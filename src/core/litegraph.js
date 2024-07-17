@@ -6,6 +6,7 @@ import { LGraphNode } from "./LGraphNode.js";
 import { LGraphGroup } from "./LGraphGroup.js";
 import { DragAndScale } from "./DragAndScale.js";
 import { LGraphCanvas } from "./LGraphCanvas.js";
+import { Logger, LOG_LEVELS } from "./helpers/Logger.js";
 
 var global = typeof(window) != "undefined" ? window : typeof(self) != "undefined" ? self : globalThis;
 
@@ -21,6 +22,8 @@ var global = typeof(window) != "undefined" ? window : typeof(self) != "undefined
      */
 
 export const LiteGraph = {
+  logger: new Logger({log_prepend_arguments: ["[LG]"]}),
+
   VERSION: 0.4,
 
   CANVAS_GRID_SIZE: 10,
@@ -169,9 +172,7 @@ export const LiteGraph = {
     }
     base_class.type = type;
 
-    if (LiteGraph.debug) {
-      console.log("Node registered: " + type);
-    }
+    LiteGraph.logger.log("Node registered: " + type);
 
     const classname = base_class.name;
 
@@ -192,7 +193,7 @@ export const LiteGraph = {
 
     const prev = this.registered_node_types[type];
     if (prev) {
-      console.log("replacing node type: " + type);
+      LiteGraph.logger.log("replacing node type: " + type);
     }
     if ( !Object.prototype.hasOwnProperty.call( base_class.prototype, "shape") ) {
       Object.defineProperty(base_class.prototype, "shape", {
@@ -249,7 +250,7 @@ export const LiteGraph = {
 
     // warnings
     if (base_class.prototype.onPropertyChange) {
-      console.warn(
+      LiteGraph.logger.logWarn(
         "LiteGraph node class " +
                         type +
                         " has onPropertyChange method, it must be called onPropertyChanged with d at the end",
@@ -486,11 +487,9 @@ export const LiteGraph = {
   createNode: function(type, title, options) {
     var base_class = this.registered_node_types[type];
     if (!base_class) {
-      if (LiteGraph.debug) {
-        console.log(
-          'GraphNode type "' + type + '" not registered.',
-        );
-      }
+      LiteGraph.logger.log(
+        'GraphNode type "' + type + '" not registered.',
+      );
       return null;
     }
 
@@ -504,7 +503,7 @@ export const LiteGraph = {
       try {
         node = new base_class(title);
       } catch (err) {
-        console.error(err);
+        LiteGraph.logger.logError(err);
         return null;
       }
     } else {
@@ -638,9 +637,7 @@ export const LiteGraph = {
       }
 
       try {
-        if (LiteGraph.debug) {
-          console.log("Reloading: " + src);
-        }
+        LiteGraph.logger.log("Reloading: " + src);
         var dynamicScript = document.createElement("script");
         dynamicScript.type = "text/javascript";
         dynamicScript.src = src;
@@ -650,15 +647,11 @@ export const LiteGraph = {
         if (LiteGraph.throw_errors) {
           throw err;
         }
-        if (LiteGraph.debug) {
-          console.log("Error while reloading " + src);
-        }
+        LiteGraph.logger.log("Error while reloading " + src);
       }
     }
 
-    if (LiteGraph.debug) {
-      console.log("Nodes reloaded");
-    }
+    LiteGraph.logger.log("Nodes reloaded");
   },
 
   // separated just to improve if it doesn't work
@@ -783,7 +776,7 @@ export const LiteGraph = {
             on_complete(data);
         })
         .catch(function(error) {
-          console.error("error fetching file:", url);
+          LiteGraph.logger.logError("error fetching file:", url);
           if (on_error)
             on_error(error);
         });
@@ -1009,7 +1002,7 @@ export const LiteGraph = {
   /* helper for interaction: pointer, touch, mouse Listeners used by LGraphCanvas DragAndScale ContextMenu*/
   pointerListenerAdd: function(oDOM, sEvIn, fCall, capture=false) {
     if (!oDOM || !oDOM.addEventListener || !sEvIn || typeof fCall!=="function") {
-      // console.log("cant pointerListenerAdd "+oDOM+", "+sEvent+", "+fCall);
+      // LiteGraph.logger.log("cant pointerListenerAdd "+oDOM+", "+sEvent+", "+fCall);
       return; // -- break --
     }
 
@@ -1019,8 +1012,8 @@ export const LiteGraph = {
     // UNDER CONSTRUCTION
     // convert pointerevents to touch event when not available
     if (sMethod=="pointer" && !window.PointerEvent) {
-      console.warn("sMethod=='pointer' && !window.PointerEvent");
-      console.log("Converting pointer["+sEvent+"] : down move up cancel enter TO touchstart touchmove touchend, etc ..");
+      LiteGraph.logger.logWarn("sMethod=='pointer' && !window.PointerEvent");
+      LiteGraph.logger.log("Converting pointer["+sEvent+"] : down move up cancel enter TO touchstart touchmove touchend, etc ..");
       switch (sEvent) {
         case "down":{
           sMethod = "touch";
@@ -1043,12 +1036,12 @@ export const LiteGraph = {
           break;
         }
         case "enter":{
-          console.log("debug: Should I send a move event?"); // ???
+          LiteGraph.logger.log("debug: Should I send a move event?"); // ???
           break;
         }
         // case "over": case "out": not used at now
         default:{
-          console.warn("PointerEvent not available in this browser ? The event "+sEvent+" would not be called");
+          LiteGraph.logger.logWarn("PointerEvent not available in this browser ? The event "+sEvent+" would not be called");
         }
       }
     }
@@ -1080,7 +1073,7 @@ export const LiteGraph = {
 
   pointerListenerRemove: function(oDOM, sEvent, fCall, capture=false) {
     if (!oDOM || !oDOM.removeEventListener || !sEvent || typeof fCall!=="function") {
-      // console.log("cant pointerListenerRemove "+oDOM+", "+sEvent+", "+fCall);
+      // LiteGraph.logger.log("cant pointerListenerRemove "+oDOM+", "+sEvent+", "+fCall);
       return; // -- break --
     }
     switch (sEvent) {
