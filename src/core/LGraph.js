@@ -913,27 +913,27 @@ export class LGraph {
   }
 
   /**
-                 * Returns the top-most group in that position
-                 * @method getGroupOnPos
-                 * @param {number} x the x coordinate in canvas space
-                 * @param {number} y the y coordinate in canvas space
-                 * @return {LGraphGroup} the group or null
-                 */
+   * Returns the y closest group enclosing a position
+   * @method getGroupOnPos
+   * @param {number} x the x coordinate in canvas space
+   * @param {number} y the y coordinate in canvas space
+   * @return {LGraphGroup} the group or null
+   */
   getGroupOnPos(x, y) {
-    for (var i = this._groups.length - 1; i >= 0; i--) {
-      var g = this._groups[i];
-      if (g.isPointInside(x, y, 2, true)) {
-        return g;
-      }
-    }
-    return null;
+    // let firstGroupMatching = this._groups.find((group) => group.isPointInside(x, y, 2, true)) ?? null;
+    let aMatchingGroups = this._groups.filter((group, index) => {
+        return group.isPointInside(x, y, 2, true); // ?? null;
+    });
+    if(!aMatchingGroups.length) return null;
+    let aSortedByYDistance = aMatchingGroups.sort((a,b) => Math.abs(a._pos[1]-y) > Math.abs(b._pos[1]-y));
+    return aSortedByYDistance[0];
   }
 
   /**
-                 * Checks that the node type matches the node type registered, used when replacing a nodetype by a newer version during execution
-                 * this replaces the ones using the old version with the new version
-                 * @method checkNodeTypes
-                 */
+   * Checks that the node type matches the node type registered, used when replacing a nodetype by a newer version during execution
+   * this replaces the ones using the old version with the new version
+   * @method checkNodeTypes
+   */
   checkNodeTypes() {
     var changes = false;
     for (var i = 0; i < this._nodes.length; i++) {

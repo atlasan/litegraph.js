@@ -838,11 +838,62 @@ export const LiteGraph = {
     );
   },
 
+  /**
+   * helper function to write text to a canvas calculating multiline and returning info on final sizes 
+   * @param {*} context 
+   * @param {*} text 
+   * @param {*} x 
+   * @param {*} y 
+   * @param {*} maxWidth 
+   * @param {*} lineHeight 
+   * @returns 
+   */
+  canvasFillTextMultiline: function(context, text, x, y, maxWidth, lineHeight) {
+    var words = (text+"").trim().split(' ');
+    var line = '';
+    var ret = {lines: [], maxW: 0, height: 0};
+    if (words.length>1) {
+        for(var n = 0; n < words.length; n++) {
+            var testLine = line + words[n] + ' ';
+            var metrics = context.measureText(testLine);
+            var testWidth = metrics.width;
+            if (testWidth > maxWidth && n > 0) {
+                context.fillText(line, x, y+(lineHeight*ret.lines.length));
+                line = words[n] + ' ';
+                // y += lineHeight;
+                ret.max = testWidth;
+                ret.lines.push(line);
+            }else{
+                line = testLine;
+            }
+        }
+    } else {
+        line = words[0];
+    }
+    context.fillText(line, x, y+(lineHeight*ret.lines.length));
+    ret.lines.push(line);
+    ret.height = lineHeight*ret.lines.length || lineHeight;
+    return ret;
+  },
+
   isInsideRectangle: function(x, y, left, top, width, height) {
     if (left < x && left + width > x && top < y && top + height > y) {
       return true;
     }
     return false;
+  },
+
+  
+  isBoundingInsideRectangle: function(bounding, left, top, width, height) {
+    let x = bounding[0];
+    let y = bounding[1];
+    if(!(x > left && x < left + width && y > top && y < top + height))
+      return false;
+    x = bounding[0] + bounding[2];
+    y = bounding[1] + bounding[3];
+    if(!(x > left && x < left + width && y > top && y < top + height))
+      return false;
+    return true;
   },
 
   // [minx,miny,maxx,maxy]
@@ -874,17 +925,17 @@ export const LiteGraph = {
   },
 
   // bounding overlap, format: [ startx, starty, width, height ]
-  overlapBounding: function(a, b) {
-    var A_end_x = a[0] + a[2];
-    var A_end_y = a[1] + a[3];
-    var B_end_x = b[0] + b[2];
-    var B_end_y = b[1] + b[3];
+  overlapBounding: function(a, b, add) {
+    const A_end_x = a[0] + a[2] + add;
+    const A_end_y = a[1] + a[3] + add;
+    const B_end_x = b[0] + b[2] + add;
+    const B_end_y = b[1] + b[3] + add;
 
     if (
       a[0] > B_end_x ||
-              a[1] > B_end_y ||
-              A_end_x < b[0] ||
-              A_end_y < b[1]
+      a[1] > B_end_y ||
+      A_end_x < b[0] ||
+      A_end_y < b[1]
     ) {
       return false;
     }
