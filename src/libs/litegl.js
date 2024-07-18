@@ -1462,11 +1462,10 @@ global.halfFloatToFloat = function( h )
   if (typeof(glMatrix) == "undefined")
     throw ("You must include glMatrix on your project");
 
-  Math.clamp = function(v, a, b) { return (a > v ? a : (b < v ? b : v)); }
+  var clamp = function(v, a, b) { return (a > v ? a : (b < v ? b : v)); }
 
   var V3 = vec3.create;
   var M4 = vec3.create;
-
 
   vec3.ZERO = vec3.fromValues(0, 0, 0);
   vec3.FRONT = vec3.fromValues(0, 0, -1);

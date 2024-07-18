@@ -1,6 +1,6 @@
 import { LiteGraph } from "@/litegraph.js";
 import { LGraphCanvas } from "@/LGraphCanvas.js";
-import { GL } from "@libs/litegl.js";
+import { GL, gl } from "@libs/litegl.js";
 
 var global = typeof(window) != "undefined" ? window : typeof(self) != "undefined" ? self : globalThis;
 // Works with Litegl.js to create WebGL nodes
@@ -1221,6 +1221,10 @@ class LGraphTextureToViewport {
     if (!tex) {
       return;
     }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     if (this.properties.disable_alpha) {
       gl.disable(gl.BLEND);
@@ -1388,6 +1392,10 @@ class LGraphTextureCopy {
     if (!tex && !this._temp_texture) {
       return;
     }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     if (!this.isOutputConnected(0)) {
       return;
@@ -1472,6 +1480,10 @@ class LGraphTextureDownsample {
   onExecute() {
     var tex = this.getInputData(0);
     if (!tex && !this._temp_texture) {
+      return;
+    }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
       return;
     }
 
@@ -1596,6 +1608,10 @@ class LGraphTextureResize {
   onExecute() {
     var tex = this.getInputData(0);
     if (!tex && !this._temp_texture) {
+      return;
+    }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
       return;
     }
 
@@ -1942,6 +1958,10 @@ class LGraphTextureTemporalSmooth {
     if (!tex || !this.isOutputConnected(0)) {
       return;
     }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     if (!LGraphTextureTemporalSmooth._shader) {
       LGraphTextureTemporalSmooth._shader = new GL.Shader(
@@ -2031,13 +2051,17 @@ class LGraphTextureLinearAvgSmooth {
     if (!tex || !this.isOutputConnected(0)) {
       return;
     }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     if (!LGraphTextureLinearAvgSmooth._shader) {
       LGraphTextureLinearAvgSmooth._shader_copy = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphTextureLinearAvgSmooth.pixel_shader_copy );
       LGraphTextureLinearAvgSmooth._shader_avg = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphTextureLinearAvgSmooth.pixel_shader_avg );
     }
 
-    var samples = clamp(this.properties.samples, 0, 64);
+    var samples = Math.clamp(this.properties.samples, 0, 64);
     var frame = this.frame;
     var interval = this.properties.frames_interval;
 
@@ -2144,6 +2168,10 @@ class LGraphImageToTexture {
     if (!img) {
       return;
     }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var width = img.videoWidth || img.width;
     var height = img.videoHeight || img.height;
@@ -2198,6 +2226,10 @@ class LGraphTextureLUT {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
 
@@ -2275,7 +2307,7 @@ class LGraphTextureLUT {
     uniform float u_amount;\n\
     \n\
     void main() {\n\
-        lowp vec4 textureColor = clamp( texture2D(u_texture, v_coord), vec4(0.0), vec4(1.0) );\n\
+        lowp vec4 textureColor = Math.clamp( texture2D(u_texture, v_coord), vec4(0.0), vec4(1.0) );\n\
         mediump float blueColor = textureColor.b * 63.0;\n\
         mediump vec2 quad1;\n\
         quad1.y = floor(floor(blueColor) / 8.0);\n\
@@ -2323,6 +2355,10 @@ class LGraphTextureEncode {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
 
@@ -2405,7 +2441,7 @@ class LGraphTextureEncode {
         vec2 uv = floor(v_coord * total_symbols) / total_symbols; //pixelate \n\
         vec2 local_uv = mod(v_coord * u_res, u_symbol_size) / u_symbol_size;\n\
         lowp vec4 textureColor = texture2D(u_texture, uv );\n\
-        float lum = clamp(u_brightness * (textureColor.x + textureColor.y + textureColor.z)/3.0,0.0,1.0);\n\
+        float lum = Math.clamp(u_brightness * (textureColor.x + textureColor.y + textureColor.z)/3.0,0.0,1.0);\n\
         if( u_invert == 1.0 ) lum = 1.0 - lum;\n\
         float index = floor( lum * (u_row_simbols * u_row_simbols - 1.0));\n\
         float col = mod( index, u_row_simbols );\n\
@@ -2442,6 +2478,10 @@ class LGraphTextureChannels {
   onExecute() {
     var texA = this.getInputData(0);
     if (!texA) {
+      return;
+    }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
       return;
     }
 
@@ -2558,6 +2598,10 @@ class LGraphChannelsTexture {
     var texG = this.getInputData(1) || white;
     var texB = this.getInputData(2) || white;
     var texA = this.getInputData(3) || white;
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
@@ -2655,11 +2699,11 @@ class LGraphTextureColor {
     var c = this.properties.color;
     ctx.fillStyle =
               "rgb(" +
-              Math.floor(clamp(c[0], 0, 1) * 255) +
+              Math.floor(Math.clamp(c[0], 0, 1) * 255) +
               "," +
-              Math.floor(clamp(c[1], 0, 1) * 255) +
+              Math.floor(Math.clamp(c[1], 0, 1) * 255) +
               "," +
-              Math.floor(clamp(c[2], 0, 1) * 255) +
+              Math.floor(Math.clamp(c[2], 0, 1) * 255) +
               ")";
     if (this.flags.collapsed) {
       this.boxcolor = ctx.fillStyle;
@@ -2673,7 +2717,10 @@ class LGraphTextureColor {
               this.properties.precision == LGraphTexture.HIGH
                 ? LGraphTexture.HIGH_PRECISION_FORMAT
                 : gl.UNSIGNED_BYTE;
-
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
     if (!this._tex || this._tex.type != type) {
       this._tex = new GL.Texture(1, 1, {
         format: gl.RGBA,
@@ -2767,6 +2814,10 @@ class LGraphTextureGradient {
   }
 
   onExecute() {
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
 
@@ -2844,7 +2895,7 @@ class LGraphTextureGradient {
     }\n\
     void main() {\n\
         float f = (rotate(u_scale * (v_coord - vec2(0.5)), u_angle) + vec2(0.5)).x;\n\
-        vec3 color = mix(u_colorA,u_colorB,clamp(f,0.0,1.0));\n\
+        vec3 color = mix(u_colorA,u_colorB,Math.clamp(f,0.0,1.0));\n\
       gl_FragColor = vec4(color,1.0);\n\
     }\n\
     ";
@@ -2869,12 +2920,15 @@ class LGraphTextureMix {
   }
 
   onExecute() {
-    var texA = this.getInputData(0);
-
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
-
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+    var texA = this.getInputData(0);
+    
     if (this.properties.precision === LGraphTexture.PASS_THROUGH) {
       this.setOutputData(0, texA);
       return;
@@ -2995,6 +3049,10 @@ class LGraphTextureEdges {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
 
@@ -3097,6 +3155,10 @@ class LGraphTextureDepthRange {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
     if (!tex) {
@@ -3233,6 +3295,10 @@ class LGraphTextureLinearDepth {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
     if (!tex || (tex.format != gl.DEPTH_COMPONENT && tex.format != gl.DEPTH_STENCIL) ) {
@@ -3325,14 +3391,18 @@ class LGraphTextureBlur {
   }
 
   onExecute() {
+    if (!this.isOutputConnected(0)) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
-
-    if (!this.isOutputConnected(0)) {
-      return;
-    } // saves work
 
     var temp = this._final_texture;
 
@@ -3490,7 +3560,7 @@ class FXGlow {
     var currentSource = currentDestination;
 
     var iterations = this.iterations;
-    iterations = clamp(iterations, 1, 16) | 0;
+    iterations = Math.clamp(iterations, 1, 16) | 0;
     var texel_size = uniforms.u_texel_size;
     var intensity = this.intensity;
 
@@ -3699,14 +3769,19 @@ class LGraphTextureGlow {
   }
 
   onExecute() {
+    if (!this.isAnyOutputConnected()) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
 
-    if (!this.isAnyOutputConnected()) {
-      return;
-    } // saves work
 
     if (
       this.properties.precision === LGraphTexture.PASS_THROUGH ||
@@ -3832,14 +3907,19 @@ class LGraphTextureKuwaharaFilter {
   }
 
   onExecute() {
+    if (!this.isOutputConnected(0)) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
 
-    if (!this.isOutputConnected(0)) {
-      return;
-    } // saves work
 
     var temp = this._temp_texture;
 
@@ -4025,14 +4105,19 @@ class LGraphTextureXDoGFilter {
   }
 
   onExecute() {
+    if (!this.isOutputConnected(0)) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
 
-    if (!this.isOutputConnected(0)) {
-      return;
-    } // saves work
 
     var temp = this._temp_texture;
     if (
@@ -4276,6 +4361,10 @@ class LGraphTextureWebcam {
   }
 
   onExecute() {
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
     if (this._webcam_stream == null && !this._waiting_confirmation) {
       this.openStream();
     }
@@ -4356,14 +4445,18 @@ class LGraphLensFX {
   }
 
   onExecute() {
+    if (!this.isOutputConnected(0)) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
-
-    if (!this.isOutputConnected(0)) {
-      return;
-    } // saves work
 
     if (
       this.properties.precision === LGraphTexture.PASS_THROUGH ||
@@ -4432,7 +4525,7 @@ class LGraphLensFX {
     \n\
     float sat( float t )\n\
     {\n\
-        return clamp( t, 0.0, 1.0 );\n\
+        return Math.clamp( t, 0.0, 1.0 );\n\
     }\n\
     \n\
     float linterp( float t ) {\n\
@@ -4486,6 +4579,10 @@ class LGraphTextureFromData {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var data = this.getInputData(0);
     if (!data)
@@ -4551,6 +4648,10 @@ class LGraphTextureCurve {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
 
@@ -4618,14 +4719,14 @@ class LGraphTextureCurve {
     {
       if (split)
       {
-        values[i*4] = clamp( this.sampleCurve(i/num, this._points.R)*255, 0, 255);
-        values[i*4+1] = clamp( this.sampleCurve(i/num, this._points.G)*255, 0, 255);
-        values[i*4+2] = clamp( this.sampleCurve(i/num, this._points.B)*255, 0, 255);
+        values[i*4] = Math.clamp( this.sampleCurve(i/num, this._points.R)*255, 0, 255);
+        values[i*4+1] = Math.clamp( this.sampleCurve(i/num, this._points.G)*255, 0, 255);
+        values[i*4+2] = Math.clamp( this.sampleCurve(i/num, this._points.B)*255, 0, 255);
       }
       else
       {
         var v = this.sampleCurve(i/num);// sample curve
-        values[i*4] = values[i*4+1] = values[i*4+2] = clamp(v*255, 0, 255);
+        values[i*4] = values[i*4+1] = values[i*4+2] = Math.clamp(v*255, 0, 255);
       }
       values[i*4+3] = 255; // alpha fixed
     }
@@ -4742,14 +4843,18 @@ class LGraphExposition {
   }
 
   onExecute() {
+    if (!this.isOutputConnected(0)) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
-
-    if (!this.isOutputConnected(0)) {
-      return;
-    } // saves work
 
     var temp = this._temp_texture;
     if (
@@ -4838,14 +4943,18 @@ class LGraphToneMapping {
   }
 
   onExecute() {
+    if (!this.isOutputConnected(0)) {
+      return;
+    } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
+
     var tex = this.getInputData(0);
     if (!tex) {
       return;
     }
-
-    if (!this.isOutputConnected(0)) {
-      return;
-    } // saves work
 
     if (
       this.properties.precision === LGraphTexture.PASS_THROUGH ||
@@ -5013,6 +5122,10 @@ class LGraphTexturePerlin {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var w = this.properties.width | 0;
     var h = this.properties.height | 0;
@@ -5320,6 +5433,10 @@ class LGraphTextureMatte {
     if (!this.isOutputConnected(0)) {
       return;
     } // saves work
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
 
@@ -5407,8 +5524,13 @@ class LGraphCubemapToTexture2D {
   }
 
   onExecute() {
-    if (!this.isOutputConnected(0))
+    if (!this.isOutputConnected(0)) {
       return;
+    }
+    if (typeof(gl) == "undefined" || !gl) {
+      console.warn("cant execute without gl");
+      return;
+    }
 
     var tex = this.getInputData(0);
     if ( !tex || tex.texture_type != GL.TEXTURE_CUBE_MAP )
