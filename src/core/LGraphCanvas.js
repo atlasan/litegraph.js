@@ -696,7 +696,7 @@ export class LGraphCanvas {
       // clone node ALT dragging
       if (LiteGraph.alt_drag_do_clone_nodes && e.altKey && node && this.allow_interaction && !skip_action && !this.read_only)
       {
-        cloned = node.clone();
+        let cloned = node.clone();
         if (cloned) {
           cloned.pos[0] += 5;
           cloned.pos[1] += 5;
@@ -6603,7 +6603,7 @@ export class LGraphCanvas {
         if (options.show_general_after_typefiltered
                         && (sIn.value || sOut.value)
         ) {
-          filtered_extra = [];
+          let filtered_extra = [];
           for (var i in LiteGraph.registered_node_types) {
             if ( inner_test_filter(i, {inTypeOverride: sIn&&sIn.value?"*":false, outTypeOverride: sOut&&sOut.value?"*":false}) )
               filtered_extra.push(i);
@@ -6620,7 +6620,7 @@ export class LGraphCanvas {
         if ((sIn.value || sOut.value) &&
                         ( (helper.childNodes.length == 0 && options.show_general_if_none_on_typefilter) )
         ) {
-          filtered_extra = [];
+          let filtered_extra = [];
           for (var i in LiteGraph.registered_node_types) {
             if ( inner_test_filter(i, {skipFilter: true}) )
               filtered_extra.push(i);
@@ -6656,15 +6656,14 @@ export class LGraphCanvas {
             // if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
 
             if (sIn && sV) {
-              console.log("will check filter against "+sV);
+              console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "IN search will check filter against "+sV);
               if (LiteGraph.registered_slot_in_types[sV] && LiteGraph.registered_slot_in_types[sV].nodes) { // type is stored
-                console.debug("check "+sType+" in "+LiteGraph.registered_slot_in_types[sV].nodes);
+                console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "IN", "check ",sType," in ",LiteGraph.registered_slot_in_types[sV].nodes);
                 var doesInc = LiteGraph.registered_slot_in_types[sV].nodes.includes(sType);
                 if (doesInc!==false) {
-                  console.log(sType+" HAS "+sV);
+                  console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "IN", sType+" HAS "+sV);
                 } else {
-                  console.debug(LiteGraph.registered_slot_in_types[sV]);
-                  console.log(+" DONT includes "+type);
+                  console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "IN", LiteGraph.registered_slot_in_types[sV], " DONT includes "+type);
                   return false;
                 }
               }
@@ -6675,15 +6674,14 @@ export class LGraphCanvas {
             // if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
 
             if (sOut && sV) {
-              console.log("search will check filter against "+sV);
+              console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "OUT search will check filter against "+sV);
               if (LiteGraph.registered_slot_out_types[sV] && LiteGraph.registered_slot_out_types[sV].nodes) { // type is stored
-                console.debug("check "+sType+" in "+LiteGraph.registered_slot_out_types[sV].nodes);
+                console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "check "+sType+" in "+LiteGraph.registered_slot_out_types[sV].nodes);
                 var doesInc = LiteGraph.registered_slot_out_types[sV].nodes.includes(sType);
                 if (doesInc!==false) {
-                  console.log(sType+" HAS "+sV);
+                  console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "OUT", sType+" HAS "+sV);
                 } else {
-                  console.debug(LiteGraph.registered_slot_out_types[sV]);
-                  console.log(+" DONT includes "+type);
+                  console.verbose("[showSearchBox]", "[refreshHelper]", "[inner_test_filter]", "OUT", LiteGraph.registered_slot_out_types[sV].nodes, "DONT includes "+type);
                   return false;
                 }
               }

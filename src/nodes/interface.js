@@ -1,4 +1,4 @@
-import { LiteGraph } from "@/litegraph.js";
+import { LiteGraph, clamp } from "@/litegraph.js";
 
 
 class WidgetButton {
