@@ -11303,9 +11303,9 @@ Texture.cubemap_camera_parameters = [
     },
 
     clampPoint: function(out, box, point) {
-      out[0] = Math.clamp( point[0], box[0] - box[3], box[0] + box[3]);
-      out[1] = Math.clamp( point[1], box[1] - box[4], box[1] + box[4]);
-      out[2] = Math.clamp( point[2], box[2] - box[5], box[2] + box[5]);
+      out[0] = clamp( point[0], box[0] - box[3], box[0] + box[3]);
+      out[1] = clamp( point[1], box[1] - box[4], box[1] + box[4]);
+      out[2] = clamp( point[2], box[2] - box[5], box[2] + box[5]);
     },
 
     isPointInside: function( bbox, point ) {

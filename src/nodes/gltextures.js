@@ -8,7 +8,6 @@ var global = typeof(window) != "undefined" ? window : typeof(self) != "undefined
 // @TODO: This... doesn't belong here!?
 LGraphCanvas.link_type_colors["Texture"] = "#987";
 
-
 export class LGraphTexture {
   constructor() {
     this.addOutput("tex", "Texture");
@@ -18,6 +17,7 @@ export class LGraphTexture {
       LGraphTexture.image_preview_size,
       LGraphTexture.image_preview_size,
     ];
+    if(typeof(gl)=="undefined" || !gl) gl = global.gl;
   }
 
   // returns the container where all the loaded textures are stored (overwrite if you have a Resources Manager)
@@ -2061,7 +2061,7 @@ class LGraphTextureLinearAvgSmooth {
       LGraphTextureLinearAvgSmooth._shader_avg = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphTextureLinearAvgSmooth.pixel_shader_avg );
     }
 
-    var samples = Math.clamp(this.properties.samples, 0, 64);
+    var samples = clamp(this.properties.samples, 0, 64);
     var frame = this.frame;
     var interval = this.properties.frames_interval;
 
@@ -2307,7 +2307,7 @@ class LGraphTextureLUT {
     uniform float u_amount;\n\
     \n\
     void main() {\n\
-        lowp vec4 textureColor = Math.clamp( texture2D(u_texture, v_coord), vec4(0.0), vec4(1.0) );\n\
+        lowp vec4 textureColor = clamp( texture2D(u_texture, v_coord), vec4(0.0), vec4(1.0) );\n\
         mediump float blueColor = textureColor.b * 63.0;\n\
         mediump vec2 quad1;\n\
         quad1.y = floor(floor(blueColor) / 8.0);\n\
@@ -2441,7 +2441,7 @@ class LGraphTextureEncode {
         vec2 uv = floor(v_coord * total_symbols) / total_symbols; //pixelate \n\
         vec2 local_uv = mod(v_coord * u_res, u_symbol_size) / u_symbol_size;\n\
         lowp vec4 textureColor = texture2D(u_texture, uv );\n\
-        float lum = Math.clamp(u_brightness * (textureColor.x + textureColor.y + textureColor.z)/3.0,0.0,1.0);\n\
+        float lum = clamp(u_brightness * (textureColor.x + textureColor.y + textureColor.z)/3.0,0.0,1.0);\n\
         if( u_invert == 1.0 ) lum = 1.0 - lum;\n\
         float index = floor( lum * (u_row_simbols * u_row_simbols - 1.0));\n\
         float col = mod( index, u_row_simbols );\n\
@@ -2699,11 +2699,11 @@ class LGraphTextureColor {
     var c = this.properties.color;
     ctx.fillStyle =
               "rgb(" +
-              Math.floor(Math.clamp(c[0], 0, 1) * 255) +
+              Math.floor(clamp(c[0], 0, 1) * 255) +
               "," +
-              Math.floor(Math.clamp(c[1], 0, 1) * 255) +
+              Math.floor(clamp(c[1], 0, 1) * 255) +
               "," +
-              Math.floor(Math.clamp(c[2], 0, 1) * 255) +
+              Math.floor(clamp(c[2], 0, 1) * 255) +
               ")";
     if (this.flags.collapsed) {
       this.boxcolor = ctx.fillStyle;
@@ -2895,7 +2895,7 @@ class LGraphTextureGradient {
     }\n\
     void main() {\n\
         float f = (rotate(u_scale * (v_coord - vec2(0.5)), u_angle) + vec2(0.5)).x;\n\
-        vec3 color = mix(u_colorA,u_colorB,Math.clamp(f,0.0,1.0));\n\
+        vec3 color = mix(u_colorA,u_colorB,clamp(f,0.0,1.0));\n\
       gl_FragColor = vec4(color,1.0);\n\
     }\n\
     ";
@@ -3560,7 +3560,7 @@ class FXGlow {
     var currentSource = currentDestination;
 
     var iterations = this.iterations;
-    iterations = Math.clamp(iterations, 1, 16) | 0;
+    iterations = clamp(iterations, 1, 16) | 0;
     var texel_size = uniforms.u_texel_size;
     var intensity = this.intensity;
 
@@ -4525,7 +4525,7 @@ class LGraphLensFX {
     \n\
     float sat( float t )\n\
     {\n\
-        return Math.clamp( t, 0.0, 1.0 );\n\
+        return clamp( t, 0.0, 1.0 );\n\
     }\n\
     \n\
     float linterp( float t ) {\n\
@@ -4719,14 +4719,14 @@ class LGraphTextureCurve {
     {
       if (split)
       {
-        values[i*4] = Math.clamp( this.sampleCurve(i/num, this._points.R)*255, 0, 255);
-        values[i*4+1] = Math.clamp( this.sampleCurve(i/num, this._points.G)*255, 0, 255);
-        values[i*4+2] = Math.clamp( this.sampleCurve(i/num, this._points.B)*255, 0, 255);
+        values[i*4] = clamp( this.sampleCurve(i/num, this._points.R)*255, 0, 255);
+        values[i*4+1] = clamp( this.sampleCurve(i/num, this._points.G)*255, 0, 255);
+        values[i*4+2] = clamp( this.sampleCurve(i/num, this._points.B)*255, 0, 255);
       }
       else
       {
         var v = this.sampleCurve(i/num);// sample curve
-        values[i*4] = values[i*4+1] = values[i*4+2] = Math.clamp(v*255, 0, 255);
+        values[i*4] = values[i*4+1] = values[i*4+2] = clamp(v*255, 0, 255);
       }
       values[i*4+3] = 255; // alpha fixed
     }
