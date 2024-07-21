@@ -981,8 +981,8 @@ export class LGraphCanvas {
           // not dragging mouse to connect two slots
           if (
             !this.connecting_node
-                            && !node.flags.collapsed
-                            && !this.live_mode
+            && !node.flags.collapsed
+            && !this.live_mode
           ) {
             let mClikSlot = false;
             let mClikSlot_index = false;

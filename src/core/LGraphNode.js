@@ -1810,13 +1810,13 @@ export class LGraphNode {
   }
 
   /**
-         * connect this node output to the input of another node
-         * @method connect
-         * @param {number_or_string} slot (could be the number of the slot or the string with the name of the slot)
-         * @param {LGraphNode} node the target node
-         * @param {number_or_string} target_slot the input slot of the target node (could be the number of the slot or the string with the name of the slot, or -1 to connect a trigger)
-         * @return {Object} the link_info is created, otherwise null
-         */
+   * connect this node output to the input of another node
+   * @method connect
+   * @param {number_or_string} slot (could be the number of the slot or the string with the name of the slot)
+   * @param {LGraphNode} node the target node
+   * @param {number_or_string} target_slot the input slot of the target node (could be the number of the slot or the string with the name of the slot, or -1 to connect a trigger)
+   * @return {Object} the link_info is created, otherwise null
+   */
   connect(slot, target_node, target_slot) {
     target_slot = target_slot || 0;
 
