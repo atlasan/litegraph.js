@@ -1,5 +1,6 @@
 import { LiteGraph } from './litegraph';
 import { LGraphNode } from './LGraphNode';
+import { LLink } from './LLink.js';
 import { LGraphGroup } from './LGraphGroup';
 import { console } from './Console';
 import { LGraphStyles } from './styles';

@@ -31,6 +31,7 @@ export const LGAudio = {
 
   connect(audionodeA, audionodeB) {
     if(typeof(audionodeA)=="undefined" || typeof(audionodeB)=="undefined" || !audionodeA || !audionodeB){
+      console.debug("[audionode]","not connecting if missing source or dest", audionodeA, audionodeB);
       return;
     }
     try {

@@ -3708,8 +3708,8 @@ export class LGraphCanvas {
 
       let colState = false;
       if (LiteGraph.node_box_coloured_by_mode) {
-        if (LGraphStyles.NODE_MODES_COLORS[node.mode]) {
-          colState = LGraphStyles.NODE_MODES_COLORS[node.mode];
+        if (LGraphEvents.NODE_MODES_COLORS[node.mode]) {
+          colState = LGraphEvents.NODE_MODES_COLORS[node.mode];
         }
       }
       if (LiteGraph.node_box_coloured_when_on) {
@@ -7086,8 +7086,8 @@ export class LGraphCanvas {
             node.title = value;
             break;
           case 'Mode':
-            var kV = Object.values(LGraphStyles.NODE_MODES).indexOf(value);
-            if (kV >= 0 && LGraphStyles.NODE_MODES[kV]) {
+            var kV = Object.values(LGraphEvents.NODE_MODES).indexOf(value);
+            if (kV >= 0 && LGraphEvents.NODE_MODES[kV]) {
               node.changeMode(kV);
             } else {
               console.warn(`unexpected mode: ${value}`);
@@ -7111,7 +7111,7 @@ export class LGraphCanvas {
 
       panel.addWidget('string', 'Title', node.title, {}, fUpdate);
 
-      panel.addWidget('combo', 'Mode', LGraphStyles.NODE_MODES[node.mode], { values: LGraphStyles.NODE_MODES }, fUpdate);
+      panel.addWidget('combo', 'Mode', LGraphEvents.NODE_MODES[node.mode], { values: LGraphEvents.NODE_MODES }, fUpdate);
 
       let nodeCol = '';
       if (node.color !== undefined) {
@@ -7339,7 +7339,7 @@ export class LGraphCanvas {
 
   static onMenuNodeMode(value, options, e, menu, node) {
     new ContextMenu(
-      LGraphStyles.NODE_MODES,
+      LGraphEvents.NODE_MODES,
       {
         event: e, callback: inner_clicked, parentMenu: menu, node,
       },
@@ -7349,9 +7349,9 @@ export class LGraphCanvas {
       if (!node) {
         return;
       }
-      const kV = Object.values(LGraphStyles.NODE_MODES).indexOf(v);
+      const kV = Object.values(LGraphEvents.NODE_MODES).indexOf(v);
       const fApplyMultiNode = function (node) {
-        if (kV >= 0 && LGraphStyles.NODE_MODES[kV]) node.changeMode(kV);
+        if (kV >= 0 && LGraphEvents.NODE_MODES[kV]) node.changeMode(kV);
         else {
           console.warn(`unexpected mode: ${v}`);
           node.changeMode(LGraphEvents.ALWAYS);

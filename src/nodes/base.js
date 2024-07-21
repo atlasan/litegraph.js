@@ -1,4 +1,6 @@
 import { LiteGraph } from '@/litegraph';
+import { LGraphStyles } from '../core/styles';
+import { LGraph } from '../core/LGraph';
 
 // basic nodes
 const global = typeof (window) !== 'undefined' ? window : typeof (self) !== 'undefined' ? self : globalThis;

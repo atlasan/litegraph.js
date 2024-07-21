@@ -1,4 +1,5 @@
 import { LiteGraph } from './litegraph';
+import { LLink } from './LLink.js';
 import { console } from './Console';
 import { LGraphStyles } from './styles';
 import { LGraphEvents } from './events';

@@ -1,5 +1,6 @@
 import { LiteGraph } from '@/litegraph';
 import { LGraphCanvas } from '@/LGraphCanvas';
+import { LGraph } from '@/LGraph';
 
 // Creates an interface to access extra features from a graph (like play, stop, live, etc)
 export function Editor(container_id, options) {

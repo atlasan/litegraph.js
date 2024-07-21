@@ -200,13 +200,13 @@ export const LiteGraph = {
   set ACTION(newValue) { LGraphStyles.ACTION = newValue; },
 
   /** @deprecated */ // eslint-disable-next-line deprecation/deprecation
-  get NODE_MODES() { return LGraphStyles.NODE_MODES; }, // helper, will add "On Request" and more in the future
+  get NODE_MODES() { return LGraphEvents.NODE_MODES; }, // helper, will add "On Request" and more in the future
   /** @deprecated */ // eslint-disable-next-line deprecation/deprecation
-  set NODE_MODES(newValue) { LGraphStyles.NODE_MODES = newValue; },
+  set NODE_MODES(newValue) { LGraphEvents.NODE_MODES = newValue; },
   /** @deprecated */ // eslint-disable-next-line deprecation/deprecation
-  get NODE_MODES_COLORS() { return LGraphStyles.NODE_MODES_COLORS; }, // use with node_box_coloured_by_mode
+  get NODE_MODES_COLORS() { return LGraphEvents.NODE_MODES_COLORS; }, // use with node_box_coloured_by_mode
   /** @deprecated */ // eslint-disable-next-line deprecation/deprecation
-  set NODE_MODES_COLORS(newValue) { LGraphStyles.NODE_MODES_COLORS = newValue; },
+  set NODE_MODES_COLORS(newValue) { LGraphEvents.NODE_MODES_COLORS = newValue; },
   /** @deprecated */ // eslint-disable-next-line deprecation/deprecation
   get ALWAYS() { return LGraphStyles.ALWAYS; },
   /** @deprecated */ // eslint-disable-next-line deprecation/deprecation

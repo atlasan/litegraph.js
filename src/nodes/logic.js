@@ -1,4 +1,5 @@
 import { LiteGraph } from '@/litegraph';
+import { LGraphStyles } from '../core/styles';
 
 class Selector {
   constructor() {
