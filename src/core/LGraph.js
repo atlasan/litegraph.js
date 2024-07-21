@@ -1,6 +1,9 @@
 import { LiteGraph } from './litegraph';
+import { LGraphNode } from './LGraphNode';
 import { LGraphGroup } from './LGraphGroup';
 import { console } from './Console';
+import { LGraphStyles } from './styles';
+import { LGraphEvents } from './events';
 
 const global = typeof (window) !== 'undefined' ? window : typeof (self) !== 'undefined' ? self : globalThis;
 
@@ -253,7 +256,7 @@ export class LGraph {
         for (var j = 0; j < limit; ++j) {
           var node = nodes[j];
           if (LiteGraph.use_deferred_actions && node._waiting_actions && node._waiting_actions.length) node.executePendingActions();
-          if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+          if (node.mode == LGraphEvents.ALWAYS && node.onExecute) {
             // wrap node.onExecute();
             node.doExecute();
           }
@@ -275,7 +278,7 @@ export class LGraph {
           for (var j = 0; j < limit; ++j) {
             var node = nodes[j];
             if (LiteGraph.use_deferred_actions && node._waiting_actions && node._waiting_actions.length) node.executePendingActions();
-            if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+            if (node.mode == LGraphEvents.ALWAYS && node.onExecute) {
               node.onExecute();
             }
           }
@@ -525,17 +528,17 @@ export class LGraph {
         continue;
       }
       let max_size = 100;
-      let y = margin + LiteGraph.NODE_TITLE_HEIGHT;
+      let y = margin + LGraphStyles.NODE_TITLE_HEIGHT;
       for (let j = 0; j < column.length; ++j) {
         const node = column[j];
-        node.pos[0] = (layout == LiteGraph.VERTICAL_LAYOUT) ? y : x;
-        node.pos[1] = (layout == LiteGraph.VERTICAL_LAYOUT) ? x : y;
-        const max_size_index = (layout == LiteGraph.VERTICAL_LAYOUT) ? 1 : 0;
+        node.pos[0] = (layout == LGraphStyles.VERTICAL_LAYOUT) ? y : x;
+        node.pos[1] = (layout == LGraphStyles.VERTICAL_LAYOUT) ? x : y;
+        const max_size_index = (layout == LGraphStyles.VERTICAL_LAYOUT) ? 1 : 0;
         if (node.size[max_size_index] > max_size) {
           max_size = node.size[max_size_index];
         }
-        const node_size_index = (layout == LiteGraph.VERTICAL_LAYOUT) ? 0 : 1;
-        y += node.size[node_size_index] + margin + LiteGraph.NODE_TITLE_HEIGHT;
+        const node_size_index = (layout == LGraphStyles.VERTICAL_LAYOUT) ? 0 : 1;
+        y += node.size[node_size_index] + margin + LGraphStyles.NODE_TITLE_HEIGHT;
       }
       x += max_size + margin;
     }
@@ -580,7 +583,7 @@ export class LGraph {
                  * @param {Array} params parameters in array format
                  */
   sendEventToAllNodes(eventname, params, mode) {
-    mode = mode || LiteGraph.ALWAYS;
+    mode = mode || LGraphEvents.ALWAYS;
 
     const nodes = this._nodes_in_order ? this._nodes_in_order : this._nodes;
     if (!nodes) {
@@ -883,7 +886,7 @@ export class LGraph {
     const nRet = null;
     for (let i = nodes_list.length - 1; i >= 0; i--) {
       const n = nodes_list[i];
-      const skip_title = n.constructor.title_mode == LiteGraph.NO_TITLE;
+      const skip_title = n.constructor.title_mode == LGraphEvents.NO_TITLE;
       if (n.isPointInside(x, y, margin, skip_title)) {
         // check for lesser interest nodes (TODO check for overlapping, use the top)
         /* if (typeof n == "LGraphGroup"){
@@ -1356,7 +1359,7 @@ export class LGraph {
       if (!link.serialize) {
         // weird bug I havent solved yet
         console.warn('weird LLink bug, link info is not a LLink but a regular object');
-        const link2 = new LiteGraph.LLink();
+        const link2 = new LLink();
         for (const j in link) {
           link2[j] = link[j];
         }
@@ -1415,7 +1418,7 @@ export class LGraph {
           console.warn('serialized graph link data contains errors, skipping.');
           continue;
         }
-        const link = new LiteGraph.LLink();
+        const link = new LLink();
         link.configure(link_data);
         links[link.id] = link;
       }
@@ -1468,7 +1471,7 @@ export class LGraph {
     this._groups.length = 0;
     if (data.groups) {
       for (var i = 0; i < data.groups.length; ++i) {
-        const group = new LiteGraph.LGraphGroup();
+        const group = new LGraphGroup();
         group.configure(data.groups[i]);
         this.add(group);
       }

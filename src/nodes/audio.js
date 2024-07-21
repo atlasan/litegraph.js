@@ -1,4 +1,5 @@
 import { LiteGraph } from '@/litegraph';
+import { LGraphStyles } from '../core/styles';
 
 const global = typeof (window) !== 'undefined' ? window : typeof (self) !== 'undefined' ? self : globalThis;
 
@@ -29,6 +30,9 @@ export const LGAudio = {
   },
 
   connect(audionodeA, audionodeB) {
+    if(typeof(audionodeA)=="undefined" || typeof(audionodeB)=="undefined" || !audionodeA || !audionodeB){
+      return;
+    }
     try {
       audionodeA.connect(audionodeB);
     } catch (err) {
@@ -122,6 +126,7 @@ export const LGAudio = {
     slot,
     connected,
     link_info,
+    output,
   ) {
     // only process the outputs events
     if (connection != LiteGraph.OUTPUT) {
@@ -157,8 +162,10 @@ export const LGAudio = {
 
     // do the connection/disconnection
     if (connected) {
+      console.debug("[audio]", "[onConnectionsChange]", "will connect", local_audionode, "to", target_audionode, "arguments", ...arguments);
       LGAudio.connect(local_audionode, target_audionode);
     } else {
+      console.debug("[audio]", "[onConnectionsChange]", "will discconnect", local_audionode, "from", target_audionode, "arguments", ...arguments);
       LGAudio.disconnect(local_audionode, target_audionode);
     }
   },
@@ -439,7 +446,7 @@ class LGAudioSource {
     this.boxcolor = '#AA4';
 
     function inner(buffer) {
-      this.boxcolor = LiteGraph.NODE_DEFAULT_BOXCOLOR;
+      this.boxcolor = LGraphStyles.NODE_DEFAULT_BOXCOLOR;
       that._audiobuffer = buffer;
       that._loading_audio = false;
       // if is playing, then play it

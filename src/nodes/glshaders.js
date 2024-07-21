@@ -1,6 +1,7 @@
 import { GL } from '@libs/litegl';
 import { LiteGraph } from '@/litegraph';
 import { LGraphTexture } from './gltextures';
+import { LGraphStyles } from '../core/styles';
 
 const global = typeof (window) !== 'undefined' ? window : typeof (self) !== 'undefined' ? self : globalThis;
 if (typeof GL !== 'undefined') {
@@ -427,7 +428,7 @@ if (typeof GL !== 'undefined') {
   class LGraphShaderGraph {
     constructor() {
       // before inputs
-      this.subgraph = new LiteGraph.LGraph();
+      this.subgraph = new LGraph();
       this.subgraph._subgraph_node = this;
       this.subgraph._is_subgraph = true;
       this.subgraph.filter = 'shader';
@@ -551,7 +552,7 @@ if (typeof GL !== 'undefined') {
     computeSize() {
       const num_inputs = this.inputs ? this.inputs.length : 0;
       const num_outputs = this.outputs ? this.outputs.length : 0;
-      return [200, Math.max(num_inputs, num_outputs) * LiteGraph.NODE_SLOT_HEIGHT + LiteGraph.NODE_TITLE_HEIGHT + 10];
+      return [200, Math.max(num_inputs, num_outputs) * LGraphStyles.NODE_SLOT_HEIGHT + LGraphStyles.NODE_TITLE_HEIGHT + 10];
     }
 
     getShader() {
@@ -565,18 +566,18 @@ if (typeof GL !== 'undefined') {
 
       // allows to preview the node if the canvas is a webgl canvas
       const tex = this.getOutputData(0);
-      const inputs_y = this.inputs ? this.inputs.length * LiteGraph.NODE_SLOT_HEIGHT : 0;
-      if (tex && ctx == tex.gl && this.size[1] > inputs_y + LiteGraph.NODE_TITLE_HEIGHT) {
-        ctx.drawImage(tex, 10, y, this.size[0] - 20, this.size[1] - inputs_y - LiteGraph.NODE_TITLE_HEIGHT);
+      const inputs_y = this.inputs ? this.inputs.length * LGraphStyles.NODE_SLOT_HEIGHT : 0;
+      if (tex && ctx == tex.gl && this.size[1] > inputs_y + LGraphStyles.NODE_TITLE_HEIGHT) {
+        ctx.drawImage(tex, 10, y, this.size[0] - 20, this.size[1] - inputs_y - LGraphStyles.NODE_TITLE_HEIGHT);
       }
 
-      var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+      var y = this.size[1] - LGraphStyles.NODE_TITLE_HEIGHT + 0.5;
 
       // button
-      const over = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0], LiteGraph.NODE_TITLE_HEIGHT);
+      const over = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0], LGraphStyles.NODE_TITLE_HEIGHT);
       ctx.fillStyle = over ? '#555' : '#222';
       ctx.beginPath();
-      if (this._shape == LiteGraph.BOX_SHAPE) { ctx.rect(0, y, this.size[0] + 1, LiteGraph.NODE_TITLE_HEIGHT); } else { ctx.roundRect(0, y, this.size[0] + 1, LiteGraph.NODE_TITLE_HEIGHT, 0, 8); }
+      if (this._shape == LGraphStyles.BOX_SHAPE) { ctx.rect(0, y, this.size[0] + 1, LGraphStyles.NODE_TITLE_HEIGHT); } else { ctx.roundRect(0, y, this.size[0] + 1, LGraphStyles.NODE_TITLE_HEIGHT, 0, 8); }
       ctx.fill();
 
       // button
@@ -587,7 +588,7 @@ if (typeof GL !== 'undefined') {
     }
 
     onMouseDown(e, localpos, graphcanvas) {
-      const y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+      const y = this.size[1] - LGraphStyles.NODE_TITLE_HEIGHT + 0.5;
       if (localpos[1] > y) {
         graphcanvas.showSubgraphPropertiesDialog(this);
       }

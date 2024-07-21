@@ -1,10 +1,11 @@
 import { LiteGraph } from '@/litegraph';
+import { Editor } from './litegraph-editor';
 
 let webgl_canvas = null;
 
 LiteGraph.node_images_path = '../nodes_data/';
 
-const editor = new LiteGraph.Editor('main', { miniwindow: false });
+const editor = new Editor('main', { miniwindow: false });
 window.graphcanvas = editor.graphcanvas;
 window.graph = editor.graph;
 updateEditorHiPPICanvas();

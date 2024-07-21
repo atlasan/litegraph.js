@@ -30,7 +30,7 @@ class Subgraph {
     this.enabled = true;
 
     // create inner graph
-    this.subgraph = new LiteGraph.LGraph();
+    this.subgraph = new LGraph();
     this.subgraph._subgraph_node = this;
     this.subgraph._is_subgraph = true;
 
@@ -133,27 +133,27 @@ class Subgraph {
 
   onDrawBackground(ctx, graphcanvas, canvas, pos) {
     if (this.flags.collapsed) { return; }
-    const y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+    const y = this.size[1] - LGraphStyles.NODE_TITLE_HEIGHT + 0.5;
     // button
-    const over = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0], LiteGraph.NODE_TITLE_HEIGHT);
-    const overleft = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0] / 2, LiteGraph.NODE_TITLE_HEIGHT);
+    const over = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0], LGraphStyles.NODE_TITLE_HEIGHT);
+    const overleft = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0] / 2, LGraphStyles.NODE_TITLE_HEIGHT);
     ctx.fillStyle = over ? '#555' : '#222';
     ctx.beginPath();
-    if (this._shape == LiteGraph.BOX_SHAPE) {
+    if (this._shape == LGraphStyles.BOX_SHAPE) {
       if (overleft) {
-        ctx.rect(0, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT);
+        ctx.rect(0, y, this.size[0] / 2 + 1, LGraphStyles.NODE_TITLE_HEIGHT);
       } else {
-        ctx.rect(this.size[0] / 2, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT);
+        ctx.rect(this.size[0] / 2, y, this.size[0] / 2 + 1, LGraphStyles.NODE_TITLE_HEIGHT);
       }
     } else if (overleft) {
-      ctx.roundRect(0, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT, [0, 0, 8, 8]);
+      ctx.roundRect(0, y, this.size[0] / 2 + 1, LGraphStyles.NODE_TITLE_HEIGHT, [0, 0, 8, 8]);
     } else {
-      ctx.roundRect(this.size[0] / 2, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT, [0, 0, 8, 8]);
+      ctx.roundRect(this.size[0] / 2, y, this.size[0] / 2 + 1, LGraphStyles.NODE_TITLE_HEIGHT, [0, 0, 8, 8]);
     }
     if (over) {
       ctx.fill();
     } else {
-      ctx.fillRect(0, y, this.size[0] + 1, LiteGraph.NODE_TITLE_HEIGHT);
+      ctx.fillRect(0, y, this.size[0] + 1, LGraphStyles.NODE_TITLE_HEIGHT);
     }
     // button
     ctx.textAlign = 'center';
@@ -172,7 +172,7 @@ class Subgraph {
   //     }
   // }
   onMouseDown(e, localpos, graphcanvas) {
-    const y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+    const y = this.size[1] - LGraphStyles.NODE_TITLE_HEIGHT + 0.5;
     console.log(0);
     if (localpos[1] > y) {
       if (localpos[0] < this.size[0] / 2) {
@@ -188,7 +188,7 @@ class Subgraph {
   computeSize() {
     const num_inputs = this.inputs ? this.inputs.length : 0;
     const num_outputs = this.outputs ? this.outputs.length : 0;
-    return [200, Math.max(num_inputs, num_outputs) * LiteGraph.NODE_SLOT_HEIGHT + LiteGraph.NODE_TITLE_HEIGHT];
+    return [200, Math.max(num_inputs, num_outputs) * LGraphStyles.NODE_SLOT_HEIGHT + LGraphStyles.NODE_TITLE_HEIGHT];
   }
 
   //* *** INPUTS ***********************************

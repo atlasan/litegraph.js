@@ -3,6 +3,7 @@ import {
 } from 'vitest';
 import { LiteGraph } from '@/litegraph';
 import { LGraphNode } from '@/LGraphNode';
+import { LGraphStyles } from './core/styles';
 
 describe('register node types', () => {
   let Sum;
@@ -79,14 +80,14 @@ describe('register node types', () => {
     node_type.prototype.shape = 'default';
     expect(new node_type().shape).toBe(undefined);
     node_type.prototype.shape = 'box';
-    console.log(LiteGraph.BOX_SHAPE);
-    expect(new node_type().shape).toBe(LiteGraph.BOX_SHAPE);
+    console.log(LGraphStyles.BOX_SHAPE);
+    expect(new node_type().shape).toBe(LGraphStyles.BOX_SHAPE);
     node_type.prototype.shape = 'round';
-    expect(new node_type().shape).toBe(LiteGraph.ROUND_SHAPE);
+    expect(new node_type().shape).toBe(LGraphStyles.ROUND_SHAPE);
     node_type.prototype.shape = 'circle';
-    expect(new node_type().shape).toBe(LiteGraph.CIRCLE_SHAPE);
+    expect(new node_type().shape).toBe(LGraphStyles.CIRCLE_SHAPE);
     node_type.prototype.shape = 'card';
-    expect(new node_type().shape).toBe(LiteGraph.CARD_SHAPE);
+    expect(new node_type().shape).toBe(LGraphStyles.CARD_SHAPE);
     node_type.prototype.shape = 'custom_shape';
     expect(new node_type().shape).toBe('custom_shape');
 
@@ -98,7 +99,7 @@ describe('register node types', () => {
     LiteGraph.registerNodeType('math/sum', NewCalcSum);
     const new_node_type = LiteGraph.registered_node_types['math/sum'];
     new_node_type.prototype.shape = 'box';
-    expect(new new_node_type().shape).toBe(LiteGraph.BOX_SHAPE);
+    expect(new new_node_type().shape).toBe(LGraphStyles.BOX_SHAPE);
   });
 
   test('onPropertyChanged warning', () => {

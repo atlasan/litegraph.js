@@ -1,4 +1,5 @@
 import { LiteGraph } from '@/litegraph';
+import { LGraphStyles } from '../core/styles';
 
 // event related nodes
 
@@ -113,7 +114,7 @@ class WaitAll {
       return;
     }
     for (let i = 0; i < this.inputs.length; ++i) {
-      const y = i * LiteGraph.NODE_SLOT_HEIGHT + 10;
+      const y = i * LGraphStyles.NODE_SLOT_HEIGHT + 10;
       ctx.fillStyle = this.ready[i] ? '#AFB' : '#000';
       ctx.fillRect(20, y, 10, 10);
     }
@@ -169,11 +170,11 @@ class Stepper {
     const index = this.properties.index || 0;
     ctx.fillStyle = '#AFB';
     const w = this.size[0];
-    const y = (index + 1) * LiteGraph.NODE_SLOT_HEIGHT + 4;
+    const y = (index + 1) * LGraphStyles.NODE_SLOT_HEIGHT + 4;
     ctx.beginPath();
     ctx.moveTo(w - 30, y);
-    ctx.lineTo(w - 30, y + LiteGraph.NODE_SLOT_HEIGHT);
-    ctx.lineTo(w - 15, y + LiteGraph.NODE_SLOT_HEIGHT * 0.5);
+    ctx.lineTo(w - 30, y + LGraphStyles.NODE_SLOT_HEIGHT);
+    ctx.lineTo(w - 15, y + LGraphStyles.NODE_SLOT_HEIGHT * 0.5);
     ctx.fill();
   }
 

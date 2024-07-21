@@ -4666,7 +4666,7 @@ class LGraphTextureCurve {
   onDrawBackground(ctx, graphcanvas) {
     if (this.flags.collapsed) return;
 
-    if (!this.curve_editor) this.curve_editor = new LiteGraph.CurveEditor(this._points.R);
+    if (!this.curve_editor) this.curve_editor = new CurveEditor(this._points.R);
     ctx.save();
     ctx.translate(0, this.curve_offset);
     let channel = this.widgets[1].value;

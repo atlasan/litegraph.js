@@ -1,4 +1,5 @@
 import { LiteGraph } from '@/litegraph';
+import { LGraphStyles } from '../core/styles';
 
 class Converter {
   constructor() {
@@ -726,7 +727,7 @@ class MathOperation {
     ctx.fillText(
       this.properties.OP,
       this.size[0] * 0.5,
-      (this.size[1] + LiteGraph.NODE_TITLE_HEIGHT) * 0.5,
+      (this.size[1] + LGraphStyles.NODE_TITLE_HEIGHT) * 0.5,
     );
     ctx.textAlign = 'left';
   }

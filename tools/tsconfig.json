@@ -8,11 +8,11 @@
     
     /* Modules */
     "baseUrl": "../src", /* Needed for Madge */
-    "rootDir": "../src",                                  /* Specify the root folder within your source files. */
+    "rootDir": "..",                                  /* Specify the root folder within your source files. */
     "paths": {
-      "@/*": ["../src/core/*"],
-      "@libs/*": ["../src/libs/*"],
-      "@@/*": ["../*"],
+      "@/*": ["./src/core/*"],
+      "@libs/*": ["./src/libs/*"],
+      "@@/*": ["./*"],
     },
 
     /* JavaScript Support */
@@ -33,23 +33,8 @@
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
   "include": [
-    "../src/core/**/*",
-    "../src/nodes/audio.js",
-    "../src/nodes/base.js",
-    "../src/nodes/events.js",
-    "../src/nodes/geometry.js",
-    "../src/nodes/glfx.js",
-    "../src/nodes/glshaders.js",
-    "../src/nodes/gltextures.js",
-    "../src/nodes/graphics.js",
-    "../src/nodes/input.js",
-    "../src/nodes/interface.js",
-    "../src/nodes/logic.js",
-    "../src/nodes/math.js",
-    "../src/nodes/math3d.js",
-    "../src/nodes/midi.js",
-    "../src/nodes/network.js",
-    "../src/nodes/string.js",
-    "../src/nodes/others.js",
-  ]
+    "../src",
+    "../eslint.config.mjs"
+  ],
+  "exclude": ["../build"]
 }

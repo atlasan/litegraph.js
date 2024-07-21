@@ -2,6 +2,8 @@
 // Project: litegraph.js
 // Definitions by: NateScarlet <https://github.com/NateScarlet>
 
+import type { LGraphStyles } from "./core/styles";
+
 export type Vector2 = [number, number];
 export type Vector4 = [number, number, number, number];
 export type widgetTypes =
@@ -12,10 +14,10 @@ export type widgetTypes =
     | "toggle"
     | "button";
 export type SlotShape =
-    | typeof LiteGraph.BOX_SHAPE
-    | typeof LiteGraph.CIRCLE_SHAPE
-    | typeof LiteGraph.ARROW_SHAPE
-    | typeof LiteGraph.SQUARE_SHAPE
+    | typeof LGraphStyles.BOX_SHAPE
+    | typeof LGraphStyles.CIRCLE_SHAPE
+    | typeof LGraphStyles.ARROW_SHAPE
+    | typeof LGraphStyles.SQUARE_SHAPE
     | number; // For custom shapes
 
 /** https://github.com/jagenjo/litegraph.js/tree/master/guides#node-slots */

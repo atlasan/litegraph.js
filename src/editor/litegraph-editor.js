@@ -2,7 +2,7 @@ import { LiteGraph } from '@/litegraph';
 import { LGraphCanvas } from '@/LGraphCanvas';
 
 // Creates an interface to access extra features from a graph (like play, stop, live, etc)
-function Editor(container_id, options) {
+export function Editor(container_id, options) {
   options = options || {};
 
   // fill container
@@ -22,7 +22,7 @@ function Editor(container_id, options) {
   const canvas = this.canvas = root.querySelector('.graphcanvas');
 
   // create graph
-  const graph = (this.graph = new LiteGraph.LGraph());
+  const graph = (this.graph = new LGraph());
   const graphcanvas = this.graphcanvas = new LGraphCanvas(canvas, graph);
   graphcanvas.background_image = './assets/images/grid.png';
   graph.onAfterExecute = function () {

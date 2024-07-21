@@ -148,7 +148,8 @@ class LGWebSocket {
 
   static desc = 'Send data through a websocket';
 }
-LiteGraph.registerNodeType('network/websocket', LGWebSocket);
+// @TODO: verify this doesn't even attempt to phone home anywhere and isn't instantiated before a node is created before re-enabling
+// LiteGraph.registerNodeType('network/websocket', LGWebSocket);
 
 // It is like a websocket but using the SillyServer.js server that bounces packets back to all clients connected:
 // For more information: https://github.com/jagenjo/SillyServer.js
@@ -173,13 +174,12 @@ class LGSillyClient {
     this.addInput('in', 0);
     this.addOutput('out', 0);
     this.properties = {
-      url: 'tamats.com:55000',
+      url: 'localhost:55000',
       room: 'lgraph',
       only_send_changes: true,
     };
 
     this._server = null;
-    this.connectSocket();
     this._last_sent_data = [];
     this._last_received_data = [];
 
@@ -348,7 +348,8 @@ class LGSillyClient {
 
   static desc = 'Connects to SillyServer to broadcast messages';
 }
-LiteGraph.registerNodeType('network/sillyclient', LGSillyClient);
+// @TODO: verify this doesn't even attempt to phone home anywhere and isn't instantiated before a node is created before re-enabling
+// LiteGraph.registerNodeType('network/sillyclient', LGSillyClient);
 
 class HTTPRequestNode {
   constructor() {
@@ -402,4 +403,5 @@ class HTTPRequestNode {
 
   static desc = 'Fetch data through HTTP';
 }
-LiteGraph.registerNodeType('network/httprequest', HTTPRequestNode);
+// @TODO: verify this doesn't even attempt to phone home anywhere and isn't instantiated before a node is created before re-enabling
+// LiteGraph.registerNodeType('network/httprequest', HTTPRequestNode);
