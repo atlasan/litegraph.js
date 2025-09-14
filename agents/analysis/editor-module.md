@@ -1,10 +1,95 @@
-# Editor Module Documentation
+# LiteGraph Editor Module Analysis
 
 ## Overview
 
-The LiteGraph Editor module provides a complete web-based visual node editor interface. It combines the core LiteGraph library with a rich user interface, demo system, and comprehensive configuration options for creating interactive node-based applications.
+The editor module provides a complete web-based visual interface for creating, editing, and managing LiteGraph workflows. It includes a comprehensive set of UI components, examples, and editor functionality built on top of the core LiteGraph library.
 
-## Architecture
+## Module Structure
+
+### Directory Organization
+```
+editor/
+├── demodata/           # Sample media files for demonstrations
+│   ├── audio.wav       # Audio sample
+│   ├── impulse.wav     # Audio impulse response
+│   └── video.webm      # Video sample
+├── examples/           # Comprehensive example workflows
+│   ├── ancestors/      # Ancestor execution examples
+│   ├── audio*.json     # Audio processing workflows
+│   ├── conditionals/   # Conditional logic examples
+│   ├── features/       # Feature demonstration workflows
+│   ├── functions/      # Function node examples
+│   ├── graphics/       # Graphics and rendering examples
+│   ├── tests/          # Testing workflows
+│   ├── three/          # Three.js integration examples
+│   └── websocket/      # WebSocket communication examples
+├── imgs/               # UI icons and graphics
+├── js/                 # JavaScript modules and libraries
+│   ├── code.js         # Main editor initialization
+│   ├── defaults*.js    # Configuration presets
+│   ├── demos.js        # Demo management
+│   ├── libs/           # Third-party libraries
+│   └── web_console.js  # Web-based console
+├── index.html          # Main editor interface
+├── editor_*.html       # Specialized editor variants
+├── style.css           # Editor-specific styling
+└── favicon.svg         # Editor icon
+```
+
+## Core Components
+
+### 1. Main Editor Interface (index.html)
+```html
+<!-- Comprehensive module loading -->
+<script type="module" src="../src/litegraph.js"></script>
+<script type="module" src="../src/litegraph-editor.js"></script>
+<script type="module" src="js/defaults.js"></script>
+
+<!-- Node type libraries -->
+<script type="module" src="../src/nodes/base.js"></script>
+<script type="module" src="../src/nodes/logic.js"></script>
+<script type="module" src="../src/nodes/events.js"></script>
+<!-- ... additional node types ... -->
+```
+
+**Key Features:**
+- Modular architecture with ES6 modules
+- Comprehensive node type loading
+- Third-party library integration
+- Responsive design support
+
+### 2. Editor Initialization (code.js)
+```javascript
+import { LiteGraph } from "../../src/litegraph.js";
+import { Editor } from "../../src/litegraph-editor.js";
+
+// Initialize editor with configuration
+var editor = new Editor("main", {miniwindow: false});
+window.graphcanvas = editor.graphcanvas;
+window.graph = editor.graph;
+
+// High-DPI canvas support
+function updateEditorHiPPICanvas() {
+    const ratio = window.devicePixelRatio;
+    if(ratio == 1) return;
+    
+    const rect = editor.canvas.parentNode.getBoundingClientRect();
+    const { width, height } = rect;
+    editor.canvas.width = width * ratio;
+    editor.canvas.height = height * ratio;
+    editor.canvas.style.width = width + "px";
+    editor.canvas.style.height = height + "px";
+    editor.canvas.getContext("2d").scale(ratio, ratio);
+}
+```
+
+**Key Features:**
+- High-DPI display support
+- Responsive canvas resizing
+- Global object exposure for debugging
+- Automatic backup to localStorage
+
+### Architecture
 
 ### Core Components
 
@@ -13,23 +98,6 @@ The LiteGraph Editor module provides a complete web-based visual node editor int
 3. **Demo System** (`demos.js`): Example graphs and test cases
 4. **Configuration** (`defaults.js`): Global settings and feature flags
 5. **UI Framework**: HTML/CSS interface with toolbar and panels
-
-### File Structure
-
-```
-editor/
-├── index.html          # Main HTML entry point
-├── style.css           # Editor-specific styles
-├── favicon.svg         # Editor icon
-└── js/
-    ├── code.js         # Main editor initialization
-    ├── demos.js        # Demo graphs and test nodes
-    ├── defaults.js     # Configuration and feature flags
-    └── libs/           # Third-party libraries
-        ├── gl-matrix-min.js
-        ├── audiosynth.js
-        └── midi-parser.js
-```
 
 ## Main Entry Point (`index.html`)
 

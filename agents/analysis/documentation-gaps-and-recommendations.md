@@ -5,10 +5,14 @@
 Based on the comprehensive analysis of the LiteGraph.js codebase, the following documentation has been created or updated:
 
 ### Completed Module Analysis
-1. **Source Module Analysis** (`src-module-analysis.md`) - Core library components
-2. **Headless Module Analysis** (`headless-module-analysis.md`) - Server-side execution
-3. **Editor Module Analysis** (`editor-module-analysis.md`) - UI and editor functionality
-4. **Cross-Reference Analysis** (`cross-reference-analysis.md`) - Comprehensive gap identification
+1. **Core Architecture** (`core-architecture.md`) - Comprehensive analysis of LiteGraph, LGraph, and LGraphNode classes
+2. **Node System** (`node-system.md`) - Detailed documentation of all node categories and types
+3. **Canvas Rendering** (`canvas-rendering.md`) - Complete rendering pipeline and visual system analysis
+4. **Callback System** (`callback-system.md`) - Comprehensive event handling and callback documentation
+5. **Execution System** (`execution-system.md`) - Complete analysis of execution modes, flow types, and performance
+6. **Headless Module** (`headless-module.md`) - Server-side execution capabilities and Node.js integration
+7. **Editor Module** (`editor-module.md`) - Web-based visual interface and UI components
+8. **Cross-Reference Analysis** (`cross-reference-analysis.md`) - Comprehensive gap identification
 
 ### Documentation Structure Analysis
 - **JSDoc Configuration** - Existing but incomplete coverage
@@ -61,6 +65,8 @@ Based on the comprehensive analysis of the LiteGraph.js codebase, the following 
 2. **API Completeness**: JSDoc exists but misses key extension APIs
 3. **Integration Patterns**: No documentation for build, test, or deployment workflows
 4. **Configuration Management**: Multiple config systems without unified documentation
+5. **Execution System Complexity**: Previously undocumented execution behaviors - ✅ **RESOLVED**
+6. **Headless vs Browser Differences**: Differences between execution environments - ✅ **RESOLVED**
 
 ## Identified Documentation Gaps
 
@@ -209,8 +215,9 @@ Based on the comprehensive analysis of the LiteGraph.js codebase, the following 
 
 ### Critical Priority (Immediate)
 1. **Callback System Documentation** - Core extensibility feature (✅ COMPLETED)
-2. **Complete API Reference** - Essential for developers
-3. **Node Development Guide** - Core functionality extension
+2. **Execution System Documentation** - Core performance and behavior (✅ COMPLETED)
+3. **Complete API Reference** - Essential for developers
+4. **Node Development Guide** - Core functionality extension
 
 ### High Priority (Immediate)
 1. **Integration Examples** - Framework adoption
