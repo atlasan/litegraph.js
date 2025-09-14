@@ -18,6 +18,8 @@ The build system is implemented as a single Python script that orchestrates the 
 
 ### Build Configuration
 
+#### Build Configuration
+
 #### Command Line Options
 
 ```python
@@ -32,8 +34,8 @@ options = {
 - `--no-minify`: Disables code minification
 - `--no-prettify`: Skips code beautification
 - `--update-version`: Increments version numbers
-- `--minor`: Increments minor version
-- `--major`: Increments major version
+
+**Note**: The build system uses a custom minification approach, not UglifyJS as previously documented. Minification is applied selectively to `.mini.` variants only.
 
 #### File Categories
 
@@ -98,6 +100,16 @@ options = {
    - Target: Interactive applications
 
 4. **litegraph.full.mini.js** (Complete Browser Bundle, Minified)
+   - Same as litegraph.full.js but minified
+   - Production-ready full bundle
+
+5. **litegraph.core.js** (Core Only)
+   - Core library without nodes
+   - Minimal footprint for custom implementations
+
+6. **litegraph_nodejs.full.js** (Node.js Bundle)
+   - Includes Node.js-specific nodes
+   - Server-side execution support
    - Minified version of full bundle
    - Production-ready complete solution
 

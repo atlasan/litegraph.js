@@ -1,10 +1,34 @@
-# Build System and Project Structure
+# Build System Documentation
 
 ## Overview
 
-LiteGraph.js uses a Python-based build system that creates multiple distribution bundles for different use cases, including browser, Node.js, and minified versions.
+LiteGraph.js uses a Python-based build system (`build.py`) that concatenates JavaScript files, manages dependencies, and creates multiple distribution targets. The build system supports ES6 modules, handles version injection, and provides both development and production builds with 6 distinct distribution configurations.
 
 ## Build Architecture
+
+### Core Components
+
+1. **Build Script**: `build.py` - Python-based file concatenation and processing
+2. **File Lists**: Organized lists of source files for different components
+3. **Build Targets**: 6 different distribution configurations
+4. **Version Management**: Automatic version injection from package.json
+5. **Minification**: Custom minification pipeline for production builds
+
+### Build Targets
+
+The build system creates 6 distinct distribution files:
+
+#### 1. Core Builds
+- **`litegraph.js`** - Core library without extensions
+- **`litegraph.mini.js`** - Minified core library
+
+#### 2. Full Builds
+- **`litegraph.full.js`** - Core library + all extensions
+- **`litegraph.full.mini.js`** - Minified full library
+
+#### 3. Node.js Builds
+- **`litegraph_nodejs.js`** - Core library for Node.js
+- **`litegraph_nodejs.full.js`** - Full library for Node.js with extensions
 
 ### 1. Build Script Structure
 

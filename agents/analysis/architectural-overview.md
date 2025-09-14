@@ -54,7 +54,7 @@ class LGraph {
 
 ### 3. Plugin Architecture
 
-Extensibility through a plugin-based node system:
+Extensibility through a plugin-based node system and extension framework:
 
 ```javascript
 // Node registration pattern
@@ -64,11 +64,24 @@ LiteGraph.registerNodeType("math/add", {
     outputs: [["Result", "number"]],
     
     onExecute: function() {
+        // Two data retrieval patterns available:
+        // getInputData() - direct connection data
         const a = this.getInputData(0) || 0;
         const b = this.getInputData(1) || 0;
+        
+        // getInputOrProperty() - input data or property fallback
+        // const a = this.getInputOrProperty("A") || 0;
+        
         this.setOutputData(0, a + b);
     }
 });
+
+// Extension system (src/extensions/)
+LiteGraph.Extensions = {
+    keyboard_helper: require('./extensions/keyboard_helper.js'),
+    autoconnect: require('./extensions/autoconnect.js'),
+    renamer: require('./extensions/renamer.js')
+};
 ```
 
 ## Core Design Patterns
