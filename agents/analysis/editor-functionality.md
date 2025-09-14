@@ -1,8 +1,161 @@
-# Editor Functionality Analysis
+# Editor Functionality and UI Components
 
 ## Overview
 
-LiteGraph.js provides a comprehensive visual node editor with rich interaction capabilities, context menus, property panels, and extensible UI components. The editor is designed for both desktop and mobile environments with responsive design patterns.
+This document analyzes the editor functionality and user interface components of LiteGraph.js, including the main Editor class, UI panel system, and styling architecture. LiteGraph.js provides a comprehensive visual node editor with rich interaction capabilities, context menus, property panels, and extensible UI components designed for both desktop and mobile environments.
+
+## Editor Class (`litegraph-editor.js`)
+The main editor interface is provided by the `Editor` class, which creates a complete graph editing environment.
+
+### DOM Structure
+```html
+<div class="litegraph litegraph-editor">
+  <div class="header">
+    <div class="tools tools-left"></div>
+    <div class="tools tools-right"></div>
+  </div>
+  <div class="content">
+    <div class="editor-area">
+      <canvas class="graphcanvas" width="1000" height="500" tabindex="10"></canvas>
+    </div>
+  </div>
+  <div class="footer">
+    <div class="tools tools-left"></div>
+    <div class="tools tools-right"></div>
+  </div>
+</div>
+```
+
+### Key Methods
+- `addToolsButton()`: Adds buttons to toolbar
+- `addLoadCounter()`: Creates CPU/GPU load meters
+- `onPlayButton()`: Controls graph execution
+- `onFullscreenButton()`: Toggles fullscreen mode
+- `addMiniWindow()`: Creates miniature graph view
+- `toggleMultiview()`: Manages multiple graph views
+
+## UI Panel System (`LGraphCanvas.createPanel()`)
+
+### Panel Creation
+The `createPanel(title, options)` method creates modal dialogs and panels:
+
+```javascript
+var panel = graphcanvas.createPanel("Panel Title", {
+    closable: true,
+    width: 500,
+    height: 300,
+    window: ref_window,
+    onOpen: function() { /* callback */ },
+    onClose: function() { /* callback */ }
+});
+```
+
+### Panel Structure
+```html
+<div class="litegraph dialog">
+  <div class="dialog-header">
+    <span class="dialog-title">Title</span>
+    <span class="close">×</span>
+  </div>
+  <div class="dialog-content"></div>
+  <div class="dialog-alt-content" style="display:none;"></div>
+  <div class="dialog-footer"></div>
+</div>
+```
+
+### Panel Methods
+- `panel.close()`: Closes the panel
+- `panel.toggleAltContent()`: Switches between content views
+- `panel.addHTML()`: Adds HTML content
+- `panel.addButton()`: Adds action buttons
+- `panel.addWidget()`: Adds interactive widgets
+- `panel.addSeparator()`: Adds visual separators
+
+### Widget Types
+Supported widget types in panels:
+- **boolean**: Toggle switches
+- **string/number**: Editable text fields
+- **combo/enum**: Dropdown selections
+- **code**: Code editor integration
+- **button**: Action buttons
+- **slider**: Range controls
+
+## Specialized Panels
+
+### Options Panel (`extensions/options_panel.js`)
+Provides canvas configuration interface:
+- Canvas rendering options
+- Interaction settings
+- Visual appearance controls
+- Performance toggles
+
+### Node Panel (`showShowNodePanel()`)
+Displays node properties and settings:
+- Node-specific properties
+- Widget configurations
+- Connection management
+
+### Subgraph Panels
+- Input/Output management
+- Subgraph navigation
+- Property inheritance
+
+## Mini Window System
+
+### Features
+- Scaled-down graph view (0.25x scale)
+- Read-only interaction
+- Viewport indicator
+- Synchronized with main canvas
+
+### Configuration
+```javascript
+var graphcanvas = new LGraphCanvas(canvas, this.graph);
+graphcanvas.scale = 0.25;
+graphcanvas.allow_dragnodes = false;
+graphcanvas.allow_interaction = false;
+graphcanvas.render_shadows = false;
+```
+
+## Styling System
+
+### Main Editor Styles (`litegraph-editor.css`)
+- `.litegraph-editor`: Main container
+- `.tools`: Toolbar areas
+- `.miniwindow`: Mini graph windows
+- `.loadmeter`: Performance indicators
+- `.codeflask`: Code editor styling
+
+### Canvas Styles (`litegraph.css`)
+- `.lgraphcanvas`: Main canvas styling
+- `.litegraph.litecontextmenu`: Context menus
+- `.litemenubar`: Menu bars
+- `.litesearchbox`: Search interface
+
+### Dialog Styles
+- `.litegraph.dialog`: Panel containers
+- `.dialog-header/.dialog-content/.dialog-footer`: Panel sections
+- `.property`: Widget containers
+- `.boolean/.bool-on`: Toggle states
+
+## Integration Points
+
+### Core Integration
+- **LGraphCanvas**: Rendering and interaction
+- **LGraph**: Graph data management
+- **LiteGraph**: Core library features
+
+### Event Handling
+- Mouse/keyboard events
+- Graph execution events
+- UI interaction callbacks
+- Drag and drop support
+
+### Extensibility
+- Custom panel types
+- Widget system extension
+- Theme customization
+- Plugin architecture support
 
 ## Core Editor Components
 

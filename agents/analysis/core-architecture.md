@@ -35,11 +35,15 @@ LiteGraph.wrapFunctionAsNode(name, func, param_types, return_type)
 ```
 
 **Configuration Constants**:
-- `NODE_SLOT_HEIGHT = 15` - Height of input/output slots
-- `NODE_WIDGET_HEIGHT = 20` - Height of widgets
+- `NODE_SLOT_HEIGHT = 20` - Height of input/output slots
+- `NODE_WIDGET_HEIGHT = 20` - Height of widgets  
 - `NODE_WIDTH = 140` - Default node width
+- `NODE_MIN_WIDTH = 50` - Minimum node width
+- `NODE_TITLE_HEIGHT = 30` - Height of node title bar
 - `CANVAS_GRID_SIZE = 10` - Grid snap size
 - `MAX_NUMBER_OF_NODES = 1000` - Performance limit
+- `NODE_COLLAPSED_RADIUS = 10` - Radius when collapsed
+- `NODE_COLLAPSED_WIDTH = 80` - Width when collapsed
 
 ### 2. LGraph (lgraph.js)
 
@@ -55,25 +59,57 @@ LiteGraph.wrapFunctionAsNode(name, func, param_types, return_type)
 **Core Properties**:
 ```javascript
 class LGraph {
-    list_of_graphnodes = []     // All nodes in the graph
+    _nodes = []                 // All nodes in the graph
     _nodes_by_id = {}           // Fast node lookup by ID
     _nodes_in_order = []        // Execution order cache
+    _nodes_executable = null    // Nodes with onExecute method
     links = {}                  // All connections in the graph
+    _groups = []                // Node groups
+    
+    // Timing properties
     globaltime = 0              // Current execution time
     runningtime = 0             // Total execution time
+    fixedtime = 0               // Fixed timestep
+    fixedtime_lapse = 0.01      // Fixed time increment
+    elapsed_time = 0.01         // Time since last update
+    last_update_time = 0        // Previous update timestamp
+    starttime = 0               // Graph start time
+    
     iteration = 0               // Execution cycle count
     config = {}                 // Graph configuration
     vars = {}                   // Global variables
+    extra = {}                  // Custom data storage
+    
+    // Execution tracking
+    nodes_executing = []        // Currently executing nodes
+    nodes_actioning = []        // Nodes processing actions
+    node_ancestorsCalculated = [] // Ancestor calculation cache
+    nodes_executedAction = []   // Action execution tracking
+    
+    // Subgraph support
+    inputs = {}                 // Graph input definitions
+    outputs = {}                // Graph output definitions
+    
     status = LGraph.STATUS_STOPPED
+    
+    // History for undo/redo
+    history = {
+        actionHistory: [],
+        actionHistoryVersions: [],
+        actionHistoryPtr: 0
+    }
 }
 ```
 
 **Execution Flow**:
-1. **start()** - Begins graph execution loop
-2. **runStep()** - Executes one iteration
-3. **computeExecutionOrder()** - Determines node execution sequence
-4. **Node execution** - Calls onExecute() on each node in order
-5. **Link propagation** - Transfers data between connected nodes
+1. **start(interval)** - Begins graph execution loop with optional interval
+2. **runStep(num, do_not_catch_errors, limit)** - Executes one or more iterations
+3. **updateExecutionOrder()** - Updates cached execution order if needed
+4. **computeExecutionOrder(only_onExecute, set_level)** - Determines node execution sequence
+5. **Node execution** - Calls onExecute() on each node in computed order
+6. **Link propagation** - Transfers data between connected nodes via getInputData/setOutputData
+7. **Event handling** - Processes actions and triggers
+8. **Canvas updates** - Notifies attached canvases of changes
 
 **Serialization**:
 ```javascript

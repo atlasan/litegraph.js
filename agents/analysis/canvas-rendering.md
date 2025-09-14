@@ -26,38 +26,35 @@ class LGraphCanvas {
 
 ### Rendering Pipeline
 
-The rendering process follows a structured pipeline:
+The canvas rendering follows a structured pipeline orchestrated by the main `draw()` method:
 
+#### Main Draw Method
 ```javascript
-// Main render method
-render(force_canvas, force_bgcanvas) {
-    1. // Background rendering (if needed)
-    if (force_bgcanvas || this.dirty_bgcanvas) {
-        this.drawBackCanvas();
-    }
-    
-    2. // Foreground rendering
-    if (force_canvas || this.dirty_canvas) {
-        this.drawFrontCanvas();
-    }
+draw(force_canvas, force_bgcanvas) {
+    // FPS counting and timing
+    // Compute visible area
+    // Conditionally render background and foreground
 }
 ```
 
-#### Background Rendering (`drawBackCanvas`)
-1. **Clear background**
-2. **Draw grid pattern**
-3. **Draw background image** (if specified)
-4. **Draw node groups** (group backgrounds)
-5. **Cache result** for reuse
+#### Background Rendering (`drawBackCanvas()`)
+1. **Grid Drawing**: Renders the background grid pattern with scale-dependent visibility
+2. **Background Image**: Optional tiled background image with pattern creation
+3. **Group Rendering**: Renders node groups if present and not in live mode
+4. **Connection Rendering**: Draws all node connections/links with shadows
+5. **Canvas Border**: Optional border rendering around the entire canvas
 
-#### Foreground Rendering (`drawFrontCanvas`)
-1. **Clear foreground**
-2. **Apply transformations** (zoom, pan)
-3. **Draw connections/links**
-4. **Draw nodes**
-5. **Draw widgets**
-6. **Draw selection boxes**
-7. **Draw overlays** (tooltips, menus)
+#### Foreground Rendering (`drawFrontCanvas()`)
+1. **Canvas Setup**: Clears canvas and applies background canvas as base
+2. **Viewport Clipping**: Applies dirty area clipping for performance
+3. **Visible Node Computation**: Uses `computeVisibleNodes()` to determine renderable nodes
+4. **Node Rendering Loop**: For each visible node:
+   - Apply node transformation (translate to node position)
+   - Call `drawNode()` with node-specific rendering
+   - Restore transformation context
+5. **Execution Order**: Optional debug rendering of node execution order
+6. **Active Connections**: Renders the connection being dragged by mouse
+7. **Debug Information**: Optional info panel and overlays
 
 ## Visual Components
 
@@ -96,7 +93,33 @@ drawGrid(ctx) {
 
 ### 2. Node Rendering
 
-#### Node Structure Visualization
+#### Node Rendering Components (`drawNode()`)
+
+##### Node Structure and Context
+- **Current Node Tracking**: Sets `this.current_node` for context
+- **Quality Detection**: Uses `low_quality` flag based on zoom scale (<0.6)
+- **Alpha Blending**: Applies `editor_alpha` for transparency effects
+- **Shadow Rendering**: Conditional shadow rendering based on quality and settings
+
+##### Node Shapes and Styles
+- **Shape Detection**: Uses `node._shape` or defaults to `LiteGraph.BOX_SHAPE`
+- **Size Calculation**: Dynamic size calculation with `temp_vec2`
+- **Horizontal Layout**: Support for horizontal node orientation
+- **Color System**: 
+  - `node.color` or `node.constructor.color` for foreground
+  - `node.bgcolor` or `node.constructor.bgcolor` for background
+  - Fallback to `LiteGraph.NODE_DEFAULT_COLOR/BGCOLOR`
+
+##### Rendering States
+- **Live Mode**: Simplified rendering with only `onDrawForeground` callback
+- **Collapsed State**: Special rendering via `onDrawCollapsed` callback
+- **Custom Drawing**: Node-specific rendering through callback handlers
+
+##### Title Bar and Content Rendering
+- **Shadow Effects**: Configurable shadow with offset and blur
+- **Clipping Support**: Mask-based clipping for complex shapes
+- **Widget Integration**: Embedded widget rendering within nodes
+
 ```javascript
 // Node rendering components
 drawNode(node, ctx) {
@@ -307,6 +330,31 @@ drawSliderWidget(ctx, widget, node, y) {
 ```
 
 ## Performance Optimizations
+
+### Viewport Culling (`computeVisibleNodes()`)
+- Uses `LiteGraph.overlapBounding()` to test node visibility against `visible_area`
+- Skips nodes without draw callbacks in live mode
+- Maintains `visible_nodes` array for efficient reuse
+- Reduces rendering overhead for large graphs
+
+### Dirty Region Tracking
+- `dirty_canvas` and `dirty_bgcanvas` flags control selective rendering
+- `dirty_area` defines specific regions needing updates
+- `always_render_background` option for dynamic backgrounds
+- Viewport clipping with `ctx.clip()` for partial updates
+
+### Level of Detail (LOD) and Quality Management
+- `low_quality` flag when scale < 0.6 disables expensive effects
+- `low_quality_rendering_counter` tracks performance over time
+- Dynamic quality adjustment based on FPS (target: 45 FPS)
+- `zoom_modify_alpha` adjusts transparency based on zoom level
+- Shadow and effect disabling at low quality levels
+
+### Dual Canvas System Benefits
+- Background canvas caching reduces redraw frequency
+- Foreground canvas handles dynamic elements (nodes, selections)
+- `ctx.drawImage(this.bgcanvas, 0, 0)` for efficient background compositing
+- Separate dirty flags allow independent update cycles
 
 ### 1. Dirty Region Tracking
 

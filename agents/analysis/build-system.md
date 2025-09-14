@@ -1,8 +1,8 @@
-# Build System and Distribution Analysis
+# Build System and Project Structure
 
 ## Overview
 
-LiteGraph.js uses a Python-based build system that creates multiple distribution variants optimized for different use cases. The build process concatenates source files, applies optimizations, and generates both development and production builds.
+LiteGraph.js uses a Python-based build system that creates multiple distribution bundles for different use cases, including browser, Node.js, and minified versions.
 
 ## Build Architecture
 

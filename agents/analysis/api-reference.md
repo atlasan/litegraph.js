@@ -351,6 +351,153 @@ configure(info: Object): void
 clone(): LGraphNode
 ```
 
+##### Node Lifecycle Methods
+
+```javascript
+// Main execution - called every frame when graph is running
+onExecute(param, options) {
+    // Process inputs and generate outputs
+    const input1 = this.getInputData(0);
+    const input2 = this.getInputData(1);
+    const result = this.processData(input1, input2);
+    this.setOutputData(0, result);
+}
+
+// Called when node starts executing
+onStart() {
+    this.executionTime = 0;
+    this.initializeResources();
+}
+
+// Called when node stops executing
+onStop() {
+    this.cleanupResources();
+}
+
+// Called once per frame before onExecute
+onGetInputs() {
+    // Prepare input data
+    return this.inputs;
+}
+
+// Called once per frame after onExecute
+onGetOutputs() {
+    // Prepare output data
+    return this.outputs;
+}
+
+// Called when node is added to graph
+onAdded(graph) {
+    this.graph = graph;
+    this.setupNodeInGraph();
+}
+
+// Called when node is removed from graph
+onRemoved() {
+    this.cleanup();
+    this.graph = null;
+}
+
+// Called when connections change
+onConnectionsChange(type, slot, connected, link_info, input_info) {
+    if (type === LiteGraph.INPUT) {
+        this.onInputConnected(slot, connected, link_info);
+    } else {
+        this.onOutputConnected(slot, connected, link_info);
+    }
+}
+
+// Called when property changes
+onPropertyChanged(name, value, prev_value) {
+    if (name === "mode") {
+        this.updateMode(value);
+    }
+    this.setDirtyCanvas(true, true);
+}
+
+// Called when node is resized
+onResize(size) {
+    this.size = size;
+    this.updateLayout();
+}
+
+// Custom serialization
+onSerialize(data) {
+    data.custom_data = this.customData;
+    data.internal_state = this.getInternalState();
+}
+
+// Custom deserialization
+onConfigure(data) {
+    if (data.custom_data) {
+        this.customData = data.custom_data;
+    }
+    if (data.internal_state) {
+        this.setInternalState(data.internal_state);
+    }
+}
+```
+
+##### Event Handling Methods
+
+```javascript
+// Mouse events
+onMouseDown(event, pos, canvas) {
+    return false; // Return true if handled
+}
+
+onMouseMove(event, pos, canvas) {
+    return false;
+}
+
+onMouseUp(event, pos, canvas) {
+    return false;
+}
+
+// Double click event
+onDblClick(event, pos, canvas) {
+    this.showConfigDialog();
+    return true;
+}
+
+// Key events
+onKeyDown(event) {
+    if (event.keyCode === 46) { // Delete key
+        this.graph.remove(this);
+        return true;
+    }
+    return false;
+}
+
+// Drop events
+onDropFile(file) {
+    this.loadFile(file);
+}
+
+// Widget events
+onWidgetChanged(widget, value) {
+    this.properties[widget.property] = value;
+    this.onPropertyChanged(widget.property, value);
+}
+
+// Action events
+onAction(action, param) {
+    switch(action) {
+        case "reset":
+            this.reset();
+            break;
+        case "trigger":
+            this.trigger();
+            break;
+    }
+}
+
+// Trigger events
+onTrigger(action, param) {
+    this.triggerSlot(0, param);
+}
+```
+
 ##### Utility Methods
 
 ```javascript
@@ -562,6 +709,94 @@ node.addWidget("combo", "Option", "A", function(value) {
 }, { values: ["A", "B", "C"] });
 ```
 
+### Widget System
+
+#### Widget Types
+- `number` - Numeric input with precision control
+- `slider` - Range slider with min/max bounds
+- `combo` - Dropdown selection with dynamic values
+- `text` - Text input field
+- `toggle` - Boolean toggle switch
+- `button` - Action button trigger
+- `property` - Property selector widget
+- `code` - Code editor widget
+- `resource` - Resource/file selector
+
+#### Widget Creation
+```javascript
+// Basic widget creation
+node.addWidget(type, name, value, callback, options);
+
+// Examples:
+this.addWidget("number", "value", 1.0, "value", { 
+    precision: 2, 
+    step: 0.1, 
+    min: 0, 
+    max: 100 
+});
+
+this.addWidget("slider", "amount", 0.5, function(v) {
+    this.properties.amount = v;
+}, { min: 0, max: 1 });
+
+this.addWidget("combo", "mode", "linear", { 
+    property: "mode", 
+    values: ["linear", "cubic", "bezier"] 
+});
+
+this.addWidget("toggle", "enabled", true, "enabled");
+this.addWidget("button", "execute", null, this.onExecuteAction.bind(this));
+```
+
+#### Widget Properties
+```javascript
+// Widget configuration options
+widget = {
+    name: "widget_name",
+    type: "number",
+    value: 1.0,
+    property: "linked_property", // Auto-sync with node property
+    callback: function(value, canvas, node, pos, event) { },
+    options: {
+        precision: 2,     // For number widgets
+        step: 0.1,        // Increment step
+        min: 0,           // Minimum value
+        max: 100,         // Maximum value
+        values: [],       // For combo widgets
+        on: "ON",         // Toggle on text
+        off: "OFF"        // Toggle off text
+    },
+    
+    // Custom rendering
+    draw: function(ctx, node, width, y, height) { },
+    
+    // Custom interaction
+    mouse: function(event, pos, node) { return false; },
+    
+    // Custom sizing
+    computeSize: function(width) { return [width, height]; }
+};
+```
+
+#### Widget Management
+```javascript
+// Find widget by name
+const widget = node.findWidget("widget_name");
+
+// Remove widget
+node.removeWidget(widget);
+
+// Clear all widgets
+node.widgets = [];
+
+// Widget positioning
+node.widgets_up = true;        // Place widgets above inputs
+node.widgets_start_y = 30;     // Y offset for widgets
+
+// Serialize widgets with node
+node.serialize_widgets = true;
+```
+
 ### Custom Widget Creation
 
 ```javascript
@@ -719,5 +954,154 @@ canvas.onConnectingChange = function(node, slot) {
     console.log("Connection state changed");
 };
 ```
+
+## Node System
+
+### Core Node Categories
+
+#### Basic Nodes (`basic/*`)
+**Constants:**
+- `basic/const` - Number constant with precision control
+- `basic/boolean` - Boolean constant with toggle widget
+- `basic/string` - String constant with text input
+- `basic/object` - Object constant
+- `basic/data` - Generic data constant
+- `basic/file` - File loader with URL fetching
+- `basic/time` - Current time in ms/sec
+- `basic/empty` - Empty placeholder node
+
+**Array Operations:**
+- `basic/array` - Array constant with dynamic sizing
+- `basic/array_length` - Get array length
+- `basic/array[]` - Get array element by index
+- `basic/set_array` - Set array element
+- `basic/array_append` - Push element to array
+- `basic/table[][]` - 2D table element access
+
+**Data Processing:**
+- `basic/variable` - Store/read variables (litegraph/graph/global scope)
+- `basic/watch` - Display input values
+- `basic/watch_advanced` - Enhanced value display with formatting
+- `basic/cast` - Type conversion
+- `basic/jsonparse` - Parse JSON strings
+- `basic/length` - Get length of various types
+- `basic/not` - Boolean negation
+
+**I/O Operations:**
+- `basic/download` - Download data as file
+- `basic/console` - Console output
+- `basic/alert` - Show alert dialog
+- `basic/script` - Execute JavaScript code
+- `basic/CompareValues` - Generic value comparison
+
+#### Math Nodes (`math/*`)
+**Basic Operations:**
+- `math/operation` - Arithmetic operations (+, -, *, /, %, ^, max, min)
+- `math/compare` - Numeric comparisons (>, <, ==, !=, >=, <=)
+- `math/condition` - Conditional evaluation
+- `math/branch` - Conditional data routing
+
+**Numeric Functions:**
+- `math/abs` - Absolute value
+- `math/floor` - Floor function
+- `math/frac` - Fractional part
+- `math/clamp` - Clamp between min/max
+- `math/lerp` - Linear interpolation
+- `math/smoothstep` - Smooth interpolation
+- `math/scale` - Multiply by factor
+- `math/accumulate` - Value accumulator
+
+**Advanced Math:**
+- `math/range` - Convert between ranges
+- `math/rand` - Random number generation
+- `math/noise` - Temporal noise generation
+- `math/spikes` - Spike generation
+- `math/average` - Moving average filter
+- `math/tendTo` - Smooth value transition
+- `math/formula` - Custom formula evaluation
+- `math/trigonometry` - Sin/Cos/Tan functions
+
+**Vector Operations:**
+- `math/converter` - Type conversion (number/vec2/vec3/vec4)
+- `math/bypass` - Type removal
+- `math/to_number` - Cast to number
+- `math/gate` - Conditional gate
+- `math3d/vec2-to-xy` - Vector2 decomposition
+- `math3d/xy-to-vec2` - Vector2 composition
+- `math3d/vec3-to-xyz` - Vector3 decomposition
+- `math3d/xyz-to-vec3` - Vector3 composition
+- `math3d/vec4-to-xyzw` - Vector4 decomposition
+- `math3d/xyzw-to-vec4` - Vector4 composition
+
+#### Graphics Nodes (`graphics/*`)
+**Image Processing:**
+- `graphics/image` - Image loader with URL support
+- `graphics/frame` - Image viewer/display
+- `graphics/imagefade` - Fade between images
+- `graphics/cropImage` - Image cropping
+- `graphics/video` - Video playback with controls
+- `graphics/webcam` - Webcam capture
+
+**Canvas Operations:**
+- `graphics/canvas` - Canvas creation
+- `graphics/drawImage` - Draw image to canvas
+- `graphics/drawRectangle` - Draw rectangle shapes
+
+**Visualization:**
+- `graphics/plot` - Real-time data plotting (4 channels)
+- `color/palette` - Color generation
+- `graphics/visualization` - Generic visualization
+
+#### Audio Nodes (`audio/*`)
+**Sources:**
+- `audio/source` - Audio file playback
+- `audio/media_source` - Microphone input
+- `audio/oscillator` - Waveform generation
+- `audio/destination` - Audio output
+
+**Effects:**
+- `audio/gain` - Volume control
+- `audio/delay` - Audio delay effect
+- `audio/convolver` - Convolution reverb
+- `audio/dynamicsCompressor` - Dynamic range compression
+- `audio/biquadfilter` - Audio filtering
+- `audio/waveshaper` - Distortion effect
+
+**Analysis:**
+- `audio/analyser` - Frequency analysis
+- `audio/visualization` - Audio visualization
+- `audio/signal` - Frequency band extraction
+
+**Utilities:**
+- `audio/mixer` - Multi-channel audio mixing
+- `audio/adsr` - Envelope generation
+- `audio/script` - Custom audio processing
+
+#### Interface Nodes (`widget/*`)
+**Input Controls:**
+- `widget/button` - Trigger button
+- `widget/toggle` - Boolean toggle
+- `widget/knob` - Circular controller
+- `widget/internal_slider` - Internal slider widget
+- `widget/combo` - Dropdown selection
+
+**Display:**
+- `widget/H.Slider` - Horizontal slider
+
+#### Network Nodes (`network/*`)
+**Communication:**
+- `network/websocket` - WebSocket client with auto-reconnect
+- `network/httprequest` - HTTP requests
+- `network/webrtc` - WebRTC peer-to-peer communication
+
+#### Input Nodes (`input/*`)
+**Hardware:**
+- `input/gamepad` - Gamepad input handling
+
+#### Object Nodes (`objects/*`)
+**Manipulation:**
+- `objects/properties` - Object property access
+- `objects/property_widget` - Interactive property selection
+- `objects/method_widget` - Method execution interface
 
 This API reference provides the foundation for building custom nodes, extending functionality, and integrating LiteGraph.js into applications.
