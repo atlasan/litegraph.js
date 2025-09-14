@@ -234,6 +234,7 @@ export class LGraphNode {
        if(this.graph)
            this.graph.onGraphChanged({action: "nodeBeforeConfigure", doSave: false});
 
+        if (!this.properties) this.properties = {};
         Object.entries(info).forEach(([key, value]) => {
             if (key === "properties") {
                 for (var k in value) {
@@ -2795,6 +2796,7 @@ export class LGraphNode {
 
     /* Force align to grid */
     alignToGrid() {
+        if(!this.pos) this.pos = [0,0];
         this.pos[0] =
             LiteGraph.CANVAS_GRID_SIZE *
             Math.round(this.pos[0] / LiteGraph.CANVAS_GRID_SIZE);
