@@ -16,8 +16,8 @@ This document provides a comprehensive cross-reference analysis between the actu
 #### 1. Extensions System
 **Location**: `src/extensions/`
 **Components Found**:
-- `keyboard_helper.js` - Advanced keyboard navigation and node manipulation
-- `options_panel.js` - Runtime configuration panel for canvas options
+- `keyboard_helper.js` - Basic keyboard helper (ArrowRight key only)
+- `options_panel.js` - Incomplete configuration panel (mostly commented out)
 - `renamer.js` - Interactive node renaming functionality
 - `autoconnect.js` - Automatic node connection system
 

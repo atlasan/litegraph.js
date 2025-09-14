@@ -7,6 +7,10 @@
 
 This document identifies missing components, undocumented features, and provides recommendations for improving the LiteGraph.js project documentation and implementation based on comprehensive code analysis and cross-referencing with existing documentation. Based on extensive analysis of all major modules, several critical gaps remain that impact developer experience and library adoption.
 
+**⚠️ IMPORTANT UPDATE (January 2025)**: Unimplemented recommendations and enhancement ideas have been extracted and moved to the `../improvements/` directory. This document now focuses on actual missing parts and documentation gaps in the current implementation, while future enhancement opportunities are documented separately in the improvements directory.
+
+**See**: `../improvements/README.md` for comprehensive enhancement roadmap and implementation plans.
+
 ## Completed Documentation Analysis
 
 ### ✅ Successfully Analyzed and Documented

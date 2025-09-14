@@ -12,7 +12,7 @@ The build system is implemented as a single Python script that orchestrates the 
 
 1. **File Organization**: Categorizes source files into logical groups
 2. **Concatenation**: Combines multiple JS files into single bundles
-3. **Minification**: Compresses code using UglifyJS
+3. **Minification**: Compresses code using custom minification approach
 4. **Cross-Platform Conversion**: Transforms ES6 modules to CommonJS for Node.js
 5. **Version Management**: Handles semantic versioning across builds
 
@@ -35,7 +35,7 @@ options = {
 - `--no-prettify`: Skips code beautification
 - `--update-version`: Increments version numbers
 
-**Note**: The build system uses a custom minification approach, not UglifyJS as previously documented. Minification is applied selectively to `.mini.` variants only.
+**Note**: The build system uses a custom minification approach implemented in Python. Minification is applied selectively to `.mini.` variants only.
 
 #### File Categories
 
@@ -143,7 +143,7 @@ options = {
 ### 2. Code Minification (`pack_js_files`)
 
 **Minification Process**:
-- Uses UglifyJS with compression flags: `uglifyjs [file] -c`
+- Uses custom Python-based minification (not UglifyJS)
 - Adds `/*packed*/` header to minified files
 - UTF-8 encoding preservation
 - Error capture for debugging

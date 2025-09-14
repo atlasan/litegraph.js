@@ -55,7 +55,6 @@ This directory contains comprehensive analysis of the LiteGraph.js codebase, val
 - **[Editor Functionality](editor-functionality.md)** - UI components and editor features (`litegraph-editor.js`) ✓ Validated
 
 ### Additional Documentation
-- **[Performance Analysis](performance-analysis.md)** - Optimization strategies and benchmarks
 - **[Testing Framework](testing-framework.md)** - Test structure and coverage analysis
 - **[Cross-Platform Integration](cross-platform-integration.md)** - Node.js and browser compatibility
 - **[Library Management Guide](library-management-guide.md)** - Dependency and extension management

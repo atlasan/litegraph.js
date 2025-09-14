@@ -4,6 +4,8 @@
 
 LiteGraph.js is a sophisticated visual programming framework that implements a node-based computational graph system. The architecture follows a modular design pattern with clear separation of concerns between data flow management, visual representation, and user interaction. This analysis provides a comprehensive overview of the system's architectural principles, design patterns, and extensibility mechanisms.
 
+**📋 Note**: For architectural enhancement recommendations and future development plans, see `../improvements/` directory. This document focuses on the current implemented architecture.
+
 ## Architectural Principles
 
 ### 1. Separation of Concerns

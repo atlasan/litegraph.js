@@ -73,14 +73,13 @@ case 65: // a
 
 ### 2. Keyboard Helper Extension (`keyboard_helper.js`)
 
-**Purpose**: Enhanced keyboard navigation and node manipulation
+**Purpose**: Basic keyboard navigation (limited implementation)
 
-**Features**:
-- Arrow key navigation for selected nodes
+**Features** (partially implemented):
+- ArrowRight key handling only (other arrow keys not implemented)
 - Shift+Right Arrow: Show search box for new connected nodes
 - Ctrl+Right Arrow: Show connection menu
-- Ctrl+Up Arrow: Select sibling nodes (connected inputs)
-- Grid-aligned movement with `LiteGraph.CANVAS_GRID_SIZE`
+- **Note**: Arrow key navigation, Ctrl+Up Arrow, and grid-aligned movement are not fully implemented
 
 **Key Implementation**:
 ```javascript

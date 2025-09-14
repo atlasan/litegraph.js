@@ -1,5 +1,9 @@
 # Documentation Gaps and Recommendations
 
+**⚠️ IMPORTANT UPDATE (January 2025)**: Enhancement recommendations and unimplemented features have been moved to `../improvements/` directory. This document now focuses on actual documentation gaps in the current implementation.
+
+**See**: `../improvements/README.md` for comprehensive enhancement roadmap and `../improvements/documentation-developer-experience.md` for detailed documentation improvement plans.
+
 ## Current Documentation Status
 
 Based on the comprehensive analysis of the LiteGraph.js codebase, the following documentation has been created or updated:
