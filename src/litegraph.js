@@ -1304,5 +1304,8 @@ if(!getGlobalVariable("LiteGraph")){
     let LGInst = getGlobalVariable("LiteGraph");
     LGInst.log_info("LiteGraph instantiated",LGInst.getTime());
     LGInst.root = getGlobalObject();
+    // ? Initialize LiteGraph to set up core classes
+    // LGInst.initialize();
+    // LGInst.log_info("LiteGraph initialized",LGInst.getTime());
 }
 export const LiteGraph = getGlobalVariable("LiteGraph");

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiteGraph Editor Tester - Simple Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #333;
+        }
+        .success { background: #2d5a2d; }
+        .error { background: #5a2d2d; }
+        .info { background: #2d4a5a; }
+        #console {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #357abd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>LiteGraph Editor Tester - Simple Test</h1>
+            <p>Testing basic functionality without external dependencies</p>
+        </div>
+        
+        <div class="status info" id="status">
+            Initializing...
+        </div>
+        
+        <div>
+            <button onclick="runBasicTest()">Run Basic Test</button>
+            <button onclick="clearConsole()">Clear Console</button>
+        </div>
+        
+        <div id="console"></div>
+    </div>
+    
+    <script type="module">
+        let console_element = document.getElementById('console');
+        let status_element = document.getElementById('status');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            console_element.textContent += `[${timestamp}] ${message}\n`;
+            console_element.scrollTop = console_element.scrollHeight;
+            
+            if (type === 'error') {
+                console.error(message);
+            } else {
+                console.log(message);
+            }
+        }
+        
+        function updateStatus(message, type = 'info') {
+            status_element.textContent = message;
+            status_element.className = `status ${type}`;
+        }
+        
+        function clearConsole() {
+            console_element.textContent = '';
+        }
+        
+        async function runBasicTest() {
+            log('Starting basic test...');
+            updateStatus('Running tests...', 'info');
+            
+            try {
+                // Test 1: Check if we can create basic objects
+                log('Test 1: Creating basic test objects');
+                const testObj = {
+                    name: 'TestNode',
+                    inputs: [{name: 'input1', type: 'number'}],
+                    outputs: [{name: 'output1', type: 'number'}]
+                };
+                log(`✓ Created test object: ${testObj.name}`);
+                
+                // Test 2: Test basic functionality
+                log('Test 2: Testing basic operations');
+                const result = testObj.inputs.length + testObj.outputs.length;
+                log(`✓ Basic operations work: ${result}`);
+                
+                // Test 3: Test async operations
+                log('Test 3: Testing async operations');
+                await new Promise(resolve => setTimeout(resolve, 100));
+                log('✓ Async operations work');
+                
+                // Test 4: Test DOM manipulation
+                log('Test 4: Testing DOM manipulation');
+                const testDiv = document.createElement('div');
+                testDiv.textContent = 'Test element';
+                log('✓ DOM manipulation works');
+                
+                // Test 5: Test module system
+                log('Test 5: Testing module system');
+                const moduleTest = await import('data:text/javascript,export const test = "module works";');
+                log(`✓ Module system works: ${moduleTest.test}`);
+                
+                log('\n=== All basic tests passed! ===');
+                updateStatus('All tests passed!', 'success');
+                
+            } catch (error) {
+                log(`✗ Test failed: ${error.message}`, 'error');
+                updateStatus('Tests failed!', 'error');
+            }
+        }
+        
+        // Make functions global
+        window.runBasicTest = runBasicTest;
+        window.clearConsole = clearConsole;
+        
+        // Initialize
+        log('Simple test environment initialized');
+        updateStatus('Ready to run tests', 'success');
+    </script>
+</body>
+</html>
