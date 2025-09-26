@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>LiteGraph Node Tester</title>
+    <link rel="icon" href="/editor/favicon.svg"/>
+    <link rel="stylesheet" type="text/css" href="/css/litegraph.css">
+    <link rel="stylesheet" type="text/css" href="/css/litegraph-editor.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+    <div id="main-container">
+        <!-- Header with controls -->
+        <div id="header">
+            <div class="header-section">
+                <h1>🧪 LiteGraph Node Tester</h1>
+                <div class="header-controls">
+                    <button id="runAllBtn" class="btn btn-primary">▶ Run All Tests</button>
+                    <button id="runSelectedBtn" class="btn btn-secondary">▶ Run Selected</button>
+                    <button id="stopBtn" class="btn btn-danger">⏹ Stop Tests</button>
+                    <button id="clearResultsBtn" class="btn btn-warning">🗑 Clear Results</button>
+                    <button id="exportBtn" class="btn btn-info">📊 Export Report</button>
+                    <button id="configBtn" class="btn btn-secondary">⚙️ Config</button>
+                </div>
+            </div>
+            <div class="test-stats">
+                <span class="stat passed">✅ Passed: <span id="passed-count">0</span></span>
+                <span class="stat failed">❌ Failed: <span id="failed-count">0</span></span>
+                <span class="stat total">📊 Total: <span id="total-count">0</span></span>
+                <span class="stat coverage">📈 Coverage: <span id="coverage-percent">0%</span></span>
+            </div>
+        </div>
+
+        <!-- Main content area -->
+        <div id="content">
+            <!-- Left panel: Test categories and node list -->
+            <div id="left-panel">
+                <div class="panel-header">
+                    <h3>📋 Test Categories</h3>
+                    <div class="filter-controls">
+                        <input type="text" id="node-filter" placeholder="🔍 Filter nodes..." />
+                        <select id="category-filter">
+                            <option value="all">All Categories</option>
+                            <option value="basic">Basic</option>
+                            <option value="math">Math</option>
+                            <option value="logic">Logic</option>
+                            <option value="events">Events</option>
+                            <option value="strings">Strings</option>
+                            <option value="interface">Interface</option>
+                            <option value="geometry">Geometry</option>
+                            <option value="graphics">Graphics</option>
+                            <option value="input">Input</option>
+                            <option value="midi">MIDI</option>
+                            <option value="audio">Audio</option>
+                            <option value="network">Network</option>
+                            <option value="objects">Objects</option>
+                            <option value="html">HTML</option>
+                            <option value="others">Others</option>
+                        </select>
+                    </div>
+                    <div class="global-selection-controls">
+                        <button id="select-all-nodes" class="btn btn-small btn-primary">✅ Select All</button>
+                        <button id="deselect-all-nodes" class="btn btn-small btn-secondary">❌ Deselect All</button>
+                        <div class="selection-count">Selected: <span id="selectedCount">0</span></div>
+                    </div>
+                </div>
+                <div id="node-list" class="scrollable">
+                    <!-- Node categories will be populated here -->
+                </div>
+            </div>
+
+            <!-- Center panel: Graph canvas -->
+            <div id="center-panel">
+                <div class="panel-header">
+                    <h3>🎯 Test Canvas</h3>
+                    <div class="canvas-controls">
+                        <button id="clear-canvas" class="btn btn-small">🗑 Clear</button>
+                        <button id="auto-layout" class="btn btn-small">📐 Auto Layout</button>
+                        <button id="zoom-fit" class="btn btn-small">🔍 Fit</button>
+                        <select id="test-mode">
+                            <option value="manual">Manual Testing</option>
+                            <option value="automated">Automated Testing</option>
+                            <option value="stress">Stress Testing</option>
+                            <option value="performance">Performance Testing</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="graph-canvas-container">
+                    <canvas id="graph-canvas" width="800" height="600"></canvas>
+                </div>
+            </div>
+
+            <!-- Right panel: Test results and details -->
+            <div id="right-panel">
+                <div class="panel-header">
+                    <h3>📊 Test Results</h3>
+                    <div class="result-controls">
+                        <button id="toggle-details" class="btn btn-small">📋 Toggle Details</button>
+                        <button id="save-test-case" class="btn btn-small">💾 Save Test</button>
+                        <button id="load-test-case" class="btn btn-small">📂 Load Test</button>
+                    </div>
+                </div>
+                <div class="stats-section">
+                    <div class="stat-item">
+                        <span class="stat-label">Total:</span>
+                        <span id="stat-total" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Passed:</span>
+                        <span id="stat-passed" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Failed:</span>
+                        <span id="stat-failed" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Coverage:</span>
+                        <span id="stat-coverage" class="stat-value">0%</span>
+                    </div>
+                </div>
+                <div class="error-controls">
+                    <button id="view-all-errors" class="btn btn-small btn-error hidden">🔍 View All Errors (<span id="error-count">0</span>)</button>
+                </div>
+                <!-- Error Panel -->
+                <div id="error-panel" class="error-panel hidden">
+                    <div class="error-panel-header">
+                        <h4>❌ Test Errors</h4>
+                        <button id="close-error-panel" class="btn btn-small">✕</button>
+                    </div>
+                    <div id="error-panel-content" class="scrollable">
+                        <!-- Error details will be populated here -->
+                    </div>
+                </div>
+                
+                <div id="test-results" class="scrollable">
+                    <div class="welcome-message">
+                        <h4>🚀 Welcome to LiteGraph Node Tester!</h4>
+                        <p>Select nodes from the left panel to start testing, or click "Run All Tests" to execute comprehensive node validation.</p>
+                        <ul>
+                            <li>✅ <strong>Manual Testing:</strong> Drag nodes to canvas and test interactively</li>
+                            <li>🤖 <strong>Automated Testing:</strong> Run predefined test suites</li>
+                            <li>⚡ <strong>Stress Testing:</strong> Test nodes under heavy load</li>
+                            <li>📈 <strong>Performance Testing:</strong> Measure execution times</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom panel: Console and logs -->
+        <div id="bottom-panel">
+            <div class="panel-header">
+                <h3>📝 Test Console</h3>
+                <div class="console-controls">
+                    <button id="clear-console" class="btn btn-small">🗑 Clear</button>
+                    <button id="toggle-console" class="btn btn-small">📋 Toggle</button>
+                    <select id="log-level">
+                        <option value="all">All Logs</option>
+                        <option value="error">Errors Only</option>
+                        <option value="warning">Warnings+</option>
+                        <option value="info">Info+</option>
+                        <option value="debug">Debug+</option>
+                    </select>
+                </div>
+            </div>
+            <div id="console-output" class="scrollable">
+                <div class="console-line info">[INFO] LiteGraph Node Tester initialized</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Configuration Modal -->
+    <div id="test-config-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚙️ Test Configuration</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-section">
+                    <h4>Test Parameters</h4>
+                    <label>Execution Timeout (ms): <input type="number" id="test-timeout" value="5000" min="100" max="30000"></label>
+                    <label>Stress Test Iterations: <input type="number" id="stress-iterations" value="1000" min="10" max="10000"></label>
+                    <label>Performance Samples: <input type="number" id="perf-samples" value="100" min="10" max="1000"></label>
+                </div>
+                <div class="config-section">
+                    <h4>Validation Options</h4>
+                    <label><input type="checkbox" id="validate-inputs" checked> Validate Input Types</label>
+                    <label><input type="checkbox" id="validate-outputs" checked> Validate Output Types</label>
+                    <label><input type="checkbox" id="validate-properties" checked> Validate Properties</label>
+                    <label><input type="checkbox" id="validate-execution" checked> Validate Execution</label>
+                    <label><input type="checkbox" id="validate-memory" checked> Check Memory Leaks</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="save-config" class="btn btn-primary">💾 Save Config</button>
+                <button id="reset-config" class="btn btn-secondary">🔄 Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📊 Export Test Results</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="export-options">
+                    <div class="config-field">
+                        <label for="exportFormat">Export Format</label>
+                        <select id="exportFormat">
+                            <option value="html">HTML Report</option>
+                            <option value="json">JSON Export</option>
+                            <option value="csv">CSV Export</option>
+                            <option value="markdown">Markdown Report</option>
+                            <option value="junit">JUnit XML</option>
+                        </select>
+                    </div>
+                    <div class="config-field">
+                        <label>
+                            <input type="checkbox" id="includeDetails" checked>
+                            Include detailed information
+                        </label>
+                    </div>
+                    <div class="config-field">
+                        <label>
+                            <input type="checkbox" id="includeCharts" checked>
+                            Include charts (HTML format only)
+                        </label>
+                    </div>
+                    <div class="config-field">
+                        <label for="exportTheme">Theme (HTML format only)</label>
+                        <select id="exportTheme">
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="export-preview">
+                    <h4>Preview</h4>
+                    <div id="exportPreview" class="preview-content"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="previewExport">👁️ Preview</button>
+                <button class="btn btn-primary" id="downloadExport">💾 Download</button>
+                <button class="btn btn-secondary" id="copyExport">📋 Copy to Clipboard</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Libraries -->
+    <script type="text/javascript" src="/editor/js/libs/gl-matrix-min.js"></script>
+    <script type="text/javascript" src="/editor/js/libs/audiosynth.js"></script>
+    <script type="text/javascript" src="/editor/js/libs/midi-parser.js"></script>
+    
+    <!-- LiteGraph Core -->
+    <script type="module" src="/src/litegraph.js"></script>
+    <script type="module" src="/src/litegraph-editor.js"></script>
+    
+    <!-- Node Libraries -->
+    <script type="module" src="/src/nodes/libraries.js"></script>
+    <script type="module" src="/src/nodes/base.js"></script>
+    <script type="module" src="/src/nodes/logic.js"></script>
+    <script type="module" src="/src/nodes/events.js"></script>
+    <script type="module" src="/src/nodes/math.js"></script>
+    <script type="module" src="/src/nodes/math3d.js"></script>
+    <script type="module" src="/src/nodes/strings.js"></script>
+    <script type="module" src="/src/nodes/interface.js"></script>
+    <script type="module" src="/src/nodes/geometry.js"></script>
+    <script type="module" src="/src/nodes/graphics.js"></script>
+    <script type="module" src="/src/nodes/input.js"></script>
+    <script type="module" src="/src/nodes/midi.js"></script>
+    <script type="module" src="/src/nodes/audio.js"></script>
+    <script type="module" src="/src/nodes/network.js"></script>
+    <script type="module" src="/src/nodes/objects.js"></script>
+    <script type="module" src="/src/nodes/litegraph_nodes.js"></script>
+    <script type="module" src="/src/nodes/html.js"></script>
+    <script type="module" src="/src/nodes/others.js"></script>
+
+    <!-- Testing Framework -->
+    <script type="module" src="js/test-framework.js"></script>
+    <script type="module" src="js/test-generator.js"></script>
+    <script type="module" src="js/test-reporter.js"></script>
+    <script type="module" src="js/test-config.js"></script>
+    <script type="module" src="js/ui-manager.js"></script>
+    <script type="module" src="js/test-runner.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

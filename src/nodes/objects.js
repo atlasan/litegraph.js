@@ -1,5 +1,4 @@
-import { LiteGraph } from "../litegraph.js";
-
+﻿
 // EG METHOD
 
 // function mMETHOD(){
@@ -27,12 +26,9 @@ import { LiteGraph } from "../litegraph.js";
 
 // --------------------------
 
-class objProperties {
+function objProperties() {
 
-    static title = "OBJ props";
-    static desc = "Properties for objects";
 
-    constructor() {
 
         this.addInput("obj", "object");
         // this.addInput("condition", "boolean");
@@ -48,7 +44,7 @@ class objProperties {
         this._objProperties = [];
     }
 
-    onExecute() {
+objProperties.prototype.onExecute = function() {
         var data = this.getInputData(0);
         if (data != null) {
             this._value = data;
@@ -60,24 +56,26 @@ class objProperties {
             this.setOutputData(0, this._objProperties);
         }
     }
-    onAction() {
+objProperties.prototype.onAction = function() {
         // should probably execute on action
     }
-    onGetInputs() {
+objProperties.prototype.onGetInputs = function() {
         // return [["in", 0]];
     }
-    onGetOutputs() {
+objProperties.prototype.onGetOutputs = function() {
         // return [["out", 0]];
     }
-    getTitle() {
+objProperties.prototype.getTitle = function() {
     //    if (this.flags.collapsed) {
     //    }
         return this.title;
     }
-    onPropertyChanged() {
+objProperties.prototype.onPropertyChanged = function() {
         // this.widget.value = value;
     }
 }
+objProperties.title = "OBJ props";
+objProperties.desc = "Properties for objects";
 LiteGraph.registerNodeType("objects/properties", objProperties);
 
 // --------------------------
@@ -125,12 +123,9 @@ obWidget.callback = function(value, canvas, node, pos, event){
 // --------------------------
 
 
-class objPropertyWidget {
+function objPropertyWidget() {
 
-    static title = "Obj Prop widget";
-    static desc = "Choose a property for an object";
 
-    constructor() {
 
         this.addInput("obj", "object");
         // this.addInput("condition", "boolean");
@@ -151,34 +146,34 @@ class objPropertyWidget {
         this._objProperties = [];
     }
 
-    setValue(v) {
+objPropertyWidget.prototype.setValue = function(v) {
         this.properties.prop = v;
         this.widg_prop.value = v;
     }
 
-    updateFromInput() {
+objPropertyWidget.prototype.updateFromInput = function() {
         let refresh_ancestors = true;
         var data = this.getInputData(0, refresh_ancestors);
         if (data != null) {
             this._obin = data;
-            if(this._obin) { // } && typeof this._obin == "Object"){
+objPropertyWidget.prototype.if = function(this._obin) {
                 // TODO should detect change or rebuild use a widget/action to refresh properties list
                 try{
                     this._objProperties = Object.keys(this._obin);
-                    if(this._objProperties && this._objProperties.sort){
+objPropertyWidget.prototype.if = function(this._objProperties && this._objProperties.sort) {
                         this._objProperties = this._objProperties.sort();
                     }
                 }catch(e) {
                     console.error?.(this.name, "updateFromInput error", e);
                 }
                 // recreate property widget
-                if(this._objProperties) {
+objPropertyWidget.prototype.if = function(this._objProperties) {
                     // this.removeWidget();
                     this.widgets = [];
                     console.info("**propertywidget**","refreshing widget","will set previous value if found", this.properties.prop);
                     this.widg_prop = this.addWidget("combo", "prop", this.properties.prop, { property: "prop", values: this._objProperties });
                 }
-                if(typeof this._obin[this.properties.prop] !== "undefined") {
+objPropertyWidget.prototype.if = function(typeof this._obin[this.properties.prop] !== "undefined") {
                     this._value = this._obin[this.properties.prop];
                 }else{
                     this._value = null;
@@ -193,7 +188,7 @@ class objPropertyWidget {
         this.setOutputData(0, this._value);
     }
 
-    onConnectionsChange(connection, slot, connected, link_info) {
+objPropertyWidget.prototype.onConnectionsChange = function(connection, slot, connected, link_info) {
         // only process the inputs
         if (connection != LiteGraph.INPUT) {
             return;
@@ -201,37 +196,37 @@ class objPropertyWidget {
         this.updateFromInput();
     }
 
-    onExecute() {
+objPropertyWidget.prototype.onExecute = function() {
         //this.updateFromInput();
     }
 
-    onAction() {
+objPropertyWidget.prototype.onAction = function() {
         // should probably execute on action
         //this.updateFromInput();
     }
 
-    onGetInputs() {
+objPropertyWidget.prototype.onGetInputs = function() {
         // return [["in", 0]];
     }
 
-    onGetOutputs() {
+objPropertyWidget.prototype.onGetOutputs = function() {
         // return [["out", 0]];
     }
 
-    getTitle() {
+objPropertyWidget.prototype.getTitle = function() {
         if (this.flags.collapsed) {
             return this.properties.prop;
         }
         return this.title;
     }
 
-    onPropertyChanged(name, value) {
-        if(name == "value") {
+objPropertyWidget.prototype.onPropertyChanged = function(name, value) {
+objPropertyWidget.prototype.if = function(name == "value") {
             this.widg_prop.value = value;
         }
     }
 
-    getExtraMenuOptions() {
+objPropertyWidget.prototype.getExtraMenuOptions = function() {
         return [{
             content: "Console DBG", // has_submenu: false,
             callback: function(menuitO,obX,ev,htmO,nodeX) {
@@ -241,15 +236,14 @@ class objPropertyWidget {
         }];
     }
 }
+objPropertyWidget.title = "Obj Prop widget";
+objPropertyWidget.desc = "Choose a property for an object";
 LiteGraph.registerNodeType("objects/property_widget", objPropertyWidget);
 
 
-class objMethodWidget {
+function objMethodWidget() {
 
-    static title = "Obj Method widget";
-    static desc = "Choose and execute a method from an object";
 
-    constructor() {
         // this.addInput("onTrigger", LiteGraph.ACTION);
         this.addInput("obj", "object"); // 0
         this.addInput("refresh", LiteGraph.ACTION); // 1
@@ -265,25 +259,25 @@ class objMethodWidget {
         this._methods = [];
     }
 
-    setValue(v) {
+objMethodWidget.prototype.setValue = function(v) {
         this.properties.method = v;
         this.widg_prop.value = v;
     }
 
-    updateFromInput(v) {
+objMethodWidget.prototype.updateFromInput = function(v) {
         var that = this;
         let refresh_ancestors = true;
         var data = this.getInputData(0, refresh_ancestors);
         if (data != null) {
             this._obin = data;
-            if(this._obin) { // } && typeof this._obin == "Object"){
+objMethodWidget.prototype.if = function(this._obin) {
                 // TODO should detect change or rebuild use a widget/action to refresh properties list
                 try{
                     this._methods = [];
                     // method 1, simple
                     /* var allProps = Object.keys(this._obin);
                     console.debug("Props",allProps);
-                    for(var iM in allProps){
+objMethodWidget.prototype.for = function(var iM in allProps) {
                         // console.debug("dbg prop",allProps[iM],typeof(this._obin[allProps[iM]]));
                         if(typeof(this._obin[allProps[iM]]) == "function"){
                             this._methods.push(allProps[iM]);
@@ -302,7 +296,7 @@ class objMethodWidget {
                     do {
                         Object.getOwnPropertyNames(currentObj).map(function(item){ if(!that._objProperties.includes(item)) that._objProperties.push(item) });
                     } while ((currentObj = Object.getPrototypeOf(currentObj)));
-                    for(var iM in this._objProperties){
+objMethodWidget.prototype.for = function(var iM in this._objProperties) {
                         if(typeof(this._obin[this._objProperties[iM]]) == "function"){
                             this._methods.push(this._objProperties[iM]);
                         }
@@ -314,7 +308,7 @@ class objMethodWidget {
                     console.warn?.("Err on methods get",e);
                     this.boxcolor = "#F00";
                 }
-                if(this._methods) {
+objMethodWidget.prototype.if = function(this._methods) {
                     // this.removeWidget();
                     this.widgets = [];
                     this.widg_prop = this.addWidget("combo","method",this.properties.method,{ property: "method", values: this._methods });
@@ -336,12 +330,12 @@ class objMethodWidget {
         this.refreshMethodAndInputs();
     }
 
-    onConfigure() {
+objMethodWidget.prototype.onConfigure = function() {
         this.updateFromInput();
         this.refreshMethodAndInputs();
     }
 
-    onConnectionsChange(connection, slot, connected, link_info) {
+objMethodWidget.prototype.onConnectionsChange = function(connection, slot, connected, link_info) {
         console.debug("onConnectionsChange", this.name, connection, slot, connected);
         // only process the inputs
         if (connection != LiteGraph.INPUT) {
@@ -351,10 +345,10 @@ class objMethodWidget {
         this.refreshMethodAndInputs();
     }
 
-    refreshMethodAndInputs(actVal) {
+objMethodWidget.prototype.refreshMethodAndInputs = function(actVal) {
         // TODO fixthis :: property is not yet updated?
         actVal = actVal || this.properties.method; //this.widg_prop.value; // this.properties.method
-        if(actVal && this._obin && typeof this._obin[actVal] !== "undefined") {
+objMethodWidget.prototype.if = function(actVal && this._obin && typeof this._obin[actVal] !== "undefined") {
 
             // if changed, reset inputs
             // if(this._function !== this._obin[actVal]){
@@ -367,7 +361,7 @@ class objMethodWidget {
             
             // inheritance ?
             // using call or apply ?
-            // prototype ¿
+            // prototype Â¿
             // Uncaught (in promise) TypeError: can't access private field or method: object is not the right class
             /*
             BAD
@@ -379,7 +373,7 @@ class objMethodWidget {
             var names = LiteGraph.getParameterNames(this._function);
             for (var i = 0; i < names.length; ++i) {
                 var exs = this.findInputSlot(names[i]);
-                if(exs == -1) {
+objMethodWidget.prototype.if = function(exs == -1) {
                     this.addInput(names[i],"",{auto: true, removable: false, nameLocked: true});
                 }
             }
@@ -401,7 +395,7 @@ class objMethodWidget {
         this.setOutputData(1, this._function); // update function output
     }
 
-    onExecute() {
+objMethodWidget.prototype.onExecute = function() {
         // this.updateFromInput();
         // ?
     }
@@ -411,10 +405,10 @@ class objMethodWidget {
     //     this.refreshMethodAndInputs();
     // }
 
-    onWidgetChanged(name, value, prev_value) {
+objMethodWidget.prototype.onWidgetChanged = function(name, value, prev_value) {
         console.debug?.("Widget changed", name, value, prev_value);
         // if changed, reset inputs
-        if(this.properties.method !== value) {
+objMethodWidget.prototype.if = function(this.properties.method !== value) {
             const nInputs = this.inputs.length;
             for (var i = 3; i < nInputs; ++i) {
                 this.removeInput(3); // not i
@@ -423,10 +417,10 @@ class objMethodWidget {
         this.refreshMethodAndInputs(this.widg_prop.value);
     }
 
-    onAction(action) {
+objMethodWidget.prototype.onAction = function(action) {
         // should probably execute on action
         // this.updateFromInput();
-        if(action == "refresh") {
+objMethodWidget.prototype.if = function(action == "refresh") {
             this.updateFromInput();
         }else if(action == "execute" || action == "new") {
             if (!this._function || typeof(this._function) == "function") {
@@ -445,7 +439,7 @@ class objMethodWidget {
                 // call execute
                 console.debug?.("NodeObjMethod Execute", this._function, this._obin, parValues);
                 try{
-                    if(this._isClass){
+objMethodWidget.prototype.if = function(this._isClass) {
                         var r = new this._function(...parValues); // this._function.apply(this, parValues);
                     }else{
                         // TODO: spread arguments
@@ -469,29 +463,29 @@ class objMethodWidget {
         }
     }
 
-    onGetInputs() {
+objMethodWidget.prototype.onGetInputs = function() {
         // return [["in", 0]];
     }
 
-    onGetOutputs() {
+objMethodWidget.prototype.onGetOutputs = function() {
         // return [["out", 0]];
     }
 
-    getTitle() {
+objMethodWidget.prototype.getTitle = function() {
         if (this.flags.collapsed) {
             return this.properties.method;
         }
         return this.title;
     }
 
-    onPropertyChanged(name, value) {
-        if(name == "method") { //} "value") {
+objMethodWidget.prototype.onPropertyChanged = function(name, value) {
+objMethodWidget.prototype.if = function(name == "method") {
             this.widg_prop.value = value;
             this.refreshMethodAndInputs(value);
         }
     }
 
-    getExtraMenuOptions() {
+objMethodWidget.prototype.getExtraMenuOptions = function() {
         return [{
             content: "NodeObjMethod DBG", // has_submenu: false,
             callback: function(menuitO,obX,ev,htmO,nodeX) {
@@ -500,16 +494,15 @@ class objMethodWidget {
         }];
     }
 }
+objMethodWidget.title = "Obj Method widget";
+objMethodWidget.desc = "Choose and execute a method from an object";
 LiteGraph.registerNodeType("objects/method_widget", objMethodWidget);
 
 
 // eval a Global object
-class objEvalGlo {
+function objEvalGlo() {
 
-    static title = "Eval Obj";
-    static desc = "Evaluate an object";
 
-    constructor() {
         this.size = [60, 30];
         this.addProperty("obj_eval", "window");
         this.addOutput("obj", "object");
@@ -523,14 +516,13 @@ class objEvalGlo {
             this.compileCode(o.properties.obj_eval);
     };
 
-    static widgets_info = {obj_eval: { type: "code" }};
 
     onPropertyChanged = function(name, value) {
         if (name == "obj_eval")
             this.compileCode(value);
     };
 
-    compileCode(code) {
+objEvalGlo.prototype.compileCode = function(code) {
         this._func = null;
         if (LiteGraph.allow_scripts){
             // ok
@@ -570,7 +562,7 @@ class objEvalGlo {
         return false;
     }
 
-    onExecute() {
+objEvalGlo.prototype.onExecute = function() {
         if (this.properties.obj_eval)
             this.compileCode(this.properties.obj_eval);
         if (!this._func) {
@@ -590,16 +582,16 @@ class objEvalGlo {
     //     return [["C", ""]];
     // };
 }
+objEvalGlo.title = "Eval Obj";
+objEvalGlo.desc = "Evaluate an object";
+objEvalGlo.widgets_info = {obj_eval: { type: "code" }};
 LiteGraph.registerNodeType("objects/evaluate", objEvalGlo);
 
 
 // eval a Global object
-class EventAsFunction {
+function EventAsFunction() {
 
-    static title = "Event Function";
-    static desc = "Get a function binded to an event";
 
-    constructor() {
         this.size = [60, 30];
         this.addOutput("fun", "function");
         this.addOutput("executed", LiteGraph.EVENT);
@@ -612,11 +604,11 @@ class EventAsFunction {
         this.data = {};
     }
 
-    onConfigure(o) {
+EventAsFunction.prototype.onConfigure = function(o) {
         this.setOutputData("fun",this._func);
     }
 
-    onExecute() {
+EventAsFunction.prototype.onExecute = function() {
         if (!this._func) {
             return;
         }
@@ -624,15 +616,14 @@ class EventAsFunction {
     }
 
 }
+EventAsFunction.title = "Event Function";
+EventAsFunction.desc = "Get a function binded to an event";
 LiteGraph.registerNodeType("objects/event_function", EventAsFunction);
 
 
-class ObjectProperty {
+function ObjectProperty() {
 
-    static title = "Object property";
-    static desc = "Outputs the property of an object";
 
-    constructor() {
         this.addInput("obj", "object");
         this.addOutput("property", 0);
         this.addProperty("value", 0);
@@ -642,57 +633,55 @@ class ObjectProperty {
         this._value = null;
     }
 
-    setValue(v) {
+ObjectProperty.prototype.setValue = function(v) {
         this.properties.value = v;
         this.widget.value = v;
     }
 
-    getTitle() {
+ObjectProperty.prototype.getTitle = function() {
         if (this.flags.collapsed) {
             return "in." + this.properties.value;
         }
         return this.title;
     }
 
-    onPropertyChanged(name, value) {
+ObjectProperty.prototype.onPropertyChanged = function(name, value) {
         this.widget.value = value;
     }
 
-    onExecute() {
+ObjectProperty.prototype.onExecute = function() {
         var data = this.getInputData(0);
         if (data != null) {
             this.setOutputData(0, data[this.properties.value]);
         }
     }
 }
+ObjectProperty.title = "Object property";
+ObjectProperty.desc = "Outputs the property of an object";
 LiteGraph.registerNodeType("objects/get_property", ObjectProperty);
 
 
-class ObjectKeys {
-    static title = "Object keys";
-    static desc = "Outputs an array with the keys of an object";
-    constructor() {
+function ObjectKeys() {
         this.addInput("obj", "object");
         this.addOutput("keys", "array");
         this.size = [140, 30];
     }
 
-    onExecute() {
+ObjectKeys.prototype.onExecute = function() {
         var data = this.getInputData(0);
         if (data != null) {
             this.setOutputData(0, Object.keys(data));
         }
     }
 }
+ObjectKeys.title = "Object keys";
+ObjectKeys.desc = "Outputs an array with the keys of an object";
 LiteGraph.registerNodeType("objects/object_keys", ObjectKeys);
 
 
-class SetObject {
+function SetObject() {
 
-    static title = "Set property";
-    static desc = "Set property of object";
 
-    constructor() {
         this.addInput("obj", "object");
         this.addInput("value", "");
         this.addOutput("obj", "object");
@@ -704,7 +693,7 @@ class SetObject {
             "property",
         );
     }
-    onExecute() {
+SetObject.prototype.onExecute = function() {
         var obj = this.getInputData(0);
         if (!obj) return;
         var v = this.getInputData(1);
@@ -713,15 +702,14 @@ class SetObject {
         this.setOutputData(0, obj);
     }
 }
+SetObject.title = "Set property";
+SetObject.desc = "Set property of object";
 LiteGraph.registerNodeType("objects/set_property", SetObject);
 
 
-class MergeObjects {
+function MergeObjects() {
 
-    static title = "Merge Objects";
-    static desc = "Creates an object copying properties from others";
 
-    constructor() {
         this.addInput("A", "object");
         this.addInput("B", "object");
         this.addOutput("out", "object");
@@ -733,7 +721,7 @@ class MergeObjects {
         this.size = this.computeSize();
     }
 
-    onExecute() {
+MergeObjects.prototype.onExecute = function() {
         var A = this.getInputData(0);
         var B = this.getInputData(1);
         var C = this._result;
@@ -746,13 +734,12 @@ class MergeObjects {
         this.setOutputData(0, C);
     }
 }
+MergeObjects.title = "Merge Objects";
+MergeObjects.desc = "Creates an object copying properties from others";
 LiteGraph.registerNodeType("objects/merge_objects", MergeObjects);
 
-class ObjectEditorNode {
-    static title = "JSON Editor+";
-    static desc = "Edit JSON and navigate/edit nested properties dynamically.";
+function ObjectEditorNode() {
 
-    constructor() {
         this.addInput("set", LiteGraph.ACTION);
         this.addOutput("data", "object");
         this.addProperty("value", "{}");  // Entire JSON as a string
@@ -775,11 +762,11 @@ class ObjectEditorNode {
     }
 
     // When JSON is edited
-    onJSONChanged(value) {
+ObjectEditorNode.prototype.onJSONChanged = function(value) {
         this.parseJSON(value);
     }
 
-    onPropertyChanged(name, value) {
+ObjectEditorNode.prototype.onPropertyChanged = function(name, value) {
         if (name === "value") {
             this.parseJSON(value);
         } else if (name === "selectedProp") {
@@ -787,7 +774,7 @@ class ObjectEditorNode {
         }
     }
 
-    parseJSON(jsonString) {
+ObjectEditorNode.prototype.parseJSON = function(jsonString) {
         try {
             this._parsedValue = JSON.parse(jsonString);
             this.boxcolor = "#4CAF50"; // Green for valid JSON
@@ -801,7 +788,7 @@ class ObjectEditorNode {
         this.setOutputData(0, this._parsedValue);
     }
 
-    updatePropertyList() {
+ObjectEditorNode.prototype.updatePropertyList = function() {
         if (!this._parsedValue || typeof this._parsedValue !== "object") {
             this.propSelector.options.values = [];
             return;
@@ -810,7 +797,7 @@ class ObjectEditorNode {
         this.propSelector.options.values = ["", ".."].concat(keys);
     }
 
-    updateSelectedProperty() {
+ObjectEditorNode.prototype.updateSelectedProperty = function() {
         if (!this._parsedValue) {
             this._currentPath = "";
             this.properties.selectedProp = "";
@@ -830,7 +817,7 @@ class ObjectEditorNode {
         }
 
         this._currentPath = selectedPath;
-        if(this._currentPath == ""){
+ObjectEditorNode.prototype.if = function(this._currentPath == "") {
             this.updateValueEditor(this._parsedValue);
             this.updatePropertyList();
             return;
@@ -849,11 +836,11 @@ class ObjectEditorNode {
         this.updateValueEditor(propValue);
     }
 
-    updatePropertyListBasedOnPath(propValue) {
+ObjectEditorNode.prototype.updatePropertyListBasedOnPath = function(propValue) {
         console.debug("UpdateOBWidget",propValue,this.properties,this._currentPath);
         if (typeof propValue === "object" && propValue !== null) {
             const subKeys = Object.keys(propValue).sort();
-            if(this._currentPath && this._currentPath != ""){
+ObjectEditorNode.prototype.if = function(this._currentPath && this._currentPath != "") {
                 this.propSelector.options.values = ["", ".."];
             }else{
                 this.propSelector.options.values = [];
@@ -872,7 +859,7 @@ class ObjectEditorNode {
         }
     }
 
-    updateValueEditor(propValue) {
+ObjectEditorNode.prototype.updateValueEditor = function(propValue) {
         if (this.valueEditor) {
             this.widgets.splice(this.widgets.indexOf(this.valueEditor), 1); // Remove old widget
         }
@@ -889,11 +876,11 @@ class ObjectEditorNode {
         this.properties.propValue = displayValue;
     }
 
-    getValueByPath(obj, path) {
+ObjectEditorNode.prototype.getValueByPath = function(obj, path) {
         return path.split('.').reduce((o, key) => (o ? o[key] : undefined), obj);
     }
 
-    setValueByPath(obj, path, newValue) {
+ObjectEditorNode.prototype.setValueByPath = function(obj, path, newValue) {
         const keys = path.split('.');
         let ref = obj;
         for (let i = 0; i < keys.length - 1; i++) {
@@ -906,13 +893,13 @@ class ObjectEditorNode {
         ref[keys[keys.length - 1]] = this.tryParseValue(newValue);
     }
 
-    onAction(action, value) {
-        if(action=="set"){
+ObjectEditorNode.prototype.onAction = function(action, value) {
+ObjectEditorNode.prototype.if = function(action=="set") {
             this.updatePropertyValue(this.properties.propValue);
         }
     }
 
-    updatePropertyValue(value) {
+ObjectEditorNode.prototype.updatePropertyValue = function(value) {
         if (!this._parsedValue) return;
 
         // this.setValueByPath(this._parsedValue, this._currentPath, value);
@@ -924,7 +911,7 @@ class ObjectEditorNode {
         this.updateSelectedProperty(); // Refresh UI
     }
 
-    tryParseValue(value) {
+ObjectEditorNode.prototype.tryParseValue = function(value) {
         try {
             return JSON.parse(value);
         } catch {
@@ -932,10 +919,13 @@ class ObjectEditorNode {
         }
     }
 
-    onExecute() {
+ObjectEditorNode.prototype.onExecute = function() {
         this.setOutputData(0, this._parsedValue);
     }
 }
+ObjectEditorNode.title = "JSON Editor+";
+ObjectEditorNode.desc = "Edit JSON and navigate/edit nested properties dynamically.";
 
 LiteGraph.registerNodeType("objects/json_editor", ObjectEditorNode);
+
 

@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>LiteGraph Node Tester</title>
-    <link rel="icon" href="/editor/favicon.svg"/>
-    <link rel="stylesheet" type="text/css" href="/css/litegraph.css">
-    <link rel="stylesheet" type="text/css" href="/css/litegraph-editor.css">
-    <link rel="stylesheet" type="text/css" href="style.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
+    <title>LiteGraph Node Tester</title>
+    <link rel="icon" href="../editor/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="../../css/litegraph.css">
+    <link rel="stylesheet" href="../../editor/css/litegraph-editor.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/enhanced-styles.css">
 <body>
     <div id="main-container">
         <!-- Header with controls -->
@@ -62,6 +62,7 @@
                     <div class="global-selection-controls">
                         <button id="select-all-nodes" class="btn btn-small btn-primary">✅ Select All</button>
                         <button id="deselect-all-nodes" class="btn btn-small btn-secondary">❌ Deselect All</button>
+                        <div class="selection-count">Selected: <span id="selectedCount">0</span></div>
                     </div>
                 </div>
                 <div id="node-list" class="scrollable">
@@ -118,6 +119,20 @@
                         <span id="stat-coverage" class="stat-value">0%</span>
                     </div>
                 </div>
+                <div class="error-controls">
+                    <button id="view-all-errors" class="btn btn-small btn-error hidden">🔍 View All Errors (<span id="error-count">0</span>)</button>
+                </div>
+                <!-- Error Panel -->
+                <div id="error-panel" class="error-panel hidden">
+                    <div class="error-panel-header">
+                        <h4>❌ Test Errors</h4>
+                        <button id="close-error-panel" class="btn btn-small">✕</button>
+                    </div>
+                    <div id="error-panel-content" class="scrollable">
+                        <!-- Error details will be populated here -->
+                    </div>
+                </div>
+                
                 <div id="test-results" class="scrollable">
                     <div class="welcome-message">
                         <h4>🚀 Welcome to LiteGraph Node Tester!</h4>
@@ -237,42 +252,59 @@
         </div>
     </div>
 
-    <!-- External Libraries -->
-    <script type="text/javascript" src="/editor/js/libs/gl-matrix-min.js"></script>
-    <script type="text/javascript" src="/editor/js/libs/audiosynth.js"></script>
-    <script type="text/javascript" src="/editor/js/libs/midi-parser.js"></script>
-    
-    <!-- LiteGraph Core -->
-    <script type="module" src="/src/litegraph.js"></script>
-    <script type="module" src="/src/litegraph-editor.js"></script>
-    
-    <!-- Node Libraries -->
-    <script type="module" src="/src/nodes/libraries.js"></script>
-    <script type="module" src="/src/nodes/base.js"></script>
-    <script type="module" src="/src/nodes/logic.js"></script>
-    <script type="module" src="/src/nodes/events.js"></script>
-    <script type="module" src="/src/nodes/math.js"></script>
-    <script type="module" src="/src/nodes/math3d.js"></script>
-    <script type="module" src="/src/nodes/strings.js"></script>
-    <script type="module" src="/src/nodes/interface.js"></script>
-    <script type="module" src="/src/nodes/geometry.js"></script>
-    <script type="module" src="/src/nodes/graphics.js"></script>
-    <script type="module" src="/src/nodes/input.js"></script>
-    <script type="module" src="/src/nodes/midi.js"></script>
-    <script type="module" src="/src/nodes/audio.js"></script>
-    <script type="module" src="/src/nodes/network.js"></script>
-    <script type="module" src="/src/nodes/objects.js"></script>
-    <script type="module" src="/src/nodes/litegraph_nodes.js"></script>
-    <script type="module" src="/src/nodes/html.js"></script>
-    <script type="module" src="/src/nodes/others.js"></script>
+    <!-- Add failsafe error handling -->
+    <script>
+        window.addEventListener('error', function(event) {
+            console.error('Global error caught:', event.error);
+            var errorDisplay = document.createElement('div');
+            errorDisplay.className = 'global-error';
+            errorDisplay.innerHTML = 
+                '<h3>⚠️ Error Detected</h3>' +
+                '<p>' + event.message + '</p>' +
+                '<p>File: ' + event.filename + '</p>' +
+                '<p>Line: ' + event.lineno + ', Column: ' + event.colno + '</p>' +
+                '<button onclick="this.parentNode.style.display=\'none\'">Dismiss</button>';
+            document.body.appendChild(errorDisplay);
+        });
+    </script>
 
-    <!-- Testing Framework -->
-    <script type="module" src="js/test-framework.js"></script>
-    <script type="module" src="js/test-generator.js"></script>
-    <script type="module" src="js/test-reporter.js"></script>
-    <script type="module" src="js/test-config.js"></script>
-    <script type="module" src="js/ui-manager.js"></script>
-    <script type="module" src="js/test-runner.js"></script>
-    <script type="module" src="js/app.js"></script>
+    <!-- External Libraries -->
+    <script src="../editor/js/libs/gl-matrix-min.js"></script>
+    <script src="../editor/js/libs/audiosynth.js"></script>
+    <script src="../editor/js/libs/midi-parser.js"></script>
+    
+    <!-- Load LiteGraph core directly from build -->
+    <script src="../build/litegraph.mini.js"></script>
+    
+    <!-- Load node modules as regular scripts -->
+    <script src="../src/nodes/base.js"></script>
+    <script src="../src/nodes/math.js"></script>
+    <script src="../src/nodes/logic.js"></script>
+    <script src="../src/nodes/strings.js"></script>
+    <script src="../src/nodes/events.js"></script>
+    <script src="../src/nodes/interface.js"></script>
+    <script src="../src/nodes/input.js"></script>
+    <script src="../src/nodes/graphics.js"></script>
+    <script src="../src/nodes/geometry.js"></script>
+    <script src="../src/nodes/audio.js"></script>
+    <script src="../src/nodes/midi.js"></script>
+    <script src="../src/nodes/network.js"></script>
+    <script src="../src/nodes/objects.js"></script>
+    <script src="../src/nodes/html.js"></script>
+    <script src="../src/nodes/others.js"></script>
+
+    <!-- Load Testing Framework Modules -->
+    <script src="js/test-categories.js"></script>
+    <script src="js/test-config.js"></script>
+    <script src="js/test-framework.js"></script>
+    <script src="js/test-generator.js"></script>
+    <script src="js/test-runner.js"></script>
+    <script src="js/test-reporter.js"></script>
+    <script src="js/ui-manager.js"></script>
+    <script src="js/chart-utils.js"></script>
+    <script src="js/complex-scenario-generator.js"></script>
+    
+    <!-- Load Main Application -->
+    <script src="js/app.js"></script>
 </body>
 </html>

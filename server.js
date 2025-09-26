@@ -2,6 +2,14 @@ import express from "express";
 
 const app = express()
 
+// Configure MIME types for CSS files
+app.use((req, res, next) => {
+    if (req.url.endsWith('.css')) {
+        res.type('text/css');
+    }
+    next();
+});
+
 app.use('/css', express.static('css'))
 app.use('/src', express.static('src'))
 app.use('/build', express.static('build'))

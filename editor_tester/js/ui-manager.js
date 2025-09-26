@@ -1,1615 +1,1600 @@
 /**
- * UI Manager
- * Handles all UI interactions and test case management interface
+ * UI Manager for LiteGraph Editor Tester
+ * Handles all UI interactions, updates, and display logic
  */
 
-import testConfig from './test-config.js';
-import TestReporter from './test-reporter.js';
+function UIManager(app, testRunner, reporter) {
+    this.app = app;
+    this.testRunner = testRunner;
+    this.reporter = reporter;
+    
+    // UI elements
+    this.elements = {};
+    this.modals = {};
+    
+    // State
+    this.selectedNodes = [];
+    this.currentResults = [];
+    
+    // Initialize UI
+    this.initializeElements();
+    this.setupEventListeners();
+    this.setupConfigListeners();
+    this.updateUI();
+}
 
-export class UIManager {
-    constructor(app) {
-        this.app = app;
-        this.elements = {};
-        this.modals = {};
-        this.reporter = new TestReporter();
-        this.currentResults = [];
-        this.selectedNodes = new Set();
-        
-        this.initializeElements();
-        this.setupEventListeners();
-        this.setupConfigListeners();
-        this.updateUI();
+/**
+ * Initialize UI elements
+ */
+UIManager.prototype.initializeElements = function() {
+    // Main controls
+    this.elements.runAllBtn = document.getElementById('runAllTests');
+    this.elements.runSelectedBtn = document.getElementById('runSelectedTests');
+    this.elements.stopBtn = document.getElementById('stopTests');
+    this.elements.clearBtn = document.getElementById('clearResults');
+    this.elements.exportBtn = document.getElementById('exportResults');
+    this.elements.configBtn = document.getElementById('showConfig');
+    
+    // Stats display
+    this.elements.totalTests = document.getElementById('totalTests');
+    this.elements.passedTests = document.getElementById('passedTests');
+    this.elements.failedTests = document.getElementById('failedTests');
+    this.elements.successRate = document.getElementById('successRate');
+    this.elements.coverage = document.getElementById('coverage');
+    
+    // Progress
+    this.elements.progressBar = document.querySelector('.progress-bar');
+    this.elements.progressText = document.querySelector('.progress-text');
+    
+    // Panels
+    this.elements.nodeList = document.getElementById('node-list');
+    this.elements.resultsPanel = document.getElementById('results-panel');
+    this.elements.consoleOutput = document.getElementById('console-output');
+    
+    // Modals
+    this.modals.config = document.getElementById('config-modal');
+    this.modals.export = document.getElementById('export-modal');
+    
+    // Search and filter
+    this.elements.searchInput = document.getElementById('nodeSearch');
+    this.elements.categoryFilter = document.getElementById('categoryFilter');
+    this.elements.statusFilter = document.getElementById('statusFilter');
+    
+    // Global selection
+    this.elements.selectAllBtn = document.getElementById('selectAll');
+    this.elements.deselectAllBtn = document.getElementById('deselectAll');
+    this.elements.selectedCount = document.getElementById('selectedCount');
+};
+
+/**
+ * Setup event listeners
+ */
+UIManager.prototype.setupEventListeners = function() {
+    var self = this;
+    
+    // Main controls
+    if (this.elements.runAllBtn) {
+        this.elements.runAllBtn.addEventListener('click', function() { self.runAllTests(); });
     }
-
-    /**
-     * Initialize UI elements
-     */
-    initializeElements() {
-        // Main controls
-        this.elements.runAllBtn = document.getElementById('runAllBtn');
-        this.elements.runSelectedBtn = document.getElementById('runSelectedBtn');
-        this.elements.stopBtn = document.getElementById('stopBtn');
-        this.elements.configBtn = document.getElementById('configBtn');
-        this.elements.exportBtn = document.getElementById('exportBtn');
-        this.elements.clearBtn = document.getElementById('clearResultsBtn');
-        
-        // Stats display - Fix element IDs to match HTML
-        this.elements.totalTests = document.getElementById('total-count');
-        this.elements.passedTests = document.getElementById('passed-count');
-        this.elements.failedTests = document.getElementById('failed-count');
-        this.elements.coveragePercent = document.getElementById('coverage-percent');
-        this.elements.statTotal = document.getElementById('stat-total');
-        this.elements.statPassed = document.getElementById('stat-passed');
-        this.elements.statFailed = document.getElementById('stat-failed');
-        this.elements.statCoverage = document.getElementById('stat-coverage');
-        
-        // Progress
-        this.elements.progressBar = document.getElementById('progress-bar');
-        this.elements.progressText = document.getElementById('progress-text');
-        
-        // Panels
-        this.elements.nodeList = document.getElementById('node-list');
-        this.elements.testResults = document.getElementById('test-results');
-        this.elements.consoleOutput = document.getElementById('console-output');
-        
-        // Modals
-        this.modals.config = document.getElementById('test-config-modal');
-        this.modals.export = document.getElementById('export-modal');
-        
-        // Search and filters
-        this.elements.nodeSearch = document.getElementById('node-filter');
-        this.elements.categoryFilter = document.getElementById('category-filter');
-        this.elements.statusFilter = document.getElementById('status-filter');
-        
-        // Global selection controls
-        this.elements.selectAllNodes = document.getElementById('select-all-nodes');
-        this.elements.deselectAllNodes = document.getElementById('deselect-all-nodes');
+    
+    if (this.elements.runSelectedBtn) {
+        this.elements.runSelectedBtn.addEventListener('click', function() { self.runSelectedTests(); });
     }
-
-    /**
-     * Setup event listeners
-     */
-    setupEventListeners() {
-        // Main controls
-        this.elements.runAllBtn?.addEventListener('click', () => this.runAllTests());
-        this.elements.runSelectedBtn?.addEventListener('click', () => this.runSelectedTests());
-        this.elements.stopBtn?.addEventListener('click', () => this.stopTests());
-        this.elements.configBtn?.addEventListener('click', () => this.showConfigModal());
-        this.elements.exportBtn?.addEventListener('click', () => this.showExportModal());
-        this.elements.clearBtn?.addEventListener('click', () => this.clearResults());
-        
-        // Search and filters
-        this.elements.nodeSearch?.addEventListener('input', (e) => this.filterNodes(e.target.value));
-        this.elements.categoryFilter?.addEventListener('change', (e) => this.filterByCategory(e.target.value));
-        this.elements.statusFilter?.addEventListener('change', (e) => this.filterByStatus(e.target.value));
-        
-        // Global selection controls
-        this.elements.selectAllNodes?.addEventListener('click', () => this.selectAllNodes());
-        this.elements.deselectAllNodes?.addEventListener('click', () => this.deselectAllNodes());
-        
-        // Modal close handlers
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal')) {
-                this.closeModal(e.target);
+    
+    if (this.elements.stopBtn) {
+        this.elements.stopBtn.addEventListener('click', function() { self.stopTests(); });
+    }
+    
+    if (this.elements.clearBtn) {
+        this.elements.clearBtn.addEventListener('click', function() { self.clearResults(); });
+    }
+    
+    if (this.elements.exportBtn) {
+        this.elements.exportBtn.addEventListener('click', function() { self.showExportModal(); });
+    }
+    
+    if (this.elements.configBtn) {
+        this.elements.configBtn.addEventListener('click', function() { self.showConfigModal(); });
+    }
+    
+    // Search and filter
+    if (this.elements.searchInput) {
+        this.elements.searchInput.addEventListener('input', function(e) {
+            self.filterNodes(e.target.value);
+        });
+    }
+    
+    if (this.elements.categoryFilter) {
+        this.elements.categoryFilter.addEventListener('change', function(e) {
+            self.filterByCategory(e.target.value);
+        });
+    }
+    
+    if (this.elements.statusFilter) {
+        this.elements.statusFilter.addEventListener('change', function(e) {
+            self.filterByStatus(e.target.value);
+        });
+    }
+    
+    // Global selection
+    if (this.elements.selectAllBtn) {
+        this.elements.selectAllBtn.addEventListener('click', function() { self.selectAllNodes(); });
+    }
+    
+    if (this.elements.deselectAllBtn) {
+        this.elements.deselectAllBtn.addEventListener('click', function() { self.deselectAllNodes(); });
+    }
+    
+    // Modal close handlers
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('close-modal')) {
+            var modal = e.target.closest('.modal');
+            if (modal) {
+                self.closeModal(modal);
             }
-        });
-        
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => this.handleKeyboardShortcuts(e));
-        
-        // Window resize
-        window.addEventListener('resize', () => this.handleResize());
-    }
-
-    /**
-     * Setup configuration listeners
-     */
-    setupConfigListeners() {
-        testConfig.on('configChanged', (data) => {
-            this.updateUI();
-            this.logMessage(`Configuration updated: ${data.path} = ${data.value}`);
-        });
-        
-        testConfig.on('presetLoaded', (data) => {
-            this.updateUI();
-            this.logMessage(`Preset loaded: ${data.preset.name}`);
-        });
-    }
-
-    /**
-     * Update UI based on current state
-     */
-    updateUI() {
-        this.updateNodeList();
-        this.updateStats();
-        this.updateControls();
-        this.updateFilters();
-    }
-
-    /**
-     * Update node list display
-     */
-    updateNodeList() {
-        if (!this.elements.nodeList) return;
-        
-        const nodeTypes = this.app.getAvailableNodeTypes();
-        const selectedCriteria = testConfig.getNodeSelectionCriteria();
-        
-        this.elements.nodeList.innerHTML = '';
-        
-        // Group nodes by category
-        const categories = new Map();
-        
-        for (const nodeType of nodeTypes) {
-            const category = this.extractCategory(nodeType) || 'Other';
-            if (!categories.has(category)) {
-                categories.set(category, []);
-            }
-            categories.get(category).push(nodeType);
         }
+    });
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) { self.handleKeyboardShortcuts(e); });
+    
+    // Window resize
+    window.addEventListener('resize', function() { self.handleResize(); });
+    
+    // Error panel toggle
+    var errorToggle = document.getElementById('toggle-error-panel');
+    if (errorToggle) {
+        errorToggle.addEventListener('click', function() {
+            var errorPanel = document.getElementById('error-panel');
+            if (errorPanel) {
+                errorPanel.classList.toggle('hidden');
+            }
+        });
+    }
+};
+
+/**
+ * Setup configuration listeners
+ */
+UIManager.prototype.setupConfigListeners = function() {
+    var self = this;
+    
+    // Listen for config changes
+    if (window.TestConfig && window.TestConfig.on) {
+        window.TestConfig.on('configChanged', function(config) {
+            self.updateUI();
+        });
         
-        // Render categories
-        for (const [category, nodes] of categories) {
-            const categoryElement = this.createCategoryElement(category, nodes, selectedCriteria);
+        window.TestConfig.on('presetLoaded', function(presetName) {
+            self.logMessage('Loaded preset: ' + presetName);
+        });
+    }
+};
+
+/**
+ * Update UI
+ */
+UIManager.prototype.updateUI = function() {
+    this.updateNodeList();
+    this.updateStats();
+    this.updateControls();
+    this.updateFilters();
+};
+
+/**
+ * Update node list
+ */
+UIManager.prototype.updateNodeList = function() {
+    if (!this.elements.nodeList) return;
+    
+    var nodeTypes = this.app.getAvailableNodeTypes();
+    var groupedNodes = this.groupNodesByCategory(nodeTypes);
+    
+    this.elements.nodeList.innerHTML = '';
+    
+    var self = this;
+    for (var category in groupedNodes) {
+        if (groupedNodes.hasOwnProperty(category)) {
+            var nodes = groupedNodes[category];
+            var categoryElement = this.createCategoryElement(category, nodes);
             this.elements.nodeList.appendChild(categoryElement);
         }
-        
-        this.updateSelectedCount();
     }
+    
+    this.updateSelectedCount();
+};
 
-    /**
-     * Create category element
-     */
-    createCategoryElement(category, nodes, selectedCriteria) {
-        const categoryDiv = document.createElement('div');
-        categoryDiv.className = 'node-category';
-        
-        // Category header
-        const header = document.createElement('div');
-        header.className = 'category-header';
-        header.innerHTML = `
-            <div class="category-info">
-                <span class="category-name">${category}</span>
-                <span class="category-count">${nodes.length} nodes</span>
-            </div>
-            <div class="category-controls">
-                <button class="btn-small select-all" data-category="${category}">Select All</button>
-                <button class="btn-small deselect-all" data-category="${category}">Deselect All</button>
-                <button class="btn-small toggle-category" data-category="${category}">▼</button>
-            </div>
-        `;
-        
-        // Category controls
-        header.querySelector('.select-all').addEventListener('click', () => {
-            this.selectCategoryNodes(category, true);
-        });
-        
-        header.querySelector('.deselect-all').addEventListener('click', () => {
-            this.selectCategoryNodes(category, false);
-        });
-        
-        header.querySelector('.toggle-category').addEventListener('click', (e) => {
-            this.toggleCategory(category, e.target);
-        });
-        
-        categoryDiv.appendChild(header);
-        
-        // Node list
-        const nodeListDiv = document.createElement('div');
-        nodeListDiv.className = 'category-nodes';
-        
-        for (const nodeType of nodes.sort()) {
-            const nodeElement = this.createNodeElement(nodeType, selectedCriteria);
-            nodeListDiv.appendChild(nodeElement);
-        }
-        
-        categoryDiv.appendChild(nodeListDiv);
-        
-        return categoryDiv;
+/**
+ * Create category element
+ */
+UIManager.prototype.createCategoryElement = function(category, nodes) {
+    var self = this;
+    var categoryDiv = document.createElement('div');
+    categoryDiv.className = 'node-category';
+    categoryDiv.dataset.category = category;
+    
+    var header = document.createElement('div');
+    header.className = 'category-header';
+    header.innerHTML = 
+        '<button class="category-toggle" onclick="this.parentElement.parentElement.classList.toggle(\'collapsed\')">' +
+            '<span class="toggle-icon">▼</span>' +
+        '</button>' +
+        '<span class="category-name">' + category + '</span>' +
+        '<div class="category-controls">' +
+            '<button class="btn btn-sm select-category" title="Select all in category">Select All</button>' +
+            '<button class="btn btn-sm deselect-category" title="Deselect all in category">Deselect All</button>' +
+        '</div>';
+    
+    var selectBtn = header.querySelector('.select-category');
+    var deselectBtn = header.querySelector('.deselect-category');
+    
+    selectBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.selectCategoryNodes(category, true);
+    });
+    
+    deselectBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        self.selectCategoryNodes(category, false);
+    });
+    
+    categoryDiv.appendChild(header);
+    
+    var nodesDiv = document.createElement('div');
+    nodesDiv.className = 'category-nodes';
+    
+    for (var i = 0; i < nodes.length; i++) {
+        var nodeType = nodes[i];
+        var nodeElement = this.createNodeElement(nodeType);
+        nodesDiv.appendChild(nodeElement);
     }
+    
+    categoryDiv.appendChild(nodesDiv);
+    return categoryDiv;
+};
 
-    /**
-     * Create node element
-     */
-    createNodeElement(nodeType, selectedCriteria) {
-        const isSelected = selectedCriteria.selectedNodes.includes(nodeType) || 
-                          this.selectedNodes.has(nodeType);
-        const isExcluded = selectedCriteria.excludedNodes.includes(nodeType);
-        
-        const nodeDiv = document.createElement('div');
-        nodeDiv.className = `node-item ${isSelected ? 'selected' : ''} ${isExcluded ? 'excluded' : ''}`;
-        nodeDiv.dataset.nodeType = nodeType;
-        
-        nodeDiv.innerHTML = `
-            <div class="node-checkbox">
-                <input type="checkbox" id="node_${nodeType}" ${isSelected ? 'checked' : ''} ${isExcluded ? 'disabled' : ''}>
-            </div>
-            <div class="node-info">
-                <div class="node-name">${nodeType}</div>
-                <div class="node-status"></div>
-            </div>
-            <div class="node-controls">
-                <button class="btn-small test-single" data-node="${nodeType}" title="Test this node">Test</button>
-                <button class="btn-small node-info-btn" data-node="${nodeType}" title="Node information">Info</button>
-            </div>
-        `;
-        
-        // Event listeners
-        const checkbox = nodeDiv.querySelector('input[type="checkbox"]');
-        checkbox.addEventListener('change', (e) => {
-            this.toggleNodeSelection(nodeType, e.target.checked);
-        });
-        
-        // Add debouncing to prevent double-clicks
-        let testClickTimeout = null;
-        nodeDiv.querySelector('.test-single').addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            if (testClickTimeout) {
-                clearTimeout(testClickTimeout);
-            }
-            
-            testClickTimeout = setTimeout(() => {
-                this.runSingleNodeTest(nodeType);
-                testClickTimeout = null;
-            }, 300); // 300ms debounce
-        });
-        
-        let infoClickTimeout = null;
-        nodeDiv.querySelector('.node-info-btn').addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            if (infoClickTimeout) {
-                clearTimeout(infoClickTimeout);
-            }
-            
-            infoClickTimeout = setTimeout(() => {
-                this.showNodeInfo(nodeType);
-                infoClickTimeout = null;
-            }, 300); // 300ms debounce
-        });
-        
-        return nodeDiv;
+/**
+ * Create node element
+ */
+UIManager.prototype.createNodeElement = function(nodeType) {
+    var self = this;
+    var nodeDiv = document.createElement('div');
+    nodeDiv.className = 'node-item';
+    nodeDiv.dataset.nodeType = nodeType;
+    
+    var isSelected = this.selectedNodes.indexOf(nodeType) !== -1;
+    var testResult = this.getNodeTestResult(nodeType);
+    
+    nodeDiv.innerHTML = 
+        '<div class="node-checkbox">' +
+            '<input type="checkbox" id="node_' + nodeType + '"' + (isSelected ? ' checked' : '') + '>' +
+        '</div>' +
+        '<div class="node-info">' +
+            '<span class="node-name">' + nodeType + '</span>' +
+            '<div class="node-status ' + (testResult ? testResult.status : '') + '">' +
+                (testResult ? this.getStatusIcon(testResult.status) : '') +
+            '</div>' +
+        '</div>' +
+        '<div class="node-controls">' +
+            '<button class="btn btn-sm run-single" title="Run tests for this node">▶</button>' +
+            '<button class="btn btn-sm node-info-btn" title="Show node information">ℹ</button>' +
+        '</div>';
+    
+    var checkbox = nodeDiv.querySelector('input[type="checkbox"]');
+    var debounceTimer;
+    
+    checkbox.addEventListener('change', function(e) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+            self.toggleNodeSelection(nodeType, e.target.checked);
+        }, 100);
+    });
+    
+    var runBtn = nodeDiv.querySelector('.run-single');
+    runBtn.addEventListener('click', function() { self.runSingleNodeTest(nodeType); });
+    
+    var infoBtn = nodeDiv.querySelector('.node-info-btn');
+    infoBtn.addEventListener('click', function() { self.showNodeInfo(nodeType); });
+    
+    return nodeDiv;
+};
+
+/**
+ * Update stats
+ */
+UIManager.prototype.updateStats = function() {
+    var stats = this.calculateStats(this.currentResults);
+    
+    if (this.elements.totalTests) {
+        this.elements.totalTests.textContent = stats.total;
     }
-
-    /**
-     * Update statistics display
-     */
-    updateStats() {
-        console.log('[UIManager] updateStats called, currentResults:', this.currentResults);
-        const stats = this.calculateStats(this.currentResults);
-        
-        console.log('[UIManager] Updating DOM elements with stats:', stats);
-        
-        // Update header stats
-        if (this.elements.totalTests) {
-            console.log('[UIManager] Updating totalTests element');
-            this.elements.totalTests.textContent = stats.total;
-        } else {
-            console.warn('[UIManager] totalTests element not found');
-        }
-        if (this.elements.passedTests) {
-            console.log('[UIManager] Updating passedTests element');
-            this.elements.passedTests.textContent = stats.passed;
-        } else {
-            console.warn('[UIManager] passedTests element not found');
-        }
-        if (this.elements.failedTests) {
-            console.log('[UIManager] Updating failedTests element');
-            this.elements.failedTests.textContent = stats.failed;
-        } else {
-            console.warn('[UIManager] failedTests element not found');
-        }
-        if (this.elements.coveragePercent) {
-            console.log('[UIManager] Updating coveragePercent element');
-            this.elements.coveragePercent.textContent = `${stats.coverage}%`;
-        } else {
-            console.warn('[UIManager] coveragePercent element not found');
-        }
-        
-        // Update right panel stats
-        if (this.elements.statTotal) {
-            console.log('[UIManager] Updating statTotal element');
-            this.elements.statTotal.textContent = stats.total;
-        } else {
-            console.warn('[UIManager] statTotal element not found');
-        }
-        if (this.elements.statPassed) {
-            console.log('[UIManager] Updating statPassed element');
-            this.elements.statPassed.textContent = stats.passed;
-        } else {
-            console.warn('[UIManager] statPassed element not found');
-        }
-        if (this.elements.statFailed) {
-            console.log('[UIManager] Updating statFailed element');
-            this.elements.statFailed.textContent = stats.failed;
-        } else {
-            console.warn('[UIManager] statFailed element not found');
-        }
-        if (this.elements.statCoverage) {
-            console.log('[UIManager] Updating statCoverage element');
-            this.elements.statCoverage.textContent = `${stats.coverage}%`;
-        } else {
-            console.warn('[UIManager] statCoverage element not found');
-        }
-        
-        // Update progress bar
-        if (this.elements.progressBar) {
-            const progress = stats.total > 0 ? (stats.passed / stats.total) * 100 : 0;
-            console.log('[UIManager] Updating progress bar:', progress + '%');
-            this.elements.progressBar.style.width = `${progress}%`;
-        } else {
-            console.warn('[UIManager] progressBar element not found');
-        }
+    if (this.elements.passedTests) {
+        this.elements.passedTests.textContent = stats.passed;
     }
-
-    /**
-     * Update control states
-     */
-    updateControls() {
-        const isRunning = this.app.isRunning();
-        const hasSelection = this.selectedNodes.size > 0;
-        const hasResults = this.currentResults.length > 0;
-        
-        if (this.elements.runAllBtn) {
-            this.elements.runAllBtn.disabled = isRunning;
-            this.elements.runAllBtn.textContent = isRunning ? '⏳ Running...' : '▶ Run All Tests';
-        }
-        
-        if (this.elements.runSelectedBtn) {
-            this.elements.runSelectedBtn.disabled = isRunning || !hasSelection;
-            this.elements.runSelectedBtn.textContent = isRunning ? '⏳ Running...' : `▶ Run Selected (${this.selectedNodes.size})`;
-        }
-        
-        if (this.elements.stopBtn) {
-            this.elements.stopBtn.disabled = !isRunning;
-        }
-        
-        if (this.elements.exportBtn) {
-            this.elements.exportBtn.disabled = !hasResults;
-        }
-        
-        if (this.elements.clearBtn) {
-            this.elements.clearBtn.disabled = !hasResults;
-        }
+    if (this.elements.failedTests) {
+        this.elements.failedTests.textContent = stats.failed;
     }
+    if (this.elements.successRate) {
+        this.elements.successRate.textContent = stats.successRate.toFixed(1) + '%';
+    }
+    if (this.elements.coverage) {
+        this.elements.coverage.textContent = stats.coverage + '%';
+    }
+    
+    var rightPanelStats = document.querySelector('.stats-panel');
+    if (rightPanelStats) {
+        rightPanelStats.innerHTML = 
+            '<div class="stat-item">' +
+                '<span class="stat-label">Total Tests:</span>' +
+                '<span class="stat-value">' + stats.total + '</span>' +
+            '</div>' +
+            '<div class="stat-item">' +
+                '<span class="stat-label">Passed:</span>' +
+                '<span class="stat-value passed">' + stats.passed + '</span>' +
+            '</div>' +
+            '<div class="stat-item">' +
+                '<span class="stat-label">Failed:</span>' +
+                '<span class="stat-value failed">' + stats.failed + '</span>' +
+            '</div>' +
+            '<div class="stat-item">' +
+                '<span class="stat-label">Success Rate:</span>' +
+                '<span class="stat-value">' + stats.successRate.toFixed(1) + '%</span>' +
+            '</div>' +
+            '<div class="stat-item">' +
+                '<span class="stat-label">Coverage:</span>' +
+                '<span class="stat-value">' + stats.coverage + '%</span>' +
+            '</div>' +
+            '<div class="stat-item">' +
+                '<span class="stat-label">Avg Duration:</span>' +
+                '<span class="stat-value">' + stats.averageDuration.toFixed(2) + 'ms</span>' +
+            '</div>';
+    }
+    
+    if (this.elements.progressBar && stats.total > 0) {
+        var progress = ((stats.passed + stats.failed) / stats.total) * 100;
+        this.updateProgress(progress);
+    }
+    
+    var errorControls = document.querySelector('.error-controls');
+    if (errorControls) {
+        errorControls.style.display = stats.failed > 0 ? 'block' : 'none';
+    }
+};
 
-    /**
-     * Update filter options
-     */
-    updateFilters() {
-        if (this.elements.categoryFilter) {
-            const categories = this.getAvailableCategories();
-            this.elements.categoryFilter.innerHTML = '<option value="">All Categories</option>';
-            
-            for (const category of categories) {
-                const option = document.createElement('option');
-                option.value = category;
-                option.textContent = category;
-                this.elements.categoryFilter.appendChild(option);
-            }
+/**
+ * Update controls
+ */
+UIManager.prototype.updateControls = function() {
+    var isRunning = this.testRunner.isTestsRunning();
+    var hasSelectedNodes = this.selectedNodes.length > 0;
+    var hasResults = this.currentResults.length > 0;
+    
+    if (this.elements.runAllBtn) {
+        this.elements.runAllBtn.disabled = isRunning;
+        this.toggleButtonLoading(this.elements.runAllBtn, isRunning);
+    }
+    
+    if (this.elements.runSelectedBtn) {
+        this.elements.runSelectedBtn.disabled = isRunning || !hasSelectedNodes;
+        this.toggleButtonLoading(this.elements.runSelectedBtn, isRunning);
+    }
+    
+    if (this.elements.stopBtn) {
+        this.elements.stopBtn.disabled = !isRunning;
+    }
+    
+    if (this.elements.exportBtn) {
+        this.elements.exportBtn.disabled = !hasResults;
+    }
+    
+    if (this.elements.clearBtn) {
+        this.elements.clearBtn.disabled = !hasResults;
+    }
+    
+    document.body.classList.toggle('tests-running', isRunning);
+};
+
+/**
+ * Toggle button loading state
+ */
+UIManager.prototype.toggleButtonLoading = function(button, loading) {
+    if (loading) {
+        button.classList.add('loading');
+        button.innerHTML = '<span class="spinner"></span> Running...';
+    } else {
+        button.classList.remove('loading');
+        button.innerHTML = button.dataset.originalText || button.textContent.replace('Running...', '').trim();
+    }
+};
+
+/**
+ * Update filters
+ */
+UIManager.prototype.updateFilters = function() {
+    if (this.elements.categoryFilter) {
+        var categories = this.getAvailableCategories();
+        this.elements.categoryFilter.innerHTML = '<option value="">All Categories</option>';
+        
+        for (var i = 0; i < categories.length; i++) {
+            var category = categories[i];
+            var option = document.createElement('option');
+            option.value = category;
+            option.textContent = category;
+            this.elements.categoryFilter.appendChild(option);
         }
     }
+};
 
-    /**
-     * Run all tests
-     */
-    async runAllTests() {
-        try {
-            this.logMessage('Starting all tests...');
-            this.updateProgress(0, 'Initializing...');
-            
-            // Clear previous results
-            this.currentResults = [];
-            this.updateStats();
-            this.displayResults([]);
-            
-            // Get all available node types
-            const allNodeTypes = this.app.getAvailableNodeTypes();
-            this.logMessage(`Found ${allNodeTypes.length} node types to test`);
-            
-            if (allNodeTypes.length === 0) {
-                this.logWarning('No node types available for testing');
-                return;
-            }
-            
-            const results = await this.app.runTestsForNodeTypes(allNodeTypes, (progress, message) => {
-                this.updateProgress(progress, message);
-            });
-            
-            this.handleTestResults(results);
-            this.logMessage(`All tests completed. ${results.length} tests executed.`);
-        } catch (error) {
-            this.logError('Failed to run all tests:', error);
-        }
-    }
-
-    /**
-     * Run selected tests
-     */
-    async runSelectedTests() {
-        try {
-            const selectedNodes = Array.from(this.selectedNodes);
-            if (selectedNodes.length === 0) {
-                this.logWarning('No nodes selected for testing.');
-                return;
-            }
-            
-            this.logMessage(`Starting tests for ${selectedNodes.length} selected nodes...`);
-            this.updateProgress(0, 'Initializing...');
-            
-            // Clear previous results
-            this.currentResults = [];
-            this.updateStats();
-            this.displayResults([]);
-            
-            const results = await this.app.runTestsForNodeTypes(selectedNodes, (progress, message) => {
-                this.updateProgress(progress, message);
-            });
-            
-            this.handleTestResults(results);
-            this.logMessage(`Selected tests completed. ${results.length} tests executed.`);
-        } catch (error) {
-            this.logError('Failed to run selected tests:', error);
-        }
-    }
-
-    /**
-     * Stop running tests
-     */
-    stopTests() {
-        this.app.stopTests();
-        this.logMessage('Test execution stopped by user.');
-        this.updateProgress(0, 'Stopped');
-    }
-
-    /**
-     * Run single node test
-     */
-    async runSingleNodeTest(nodeType) {
-        try {
-            this.logMessage(`Testing node: ${nodeType}`);
-            
-            // Clear previous results
-            this.currentResults = [];
-            this.updateStats();
-            this.displayResults([]);
-            
-            // Validate node type exists
-            const availableTypes = this.app.getAvailableNodeTypes();
-            if (!availableTypes.includes(nodeType)) {
-                this.logError(`Node type '${nodeType}' is not available`);
-                return;
-            }
-            
-            // Run test for single node type using the new method
-            const results = await this.app.runTestsForNodeTypes([nodeType]);
-            this.handleTestResults(results);
-            
-            this.logMessage(`Node test completed: ${nodeType}`);
-        } catch (error) {
-            this.logError(`Failed to test node ${nodeType}:`, error);
-        }
-    }
-
-    /**
-     * Handle test results
-     */
-    handleTestResults(results, append = false) {
-        console.log('[UIManager] handleTestResults called with:', results, 'append:', append);
-        
-        if (!append) {
-            this.currentResults = results || [];
-        } else {
-            this.currentResults = [...(this.currentResults || []), ...(results || [])];
-        }
-        
-        console.log('[UIManager] Updated currentResults:', this.currentResults);
-        
-        this.displayResults(this.currentResults);
-        this.updateStats();
-        this.updateControls();
-        this.updateNodeStatuses(this.currentResults);
-    }
-
-    /**
-     * Display test results
-     */
-    displayResults(results) {
-        if (!this.elements.testResults) return;
-        
-        this.elements.testResults.innerHTML = '';
-        
-        if (results.length === 0) {
-            this.elements.testResults.innerHTML = '<div class="no-results">No test results to display</div>';
+/**
+ * Run all tests
+ */
+UIManager.prototype.runAllTests = function() {
+    var self = this;
+    try {
+        var nodeTypes = this.app.getAvailableNodeTypes();
+        if (nodeTypes.length === 0) {
+            this.logWarning('No node types available for testing');
             return;
         }
         
-        // Group results by node type
-        const groupedResults = new Map();
-        for (const result of results) {
-            if (!groupedResults.has(result.nodeType)) {
-                groupedResults.set(result.nodeType, []);
-            }
-            groupedResults.get(result.nodeType).push(result);
-        }
-        
-        // Display grouped results
-        for (const [nodeType, nodeResults] of groupedResults) {
-            const groupElement = this.createResultGroup(nodeType, nodeResults);
-            this.elements.testResults.appendChild(groupElement);
-        }
-    }
-
-    /**
-     * Create result group element
-     */
-    createResultGroup(nodeType, results) {
-        const stats = this.calculateStats(results);
-        const hasFailures = stats.failed > 0;
-        
-        const groupDiv = document.createElement('div');
-        groupDiv.className = `result-group ${hasFailures ? 'has-failures' : 'all-passed'}`;
-        
-        // Group header
-        const header = document.createElement('div');
-        header.className = 'result-group-header';
-        header.innerHTML = `
-            <div class="group-info">
-                <span class="node-type">${nodeType}</span>
-                <span class="group-stats">
-                    <span class="passed">${stats.passed}</span> / 
-                    <span class="total">${stats.total}</span> passed
-                </span>
-            </div>
-            <div class="group-controls">
-                <span class="execution-time">${stats.totalDuration.toFixed(1)}ms</span>
-                <button class="btn-small toggle-group" data-node="${nodeType}">▼</button>
-            </div>
-        `;
-        
-        header.querySelector('.toggle-group').addEventListener('click', (e) => {
-            this.toggleResultGroup(nodeType, e.target);
+        this.testRunner.runAllTests(function(progress) {
+            self.updateProgress(progress.percentage, progress.message);
+        }).then(function(results) {
+            self.handleTestResults(results);
+        }).catch(function(error) {
+            self.logError('Failed to run all tests:', error);
         });
-        
-        groupDiv.appendChild(header);
-        
-        // Results list
-        const resultsDiv = document.createElement('div');
-        resultsDiv.className = 'group-results';
-        
-        for (const result of results) {
-            const resultElement = this.createResultElement(result);
-            resultsDiv.appendChild(resultElement);
+    } catch (error) {
+        this.logError('Failed to run all tests:', error);
+    }
+};
+
+/**
+ * Run selected tests
+ */
+UIManager.prototype.runSelectedTests = function() {
+    var self = this;
+    try {
+        var selectedNodeTypes = this.selectedNodes;
+        if (selectedNodeTypes.length === 0) {
+            this.logWarning('No node types selected for testing');
+            return;
         }
         
-        groupDiv.appendChild(resultsDiv);
-        
-        return groupDiv;
-    }
-
-    /**
-     * Create result element
-     */
-    createResultElement(result) {
-        const resultDiv = document.createElement('div');
-        resultDiv.className = `test-result ${result.status}`;
-        
-        const statusIcon = result.status === 'passed' ? '✓' : '✗';
-        const statusClass = result.status === 'passed' ? 'success' : 'error';
-        
-        resultDiv.innerHTML = `
-            <div class="result-header">
-                <span class="status-icon ${statusClass}">${statusIcon}</span>
-                <span class="test-name">${result.testId}</span>
-                <span class="execution-time">${result.duration.toFixed(2)}ms</span>
-            </div>
-            <div class="result-details" style="display: none;">
-                ${result.errors.length > 0 ? `
-                    <div class="errors">
-                        <h4>Errors:</h4>
-                        ${result.errors.map(error => `
-                            <div class="error-item">
-                                <strong>${error.type || 'Error'}:</strong> ${error.message}
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : ''}
-                ${result.warnings.length > 0 ? `
-                    <div class="warnings">
-                        <h4>Warnings:</h4>
-                        ${result.warnings.map(warning => `
-                            <div class="warning-item">${warning}</div>
-                        `).join('')}
-                    </div>
-                ` : ''}
-                ${result.memoryUsage ? `
-                    <div class="memory-info">
-                        <strong>Memory Usage:</strong> ${(result.memoryUsage.delta / 1024).toFixed(1)}KB
-                    </div>
-                ` : ''}
-            </div>
-        `;
-        
-        // Toggle details on click
-        resultDiv.querySelector('.result-header').addEventListener('click', () => {
-            const details = resultDiv.querySelector('.result-details');
-            const isVisible = details.style.display !== 'none';
-            details.style.display = isVisible ? 'none' : 'block';
+        this.testRunner.runSelectedTests(selectedNodeTypes, function(progress) {
+            self.updateProgress(progress.percentage, progress.message);
+        }).then(function(results) {
+            self.handleTestResults(results);
+        }).catch(function(error) {
+            self.logError('Failed to run selected tests:', error);
         });
-        
-        return resultDiv;
+    } catch (error) {
+        this.logError('Failed to run selected tests:', error);
     }
+};
 
-    /**
-     * Update node statuses based on test results
-     */
-    updateNodeStatuses(results) {
-        // Group results by node type
-        const nodeStatuses = new Map();
+/**
+ * Stop tests
+ */
+UIManager.prototype.stopTests = function() {
+    this.testRunner.stopTests();
+    this.logMessage('Tests stopped by user');
+};
+
+/**
+ * Run single node test
+ */
+UIManager.prototype.runSingleNodeTest = function(nodeType) {
+    var self = this;
+    try {
+        this.testRunner.runTestsForNodeTypes([nodeType], function(progress) {
+            self.updateProgress(progress.percentage, progress.message);
+        }).then(function(results) {
+            self.handleTestResults(results);
+        }).catch(function(error) {
+            self.logError('Failed to run tests for ' + nodeType + ':', error);
+        });
+    } catch (error) {
+        this.logError('Failed to run tests for ' + nodeType + ':', error);
+    }
+};
+
+/**
+ * Handle test results
+ */
+UIManager.prototype.handleTestResults = function(results) {
+    console.log('[UIManager] handleTestResults called with:', results);
+    
+    this.currentResults = results || [];
+    this.displayResults(this.currentResults);
+    this.updateStats();
+    this.updateControls();
+    this.updateNodeStatuses();
+    
+    this.logMessage('Tests completed. ' + this.currentResults.length + ' results processed.');
+};
+
+/**
+ * Update test results
+ */
+UIManager.prototype.updateTestResults = function(results) {
+    this.handleTestResults(results);
+};
+
+/**
+ * Display results
+ */
+UIManager.prototype.displayResults = function(results) {
+    if (!this.elements.resultsPanel) return;
+    
+    if (!results || results.length === 0) {
+        this.elements.resultsPanel.innerHTML = '<div class="no-results">No test results available</div>';
+        return;
+    }
+    
+    var groupedResults = this.groupResultsByNodeType(results);
+    var html = '<div class="results-header"><h3>Test Results</h3></div>';
+    
+    for (var nodeType in groupedResults) {
+        if (groupedResults.hasOwnProperty(nodeType)) {
+            var nodeResults = groupedResults[nodeType];
+            html += this.createResultGroupElement(nodeType, nodeResults);
+        }
+    }
+    
+    this.elements.resultsPanel.innerHTML = html;
+    
+    var failedResults = results.filter(function(r) { return r.status === 'failed'; });
+    if (failedResults.length > 0) {
+        this.showErrorsFromResults(failedResults);
+    }
+};
+
+/**
+ * Create result group element
+ */
+UIManager.prototype.createResultGroupElement = function(nodeType, results) {
+    var passedCount = results.filter(function(r) { return r.status === 'passed'; }).length;
+    var failedCount = results.filter(function(r) { return r.status === 'failed'; }).length;
+    var totalCount = results.length;
+    
+    var status = failedCount > 0 ? 'failed' : 'passed';
+    var statusIcon = this.getStatusIcon(status);
+    
+    return '<div class="result-group" data-node-type="' + nodeType + '">' +
+        '<div class="result-group-header" onclick="this.parentElement.classList.toggle(\'expanded\')">' +
+            '<span class="status-icon">' + statusIcon + '</span>' +
+            '<span class="node-type">' + nodeType + '</span>' +
+            '<span class="result-counts">' + passedCount + '/' + totalCount + ' passed</span>' +
+            '<span class="toggle-icon">▼</span>' +
+        '</div>' +
+        '<div class="result-group-details">' +
+            this.generateResultDetails(results) +
+        '</div>' +
+    '</div>';
+};
+
+/**
+ * Generate result details
+ */
+UIManager.prototype.generateResultDetails = function(results) {
+    var html = '';
+    
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
+        var statusClass = 'result-item-' + result.status;
         
-        for (const result of results) {
-            if (!nodeStatuses.has(result.nodeType)) {
-                nodeStatuses.set(result.nodeType, { passed: 0, failed: 0, total: 0 });
-            }
-            
-            const status = nodeStatuses.get(result.nodeType);
-            status.total++;
-            
-            if (result.status === 'passed') {
-                status.passed++;
-            } else {
-                status.failed++;
-            }
+        html += '<div class="result-item ' + statusClass + '">' +
+            '<div class="result-header">' +
+                '<span class="test-name">' + (result.testName || 'Test ' + (i + 1)) + '</span>' +
+                '<span class="test-status">' + result.status + '</span>' +
+            '</div>';
+        
+        if (result.error) {
+            html += '<div class="result-error">' + this.escapeHtml(result.error) + '</div>';
         }
         
-        // Update UI
-        for (const [nodeType, status] of nodeStatuses) {
-            const nodeElement = document.querySelector(`[data-node-type="${nodeType}"]`);
-            if (nodeElement) {
-                const statusElement = nodeElement.querySelector('.node-status');
-                if (statusElement) {
-                    const successRate = status.total > 0 ? (status.passed / status.total * 100).toFixed(0) : 0;
-                    statusElement.textContent = `${status.passed}/${status.total} (${successRate}%)`;
-                    statusElement.className = `node-status ${status.failed > 0 ? 'has-failures' : 'all-passed'}`;
-                }
-            }
+        if (result.duration) {
+            html += '<div class="result-duration">Duration: ' + result.duration.toFixed(2) + 'ms</div>';
+        }
+        
+        html += '</div>';
+    }
+    
+    return html;
+};
+
+/**
+ * Update node statuses
+ */
+UIManager.prototype.updateNodeStatuses = function() {
+    var nodeItems = document.querySelectorAll('.node-item');
+    
+    for (var i = 0; i < nodeItems.length; i++) {
+        var nodeItem = nodeItems[i];
+        var nodeType = nodeItem.dataset.nodeType;
+        var statusElement = nodeItem.querySelector('.node-status');
+        var result = this.getNodeTestResult(nodeType);
+        
+        if (statusElement && result) {
+            statusElement.className = 'node-status ' + result.status;
+            statusElement.innerHTML = this.getStatusIcon(result.status);
         }
     }
+};
 
-    /**
-     * Show configuration modal
-     */
-    showConfigModal() {
-        if (!this.modals.config) return;
-        
+/**
+ * Show config modal
+ */
+UIManager.prototype.showConfigModal = function() {
+    if (this.modals.config) {
         this.populateConfigModal();
         this.modals.config.style.display = 'flex';
     }
+};
 
-    /**
-     * Populate configuration modal
-     */
-    populateConfigModal() {
-        const modalContent = this.modals.config.querySelector('.modal-content');
-        if (!modalContent) return;
+/**
+ * Populate config modal
+ */
+UIManager.prototype.populateConfigModal = function() {
+    var configContent = document.getElementById('config-content');
+    if (!configContent) return;
+    
+    var config = window.TestConfig ? window.TestConfig.get() : {};
+    
+    configContent.innerHTML = this.generateConfigFields(config);
+    this.setupConfigModalEvents();
+};
+
+/**
+ * Generate config fields
+ */
+UIManager.prototype.generateConfigFields = function(config) {
+    return '<div class="config-section">' +
+        '<h3>Test Configuration</h3>' +
+        '<div class="config-field">' +
+            '<label>Timeout (ms):</label>' +
+            '<input type="number" id="config-timeout" value="' + (config.timeout || 5000) + '">' +
+        '</div>' +
+        '<div class="config-field">' +
+            '<label>Max Concurrent:</label>' +
+            '<input type="number" id="config-concurrent" value="' + (config.maxConcurrent || 5) + '">' +
+        '</div>' +
+        '<div class="config-field">' +
+            '<label>Retry Count:</label>' +
+            '<input type="number" id="config-retry" value="' + (config.retryCount || 3) + '">' +
+        '</div>' +
+    '</div>';
+};
+
+/**
+ * Setup config modal events
+ */
+UIManager.prototype.setupConfigModalEvents = function() {
+    var self = this;
+    var saveBtn = document.getElementById('save-config');
+    
+    if (saveBtn) {
+        saveBtn.addEventListener('click', function() {
+            self.saveConfiguration();
+        });
+    }
+};
+
+/**
+ * Save configuration
+ */
+UIManager.prototype.saveConfiguration = function() {
+    try {
+        var config = {};
         
-        const config = testConfig.get();
-        const schema = testConfig.getSchema();
+        var timeoutInput = document.getElementById('config-timeout');
+        var concurrentInput = document.getElementById('config-concurrent');
+        var retryInput = document.getElementById('config-retry');
         
-        modalContent.innerHTML = `
-            <div class="modal-header">
-                <h2>Test Configuration</h2>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="config-tabs">
-                    ${Object.keys(schema).map(section => `
-                        <button class="config-tab" data-section="${section}">${schema[section].title}</button>
-                    `).join('')}
-                </div>
-                <div class="config-content">
-                    ${Object.entries(schema).map(([section, sectionSchema]) => `
-                        <div class="config-section" data-section="${section}" style="display: none;">
-                            <h3>${sectionSchema.title}</h3>
-                            <p class="section-description">${sectionSchema.description}</p>
-                            ${this.generateConfigFields(section, sectionSchema.properties, config[section])}
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="resetConfig">Reset to Defaults</button>
-                <button class="btn btn-secondary" id="loadPreset">Load Preset</button>
-                <button class="btn btn-secondary" id="savePreset">Save Preset</button>
-                <button class="btn btn-primary" id="saveConfig">Save Configuration</button>
-            </div>
-        `;
+        if (timeoutInput) config.timeout = parseInt(timeoutInput.value);
+        if (concurrentInput) config.maxConcurrent = parseInt(concurrentInput.value);
+        if (retryInput) config.retryCount = parseInt(retryInput.value);
         
-        this.setupConfigModalEvents();
-        
-        // Show first tab
-        const firstTab = modalContent.querySelector('.config-tab');
-        if (firstTab) {
-            firstTab.click();
+        if (window.TestConfig) {
+            window.TestConfig.set(config);
         }
+        
+        this.closeModal(this.modals.config);
+        this.logMessage('Configuration saved');
+    } catch (error) {
+        this.logError('Failed to save configuration:', error);
     }
+};
 
-    /**
-     * Generate configuration fields
-     */
-    generateConfigFields(section, properties, values) {
-        return Object.entries(properties).map(([key, prop]) => {
-            const value = values[key];
-            const fieldId = `${section}_${key}`;
-            
-            switch (prop.type) {
-                case 'boolean':
-                    return `
-                        <div class="config-field">
-                            <label for="${fieldId}">
-                                <input type="checkbox" id="${fieldId}" ${value ? 'checked' : ''}>
-                                ${prop.title}
-                            </label>
-                            <p class="field-description">${prop.description}</p>
-                        </div>
-                    `;
-                
-                case 'number':
-                    return `
-                        <div class="config-field">
-                            <label for="${fieldId}">${prop.title}</label>
-                            <input type="number" id="${fieldId}" value="${value}" 
-                                   min="${prop.min || ''}" max="${prop.max || ''}" step="${prop.step || 1}">
-                            <p class="field-description">${prop.description}</p>
-                        </div>
-                    `;
-                
-                case 'select':
-                    return `
-                        <div class="config-field">
-                            <label for="${fieldId}">${prop.title}</label>
-                            <select id="${fieldId}">
-                                ${prop.options.map(option => `
-                                    <option value="${option.value}" ${value === option.value ? 'selected' : ''}>
-                                        ${option.label}
-                                    </option>
-                                `).join('')}
-                            </select>
-                            <p class="field-description">${prop.description}</p>
-                        </div>
-                    `;
-                
-                default:
-                    return `
-                        <div class="config-field">
-                            <label for="${fieldId}">${prop.title}</label>
-                            <input type="text" id="${fieldId}" value="${value}">
-                            <p class="field-description">${prop.description}</p>
-                        </div>
-                    `;
-            }
-        }).join('');
-    }
-
-    /**
-     * Setup configuration modal events
-     */
-    setupConfigModalEvents() {
-        const modal = this.modals.config;
-        
-        // Tab switching
-        modal.querySelectorAll('.config-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                const section = e.target.dataset.section;
-                this.showConfigSection(section);
-            });
-        });
-        
-        // Close modal
-        modal.querySelector('.close-modal').addEventListener('click', () => {
-            this.closeModal(modal);
-        });
-        
-        // Save configuration
-        modal.querySelector('#saveConfig').addEventListener('click', () => {
-            this.saveConfiguration();
-        });
-        
-        // Reset configuration
-        modal.querySelector('#resetConfig').addEventListener('click', () => {
-            if (confirm('Reset all configuration to defaults?')) {
-                testConfig.reset();
-                this.populateConfigModal();
-                this.logMessage('Configuration reset to defaults.');
-            }
-        });
-    }
-
-    /**
-     * Show configuration section
-     */
-    showConfigSection(section) {
-        const modal = this.modals.config;
-        
-        // Update tabs
-        modal.querySelectorAll('.config-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.section === section);
-        });
-        
-        // Update sections
-        modal.querySelectorAll('.config-section').forEach(sectionEl => {
-            sectionEl.style.display = sectionEl.dataset.section === section ? 'block' : 'none';
-        });
-    }
-
-    /**
-     * Save configuration from modal
-     */
-    saveConfiguration() {
-        const modal = this.modals.config;
-        const updates = {};
-        
-        // Collect all form values
-        modal.querySelectorAll('input, select').forEach(input => {
-            const [section, key] = input.id.split('_');
-            const path = `${section}.${key}`;
-            
-            let value;
-            if (input.type === 'checkbox') {
-                value = input.checked;
-            } else if (input.type === 'number') {
-                value = parseFloat(input.value);
-            } else {
-                value = input.value;
-            }
-            
-            updates[path] = value;
-        });
-        
-        // Update configuration
-        testConfig.update(updates);
-        
-        this.closeModal(modal);
-        this.logMessage('Configuration saved successfully.');
-    }
-
-    /**
-     * Show export modal
-     */
-    showExportModal() {
-        if (!this.modals.export || this.currentResults.length === 0) return;
-        
+/**
+ * Show export modal
+ */
+UIManager.prototype.showExportModal = function() {
+    if (this.modals.export) {
         this.populateExportModal();
         this.modals.export.style.display = 'flex';
     }
+};
 
-    /**
-     * Populate export modal
-     */
-    populateExportModal() {
-        const modalContent = this.modals.export.querySelector('.modal-content');
-        if (!modalContent) return;
-        
-        const formatters = this.reporter.getAvailableFormatters();
-        
-        modalContent.innerHTML = `
-            <div class="modal-header">
-                <h2>Export Test Results</h2>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="export-options">
-                    <div class="config-field">
-                        <label for="exportFormat">Export Format</label>
-                        <select id="exportFormat">
-                            ${formatters.map(formatter => `
-                                <option value="${formatter.key}">${formatter.name}</option>
-                            `).join('')}
-                        </select>
-                    </div>
-                    <div class="config-field">
-                        <label>
-                            <input type="checkbox" id="includeDetails" checked>
-                            Include detailed information
-                        </label>
-                    </div>
-                    <div class="config-field">
-                        <label>
-                            <input type="checkbox" id="includeCharts" checked>
-                            Include charts (HTML format only)
-                        </label>
-                    </div>
-                    <div class="config-field">
-                        <label for="exportTheme">Theme (HTML format only)</label>
-                        <select id="exportTheme">
-                            <option value="light">Light</option>
-                            <option value="dark">Dark</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="export-preview">
-                    <h3>Preview</h3>
-                    <div id="exportPreview" class="preview-content"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="previewExport">Preview</button>
-                <button class="btn btn-primary" id="downloadExport">Download</button>
-                <button class="btn btn-secondary" id="copyExport">Copy to Clipboard</button>
-            </div>
-        `;
-        
-        this.setupExportModalEvents();
-    }
+/**
+ * Populate export modal
+ */
+UIManager.prototype.populateExportModal = function() {
+    var exportContent = document.getElementById('export-content');
+    if (!exportContent) return;
+    
+    exportContent.innerHTML = 
+        '<div class="export-section">' +
+            '<h3>Export Results</h3>' +
+            '<div class="export-format">' +
+                '<label>Format:</label>' +
+                '<select id="export-format">' +
+                    '<option value="json">JSON</option>' +
+                    '<option value="csv">CSV</option>' +
+                    '<option value="html">HTML Report</option>' +
+                '</select>' +
+            '</div>' +
+            '<div class="export-actions">' +
+                '<button id="download-export" class="btn btn-primary">Download</button>' +
+                '<button id="copy-export" class="btn btn-secondary">Copy to Clipboard</button>' +
+            '</div>' +
+        '</div>';
+    
+    this.setupExportModalEvents();
+};
 
-    /**
-     * Setup export modal events
-     */
-    setupExportModalEvents() {
-        const modal = this.modals.export;
-        
-        // Close modal
-        modal.querySelector('.close-modal').addEventListener('click', () => {
-            this.closeModal(modal);
-        });
-        
-        // Preview export
-        modal.querySelector('#previewExport').addEventListener('click', () => {
-            this.previewExport();
-        });
-        
-        // Download export
-        modal.querySelector('#downloadExport').addEventListener('click', () => {
-            this.downloadExport();
-        });
-        
-        // Copy to clipboard
-        modal.querySelector('#copyExport').addEventListener('click', () => {
-            this.copyExportToClipboard();
+/**
+ * Setup export modal events
+ */
+UIManager.prototype.setupExportModalEvents = function() {
+    var self = this;
+    
+    var downloadBtn = document.getElementById('download-export');
+    var copyBtn = document.getElementById('copy-export');
+    
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', function() {
+            self.downloadExport();
         });
     }
+    
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+            self.copyExportToClipboard();
+        });
+    }
+};
 
-    /**
-     * Preview export
-     */
-    previewExport() {
-        const modal = this.modals.export;
-        const format = modal.querySelector('#exportFormat').value;
-        const includeDetails = modal.querySelector('#includeDetails').checked;
-        const includeCharts = modal.querySelector('#includeCharts').checked;
-        const theme = modal.querySelector('#exportTheme').value;
-        
-        const options = {
-            includeDetails,
-            includeCharts,
-            theme
-        };
-        
-        try {
-            const exportData = this.reporter.formatResults(this.currentResults, format, options);
-            const previewElement = modal.querySelector('#exportPreview');
-            
-            if (format === 'html') {
-                previewElement.innerHTML = `<iframe srcdoc="${exportData.replace(/"/g, '&quot;')}" style="width: 100%; height: 300px; border: 1px solid #ccc;"></iframe>`;
-            } else {
-                previewElement.innerHTML = `<pre><code>${this.escapeHtml(exportData.substring(0, 1000))}${exportData.length > 1000 ? '...' : ''}</code></pre>`;
-            }
-        } catch (error) {
-            this.logError('Failed to preview export:', error);
+/**
+ * Download export
+ */
+UIManager.prototype.downloadExport = function() {
+    var formatSelect = document.getElementById('export-format');
+    var format = formatSelect ? formatSelect.value : 'json';
+    
+    var content = '';
+    var filename = 'test-results.' + this.getFileExtension(format);
+    var mimeType = this.getMimeType(format);
+    
+    switch (format) {
+        case 'json':
+            content = JSON.stringify(this.currentResults, null, 2);
+            break;
+        case 'csv':
+            content = this.formatCSV(this.currentResults);
+            break;
+        case 'html':
+            content = this.formatHTML(this.currentResults);
+            break;
+    }
+    
+    this.downloadFile(content, filename, mimeType);
+    this.closeModal(this.modals.export);
+};
+
+/**
+ * Copy export to clipboard
+ */
+UIManager.prototype.copyExportToClipboard = function() {
+    var formatSelect = document.getElementById('export-format');
+    var format = formatSelect ? formatSelect.value : 'json';
+    
+    var content = '';
+    
+    switch (format) {
+        case 'json':
+            content = JSON.stringify(this.currentResults, null, 2);
+            break;
+        case 'csv':
+            content = this.formatCSV(this.currentResults);
+            break;
+        case 'html':
+            content = this.formatHTML(this.currentResults);
+            break;
+    }
+    
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(content).then(function() {
+            console.log('Results copied to clipboard');
+        }).catch(function(error) {
+            console.error('Failed to copy to clipboard:', error);
+        });
+    }
+};
+
+/**
+ * Clear results
+ */
+UIManager.prototype.clearResults = function() {
+    if (this.currentResults.length === 0) {
+        this.logMessage('No results to clear');
+        return;
+    }
+    
+    this.currentResults = [];
+    
+    if (this.elements.resultsPanel) {
+        this.elements.resultsPanel.innerHTML = '<div class="no-results">No test results available</div>';
+    }
+    
+    this.updateStats();
+    this.updateControls();
+    this.updateNodeStatuses();
+    this.hideErrorPanel();
+    
+    this.logMessage('Results cleared');
+};
+
+/**
+ * Toggle node selection
+ */
+UIManager.prototype.toggleNodeSelection = function(nodeType, selected) {
+    var index = this.selectedNodes.indexOf(nodeType);
+    
+    if (selected) {
+        if (index === -1) {
+            this.selectedNodes.push(nodeType);
+        }
+    } else {
+        if (index !== -1) {
+            this.selectedNodes.splice(index, 1);
         }
     }
-
-    /**
-     * Download export
-     */
-    downloadExport() {
-        const modal = this.modals.export;
-        const format = modal.querySelector('#exportFormat').value;
-        const includeDetails = modal.querySelector('#includeDetails').checked;
-        const includeCharts = modal.querySelector('#includeCharts').checked;
-        const theme = modal.querySelector('#exportTheme').value;
+    
+    var nodeElement = document.querySelector('[data-node-type="' + nodeType + '"]');
+    if (nodeElement) {
+        nodeElement.classList.toggle('selected', selected);
         
-        const options = {
-            includeDetails,
-            includeCharts,
-            theme
-        };
-        
-        try {
-            const exportData = this.reporter.formatResults(this.currentResults, format, options);
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `litegraph-test-results-${timestamp}.${this.getFileExtension(format)}`;
-            
-            this.downloadFile(exportData, filename, this.getMimeType(format));
-            this.logMessage(`Test results exported as ${filename}`);
-        } catch (error) {
-            this.logError('Failed to download export:', error);
+        var checkbox = nodeElement.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+            checkbox.checked = selected;
         }
     }
+    
+    this.updateSelectedCount();
+    this.updateControls();
+};
 
-    /**
-     * Copy export to clipboard
-     */
-    async copyExportToClipboard() {
-        const modal = this.modals.export;
-        const format = modal.querySelector('#exportFormat').value;
-        const includeDetails = modal.querySelector('#includeDetails').checked;
-        const includeCharts = modal.querySelector('#includeCharts').checked;
-        const theme = modal.querySelector('#exportTheme').value;
-        
-        const options = {
-            includeDetails,
-            includeCharts,
-            theme
-        };
-        
-        try {
-            const exportData = this.reporter.formatResults(this.currentResults, format, options);
-            await navigator.clipboard.writeText(exportData);
-            this.logMessage('Test results copied to clipboard.');
-        } catch (error) {
-            this.logError('Failed to copy to clipboard:', error);
+/**
+ * Select category nodes
+ */
+UIManager.prototype.selectCategoryNodes = function(category, selected) {
+    var categoryElement = document.querySelector('[data-category="' + category + '"]');
+    if (!categoryElement) return;
+    
+    var checkboxes = categoryElement.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < checkboxes.length; i++) {
+        var checkbox = checkboxes[i];
+        if (!checkbox.disabled) {
+            checkbox.checked = selected;
+            var nodeType = checkbox.closest('.node-item').dataset.nodeType;
+            this.toggleNodeSelection(nodeType, selected);
         }
     }
+};
 
-    /**
-     * Clear all results
-     */
-    clearResults() {
-        console.log('[UIManager] clearResults called, current results length:', this.currentResults.length);
-        
-        if (this.currentResults.length === 0) {
-            console.log('[UIManager] No results to clear');
-            return;
-        }
-        
-        if (confirm('Clear all test results?')) {
-            console.log('[UIManager] User confirmed clear, clearing results');
-            this.currentResults = [];
-            this.displayResults([]);
-            this.updateStats();
-            this.updateControls();
-            this.logMessage('Test results cleared.');
-        } else {
-            console.log('[UIManager] User cancelled clear');
-        }
+/**
+ * Update selected count
+ */
+UIManager.prototype.updateSelectedCount = function() {
+    var count = this.selectedNodes.length;
+    var countElement = this.elements.selectedCount;
+    
+    if (countElement) {
+        countElement.textContent = count + ' selected';
     }
+};
 
-    /**
-     * Toggle node selection
-     */
-    toggleNodeSelection(nodeType, selected) {
-        if (selected) {
-            this.selectedNodes.add(nodeType);
-        } else {
-            this.selectedNodes.delete(nodeType);
-        }
-        
-        this.updateSelectedCount();
-        this.updateControls();
+/**
+ * Select all nodes
+ */
+UIManager.prototype.selectAllNodes = function() {
+    var nodeTypes = this.app.getAvailableNodeTypes();
+    
+    for (var i = 0; i < nodeTypes.length; i++) {
+        var nodeType = nodeTypes[i];
+        this.toggleNodeSelection(nodeType, true);
     }
-
-    /**
-     * Select/deselect category nodes
-     */
-    selectCategoryNodes(category, selected) {
-        const categoryElement = document.querySelector(`[data-category="${category}"]`).closest('.node-category');
-        const checkboxes = categoryElement.querySelectorAll('input[type="checkbox"]');
-        
-        checkboxes.forEach(checkbox => {
-            if (!checkbox.disabled) {
-                checkbox.checked = selected;
-                const nodeType = checkbox.id.replace('node_', '');
-                this.toggleNodeSelection(nodeType, selected);
-            }
-        });
-    }
-
-    /**
-     * Update selected node count
-     */
-    updateSelectedCount() {
-        const count = this.selectedNodes.size;
-        const countElement = document.getElementById('selectedCount');
-        if (countElement) {
-            countElement.textContent = count;
+    
+    var checkboxes = document.querySelectorAll('.node-item input[type="checkbox"]');
+    for (var j = 0; j < checkboxes.length; j++) {
+        var checkbox = checkboxes[j];
+        if (!checkbox.disabled) {
+            checkbox.checked = true;
         }
     }
+};
 
-    /**
-     * Select all nodes globally
-     */
-    selectAllNodes() {
-        const nodeTypes = this.app.getAvailableNodeTypes();
-        nodeTypes.forEach(nodeType => {
-            this.selectedNodes.add(nodeType);
-        });
-        
-        // Update checkboxes in UI
-        const checkboxes = document.querySelectorAll('#node-list input[type="checkbox"]');
-        checkboxes.forEach(checkbox => {
-            if (!checkbox.disabled) {
-                checkbox.checked = true;
-            }
-        });
-        
-        // Update test config
-        testConfig.set('nodeSelection.selectedNodes', Array.from(this.selectedNodes));
-        
-        this.updateSelectedCount();
-        this.logMessage(`Selected all ${nodeTypes.length} nodes`);
+/**
+ * Deselect all nodes
+ */
+UIManager.prototype.deselectAllNodes = function() {
+    this.selectedNodes = [];
+    
+    var checkboxes = document.querySelectorAll('.node-item input[type="checkbox"]');
+    for (var i = 0; i < checkboxes.length; i++) {
+        checkboxes[i].checked = false;
     }
-
-    /**
-     * Deselect all nodes globally
-     */
-    deselectAllNodes() {
-        this.selectedNodes.clear();
-        
-        // Update checkboxes in UI
-        const checkboxes = document.querySelectorAll('#node-list input[type="checkbox"]');
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = false;
-        });
-        
-        // Update test config
-        testConfig.set('nodeSelection.selectedNodes', []);
-        
-        this.updateSelectedCount();
-        this.logMessage('Deselected all nodes');
+    
+    var nodeElements = document.querySelectorAll('.node-item');
+    for (var j = 0; j < nodeElements.length; j++) {
+        nodeElements[j].classList.remove('selected');
     }
+    
+    this.updateSelectedCount();
+    this.updateControls();
+};
 
-    /**
-     * Filter nodes by search term
-     */
-    filterNodes(searchTerm) {
-        const nodeItems = document.querySelectorAll('.node-item');
-        const term = searchTerm.toLowerCase();
+/**
+ * Filter nodes
+ */
+UIManager.prototype.filterNodes = function(searchTerm) {
+    var nodeItems = document.querySelectorAll('.node-item');
+    
+    for (var i = 0; i < nodeItems.length; i++) {
+        var nodeItem = nodeItems[i];
+        var nodeType = nodeItem.dataset.nodeType;
+        var matches = nodeType.toLowerCase().indexOf(searchTerm.toLowerCase()) !== -1;
         
-        nodeItems.forEach(item => {
-            const nodeType = item.dataset.nodeType.toLowerCase();
-            const matches = nodeType.includes(term);
-            item.style.display = matches ? 'flex' : 'none';
-        });
-        
-        this.updateCategoryVisibility();
+        nodeItem.style.display = matches ? 'block' : 'none';
     }
+    
+    this.updateCategoryVisibility();
+};
 
-    /**
-     * Filter by category
-     */
-    filterByCategory(category) {
-        const categories = document.querySelectorAll('.node-category');
+/**
+ * Filter by category
+ */
+UIManager.prototype.filterByCategory = function(category) {
+    var categories = document.querySelectorAll('.node-category');
+    
+    for (var i = 0; i < categories.length; i++) {
+        var categoryElement = categories[i];
+        var categoryName = categoryElement.dataset.category;
+        var matches = !category || categoryName === category;
         
-        categories.forEach(categoryEl => {
-            const categoryName = categoryEl.querySelector('.category-name').textContent;
-            const matches = !category || categoryName === category;
-            categoryEl.style.display = matches ? 'block' : 'none';
-        });
+        categoryElement.style.display = matches ? 'block' : 'none';
     }
+};
 
-    /**
-     * Filter by status
-     */
-    filterByStatus(status) {
-        const resultGroups = document.querySelectorAll('.result-group');
+/**
+ * Filter by status
+ */
+UIManager.prototype.filterByStatus = function(status) {
+    var nodeItems = document.querySelectorAll('.node-item');
+    
+    for (var i = 0; i < nodeItems.length; i++) {
+        var nodeItem = nodeItems[i];
+        var nodeType = nodeItem.dataset.nodeType;
+        var result = this.getNodeTestResult(nodeType);
         
-        resultGroups.forEach(group => {
-            let matches = true;
-            
-            if (status === 'passed') {
-                matches = group.classList.contains('all-passed');
-            } else if (status === 'failed') {
-                matches = group.classList.contains('has-failures');
-            }
-            
-            group.style.display = matches ? 'block' : 'none';
-        });
-    }
-
-    /**
-     * Update category visibility based on node visibility
-     */
-    updateCategoryVisibility() {
-        const categories = document.querySelectorAll('.node-category');
-        
-        categories.forEach(category => {
-            const visibleNodes = category.querySelectorAll('.node-item[style*="flex"], .node-item:not([style*="none"])');
-            category.style.display = visibleNodes.length > 0 ? 'block' : 'none';
-        });
-    }
-
-    /**
-     * Toggle category expansion
-     */
-    toggleCategory(category, button) {
-        const categoryElement = button.closest('.node-category');
-        const nodesElement = categoryElement.querySelector('.category-nodes');
-        const isExpanded = nodesElement.style.display !== 'none';
-        
-        nodesElement.style.display = isExpanded ? 'none' : 'block';
-        button.textContent = isExpanded ? '▶' : '▼';
-    }
-
-    /**
-     * Toggle result group expansion
-     */
-    toggleResultGroup(nodeType, button) {
-        const groupElement = button.closest('.result-group');
-        const resultsElement = groupElement.querySelector('.group-results');
-        const isExpanded = resultsElement.style.display !== 'none';
-        
-        resultsElement.style.display = isExpanded ? 'none' : 'block';
-        button.textContent = isExpanded ? '▶' : '▼';
-    }
-
-    /**
-     * Show node information
-     */
-    showNodeInfo(nodeType) {
-        const nodeInfo = this.app.getNodeInfo(nodeType);
-        if (!nodeInfo) {
-            this.logWarning(`No information available for node: ${nodeType}`);
-            return;
+        var matches = true;
+        if (status === 'passed') {
+            matches = result && result.status === 'passed';
+        } else if (status === 'failed') {
+            matches = result && result.status === 'failed';
+        } else if (status === 'untested') {
+            matches = !result;
         }
         
-        // Create info modal
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>Node Information: ${nodeType}</h2>
-                    <button class="close-modal">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="node-info-content">
-                        ${this.formatNodeInfo(nodeInfo)}
-                    </div>
-                </div>
-            </div>
-        `;
+        nodeItem.style.display = matches ? 'block' : 'none';
+    }
+    
+    this.updateCategoryVisibility();
+};
+
+/**
+ * Update category visibility
+ */
+UIManager.prototype.updateCategoryVisibility = function() {
+    var categories = document.querySelectorAll('.node-category');
+    
+    for (var i = 0; i < categories.length; i++) {
+        var category = categories[i];
+        var visibleNodes = category.querySelectorAll('.node-item[style*="block"], .node-item:not([style])');
         
-        modal.querySelector('.close-modal').addEventListener('click', () => {
+        category.style.display = visibleNodes.length > 0 ? 'block' : 'none';
+    }
+};
+
+/**
+ * Show node info
+ */
+UIManager.prototype.showNodeInfo = function(nodeType) {
+    var nodeInfo = this.app.getNodeInfo ? this.app.getNodeInfo(nodeType) : null;
+    
+    if (!nodeInfo) {
+        this.logWarning('No information available for node type: ' + nodeType);
+        return;
+    }
+    
+    var modal = document.createElement('div');
+    modal.className = 'modal node-info-modal';
+    modal.innerHTML = 
+        '<div class="modal-content">' +
+            '<div class="modal-header">' +
+                '<h2>Node Information: ' + nodeType + '</h2>' +
+                '<button class="close-modal">&times;</button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+                this.formatNodeInfo(nodeInfo) +
+            '</div>' +
+        '</div>';
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+    
+    var self = this;
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
             document.body.removeChild(modal);
-        });
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                document.body.removeChild(modal);
-            }
-        });
-        
-        document.body.appendChild(modal);
-        modal.style.display = 'flex';
-    }
+        }
+    });
+    
+    var closeBtn = modal.querySelector('.close-modal');
+    closeBtn.addEventListener('click', function() {
+        document.body.removeChild(modal);
+    });
+};
 
-    /**
-     * Format node information for display
-     */
-    formatNodeInfo(nodeInfo) {
-        return `
-            <div class="info-section">
-                <h3>Basic Information</h3>
-                <p><strong>Type:</strong> ${nodeInfo.type || 'Unknown'}</p>
-                <p><strong>Category:</strong> ${nodeInfo.category || 'Other'}</p>
-                <p><strong>Description:</strong> ${nodeInfo.description || 'No description available'}</p>
-            </div>
-            
-            ${nodeInfo.inputs && nodeInfo.inputs.length > 0 ? `
-            <div class="info-section">
-                <h3>Inputs</h3>
-                <ul>
-                    ${nodeInfo.inputs.map(input => `
-                        <li><strong>${input.name}</strong> (${input.type}) - ${input.description || 'No description'}</li>
-                    `).join('')}
-                </ul>
-            </div>
-            ` : ''}
-            
-            ${nodeInfo.outputs && nodeInfo.outputs.length > 0 ? `
-            <div class="info-section">
-                <h3>Outputs</h3>
-                <ul>
-                    ${nodeInfo.outputs.map(output => `
-                        <li><strong>${output.name}</strong> (${output.type}) - ${output.description || 'No description'}</li>
-                    `).join('')}
-                </ul>
-            </div>
-            ` : ''}
-            
-            ${nodeInfo.properties && Object.keys(nodeInfo.properties).length > 0 ? `
-            <div class="info-section">
-                <h3>Properties</h3>
-                <ul>
-                    ${Object.entries(nodeInfo.properties).map(([key, prop]) => `
-                        <li><strong>${key}</strong> (${prop.type}) - ${prop.description || 'No description'}</li>
-                    `).join('')}
-                </ul>
-            </div>
-            ` : ''}
-        `;
+/**
+ * Format node info
+ */
+UIManager.prototype.formatNodeInfo = function(nodeInfo) {
+    var html = '<div class="node-info-content">';
+    
+    if (nodeInfo.description) {
+        html += '<div class="info-section">' +
+            '<h3>Description</h3>' +
+            '<p>' + this.escapeHtml(nodeInfo.description) + '</p>' +
+        '</div>';
     }
-
-    /**
-     * Handle keyboard shortcuts
-     */
-    handleKeyboardShortcuts(e) {
-        if (e.ctrlKey || e.metaKey) {
-            switch (e.key) {
-                case 'r':
-                    e.preventDefault();
-                    if (this.selectedNodes.size > 0) {
-                        this.runSelectedTests();
-                    } else {
-                        this.runAllTests();
-                    }
-                    break;
-                
-                case 's':
-                    e.preventDefault();
-                    this.stopTests();
-                    break;
-                
-                case 'e':
-                    e.preventDefault();
-                    if (this.currentResults.length > 0) {
-                        this.showExportModal();
-                    }
-                    break;
-                
-                case 'k':
-                    e.preventDefault();
-                    this.clearResults();
-                    break;
-            }
+    
+    if (nodeInfo.inputs && nodeInfo.inputs.length > 0) {
+        html += '<div class="info-section">' +
+            '<h3>Inputs</h3>' +
+            '<ul>';
+        
+        for (var i = 0; i < nodeInfo.inputs.length; i++) {
+            var input = nodeInfo.inputs[i];
+            html += '<li>' + input.name + ' (' + input.type + ')</li>';
         }
         
-        if (e.key === 'Escape') {
-            // Close any open modals
-            const openModals = document.querySelectorAll('.modal[style*="flex"]');
-            openModals.forEach(modal => this.closeModal(modal));
+        html += '</ul></div>';
+    }
+    
+    if (nodeInfo.outputs && nodeInfo.outputs.length > 0) {
+        html += '<div class="info-section">' +
+            '<h3>Outputs</h3>' +
+            '<ul>';
+        
+        for (var j = 0; j < nodeInfo.outputs.length; j++) {
+            var output = nodeInfo.outputs[j];
+            html += '<li>' + output.name + ' (' + output.type + ')</li>';
+        }
+        
+        html += '</ul></div>';
+    }
+    
+    html += '</div>';
+    return html;
+};
+
+/**
+ * Handle keyboard shortcuts
+ */
+UIManager.prototype.handleKeyboardShortcuts = function(e) {
+    if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+            case 'a':
+                e.preventDefault();
+                this.selectAllNodes();
+                break;
+            case 'r':
+                e.preventDefault();
+                if (this.selectedNodes.length > 0) {
+                    this.runSelectedTests();
+                } else {
+                    this.runAllTests();
+                }
+                break;
+            case 's':
+                e.preventDefault();
+                this.stopTests();
+                break;
+            case 'e':
+                e.preventDefault();
+                if (this.currentResults.length > 0) {
+                    this.showExportModal();
+                }
+                break;
+            case 'c':
+                e.preventDefault();
+                this.clearResults();
+                break;
         }
     }
-
-    /**
-     * Handle window resize
-     */
-    handleResize() {
-        // Adjust layout if needed
-        this.updateLayout();
+    
+    if (e.key === 'Escape') {
+        var openModals = document.querySelectorAll('.modal[style*="flex"]');
+        for (var i = 0; i < openModals.length; i++) {
+            this.closeModal(openModals[i]);
+        }
     }
+};
 
-    /**
-     * Update layout
-     */
-    updateLayout() {
-        // Responsive layout adjustments
-        const container = document.querySelector('.container');
-        if (!container) return;
+/**
+ * Handle resize
+ */
+UIManager.prototype.handleResize = function() {
+    this.updateLayout();
+};
+
+/**
+ * Update layout
+ */
+UIManager.prototype.updateLayout = function() {
+    var container = document.querySelector('.container');
+    if (!container) return;
+    
+    var width = window.innerWidth;
+    
+    if (width < 768) {
+        container.classList.add('mobile-layout');
+    } else {
+        container.classList.remove('mobile-layout');
+    }
+};
+
+/**
+ * Update progress
+ */
+UIManager.prototype.updateProgress = function(progress, message) {
+    if (this.elements.progressBar) {
+        this.elements.progressBar.style.transition = 'width 0.3s ease-out';
+        this.elements.progressBar.style.width = progress + '%';
         
-        const width = window.innerWidth;
-        
-        if (width < 768) {
-            container.classList.add('mobile-layout');
+        this.elements.progressBar.className = 'progress-bar';
+        if (progress < 30) {
+            this.elements.progressBar.classList.add('progress-starting');
+        } else if (progress < 70) {
+            this.elements.progressBar.classList.add('progress-active');
+        } else if (progress < 100) {
+            this.elements.progressBar.classList.add('progress-finishing');
         } else {
-            container.classList.remove('mobile-layout');
+            this.elements.progressBar.classList.add('progress-complete');
         }
     }
-
-    /**
-     * Update progress display
-     */
-    updateProgress(progress, message) {
-        if (this.elements.progressBar) {
-            this.elements.progressBar.style.width = `${progress}%`;
-        }
+    
+    if (this.elements.progressText) {
+        this.elements.progressText.textContent = message || (progress.toFixed(1) + '%');
         
-        if (this.elements.progressText) {
-            this.elements.progressText.textContent = message || `${progress.toFixed(1)}%`;
+        if (progress > 0 && progress < 100) {
+            this.elements.progressText.classList.add('progress-active-text');
+        } else {
+            this.elements.progressText.classList.remove('progress-active-text');
         }
     }
-
-    /**
-     * Close modal
-     */
-    closeModal(modal) {
-        modal.style.display = 'none';
+    
+    if (progress > 0 && progress < 100) {
+        document.title = 'Testing... ' + Math.round(progress) + '% - LiteGraph Tester';
+    } else {
+        document.title = 'LiteGraph Tester';
     }
+};
 
-    /**
-     * Log message to console
-     */
-    logMessage(message, type = 'info') {
-        const timestamp = new Date().toLocaleTimeString();
-        const logEntry = `[${timestamp}] ${message}`;
+/**
+ * Close modal
+ */
+UIManager.prototype.closeModal = function(modal) {
+    modal.style.display = 'none';
+};
+
+/**
+ * Log message
+ */
+UIManager.prototype.logMessage = function(message, type) {
+    type = type || 'info';
+    var timestamp = new Date().toLocaleTimeString();
+    var logEntry = '[' + timestamp + '] ' + message;
+    
+    if (this.elements.consoleOutput) {
+        var logElement = document.createElement('div');
+        logElement.className = 'log-entry log-' + type;
+        logElement.textContent = logEntry;
         
-        if (this.elements.consoleOutput) {
-            const logElement = document.createElement('div');
-            logElement.className = `log-entry log-${type}`;
-            logElement.textContent = logEntry;
-            
-            this.elements.consoleOutput.appendChild(logElement);
-            this.elements.consoleOutput.scrollTop = this.elements.consoleOutput.scrollHeight;
-            
-            // Limit console entries
-            const entries = this.elements.consoleOutput.children;
-            if (entries.length > 1000) {
-                this.elements.consoleOutput.removeChild(entries[0]);
-            }
+        this.elements.consoleOutput.appendChild(logElement);
+        this.elements.consoleOutput.scrollTop = this.elements.consoleOutput.scrollHeight;
+        
+        var entries = this.elements.consoleOutput.children;
+        if (entries.length > 1000) {
+            this.elements.consoleOutput.removeChild(entries[0]);
         }
-        
-        console.log(logEntry);
     }
+    
+    console.log(logEntry);
+};
 
-    /**
-     * Log warning message
-     */
-    logWarning(message) {
-        this.logMessage(message, 'warning');
-    }
+/**
+ * Log warning
+ */
+UIManager.prototype.logWarning = function(message) {
+    this.logMessage(message, 'warning');
+};
 
-    /**
-     * Log error message
-     */
-    logError(message, error) {
-        const errorMessage = error ? `${message} ${error.message}` : message;
-        this.logMessage(errorMessage, 'error');
-        console.error(message, error);
-    }
+/**
+ * Log error
+ */
+UIManager.prototype.logError = function(message, error) {
+    var errorMessage = error ? (message + ' ' + error.message) : message;
+    this.logMessage(errorMessage, 'error');
+    console.error(message, error);
+};
 
-    /**
-     * Calculate statistics from results
-     */
-    calculateStats(results) {
-        console.log('[UIManager] calculateStats called with:', results);
-        
-        if (!results || results.length === 0) {
-            console.log('[UIManager] No results or empty results array');
-            return {
-                total: 0,
-                passed: 0,
-                failed: 0,
-                skipped: 0,
-                successRate: 0,
-                coverage: 0,
-                totalDuration: 0,
-                averageDuration: 0
-            };
-        }
-        
-        const stats = {
-            total: results.length,
+/**
+ * Calculate stats
+ */
+UIManager.prototype.calculateStats = function(results) {
+    console.log('[UIManager] calculateStats called with:', results);
+    
+    if (!results || results.length === 0) {
+        console.log('[UIManager] No results or empty results array');
+        return {
+            total: 0,
             passed: 0,
             failed: 0,
             skipped: 0,
-            totalDuration: 0,
-            averageDuration: 0,
             successRate: 0,
-            coverage: 0
+            coverage: 0,
+            totalDuration: 0,
+            averageDuration: 0
         };
+    }
+    
+    var stats = {
+        total: results.length,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        totalDuration: 0,
+        averageDuration: 0,
+        successRate: 0,
+        coverage: 0
+    };
+    
+    var testedNodeTypes = [];
+    
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
         
-        for (const result of results) {
-            if (result.status === 'passed') {
-                stats.passed++;
-            } else if (result.status === 'failed') {
-                stats.failed++;
-            } else {
-                stats.skipped++;
-            }
-            
-            stats.totalDuration += result.duration || 0;
+        if (result.status === 'passed') {
+            stats.passed++;
+        } else if (result.status === 'failed') {
+            stats.failed++;
+        } else {
+            stats.skipped++;
         }
         
-        stats.averageDuration = stats.total > 0 ? stats.totalDuration / stats.total : 0;
-        stats.successRate = stats.total > 0 ? (stats.passed / stats.total) * 100 : 0;
-        
-        // Calculate coverage based on tested node types vs available
-        const testedNodeTypes = new Set(results.map(r => r.nodeType).filter(Boolean));
-        const availableNodeTypes = this.app.getAvailableNodeTypes() || [];
-        stats.coverage = availableNodeTypes.length > 0 ? 
-            Math.round((testedNodeTypes.size / availableNodeTypes.length) * 100) : 0;
-        
-        console.log('[UIManager] Calculated stats:', stats);
-        return stats;
-    }
-
-    /**
-     * Extract category from node type
-     */
-    extractCategory(nodeType) {
-        // Try to extract category from node type name
-        const parts = nodeType.split('/');
-        if (parts.length > 1) {
-            return parts[0];
+        if (result.duration) {
+            stats.totalDuration += result.duration;
         }
         
-        // Fallback to common prefixes
-        const prefixes = ['Math', 'Logic', 'String', 'Array', 'Object', 'Time', 'File', 'Network', 'UI'];
-        for (const prefix of prefixes) {
-            if (nodeType.startsWith(prefix)) {
-                return prefix;
-            }
+        if (result.nodeType && testedNodeTypes.indexOf(result.nodeType) === -1) {
+            testedNodeTypes.push(result.nodeType);
         }
-        
-        return 'Other';
     }
+    
+    stats.averageDuration = stats.total > 0 ? stats.totalDuration / stats.total : 0;
+    stats.successRate = stats.total > 0 ? (stats.passed / stats.total) * 100 : 0;
+    
+    var availableNodeTypes = this.app.getAvailableNodeTypes() || [];
+    stats.coverage = availableNodeTypes.length > 0 ? 
+        Math.round((testedNodeTypes.length / availableNodeTypes.length) * 100) : 0;
+    
+    console.log('[UIManager] Calculated stats:', stats);
+    return stats;
+};
 
-    /**
-     * Get available categories
-     */
-    getAvailableCategories() {
-        const nodeTypes = this.app.getAvailableNodeTypes();
-        const categories = new Set();
-        
-        for (const nodeType of nodeTypes) {
-            const category = this.extractCategory(nodeType);
-            categories.add(category);
+/**
+ * Extract category from node type
+ */
+UIManager.prototype.extractCategory = function(nodeType) {
+    var parts = nodeType.split('/');
+    if (parts.length > 1) {
+        return parts[0];
+    }
+    
+    var prefixes = ['Math', 'Logic', 'String', 'Array', 'Object', 'Time', 'File', 'Network', 'UI'];
+    for (var i = 0; i < prefixes.length; i++) {
+        var prefix = prefixes[i];
+        if (nodeType.indexOf(prefix) === 0) {
+            return prefix;
         }
-        
-        return Array.from(categories).sort();
     }
+    
+    return 'Other';
+};
 
-    /**
-     * Get file extension for format
-     */
-    getFileExtension(format) {
-        const extensions = {
-            html: 'html',
-            json: 'json',
-            csv: 'csv',
-            markdown: 'md',
-            junit: 'xml',
-            console: 'txt'
-        };
-        
-        return extensions[format] || 'txt';
+/**
+ * Get available categories
+ */
+UIManager.prototype.getAvailableCategories = function() {
+    var nodeTypes = this.app.getAvailableNodeTypes();
+    var categories = [];
+    
+    for (var i = 0; i < nodeTypes.length; i++) {
+        var nodeType = nodeTypes[i];
+        var category = this.extractCategory(nodeType);
+        if (categories.indexOf(category) === -1) {
+            categories.push(category);
+        }
     }
+    
+    return categories.sort();
+};
 
-    /**
-     * Get MIME type for format
-     */
-    getMimeType(format) {
-        const mimeTypes = {
-            html: 'text/html',
-            json: 'application/json',
-            csv: 'text/csv',
-            markdown: 'text/markdown',
-            junit: 'application/xml',
-            console: 'text/plain'
-        };
+/**
+ * Group nodes by category
+ */
+UIManager.prototype.groupNodesByCategory = function(nodeTypes) {
+    var grouped = {};
+    
+    for (var i = 0; i < nodeTypes.length; i++) {
+        var nodeType = nodeTypes[i];
+        var category = this.extractCategory(nodeType);
         
-        return mimeTypes[format] || 'text/plain';
+        if (!grouped[category]) {
+            grouped[category] = [];
+        }
+        grouped[category].push(nodeType);
     }
+    
+    var sortedGrouped = {};
+    var sortedKeys = Object.keys(grouped).sort();
+    for (var j = 0; j < sortedKeys.length; j++) {
+        var key = sortedKeys[j];
+        sortedGrouped[key] = grouped[key];
+    }
+    
+    return sortedGrouped;
+};
 
-    /**
-     * Download file
-     */
-    downloadFile(content, filename, mimeType) {
-        const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
+/**
+ * Group results by node type
+ */
+UIManager.prototype.groupResultsByNodeType = function(results) {
+    var grouped = {};
+    
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
+        var nodeType = result.nodeType || 'Unknown';
         
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        if (!grouped[nodeType]) {
+            grouped[nodeType] = [];
+        }
+        grouped[nodeType].push(result);
+    }
+    
+    return grouped;
+};
+
+/**
+ * Get node test result
+ */
+UIManager.prototype.getNodeTestResult = function(nodeType) {
+    var nodeResults = this.currentResults.filter(function(r) { return r.nodeType === nodeType; });
+    
+    if (nodeResults.length === 0) return null;
+    
+    var hasFailures = nodeResults.some(function(r) { return r.status === 'failed'; });
+    
+    return {
+        status: hasFailures ? 'failed' : 'passed',
+        count: nodeResults.length
+    };
+};
+
+/**
+ * Get status icon
+ */
+UIManager.prototype.getStatusIcon = function(status) {
+    var icons = {
+        passed: '✓',
+        failed: '✗',
+        skipped: '⊘',
+        running: '⟳'
+    };
+    
+    return icons[status] || '?';
+};
+
+/**
+ * Get file extension
+ */
+UIManager.prototype.getFileExtension = function(format) {
+    var extensions = {
+        html: 'html',
+        json: 'json',
+        csv: 'csv',
+        markdown: 'md',
+        junit: 'xml',
+        console: 'txt'
+    };
+    
+    return extensions[format] || 'txt';
+};
+
+/**
+ * Get MIME type
+ */
+UIManager.prototype.getMimeType = function(format) {
+    var mimeTypes = {
+        html: 'text/html',
+        json: 'application/json',
+        csv: 'text/csv',
+        markdown: 'text/markdown',
+        junit: 'application/xml',
+        console: 'text/plain'
+    };
+    
+    return mimeTypes[format] || 'text/plain';
+};
+
+/**
+ * Download file
+ */
+UIManager.prototype.downloadFile = function(content, filename, mimeType) {
+    var blob = new Blob([content], { type: mimeType });
+    var url = URL.createObjectURL(blob);
+    
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    URL.revokeObjectURL(url);
+};
+
+/**
+ * Escape HTML
+ */
+UIManager.prototype.escapeHtml = function(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+};
+
+/**
+ * Format CSV
+ */
+UIManager.prototype.formatCSV = function(results) {
+    var csv = 'NodeType,TestName,Status,Duration,Error\n';
+    
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
+        var row = [
+            result.nodeType || '',
+            result.testName || '',
+            result.status || '',
+            result.duration || '',
+            (result.error || '').replace(/"/g, '""')
+        ];
+        csv += '"' + row.join('","') + '"\n';
+    }
+    
+    return csv;
+};
+
+/**
+ * Format HTML
+ */
+UIManager.prototype.formatHTML = function(results) {
+    var html = '<!DOCTYPE html><html><head><title>Test Results</title></head><body>';
+    html += '<h1>Test Results</h1>';
+    html += '<table border="1"><tr><th>Node Type</th><th>Test Name</th><th>Status</th><th>Duration</th><th>Error</th></tr>';
+    
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
+        html += '<tr>';
+        html += '<td>' + this.escapeHtml(result.nodeType || '') + '</td>';
+        html += '<td>' + this.escapeHtml(result.testName || '') + '</td>';
+        html += '<td>' + this.escapeHtml(result.status || '') + '</td>';
+        html += '<td>' + (result.duration || '') + '</td>';
+        html += '<td>' + this.escapeHtml(result.error || '') + '</td>';
+        html += '</tr>';
+    }
+    
+    html += '</table></body></html>';
+    return html;
+};
+
+/**
+ * Show error panel
+ */
+UIManager.prototype.showErrorPanel = function(errors) {
+    var errorPanel = document.getElementById('error-panel');
+    var errorContent = document.getElementById('error-panel-content');
+    var errorCount = document.getElementById('error-count');
+    
+    if (!errorPanel || !errorContent || !errorCount) {
+        console.warn('Error panel elements not found');
+        return;
+    }
+    
+    errorCount.textContent = errors.length;
+    errorContent.innerHTML = '';
+    
+    for (var i = 0; i < errors.length; i++) {
+        var error = errors[i];
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'error-item';
+        errorDiv.innerHTML = 
+            '<div class="error-header">' +
+                '<span class="error-type">' + (error.type || 'Error') + '</span>' +
+                '<span class="error-node">' + (error.nodeType || 'Unknown') + '</span>' +
+            '</div>' +
+            '<div class="error-message">' + this.escapeHtml(error.message || '') + '</div>';
         
-        URL.revokeObjectURL(url);
+        errorContent.appendChild(errorDiv);
     }
+    
+    errorPanel.classList.remove('hidden');
+};
 
-    /**
-     * Escape HTML
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+/**
+ * Hide error panel
+ */
+UIManager.prototype.hideErrorPanel = function() {
+    var errorPanel = document.getElementById('error-panel');
+    if (errorPanel) {
+        errorPanel.classList.add('hidden');
     }
-}
+};
 
-export default UIManager;
+/**
+ * Show errors from results
+ */
+UIManager.prototype.showErrorsFromResults = function(results) {
+    var errors = [];
+    
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
+        if (result.status === 'failed') {
+            errors.push({
+                type: 'Test Failure',
+                nodeType: result.nodeType,
+                message: result.error || 'Test failed without specific error message'
+            });
+        }
+    }
+    
+    if (errors.length > 0) {
+        this.showErrorPanel(errors);
+    }
+};
+
+// Make UIManager available globally
+window.UIManager = UIManager;

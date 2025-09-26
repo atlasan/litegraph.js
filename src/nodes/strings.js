@@ -1,5 +1,4 @@
-import { LiteGraph } from "../litegraph.js";
-
+﻿
 function toString(a) {
     if (a && a.constructor === Object) {
         try {
@@ -101,12 +100,9 @@ function toFixed(a) {
 LiteGraph.wrapFunctionAsNode("string/toFixed", toFixed, ["number"], "string", { precision: 0 });
 
 
-class StringToTable {
+function StringToTable() {
 
-    static title = "toTable";
-    static desc = "Splits a string to table";
 
-    constructor() {
         this.addInput("", "string");
         this.addOutput("table", "table");
         this.addOutput("rows", "number");
@@ -115,7 +111,7 @@ class StringToTable {
         this._table = null;
     }
 
-    onExecute() {
+StringToTable.prototype.onExecute = function() {
         var input = this.getInputData(0);
         if (!input) return;
         var separator = this.properties.separator || ",";
@@ -130,4 +126,7 @@ class StringToTable {
         this.setOutputData(1, this._table ? this._table.length : 0);
     }
 }
+StringToTable.title = "toTable";
+StringToTable.desc = "Splits a string to table";
 LiteGraph.registerNodeType("string/toTable", StringToTable);
+

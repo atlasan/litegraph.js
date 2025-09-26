@@ -1,18 +1,14 @@
-import { LiteGraph } from "../litegraph.js";
-
+﻿
 // Converter
-class Converter {
+function Converter() {
 
-    static title = "Converter";
-    static desc = "type A to type B";
 
-    constructor() {
         this.addInput("in", 0);
         this.addOutput("out", 0);
         this.size = [80, 30];
     }
 
-    onExecute() {
+Converter.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -66,7 +62,7 @@ class Converter {
         }
     }
 
-    onGetOutputs() {
+Converter.prototype.onGetOutputs = function() {
         return [
             ["number", "number"],
             ["vec2", "vec2"],
@@ -75,53 +71,50 @@ class Converter {
         ];
     }
 }
+Converter.title = "Converter";
+Converter.desc = "type A to type B";
 LiteGraph.registerNodeType("math/converter", Converter);
 
 
 // Bypass
-class Bypass {
+function Bypass() {
 
-    static title = "Bypass";
-    static desc = "removes the type";
 
-    constructor() {
         this.addInput("in");
         this.addOutput("out");
         this.size = [80, 30];
     }
 
-    onExecute() {
+Bypass.prototype.onExecute = function() {
         var v = this.getInputData(0);
         this.setOutputData(0, v);
     }
 }
+Bypass.title = "Bypass";
+Bypass.desc = "removes the type";
 LiteGraph.registerNodeType("math/bypass", Bypass);
 
 
-class ToNumber {
+function ToNumber() {
 
-    static title = "to Number";
-    static desc = "Cast to number";
 
-    constructor() {
         this.addInput("in");
         this.addOutput("out");
     }
 
-    onExecute() {
+ToNumber.prototype.onExecute = function() {
         var v = this.getInputData(0);
         this.setOutputData(0, Number(v));
     }
 }
+ToNumber.title = "to Number";
+ToNumber.desc = "Cast to number";
 LiteGraph.registerNodeType("math/to_number", ToNumber);
 
 
-class MathRange {
+function MathRange() {
 
-    static title = "Range";
-    static desc = "Convert a number from one range to another";
 
-    constructor() {
         this.addInput("in", "number", { locked: true });
         this.addOutput("out", "number", { locked: true });
         this.addOutput("clamped", "number", { locked: true });
@@ -135,14 +128,14 @@ class MathRange {
         this.size = [120, 50];
     }
 
-    getTitle() {
+MathRange.prototype.getTitle = function() {
         if (this.flags?.collapsed) {
             return (this._last_v || 0).toFixed(2);
         }
         return this.title;
     }
 
-    onExecute() {
+MathRange.prototype.onExecute = function() {
         let v;
         if (this.inputs) {
             for (let i = 0; i < this.inputs.length; i++) {
@@ -183,7 +176,7 @@ class MathRange {
         this.setOutputData(1, LiteGraph.clamp(this._last_v, out_min, out_max));
     }
 
-    onDrawBackground(_ctx) {
+MathRange.prototype.onDrawBackground = function(_ctx) {
         // show the current value
         if (this._last_v) {
             this.outputs[0].label = this._last_v.toFixed(3);
@@ -192,7 +185,7 @@ class MathRange {
         }
     }
 
-    onGetInputs() {
+MathRange.prototype.onGetInputs = function() {
         return [
             ["in_min", "number"],
             ["in_max", "number"],
@@ -201,22 +194,21 @@ class MathRange {
         ];
     }
 }
+MathRange.title = "Range";
+MathRange.desc = "Convert a number from one range to another";
 LiteGraph.registerNodeType("math/range", MathRange);
 
 
-class MathRand {
+function MathRand() {
 
-    static title = "Rand";
-    static desc = "Random number";
 
-    constructor() {
         this.addOutput("value", "number");
         this.addProperty("min", 0);
         this.addProperty("max", 1);
         this.size = [80, 30];
     }
 
-    onExecute() {
+MathRand.prototype.onExecute = function() {
         
         // CHECK THIS, simple mixed inputOrProperty
         if (this.inputs) {
@@ -236,28 +228,27 @@ class MathRand {
         this.setOutputData(0, this._last_v);
     }
 
-    onDrawBackground(_ctx) {
+MathRand.prototype.onDrawBackground = function(_ctx) {
         // show the current value
         this.outputs[0].label = (this._last_v || 0).toFixed(3);
     }
 
-    onGetInputs() {
+MathRand.prototype.onGetInputs = function() {
         return [
             ["min", "number"],
             ["max", "number"],
         ];
     }
 }
+MathRand.title = "Rand";
+MathRand.desc = "Random number";
 LiteGraph.registerNodeType("math/rand", MathRand);
 
 
 // basic continuous noise
-class MathNoise {
+function MathNoise() {
 
-    static title = "Noise";
-    static desc = "Random number with temporal continuity";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.addProperty("min", 0);
@@ -291,7 +282,7 @@ class MathNoise {
         return r1 * (1 - f) + r2 * f;
     }
 
-    onExecute() {
+MathNoise.prototype.onExecute = function() {
         var f = this.getInputData(0) || 0;
         var iterations = this.properties.octaves || 1;
         var r = 0;
@@ -315,19 +306,20 @@ class MathNoise {
         this.setOutputData(0, this._last_v);
     }
 
-    onDrawBackground(_ctx) {
+MathNoise.prototype.onDrawBackground = function(_ctx) {
         // show the current value
         this.outputs[0].label = (this._last_v || 0).toFixed(3);
     }
 
-    static data = null;
 }
+MathNoise.title = "Noise";
+MathNoise.desc = "Random number with temporal continuity";
+MathNoise.data = null;
 LiteGraph.registerNodeType("math/noise", MathNoise);
 
 
 // generates spikes every random time
-class MathSpikes {
-    constructor() {
+function MathSpikes() {
         this.addOutput("out", "number");
         this.addProperty("min_time", 1);
         this.addProperty("max_time", 2);
@@ -337,7 +329,7 @@ class MathSpikes {
         this._blink_time = 0;
     }
 
-    onExecute() {
+MathSpikes.prototype.onExecute = function() {
         var dt = this.graph.elapsed_time; // in secs
 
         this._remaining_time -= dt;
@@ -366,12 +358,9 @@ LiteGraph.registerNodeType("math/spikes", MathSpikes);
 
 
 // Math clamp
-class MathClamp {
+function MathClamp() {
 
-    static title = "Clamp";
-    static desc = "Clamp number between min and max";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.size = [80, 30];
@@ -381,7 +370,7 @@ class MathClamp {
 
     // MathClamp.filter = "shader";
 
-    onExecute() {
+MathClamp.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -391,7 +380,7 @@ class MathClamp {
         this.setOutputData(0, v);
     }
 
-    getCode() {
+MathClamp.prototype.getCode = function() {
         var code = "";
         if (this.isInputConnected(0)) {
             code +=
@@ -404,15 +393,14 @@ class MathClamp {
         return code;
     }
 }
+MathClamp.title = "Clamp";
+MathClamp.desc = "Clamp number between min and max";
 LiteGraph.registerNodeType("math/clamp", MathClamp);
 
 
-class MathLerp {
+function MathLerp() {
 
-    static title = "Lerp";
-    static desc = "Linear Interpolation";
 
-    constructor() {
         this.properties = { f: 0.5 };
         this.addInput("A", "number");
         this.addInput("B", "number");
@@ -420,7 +408,7 @@ class MathLerp {
         this.addOutput("out", "number");
     }
 
-    onExecute() {
+MathLerp.prototype.onExecute = function() {
         var v1 = this.getInputData(0);
         if (v1 == null) {
             v1 = 0;
@@ -440,25 +428,24 @@ class MathLerp {
         this.setOutputData(0, v1 * (1 - f) + v2 * f);
     }
 
-    onGetInputs() {
+MathLerp.prototype.onGetInputs = function() {
         return [["f", "number"]];
     }
 }
+MathLerp.title = "Lerp";
+MathLerp.desc = "Linear Interpolation";
 LiteGraph.registerNodeType("math/lerp", MathLerp);
 
 
-class MathAbs {
+function MathAbs() {
 
-    static title = "Abs";
-    static desc = "Absolute";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.size = [80, 30];
     }
 
-    onExecute() {
+MathAbs.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -466,21 +453,20 @@ class MathAbs {
         this.setOutputData(0, Math.abs(v));
     }
 }
+MathAbs.title = "Abs";
+MathAbs.desc = "Absolute";
 LiteGraph.registerNodeType("math/abs", MathAbs);
 
 
-class MathFloor {
+function MathFloor() {
 
-    static title = "Floor";
-    static desc = "Floor number to remove fractional part";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.size = [80, 30];
     }
 
-    onExecute() {
+MathFloor.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -488,22 +474,21 @@ class MathFloor {
         this.setOutputData(0, Math.floor(v));
     }
 }
+MathFloor.title = "Floor";
+MathFloor.desc = "Floor number to remove fractional part";
 LiteGraph.registerNodeType("math/floor", MathFloor);
 
 
 // Math frac
-class MathFrac {
+function MathFrac() {
 
-    static title = "Frac";
-    static desc = "Returns fractional part";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.size = [80, 30];
     }
 
-    onExecute() {
+MathFrac.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -511,22 +496,21 @@ class MathFrac {
         this.setOutputData(0, v % 1);
     }
 }
+MathFrac.title = "Frac";
+MathFrac.desc = "Returns fractional part";
 LiteGraph.registerNodeType("math/frac", MathFrac);
 
 
-class MathSmoothStep {
+function MathSmoothStep() {
 
-    static title = "Smoothstep";
-    static desc = "Smoothstep";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.size = [80, 30];
         this.properties = { A: 0, B: 1 };
     }
 
-    onExecute() {
+MathSmoothStep.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v === undefined) {
             return;
@@ -543,57 +527,54 @@ class MathSmoothStep {
         this.setOutputData(0, v);
     }
 }
+MathSmoothStep.title = "Smoothstep";
+MathSmoothStep.desc = "Smoothstep";
 LiteGraph.registerNodeType("math/smoothstep", MathSmoothStep);
 
 
-class MathScale {
+function MathScale() {
 
-    static title = "Scale";
-    static desc = "v * factor";
 
-    constructor() {
         this.addInput("in", "number", { label: "" });
         this.addOutput("out", "number", { label: "" });
         this.size = [80, 30];
         this.addProperty("factor", 1);
     }
 
-    onExecute() {
+MathScale.prototype.onExecute = function() {
         var value = this.getInputData(0);
         if (value != null) {
             this.setOutputData(0, value * this.properties.factor);
         }
     }
 }
+MathScale.title = "Scale";
+MathScale.desc = "v * factor";
 LiteGraph.registerNodeType("math/scale", MathScale);
 
 
-class Gate {
+function Gate() {
 
-    static title = "Gate";
-    static desc = "if v is true, then outputs A, otherwise B";
 
-    constructor() {
         this.addInput("v", "boolean");
         this.addInput("A");
         this.addInput("B");
         this.addOutput("out");
     }
 
-    onExecute() {
+Gate.prototype.onExecute = function() {
         var v = this.getInputData(0);
         this.setOutputData(0, this.getInputData(v ? 1 : 2));
     }
 }
+Gate.title = "Gate";
+Gate.desc = "if v is true, then outputs A, otherwise B";
 LiteGraph.registerNodeType("math/gate", Gate);
 
 
-class MathAverageFilter {
+function MathAverageFilter() {
 
-    static title = "Average";
-    static desc = "Average Filter";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.size = [80, 30];
@@ -602,7 +583,7 @@ class MathAverageFilter {
         this._current = 0;
     }
 
-    onExecute() {
+MathAverageFilter.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             v = 0;
@@ -624,7 +605,7 @@ class MathAverageFilter {
         this.setOutputData(0, avr / num_samples);
     }
 
-    onPropertyChanged(name, value) {
+MathAverageFilter.prototype.onPropertyChanged = function(name, value) {
         if (value < 1) {
             value = 1;
         }
@@ -643,15 +624,14 @@ class MathAverageFilter {
     }
 
 }
+MathAverageFilter.title = "Average";
+MathAverageFilter.desc = "Average Filter";
 LiteGraph.registerNodeType("math/average", MathAverageFilter);
 
 
-class MathTendTo {
+function MathTendTo() {
 
-    static title = "TendTo";
-    static desc = "moves the output value always closer to the input";
 
-    constructor() {
         this.addInput("in", "number");
         this.addOutput("out", "number");
         this.addProperty("factor", 0.1);
@@ -659,7 +639,7 @@ class MathTendTo {
         this._value = null;
     }
 
-    onExecute() {
+MathTendTo.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             v = 0;
@@ -673,15 +653,14 @@ class MathTendTo {
         this.setOutputData(0, this._value);
     }
 }
+MathTendTo.title = "TendTo";
+MathTendTo.desc = "moves the output value always closer to the input";
 LiteGraph.registerNodeType("math/tendTo", MathTendTo);
 
 
-class MathOperation {
+function MathOperation() {
 
-    static title = "Operation";
-    static desc = "Easy math operators";
 
-    constructor() {
         this.addInput("A", "number,array,object");
         this.addInput("B", "number");
         this.addOutput("=", "number");
@@ -692,20 +671,20 @@ class MathOperation {
         this._result = []; // only used for arrays
     }
 
-    getTitle() {
+MathOperation.prototype.getTitle = function() {
         if (this.properties.OP == "max" || this.properties.OP == "min")
             return this.properties.OP + "(A,B)";
         return "A " + this.properties.OP + " B";
     }
 
-    setValue(v) {
+MathOperation.prototype.setValue = function(v) {
         if (typeof v == "string") {
             v = parseFloat(v);
         }
         this.properties["value"] = v;
     }
 
-    onPropertyChanged(name, _value) {
+MathOperation.prototype.onPropertyChanged = function(name, _value) {
         if (name != "OP") return;
         this._func = MathOperation.funcs[this.properties.OP];
         if (!this._func) {
@@ -716,7 +695,7 @@ class MathOperation {
         }
     }
 
-    onExecute() {
+MathOperation.prototype.onExecute = function() {
         var A = this.getInputData(0);
         var B = this.getInputData(1);
         if (A != null) {
@@ -750,7 +729,7 @@ class MathOperation {
         this.setOutputData(0, result);
     }
 
-    onDrawBackground(ctx) {
+MathOperation.prototype.onDrawBackground = function(ctx) {
         if (this.flags?.collapsed) {
             return;
         }
@@ -766,9 +745,7 @@ class MathOperation {
         ctx.textAlign = "left";
     }
 
-    static values = ["+", "-", "*", "/", "%", "^", "max", "min"];
 
-    static funcs = {
         "+": function (A, B) {
             return A + B;
         },
@@ -809,6 +786,10 @@ class MathOperation {
 
     // static size = [100, 60];
 }
+MathOperation.title = "Operation";
+MathOperation.desc = "Easy math operators";
+MathOperation.values = ["+", "-", "*", "/", "%", "^", "max", "min"];
+MathOperation.funcs = {;
 LiteGraph.registerNodeType("math/operation", MathOperation);
 LiteGraph.registerSearchboxExtra("math/operation", "MAX", {
     properties: { OP: "max" },
@@ -820,12 +801,9 @@ LiteGraph.registerSearchboxExtra("math/operation", "MIN", {
 });
 
 
-class MathCompare {
+function MathCompare() {
 
-    static title = "Compare";
-    static desc = "compares between two values";
 
-    constructor() {
         this.addInput("A", "number");
         this.addInput("B", "number");
         this.addOutput("A==B", "boolean");
@@ -834,7 +812,7 @@ class MathCompare {
         this.addProperty("B", 0);
     }
 
-    onExecute() {
+MathCompare.prototype.onExecute = function() {
         var A = Number(this.getInputOrProperty("A"));
         var B = Number(this.getInputOrProperty("B"));
         this.setProperty("A",A);
@@ -870,7 +848,7 @@ class MathCompare {
         }
     }
 
-    onGetOutputs() {
+MathCompare.prototype.onGetOutputs = function() {
         return [
             ["A==B", "boolean"],
             ["A!=B", "boolean"],
@@ -881,6 +859,8 @@ class MathCompare {
         ];
     }
 }
+MathCompare.title = "Compare";
+MathCompare.desc = "compares between two values";
 LiteGraph.registerNodeType("math/compare", MathCompare);
 LiteGraph.registerSearchboxExtra("math/compare", "==", {
     outputs: [["A==B", "boolean"]],
@@ -908,12 +888,9 @@ LiteGraph.registerSearchboxExtra("math/compare", "<=", {
 });
 
 
-class MathCondition {
+function MathCondition() {
 
-    static title = "Condition";
-    static desc = "evaluates condition between A and B";
 
-    constructor() {
         this.addInput("A", "number");
         this.addInput("B", "number");
         this.addOutput("true", "boolean");
@@ -929,11 +906,11 @@ class MathCondition {
         this.size = [80, 60];
     }
 
-    getTitle() {
+MathCondition.prototype.getTitle = function() {
         return "A " + this.properties.OP + " B";
     }
 
-    onExecute() {
+MathCondition.prototype.onExecute = function() {
         var A = this.getInputData(0);
         if (A === undefined) {
             A = this.properties.A;
@@ -980,7 +957,6 @@ class MathCondition {
         this.setOutputData(1, !result);
     }
 
-    static values = [">", "<", "==", "!=", "<=", ">=", "||", "&&"];
 
     static "@OP" = {
         type: "enum",
@@ -988,13 +964,13 @@ class MathCondition {
         values: MathCondition.values,
     };
 }
+MathCondition.title = "Condition";
+MathCondition.desc = "evaluates condition between A and B";
+MathCondition.values = [">", "<", "==", "!=", "<=", ">=", "||", "&&"];
 LiteGraph.registerNodeType("math/condition", MathCondition);
 
 
-class MathBranch {
-    static title = "Branch";
-    static desc = "If condition is true, outputs IN in true, otherwise in false";
-    constructor() {
+function MathBranch() {
         this.addInput("in", 0);
         this.addInput("cond", "boolean");
         this.addOutput("true", 0);
@@ -1002,7 +978,7 @@ class MathBranch {
         this.size = [80, 60];
     }
 
-    onExecute() {
+MathBranch.prototype.onExecute = function() {
         var V = this.getInputData(0);
         var cond = this.getInputData(1);
 
@@ -1015,22 +991,21 @@ class MathBranch {
         }
     }
 }
+MathBranch.title = "Branch";
+MathBranch.desc = "If condition is true, outputs IN in true, otherwise in false";
 LiteGraph.registerNodeType("math/branch", MathBranch);
 
 
-class MathAccumulate {
+function MathAccumulate() {
 
-    static title = "Accumulate";
-    static desc = "Increments a value every time";
 
-    constructor() {
         this.addInput("inc", "number");
         this.addOutput("total", "number");
         this.addProperty("increment", 1);
         this.addProperty("value", 0);
     }
 
-    onExecute() {
+MathAccumulate.prototype.onExecute = function() {
         if (this.properties.value === null) {
             this.properties.value = 0;
         }
@@ -1044,15 +1019,14 @@ class MathAccumulate {
         this.setOutputData(0, this.properties.value);
     }
 }
+MathAccumulate.title = "Accumulate";
+MathAccumulate.desc = "Increments a value every time";
 LiteGraph.registerNodeType("math/accumulate", MathAccumulate);
 
 
-class MathTrigonometry {
+function MathTrigonometry() {
 
-    static title = "Trigonometry";
-    static desc = "Sin Cos Tan";
 
-    constructor() {
         this.addInput("v", "number");
         this.addOutput("sin", "number");
 
@@ -1063,7 +1037,7 @@ class MathTrigonometry {
 
     // MathTrigonometry.filter = "shader";
 
-    onExecute() {
+MathTrigonometry.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             v = 0;
@@ -1106,7 +1080,7 @@ class MathTrigonometry {
         }
     }
 
-    onGetInputs() {
+MathTrigonometry.prototype.onGetInputs = function() {
         return [
             ["v", "number"],
             ["amplitude", "number"],
@@ -1114,7 +1088,7 @@ class MathTrigonometry {
         ];
     }
 
-    onGetOutputs() {
+MathTrigonometry.prototype.onGetOutputs = function() {
         return [
             ["sin", "number"],
             ["cos", "number"],
@@ -1125,6 +1099,8 @@ class MathTrigonometry {
         ];
     }
 }
+MathTrigonometry.title = "Trigonometry";
+MathTrigonometry.desc = "Sin Cos Tan";
 LiteGraph.registerNodeType("math/trigonometry", MathTrigonometry);
 LiteGraph.registerSearchboxExtra("math/trigonometry", "SIN()", {
     outputs: [["sin", "number"]],
@@ -1141,12 +1117,9 @@ LiteGraph.registerSearchboxExtra("math/trigonometry", "TAN()", {
 
 
 // math library for safe math operations without eval
-class MathFormula {
+function MathFormula() {
 
-    static title = "Formula";
-    static desc = "Compute formula";
 
-    constructor() {
         this.addInput("x", "number", {nameLocked: true});
         this.addInput("y", "number", {nameLocked: true});
         this.addOutput("", "number");
@@ -1165,13 +1138,13 @@ class MathFormula {
         this._func = null;
     }
 
-    onPropertyChanged(name, value) {
+MathFormula.prototype.onPropertyChanged = function(name, value) {
         if (name == "formula") {
             this.code_widget.value = value;
         }
     }
 
-    onExecute() {
+MathFormula.prototype.onExecute = function() {
         if (!LiteGraph.allow_scripts) {
             return;
         }
@@ -1209,34 +1182,33 @@ class MathFormula {
         this.setOutputData(0, value);
     }
 
-    getTitle() {
+MathFormula.prototype.getTitle = function() {
         return this._func_code || "Formula";
     }
 
-    onDrawBackground() {
+MathFormula.prototype.onDrawBackground = function() {
         var f = this.properties["formula"];
         if (this.outputs && this.outputs.length) {
             this.outputs[0].label = f;
         }
     }
 
-    static size = [160, 100];
 }
+MathFormula.title = "Formula";
+MathFormula.desc = "Compute formula";
+MathFormula.size = [160, 100];
 LiteGraph.registerNodeType("math/formula", MathFormula);
 
 
-class Math3DVec2ToXY {
+function Math3DVec2ToXY() {
 
-    static title = "Vec2->XY";
-    static desc = "vector 2 to components";
 
-    constructor() {
         this.addInput("vec2", "vec2");
         this.addOutput("x", "number");
         this.addOutput("y", "number");
     }
 
-    onExecute() {
+Math3DVec2ToXY.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -1246,15 +1218,14 @@ class Math3DVec2ToXY {
         this.setOutputData(1, v[1]);
     }
 }
+Math3DVec2ToXY.title = "Vec2->XY";
+Math3DVec2ToXY.desc = "vector 2 to components";
 LiteGraph.registerNodeType("math3d/vec2-to-xy", Math3DVec2ToXY);
 
 
-class Math3DXYToVec2 {
+function Math3DXYToVec2() {
 
-    static title = "XY->Vec2";
-    static desc = "components to vector2";
 
-    constructor() {
         this.addInputs([
             ["x", "number"],
             ["y", "number"],
@@ -1264,7 +1235,7 @@ class Math3DXYToVec2 {
         this._data = new Float32Array(2);
     }
 
-    onExecute() {
+Math3DXYToVec2.prototype.onExecute = function() {
         var x = this.getInputData(0);
         if (x == null) {
             x = this.properties.x;
@@ -1281,22 +1252,21 @@ class Math3DXYToVec2 {
         this.setOutputData(0, data);
     }
 }
+Math3DXYToVec2.title = "XY->Vec2";
+Math3DXYToVec2.desc = "components to vector2";
 LiteGraph.registerNodeType("math3d/xy-to-vec2", Math3DXYToVec2);
 
 
-class Math3DVec3ToXYZ {
+function Math3DVec3ToXYZ() {
 
-    static title = "Vec3->XYZ";
-    static desc = "vector 3 to components";
 
-    constructor() {
         this.addInput("vec3", "vec3");
         this.addOutput("x", "number");
         this.addOutput("y", "number");
         this.addOutput("z", "number");
     }
 
-    onExecute() {
+Math3DVec3ToXYZ.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -1307,15 +1277,14 @@ class Math3DVec3ToXYZ {
         this.setOutputData(2, v[2]);
     }
 }
+Math3DVec3ToXYZ.title = "Vec3->XYZ";
+Math3DVec3ToXYZ.desc = "vector 3 to components";
 LiteGraph.registerNodeType("math3d/vec3-to-xyz", Math3DVec3ToXYZ);
 
 
-class Math3DXYZToVec3 {
+function Math3DXYZToVec3() {
 
-    static title = "XYZ->Vec3";
-    static desc = "components to vector3";
 
-    constructor() {
         this.addInputs([
             ["x", "number"],
             ["y", "number"],
@@ -1326,7 +1295,7 @@ class Math3DXYZToVec3 {
         this._data = new Float32Array(3);
     }
 
-    onExecute() {
+Math3DXYZToVec3.prototype.onExecute = function() {
         var x = this.getInputData(0);
         if (x == null) {
             x = this.properties.x;
@@ -1348,15 +1317,14 @@ class Math3DXYZToVec3 {
         this.setOutputData(0, data);
     }
 }
+Math3DXYZToVec3.title = "XYZ->Vec3";
+Math3DXYZToVec3.desc = "components to vector3";
 LiteGraph.registerNodeType("math3d/xyz-to-vec3", Math3DXYZToVec3);
 
 
-class Math3DVec4ToXYZW {
+function Math3DVec4ToXYZW() {
 
-    static title = "Vec4->XYZW";
-    static desc = "vector 4 to components";
 
-    constructor() {
         this.addInput("vec4", "vec4");
         this.addOutput("x", "number");
         this.addOutput("y", "number");
@@ -1364,7 +1332,7 @@ class Math3DVec4ToXYZW {
         this.addOutput("w", "number");
     }
 
-    onExecute() {
+Math3DVec4ToXYZW.prototype.onExecute = function() {
         var v = this.getInputData(0);
         if (v == null) {
             return;
@@ -1376,15 +1344,14 @@ class Math3DVec4ToXYZW {
         this.setOutputData(3, v[3]);
     }
 }
+Math3DVec4ToXYZW.title = "Vec4->XYZW";
+Math3DVec4ToXYZW.desc = "vector 4 to components";
 LiteGraph.registerNodeType("math3d/vec4-to-xyzw", Math3DVec4ToXYZW);
 
 
-class Math3DXYZWToVec4 {
+function Math3DXYZWToVec4() {
 
-    static title = "XYZW->Vec4";
-    static desc = "components to vector4";
 
-    constructor() {
         this.addInputs([
             ["x", "number"],
             ["y", "number"],
@@ -1396,7 +1363,7 @@ class Math3DXYZWToVec4 {
         this._data = new Float32Array(4);
     }
 
-    onExecute() {
+Math3DXYZWToVec4.prototype.onExecute = function() {
         var x = this.getInputData(0);
         if (x == null) {
             x = this.properties.x;
@@ -1423,4 +1390,7 @@ class Math3DXYZWToVec4 {
         this.setOutputData(0, data);
     }
 }
+Math3DXYZWToVec4.title = "XYZW->Vec4";
+Math3DXYZWToVec4.desc = "components to vector4";
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
+

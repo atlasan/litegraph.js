@@ -1,12 +1,8 @@
-import { LiteGraph } from "../litegraph.js";
+﻿
+
+function GraphicsPlot() {
 
 
-class GraphicsPlot {
-
-    static title = "Plot";
-    static desc = "Plots data over time";
-
-    constructor() {
         this.addInput("A", "Number");
         this.addInput("B", "Number");
         this.addInput("C", "Number");
@@ -16,7 +12,7 @@ class GraphicsPlot {
         this.properties = { scale: 2 };
     }
 
-    onExecute() {
+GraphicsPlot.prototype.onExecute = function() {
         if (this.flags.collapsed) {
             return;
         }
@@ -36,7 +32,7 @@ class GraphicsPlot {
         }
     }
 
-    onDrawBackground(ctx) {
+GraphicsPlot.prototype.onDrawBackground = function(ctx) {
         if (this.flags.collapsed) {
             return;
         }
@@ -73,28 +69,27 @@ class GraphicsPlot {
             }
         }
     }
-    static colors = ["#FFF", "#F99", "#9F9", "#99F"];
 }
+GraphicsPlot.title = "Plot";
+GraphicsPlot.desc = "Plots data over time";
+GraphicsPlot.colors = ["#FFF", "#F99", "#9F9", "#99F"];
 LiteGraph.registerNodeType("graphics/plot", GraphicsPlot);
 
 
-class GraphicsImage {
+function GraphicsImage() {
 
-    static title = "Image";
-    static desc = "Image loader";
 
-    constructor() {
         this.addOutput("frame", "image");
         this.properties = { url: "" };
     }
 
-    onAdded() {
+GraphicsImage.prototype.onAdded = function() {
         if (this.properties["url"] != "" && this.img == null) {
             this.loadImage(this.properties["url"]);
         }
     }
 
-    onDrawBackground(ctx) {
+GraphicsImage.prototype.onDrawBackground = function(ctx) {
         if (this.flags.collapsed) {
             return;
         }
@@ -103,7 +98,7 @@ class GraphicsImage {
         }
     }
 
-    onExecute() {
+GraphicsImage.prototype.onExecute = function() {
         if (!this.img) {
             this.boxcolor = "#000";
         }
@@ -117,7 +112,7 @@ class GraphicsImage {
         }
     }
 
-    onPropertyChanged(name, value) {
+GraphicsImage.prototype.onPropertyChanged = function(name, value) {
         this.properties[name] = value;
         if (name == "url" && value != "") {
             this.loadImage(value);
@@ -126,7 +121,7 @@ class GraphicsImage {
         return true;
     }
 
-    loadImage(url, callback) {
+GraphicsImage.prototype.loadImage = function(url, callback) {
         if (url == "") {
             this.img = null;
             return;
@@ -155,13 +150,13 @@ class GraphicsImage {
         };
     }
 
-    onWidget(e, widget) {
+GraphicsImage.prototype.onWidget = function(e, widget) {
         if (widget.name == "load") {
             this.loadImage(this.properties["url"]);
         }
     }
 
-    onDropFile(file) {
+GraphicsImage.prototype.onDropFile = function(file) {
         var that = this;
         if (this._url) {
             URL.revokeObjectURL(this._url);
@@ -173,18 +168,17 @@ class GraphicsImage {
         });
     }
 
-    static widgets = [{ name: "load", text: "Load", type: "button" }];
-    static supported_extensions = ["jpg", "jpeg", "png", "gif"];
 }
+GraphicsImage.title = "Image";
+GraphicsImage.desc = "Image loader";
+GraphicsImage.widgets = [{ name: "load", text: "Load", type: "button" }];
+GraphicsImage.supported_extensions = ["jpg", "jpeg", "png", "gif"];
 LiteGraph.registerNodeType("graphics/image", GraphicsImage);
 
 
-class ColorPalette {
+function ColorPalette() {
 
-    static title = "Palette";
-    static desc = "Generates a color";
 
-    constructor() {
         this.addInput("f", "number");
         this.addOutput("Color", "color");
         this.addOutput("Hex", "string");
@@ -196,7 +190,7 @@ class ColorPalette {
         };
     }
 
-    onExecute() {
+ColorPalette.prototype.onExecute = function() {
         var c = [];
 
         if (this.properties.colorA != null) {
@@ -257,31 +251,30 @@ class ColorPalette {
         this.setOutputData(1, hexColor);
     }
 }
+ColorPalette.title = "Palette";
+ColorPalette.desc = "Generates a color";
 LiteGraph.registerNodeType("color/palette", ColorPalette);
 
 
-class ImageFrame {
+function ImageFrame() {
 
-    static title = "Frame";
-    static desc = "Frame viewer";
 
-    constructor() {
         this.addInput("", "image,canvas");
         this.size = [200, 200];
     }
 
-    onDrawBackground(ctx) {
+ImageFrame.prototype.onDrawBackground = function(ctx) {
         if (this.frame && !this.flags.collapsed) {
             ctx.drawImage(this.frame, 0, 0, this.size[0], this.size[1]);
         }
     }
 
-    onExecute() {
+ImageFrame.prototype.onExecute = function() {
         this.frame = this.getInputData(0);
         this.setDirtyCanvas(true);
     }
 
-    onWidget(e, widget) {
+ImageFrame.prototype.onWidget = function(e, widget) {
         if (widget.name == "resize" && this.frame) {
             var width = this.frame.width;
             var height = this.frame.height;
@@ -300,27 +293,26 @@ class ImageFrame {
         }
     }
 
-    show() {
+ImageFrame.prototype.show = function() {
         // var str = this.canvas.toDataURL("image/png");
         if (showElement && this.frame) {
             showElement(this.frame);
         }
     }
 
-    static widgets = [
         { name: "resize", text: "Resize box", type: "button" },
         { name: "view", text: "View Image", type: "button" },
     ];
 }
+ImageFrame.title = "Frame";
+ImageFrame.desc = "Frame viewer";
+ImageFrame.widgets = [;
 LiteGraph.registerNodeType("graphics/frame", ImageFrame);
 
 
-class ImageFade {
+function ImageFade() {
 
-    static title = "Image fade";
-    static desc = "Fades between images";
 
-    constructor() {
         this.addInputs([
             ["img1", "image"],
             ["img2", "image"],
@@ -330,20 +322,20 @@ class ImageFade {
         this.properties = { fade: 0.5, width: 512, height: 512 };
     }
 
-    onAdded() {
+ImageFade.prototype.onAdded = function() {
         this.createCanvas();
         var ctx = this.canvas.getContext("2d");
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, this.properties["width"], this.properties["height"]);
     }
 
-    createCanvas() {
+ImageFade.prototype.createCanvas = function() {
         this.canvas = document.createElement("canvas");
         this.canvas.width = this.properties["width"];
         this.canvas.height = this.properties["height"];
     }
 
-    onExecute() {
+ImageFade.prototype.onExecute = function() {
         var ctx = this.canvas.getContext("2d");
         // this.canvas.width = this.canvas.width; //@BUG: Test with this excised, I couldn't find a setter
 
@@ -370,37 +362,36 @@ class ImageFade {
         this.setDirtyCanvas(true);
     }
 
-    static widgets = [
         { name: "resizeA", text: "Resize to A", type: "button" },
         { name: "resizeB", text: "Resize to B", type: "button" },
     ];
 }
+ImageFade.title = "Image fade";
+ImageFade.desc = "Fades between images";
+ImageFade.widgets = [;
 LiteGraph.registerNodeType("graphics/imagefade", ImageFade);
 
 
-class ImageCrop {
+function ImageCrop() {
 
-    static title = "Crop";
-    static desc = "Crop Image";
 
-    constructor() {
         this.addInput("", "image");
         this.addOutput("", "image");
         this.properties = { width: 256, height: 256, x: 0, y: 0, scale: 1.0 };
         this.size = [50, 20];
     }
 
-    onAdded() {
+ImageCrop.prototype.onAdded = function() {
         this.createCanvas();
     }
 
-    createCanvas() {
+ImageCrop.prototype.createCanvas = function() {
         this.canvas = document.createElement("canvas");
         this.canvas.width = this.properties["width"];
         this.canvas.height = this.properties["height"];
     }
 
-    onExecute() {
+ImageCrop.prototype.onExecute = function() {
         var input = this.getInputData(0);
         if (!input) {
             return;
@@ -422,7 +413,7 @@ class ImageCrop {
         }
     }
 
-    onDrawBackground(ctx) {
+ImageCrop.prototype.onDrawBackground = function(ctx) {
         if (this.flags.collapsed) {
             return;
         }
@@ -441,7 +432,7 @@ class ImageCrop {
         }
     }
 
-    onPropertyChanged(name, value) {
+ImageCrop.prototype.onPropertyChanged = function(name, value) {
         this.properties[name] = value;
 
         if (name == "scale") {
@@ -459,15 +450,14 @@ class ImageCrop {
         return true;
     }
 }
+ImageCrop.title = "Crop";
+ImageCrop.desc = "Crop Image";
 LiteGraph.registerNodeType("graphics/cropImage", ImageCrop);
 
 
-class CanvasNode {
+function CanvasNode() {
 
-    static title = "Canvas";
-    static desc = "Canvas to render stuff";
 
-    constructor() {
         this.addInput("clear", LiteGraph.ACTION);
         this.addOutput("", "canvas");
         this.properties = { width: 512, height: 512, autoclear: true };
@@ -476,7 +466,7 @@ class CanvasNode {
         this.ctx = this.canvas.getContext("2d");
     }
 
-    onExecute() {
+CanvasNode.prototype.onExecute = function() {
         var canvas = this.canvas;
         var w = this.properties.width | 0;
         var h = this.properties.height | 0;
@@ -493,21 +483,20 @@ class CanvasNode {
         this.setOutputData(0, canvas);
     }
 
-    onAction(action) {
+CanvasNode.prototype.onAction = function(action) {
         if (action == "clear") {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         }
     }
 }
+CanvasNode.title = "Canvas";
+CanvasNode.desc = "Canvas to render stuff";
 LiteGraph.registerNodeType("graphics/canvas", CanvasNode);
 
 
-class DrawImageNode {
+function DrawImageNode() {
 
-    static title = "DrawImage";
-    static desc = "Draws image into a canvas";
 
-    constructor() {
         this.addInput("canvas", "canvas");
         this.addInput("img", "image,canvas");
         this.addInput("x", "number");
@@ -515,7 +504,7 @@ class DrawImageNode {
         this.properties = { x: 0, y: 0, opacity: 1 };
     }
 
-    onExecute() {
+DrawImageNode.prototype.onExecute = function() {
         var canvas = this.getInputData(0);
         if (!canvas) {
             return;
@@ -532,15 +521,14 @@ class DrawImageNode {
         ctx.drawImage(img, x, y);
     }
 }
+DrawImageNode.title = "DrawImage";
+DrawImageNode.desc = "Draws image into a canvas";
 LiteGraph.registerNodeType("graphics/drawImage", DrawImageNode);
 
 
-class DrawRectangleNode {
+function DrawRectangleNode() {
 
-    static title = "DrawRectangle";
-    static desc = "Draws rectangle in canvas";
 
-    constructor() {
         this.addInput("canvas", "canvas");
         this.addInput("x", "number");
         this.addInput("y", "number");
@@ -556,7 +544,7 @@ class DrawRectangleNode {
         };
     }
 
-    onExecute() {
+DrawRectangleNode.prototype.onExecute = function() {
         var canvas = this.getInputData(0);
         if (!canvas) {
             return;
@@ -570,15 +558,14 @@ class DrawRectangleNode {
         ctx.fillRect(x, y, w, h);
     }
 }
+DrawRectangleNode.title = "DrawRectangle";
+DrawRectangleNode.desc = "Draws rectangle in canvas";
 LiteGraph.registerNodeType("graphics/drawRectangle", DrawRectangleNode);
 
 
-class ImageVideo {
+function ImageVideo() {
 
-    static title = "Video";
-    static desc = "Video playback";
 
-    constructor() {
         this.addInput("t", "number");
         this.addOutputs([
             ["frame", "image"],
@@ -588,7 +575,7 @@ class ImageVideo {
         this.properties = { url: "", use_proxy: true };
     }
 
-    onExecute() {
+ImageVideo.prototype.onExecute = function() {
         if (!this.properties.url) {
             return;
         }
@@ -614,15 +601,15 @@ class ImageVideo {
         this.setDirtyCanvas(true);
     }
 
-    onStart() {
+ImageVideo.prototype.onStart = function() {
         this.play();
     }
 
-    onStop() {
+ImageVideo.prototype.onStop = function() {
         this.stop();
     }
 
-    loadVideo(url) {
+ImageVideo.prototype.loadVideo = function(url) {
         this._video_url = url;
 
         var pos = url.substr(0, 10).indexOf(":");
@@ -691,7 +678,7 @@ class ImageVideo {
         // document.body.appendChild(this.video);
     }
 
-    onPropertyChanged(name, value) {
+ImageVideo.prototype.onPropertyChanged = function(name, value) {
         this.properties[name] = value;
         if (name == "url" && value != "") {
             this.loadVideo(value);
@@ -700,14 +687,14 @@ class ImageVideo {
         return true;
     }
 
-    play() {
+ImageVideo.prototype.play = function() {
         if (this._video && this._video.videoWidth) {
             // is loaded
             this._video.play();
         }
     }
 
-    playPause() {
+ImageVideo.prototype.playPause = function() {
         if (!this._video) {
             return;
         }
@@ -718,7 +705,7 @@ class ImageVideo {
         }
     }
 
-    stop() {
+ImageVideo.prototype.stop = function() {
         if (!this._video) {
             return;
         }
@@ -726,7 +713,7 @@ class ImageVideo {
         this._video.currentTime = 0;
     }
 
-    pause() {
+ImageVideo.prototype.pause = function() {
         if (!this._video) {
             return;
         }
@@ -734,7 +721,7 @@ class ImageVideo {
         this._video.pause();
     }
 
-    onWidget(_e, _widget) { // @BUG: Consider excising this, it's dead code
+ImageVideo.prototype.onWidget = function(_e, _widget) {
         /*
     if(widget.name == "demo")
     {
@@ -757,29 +744,28 @@ class ImageVideo {
     */
     }
 
-    static widgets = [
         { name: "play", text: "PLAY", type: "minibutton" },
         { name: "stop", text: "STOP", type: "minibutton" },
         { name: "demo", text: "Demo video", type: "button" },
         { name: "mute", text: "Mute video", type: "button" },
     ];
 }
+ImageVideo.title = "Video";
+ImageVideo.desc = "Video playback";
+ImageVideo.widgets = [;
 LiteGraph.registerNodeType("graphics/video", ImageVideo);
 
 
-class ImageWebcam {
+function ImageWebcam() {
 
-    static title = "Webcam";
-    static desc = "Webcam image";
 
-    constructor() {
         this.addOutput("Webcam", "image");
         this.properties = { filterFacingMode: false, facingMode: "user" };
         this.boxcolor = "black";
         this.frame = 0;
     }
 
-    openStream() {
+ImageWebcam.prototype.openStream = function() {
         if (!navigator.mediaDevices.getUserMedia) {
             console.log?.("getUserMedia() is not supported in your browser, use chrome and enable WebRTC from about://flags");
             return;
@@ -809,7 +795,7 @@ class ImageWebcam {
         }
     }
 
-    closeStream() {
+ImageWebcam.prototype.closeStream = function() {
         if (this._webcam_stream) {
             var tracks = this._webcam_stream.getTracks();
             if (tracks.length) {
@@ -825,7 +811,7 @@ class ImageWebcam {
         }
     }
 
-    onPropertyChanged(name, value) {
+ImageWebcam.prototype.onPropertyChanged = function(name, value) {
         if (name == "facingMode") {
             this.properties.facingMode = value;
             this.closeStream();
@@ -833,11 +819,11 @@ class ImageWebcam {
         }
     }
 
-    onRemoved() {
+ImageWebcam.prototype.onRemoved = function() {
         this.closeStream();
     }
 
-    streamReady(localMediaStream) {
+ImageWebcam.prototype.streamReady = function(localMediaStream) {
         this._webcam_stream = localMediaStream;
         // this._waiting_confirmation = false;
         this.boxcolor = "green";
@@ -860,7 +846,7 @@ class ImageWebcam {
         this.trigger("stream_ready", video);
     }
 
-    onExecute() {
+ImageWebcam.prototype.onExecute = function() {
         if (this._webcam_stream == null && !this._waiting_confirmation) {
             this.openStream();
         }
@@ -888,7 +874,7 @@ class ImageWebcam {
         }
     }
 
-    getExtraMenuOptions() {
+ImageWebcam.prototype.getExtraMenuOptions = function() {
         var that = this;
         var txt = !that.properties.show ? "Show Frame" : "Hide Frame";
         return [
@@ -901,7 +887,7 @@ class ImageWebcam {
         ];
     }
 
-    onDrawBackground(ctx) {
+ImageWebcam.prototype.onDrawBackground = function(ctx) {
         if (this.flags.collapsed || this.size[1] <= 20 || !this.properties.show) {
             return;
         }
@@ -916,7 +902,7 @@ class ImageWebcam {
         ctx.restore();
     }
 
-    onGetOutputs() {
+ImageWebcam.prototype.onGetOutputs = function() {
         return [
             ["width", "number"],
             ["height", "number"],
@@ -926,6 +912,9 @@ class ImageWebcam {
         ];
     }
 
-    static is_webcam_open = false;
 }
+ImageWebcam.title = "Webcam";
+ImageWebcam.desc = "Webcam image";
+ImageWebcam.is_webcam_open = false;
 LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
+

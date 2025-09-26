@@ -1,10 +1,6 @@
-import { LiteGraph } from "../litegraph.js";
+﻿
+function LGWebSocket() {
 
-class LGWebSocket {
-    static title = "WS Client";
-    static desc = "Connect to a WebSocket to send and receive data";
-
-    constructor() {
         this.size = [60, 20];
         // Fixed inputs and outputs
         this.addInput("msg_w_data", LiteGraph.ACTION, { nameLocked: true, removable: false });
@@ -32,14 +28,14 @@ class LGWebSocket {
         this._hasWarned = false; // To warn only once in server mode
     }
 
-    onPropertyChanged(name, _value) {
+LGWebSocket.prototype.onPropertyChanged = function(name, _value) {
         if (name === "url" && this.properties.url !== _value) {
             this.connectSocket();
         }
         // For any property change, you could consider reconnecting if needed.
     }
 
-    onExecute() {
+LGWebSocket.prototype.onExecute = function() {
         // If no websocket exists or if it is closed, attempt to connect.
         if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
             console.debug("WSClient try to connect", this._ws?.readyState, this._ws);
@@ -93,7 +89,7 @@ class LGWebSocket {
         }
     }
 
-    connectSocket() {
+LGWebSocket.prototype.connectSocket = function() {
         // In Node.js, only allow connection if runOnServerToo is true.
         if (typeof process !== "undefined" && process.versions && process.versions.node) {
             if (!this.properties.runOnServerToo) {
@@ -228,7 +224,7 @@ class LGWebSocket {
         };
     }
 
-    disconnectSocket() {
+LGWebSocket.prototype.disconnectSocket = function() {
         if (this._ws) {
             console.log("WS close connection");
             this._ws.close();
@@ -238,7 +234,7 @@ class LGWebSocket {
         }
     }
 
-    send(data) {
+LGWebSocket.prototype.send = function(data) {
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
             return;
         }
@@ -252,7 +248,7 @@ class LGWebSocket {
         }
     }
 
-    onAction(action, param) {
+LGWebSocket.prototype.onAction = function(action, param) {
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
             return;
         }
@@ -272,33 +268,32 @@ class LGWebSocket {
     }
 
     // Return additional dynamic input slots only if they exist beyond the fixed ones.
-    onGetInputs() {
+LGWebSocket.prototype.onGetInputs = function() {
         // Fixed inputs are: "msg_w_data", "DATA_1", "EV_1" (total 3)
         return this.inputs.length > 3 ? this.inputs.slice(3) : [];
     }
 
     // Return additional dynamic output slots only if they exist beyond the fixed ones.
-    onGetOutputs() {
+LGWebSocket.prototype.onGetOutputs = function() {
         // Fixed outputs are: "onReceived", "dataRec", "DATA_1", "EV_1" (total 4)
         return this.outputs && this.outputs.length > 4 ? this.outputs.slice(4) : [];
     }
 
-    onRemoved() {
+LGWebSocket.prototype.onRemoved = function() {
         this.disconnectSocket();
     }
 }
+LGWebSocket.title = "WS Client";
+LGWebSocket.desc = "Connect to a WebSocket to send and receive data";
 
 LiteGraph.registerNodeType("network/websocket", LGWebSocket);
 
 
 
 // HTTP Request
-class HTTPRequestNode {
+function HTTPRequestNode() {
 
-    static title = "HTTP Request";
-    static desc = "Fetch data through HTTP";
 
-    constructor() {
         this.addInput("request", LiteGraph.ACTION);
         this.addInput("url", "string");
         this.addProperty("url", "");
@@ -309,7 +304,7 @@ class HTTPRequestNode {
         this._fetching = null;
     }
 
-    fetch() {
+HTTPRequestNode.prototype.fetch = function() {
         var url = this.getInputOrProperty("url");
         if (!url)
             return;
@@ -333,28 +328,27 @@ class HTTPRequestNode {
             });
     }
 
-    onAction(evt) {
+HTTPRequestNode.prototype.onAction = function(evt) {
         if (evt == "request")
             this.fetch();
     }
 
-    onExecute() {
+HTTPRequestNode.prototype.onExecute = function() {
         this.setOutputData(1, this._data);
     }
 
-    onGetOutputs() {
+HTTPRequestNode.prototype.onGetOutputs = function() {
         return [["error", LiteGraph.EVENT]];
     }
 }
+HTTPRequestNode.title = "HTTP Request";
+HTTPRequestNode.desc = "Fetch data through HTTP";
 LiteGraph.registerNodeType("network/httprequest", HTTPRequestNode);
 
 
 // -------------- TODO TEST ---------------
-class WebRTCNode {
-    static title = "WebRTC";
-    static desc = "Send and receive data through WebRTC";
+function WebRTCNode() {
 
-    constructor() {
         this.size = [100, 60];
         this.addInput("send", LiteGraph.ACTION);
         this.addInput("data", 0);
@@ -376,13 +370,13 @@ class WebRTCNode {
         this._lastReceivedData = null;
     }
 
-    onPropertyChanged(name, value) {
+WebRTCNode.prototype.onPropertyChanged = function(name, value) {
         if (["signalingServer", "stunServer", "turnServer", "username", "credential"].includes(name)) {
             this.createPeerConnection();
         }
     }
 
-    createPeerConnection() {
+WebRTCNode.prototype.createPeerConnection = function() {
         if (!this.properties.stunServer || (!this.properties.turnServer && (this.properties.username || this.properties.credential))) {
             console.warn("Incomplete WebRTC configuration. Ensure stunServer and (optionally) turnServer with username and credential are set.");
             return;
@@ -435,7 +429,7 @@ class WebRTCNode {
         }
     }
 
-    setupDataChannel() {
+WebRTCNode.prototype.setupDataChannel = function() {
         if (!this.dataChannel) return;
 
         this.dataChannel.onopen = () => {
@@ -466,7 +460,7 @@ class WebRTCNode {
         };
     }
 
-    onExecute() {
+WebRTCNode.prototype.onExecute = function() {
         if (!this.peerConnection) {
             this.createPeerConnection();
         }
@@ -486,7 +480,7 @@ class WebRTCNode {
         this.setOutputData(3, this._lastReceivedData);
     }
 
-    onAction(action, param) {
+WebRTCNode.prototype.onAction = function(action, param) {
         if (!this.peerConnection) {
             this.createPeerConnection();
         }
@@ -501,7 +495,7 @@ class WebRTCNode {
         }
     }
 
-    onConnectionsChange(input) {
+WebRTCNode.prototype.onConnectionsChange = function(input) {
         if (input && input.type === "string") {
             if (input.name === "offer") {
                 this.handleOffer(input.data);
@@ -530,7 +524,7 @@ class WebRTCNode {
         }
     }
 
-    onRemoved() {
+WebRTCNode.prototype.onRemoved = function() {
         if (this.peerConnection) {
             this.peerConnection.close();
         }
@@ -544,5 +538,8 @@ class WebRTCNode {
     //     return [["offer", "string"], ["answer", "string"], ["received", LiteGraph.EVENT], ["data", 0]];
     // }
 }
+WebRTCNode.title = "WebRTC";
+WebRTCNode.desc = "Send and receive data through WebRTC";
 LiteGraph.registerNodeType("network/webrtc", WebRTCNode);
+
 

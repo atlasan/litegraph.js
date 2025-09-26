@@ -1,11 +1,7 @@
-import { LiteGraph } from "../litegraph.js";
+﻿
+function GamepadInput() {
 
-class GamepadInput {
 
-    static title = "Gamepad";
-    static desc = "gets the input of the gamepad";
-
-    constructor() {
         this.addOutput("left_x_axis", "number");
         this.addOutput("left_y_axis", "number");
         this.addOutput("button_pressed", LiteGraph.EVENT);
@@ -18,7 +14,7 @@ class GamepadInput {
         this._current_buttons = new Uint8Array(17);
     }
 
-    onExecute() {
+GamepadInput.prototype.onExecute = function() {
         // get gamepad
         var gamepad = this.getGamepad();
         var threshold = this.properties.threshold || 0.0;
@@ -160,7 +156,7 @@ class GamepadInput {
         }
     }
 
-    getGamepad() {
+GamepadInput.prototype.getGamepad = function() {
         var getGamepads =
             navigator.getGamepads ||
             navigator.webkitGetGamepads ||
@@ -248,7 +244,7 @@ class GamepadInput {
         }
     }
 
-    onDrawBackground(ctx) {
+GamepadInput.prototype.onDrawBackground = function(ctx) {
         if (this.flags.collapsed) {
             return;
         }
@@ -279,7 +275,7 @@ class GamepadInput {
         }
     }
 
-    onGetOutputs() {
+GamepadInput.prototype.onGetOutputs = function() {
         return [
             ["left_axis", "vec2"],
             ["right_axis", "vec2"],
@@ -318,8 +314,6 @@ class GamepadInput {
         ];
     }
 
-    static zero = new Float32Array(2);
-    static buttons = [
         "a",
         "b",
         "x",
@@ -335,7 +329,6 @@ class GamepadInput {
         "home",
     ];
 
-    static mapping = {
         a: 0,
         b: 1,
         x: 2,
@@ -350,7 +343,6 @@ class GamepadInput {
         rs: 11,
     };
 
-    static mapping_array = [
         "a",
         "b",
         "x",
@@ -365,6 +357,12 @@ class GamepadInput {
         "rs",
     ];
 }
+GamepadInput.title = "Gamepad";
+GamepadInput.desc = "gets the input of the gamepad";
+GamepadInput.zero = new Float32Array(2);
+GamepadInput.buttons = [;
+GamepadInput.mapping = {;
+GamepadInput.mapping_array = [;
 
 // @TODO: Enums
 GamepadInput.CENTER = 0;
@@ -374,3 +372,4 @@ GamepadInput.UP = 4;
 GamepadInput.DOWN = 8;
 
 LiteGraph.registerNodeType("input/gamepad", GamepadInput);
+

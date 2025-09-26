@@ -1,9 +1,6 @@
-import { LiteGraph } from "../litegraph.js";
-
+﻿
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
-// import { GL } from "../../editor/js/libs/litegl.js";
-
-var view_matrix = new Float32Array(16);
+// var view_matrix = new Float32Array(16);
 var projection_matrix = new Float32Array(16);
 var viewprojection_matrix = new Float32Array(16);
 var model_matrix = new Float32Array(16);
@@ -21,8 +18,7 @@ function generateGeometryId() {
     return (Math.random() * 100000) | 0;
 }
 
-class LGraphPoints3D {
-    constructor() {
+function LGraphPoints3D() {
         this.addInput("obj", "");
         this.addInput("radius", "number");
 
@@ -56,11 +52,11 @@ class LGraphPoints3D {
         this._last_radius = null;
     }
 
-    onPropertyChanged(_name, _value) {
+LGraphPoints3D.prototype.onPropertyChanged = function(_name, _value) {
         this.must_update = true;
     }
 
-    onExecute() {
+LGraphPoints3D.prototype.onExecute = function() {
         var obj = this.getInputData(0);
         if (
             obj != this._old_obj ||
@@ -89,7 +85,7 @@ class LGraphPoints3D {
         this.setOutputData(0, this.geometry);
     }
 
-    updatePoints() {
+LGraphPoints3D.prototype.updatePoints = function() {
         var num_points = this.properties.num_points | 0;
         if (num_points < 1) num_points = 1;
 
@@ -451,19 +447,9 @@ class LGraphPoints3D {
         }
     }
 
-    static RECTANGLE = 1;
-    static CIRCLE = 2;
 
-    static CUBE = 10;
-    static SPHERE = 11;
-    static HEMISPHERE = 12;
-    static INSIDE_SPHERE = 13;
 
-    static OBJECT = 20;
-    static OBJECT_UNIFORMLY = 21;
-    static OBJECT_INSIDE = 22;
 
-    static MODE_VALUES = {
         rectangle: LGraphPoints3D.RECTANGLE,
         circle: LGraphPoints3D.CIRCLE,
         cube: LGraphPoints3D.CUBE,
@@ -475,21 +461,30 @@ class LGraphPoints3D {
         object_inside: LGraphPoints3D.OBJECT_INSIDE,
     };
 
-    static widgets_info = {
         mode: {
             widget: "combo",
             values: LGraphPoints3D.MODE_VALUES,
         },
     };
 
-    static title = "list of points";
-    static desc = "returns an array of points";
 }
+LGraphPoints3D.RECTANGLE = 1;
+LGraphPoints3D.CIRCLE = 2;
+LGraphPoints3D.CUBE = 10;
+LGraphPoints3D.SPHERE = 11;
+LGraphPoints3D.HEMISPHERE = 12;
+LGraphPoints3D.INSIDE_SPHERE = 13;
+LGraphPoints3D.OBJECT = 20;
+LGraphPoints3D.OBJECT_UNIFORMLY = 21;
+LGraphPoints3D.OBJECT_INSIDE = 22;
+LGraphPoints3D.MODE_VALUES = {;
+LGraphPoints3D.widgets_info = {;
+LGraphPoints3D.title = "list of points";
+LGraphPoints3D.desc = "returns an array of points";
 LiteGraph.registerNodeType("geometry/points3D", LGraphPoints3D);
 
 
-class LGraphPointsToInstances {
-    constructor() {
+function LGraphPointsToInstances() {
         this.addInput("points", "geometry");
         this.addOutput("instances", "[mat4]");
         this.properties = {
@@ -502,7 +497,7 @@ class LGraphPointsToInstances {
         this.first_time = true;
     }
 
-    onExecute() {
+LGraphPointsToInstances.prototype.onExecute = function() {
         var geo = this.getInputData(0);
         if (!geo) {
             this.setOutputData(0, null);
@@ -522,7 +517,7 @@ class LGraphPointsToInstances {
         this.setOutputData(0, this.matrices);
     }
 
-    updateInstances(geometry) {
+LGraphPointsToInstances.prototype.updateInstances = function(geometry) {
         var vertices = geometry.vertices;
         if (!vertices) return null;
         var normals = geometry.normals;
@@ -600,33 +595,32 @@ class LGraphPointsToInstances {
         this._geometry_id = geometry._id;
     }
 
-    static NORMAL = 0;
-    static VERTICAL = 1;
-    static SPHERICAL = 2;
-    static RANDOM = 3;
-    static RANDOM_VERTICAL = 4;
 
-    static modes = {
         normal: 0,
         vertical: 1,
         spherical: 2,
         random: 3,
         random_vertical: 4,
     };
-    static widgets_info = {
         mode: {
             widget: "combo",
             values: LGraphPointsToInstances.modes,
         },
     };
 
-    static title = "points to inst";
 }
+LGraphPointsToInstances.NORMAL = 0;
+LGraphPointsToInstances.VERTICAL = 1;
+LGraphPointsToInstances.SPHERICAL = 2;
+LGraphPointsToInstances.RANDOM = 3;
+LGraphPointsToInstances.RANDOM_VERTICAL = 4;
+LGraphPointsToInstances.modes = {;
+LGraphPointsToInstances.widgets_info = {;
+LGraphPointsToInstances.title = "points to inst";
 LiteGraph.registerNodeType("geometry/points_to_instances", LGraphPointsToInstances);
 
 
-class LGraphGeometryTransform {
-    constructor() {
+function LGraphGeometryTransform() {
         this.addInput("in", "geometry,[mat4]");
         this.addInput("mat4", "mat4");
         this.addOutput("out", "geometry");
@@ -646,7 +640,7 @@ class LGraphGeometryTransform {
         this.must_update = true;
     }
 
-    onExecute() {
+LGraphGeometryTransform.prototype.onExecute = function() {
         var input = this.getInputData(0);
         var model = this.getInputData(1);
 
@@ -706,7 +700,7 @@ class LGraphGeometryTransform {
         this.setOutputData(0, this.geometry);
     }
 
-    updateGeometry(geometry, model) {
+LGraphGeometryTransform.prototype.updateGeometry = function(geometry, model) {
         var old_vertices = geometry.vertices;
         var vertices = this.geometry.vertices;
         if (!vertices || vertices.length != old_vertices.length)
@@ -748,13 +742,12 @@ class LGraphGeometryTransform {
         this.geometry._version++;
     }
 
-    static title = "Transform";
 }
+LGraphGeometryTransform.title = "Transform";
 LiteGraph.registerNodeType("geometry/transform", LGraphGeometryTransform);
 
 
-class LGraphGeometryPolygon {
-    constructor() {
+function LGraphGeometryPolygon() {
         this.addInput("sides", "number");
         this.addInput("radius", "number");
         this.addOutput("out", "geometry");
@@ -772,7 +765,7 @@ class LGraphGeometryPolygon {
         this.last_info = { sides: -1, radius: -1 };
     }
 
-    onExecute() {
+LGraphGeometryPolygon.prototype.onExecute = function() {
         if (!this.isOutputConnected(0)) return;
 
         var sides = this.getInputOrProperty("sides");
@@ -786,7 +779,7 @@ class LGraphGeometryPolygon {
         this.setOutputData(0, this.geometry);
     }
 
-    updateGeometry(sides, radius) {
+LGraphGeometryPolygon.prototype.updateGeometry = function(sides, radius) {
         var num = 3 * sides;
         var vertices = this.geometry.vertices;
         if (!vertices || vertices.length != num)
@@ -811,13 +804,12 @@ class LGraphGeometryPolygon {
         this.last_info.sides = sides;
         this.last_info.radius = radius;
     }
-    static title = "Polygon";
 }
+LGraphGeometryPolygon.title = "Polygon";
 LiteGraph.registerNodeType("geometry/polygon", LGraphGeometryPolygon);
 
 
-class LGraphGeometryExtrude {
-    constructor() {
+function LGraphGeometryExtrude() {
         this.addInput("", "geometry");
         this.addOutput("", "geometry");
         this.properties = {
@@ -831,11 +823,11 @@ class LGraphGeometryExtrude {
         this._must_update = true;
     }
 
-    onPropertyChanged(_name, _value) {
+LGraphGeometryExtrude.prototype.onPropertyChanged = function(_name, _value) {
         this._must_update = true;
     }
 
-    onExecute() {
+LGraphGeometryExtrude.prototype.onExecute = function() {
         var geo = this.getInputData(0);
         if (!geo || !this.isOutputConnected(0)) return;
 
@@ -848,7 +840,7 @@ class LGraphGeometryExtrude {
         this.setOutputData(0, this._geo);
     }
 
-    extrudeGeometry(geo) {
+LGraphGeometryExtrude.prototype.extrudeGeometry = function(geo) {
         // for every pair of vertices
         var vertices = geo.vertices;
         var num_points = vertices.length / 3;
@@ -905,13 +897,12 @@ class LGraphGeometryExtrude {
 
         return out_geo;
     }
-    static title = "extrude";
 }
+LGraphGeometryExtrude.title = "extrude";
 LiteGraph.registerNodeType("geometry/extrude", LGraphGeometryExtrude);
 
 
-class LGraphGeometryEval {
-    constructor() {
+function LGraphGeometryEval() {
         this.addInput("in", "geometry");
         this.addOutput("out", "geometry");
 
@@ -929,11 +920,11 @@ class LGraphGeometryEval {
         this.func = null;
     }
 
-    onConfigure() {
+LGraphGeometryEval.prototype.onConfigure = function() {
         this.compileCode();
     }
 
-    compileCode() {
+LGraphGeometryEval.prototype.compileCode = function() {
         if (!this.properties.code) return;
 
         try {
@@ -945,14 +936,14 @@ class LGraphGeometryEval {
         }
     }
 
-    onPropertyChanged(name, value) {
+LGraphGeometryEval.prototype.onPropertyChanged = function(name, value) {
         if (name == "code") {
             this.properties.code = value;
             this.compileCode();
         }
     }
 
-    onExecute() {
+LGraphGeometryEval.prototype.onExecute = function() {
         var geometry = this.getInputData(0);
         if (!geometry) return;
 
@@ -1007,10 +998,10 @@ class LGraphGeometryEval {
         this.setOutputData(0, this.geometry);
     }
 
-    static title = "geoeval";
-    static desc = "eval code";
-    static widgets_info = { code: { widget: "code" } };
 }
+LGraphGeometryEval.title = "geoeval";
+LGraphGeometryEval.desc = "eval code";
+LGraphGeometryEval.widgets_info = { code: { widget: "code" } };
 LiteGraph.registerNodeType("geometry/eval", LGraphGeometryEval);
 
 
@@ -1082,8 +1073,7 @@ LGraphGeometryDisplace.prototype.onExecute = function() {
 LiteGraph.registerNodeType( "geometry/displace", LGraphGeometryDisplace );
 */
 
-class LGraphConnectPoints {
-    constructor() {
+function LGraphConnectPoints() {
         this.addInput("in", "geometry");
         this.addOutput("out", "geometry");
 
@@ -1100,11 +1090,11 @@ class LGraphConnectPoints {
         this.must_update = true;
     }
 
-    onPropertyChanged(_name, _value) {
+LGraphConnectPoints.prototype.onPropertyChanged = function(_name, _value) {
         this.must_update = true;
     }
 
-    onExecute() {
+LGraphConnectPoints.prototype.onExecute = function() {
         var geometry = this.getInputData(0);
         if (!geometry) return;
 
@@ -1164,9 +1154,9 @@ class LGraphConnectPoints {
         } else this.setOutputData(0, null);
     }
 
-    static title = "connect points";
-    static desc = "adds indices between near points";
 }
+LGraphConnectPoints.title = "connect points";
+LGraphConnectPoints.desc = "adds indices between near points";
 LiteGraph.registerNodeType("geometry/connectPoints", LGraphConnectPoints);
 
 
@@ -1944,3 +1934,4 @@ if (typeof GL != "undefined") {
 	';
 	*/
 }
+
