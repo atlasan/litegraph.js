@@ -1535,7 +1535,7 @@ export class CallbackHandler {
             aResChain.push(stepRet); // cache result
             // check result for structured object
             if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stepRet check", stepRet);
-            if (typeof(stepRet) == "object") {
+            if (stepRet !== null && typeof(stepRet) == "object") {
                 if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "result is object", stepRet);
                 if (typeof(stepRet.prevent_default) !== "undefined" && stepRet.prevent_default) {
                     preventDefCb = true;
@@ -2712,7 +2712,14 @@ export class LGraph {
      * @method clear
      */
     clear() {
-        this.stop();
+        if (this._clearing) return;
+        this._clearing = true;
+        const errors = [];
+        try {
+            this.stop();
+        } catch (error) {
+            errors.push(error);
+        }
         this.status = LGraph.STATUS_STOPPED;
 
         this.last_node_id = 0;
@@ -2721,11 +2728,26 @@ export class LGraph {
         this._version = -1; // used to detect changes
 
         // safe clear
-        this._nodes?.forEach((node) => {
-            node.processCallbackHandlers("onRemoved", {
-                def_cb: node.onRemoved
-            }, this);
-            node.graph = null;
+        this._nodes?.slice().forEach((node) => {
+            try {
+                node.processCallbackHandlers("onRemoved", {
+                    def_cb: node.onRemoved
+                }, this);
+            } catch (error) {
+                errors.push(error);
+            } finally {
+                node.graph = null;
+                node._waiting_actions = [];
+                node.inputs?.forEach((input) => {
+                    input.link = null;
+                });
+                node.outputs?.forEach((output) => {
+                    output.links = null;
+                });
+            }
+        });
+        this._groups?.forEach((group) => {
+            group.graph = null;
         });
 
         // nodes
@@ -2777,12 +2799,22 @@ export class LGraph {
         this.inputs = {};
         this.outputs = {};
 
-        // notify canvas to redraw
-        this.change();
-
-        this.sendActionToCanvas("clear");
-
-        LiteGraph.log_debug("lgraph", "graph CLEARED");
+        this.ancestorsCall = false;
+        this.initialization_error = null;
+        this._clearing = false;
+        // Notification failures must not prevent the remaining cleanup notifications.
+        try {
+            this.change();
+        } catch (error) {
+            errors.push(error);
+        }
+        try {
+            this.sendActionToCanvas("clear");
+        } catch (error) {
+            errors.push(error);
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Graph cleanup failed");
     }
 
     /**
@@ -2972,24 +3004,21 @@ export class LGraph {
             }
             this.execution_timer_id = null;
         }
-        this.processCallbackHandlers("onStopEvent", {
-            def_cb: this.onStopEvent
-        });
-        this.sendEventToAllNodes("onStop");
-
-        // TODO CHECK THIS : TRYING to refresh canvas, for multiview one still need a manual refresh (mouseover) 
-        // var thisGraph = this;
-        // let fRefreshOnStop = function(){
-        //     thisGraph.change();
-        //     // thisGraph.setDirtyCanvas(true,true);
-        //     thisGraph.sendActionToCanvas("draw");
-        //     LiteGraph.log_warn("finally drawing on stop");
-        // };
-        // if(window.requestAnimationFrame){
-        //     window.requestAnimationFrame(fRefreshOnStop);
-        // }
-        // setTimeout(fRefreshOnStop,972);
-
+        const errors = [];
+        try {
+            this.processCallbackHandlers("onStopEvent", {
+                def_cb: this.onStopEvent
+            });
+        } catch (error) {
+            errors.push(error);
+        }
+        try {
+            this.sendEventToAllNodes("onStop", undefined, null);
+        } catch (error) {
+            errors.push(error);
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Graph stop failed");
     }
 
     /**
@@ -3000,86 +3029,53 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
-        var start = LiteGraph.getTime();
+        const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
-
-        var nodes = this._nodes_executable ?? this._nodes;
-        if (!nodes) {
-            return;
-        }
-
-        limit = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
-
-        if (do_not_catch_errors) {
-            for (let i = 0; i < num; i++) {
-                nodes.forEach((node, index) => {
-                    if (index >= limit) return;
-                    if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
-                        node.executePendingActions();
-                    }
-
-                    if (node.mode === LiteGraph.ALWAYS) {
-                        node.doExecute?.();
-                    }
-                });
-
+        const resetExecutionState = () => {
+            this.nodes_executing = [];
+            this.nodes_actioning = [];
+            this.node_ancestorsCalculated = [];
+            this.nodes_executedAction = [];
+        };
+        try {
+            for (let step = 0; step < num; step++) {
+                // Changes made during one cycle take effect in the following cycle.
+                const nodes = this._nodes_executable ?? this._nodes;
+                const count = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
+                for (let index = 0; index < count; index++) {
+                    const node = nodes[index];
+                    if (node.graph !== this) continue;
+                    if (LiteGraph.use_deferred_actions) node.executePendingActions();
+                    if (node.mode === LiteGraph.ALWAYS) node.doExecute?.();
+                }
                 this.fixedtime += this.fixedtime_lapse;
                 this.processCallbackHandlers("onExecuteStep", {
                     def_cb: this.onExecuteStep
                 });
+                this.iteration++;
+                if (step + 1 < num) resetExecutionState();
             }
             this.processCallbackHandlers("onAfterExecute", {
                 def_cb: this.onAfterExecute
             });
-        } else { // catch errors
+            this.errors_in_execution = false;
+        } catch (error) {
+            this.errors_in_execution = true;
             try {
-                for (let i = 0; i < num; i++) {
-                    nodes.forEach((node, index) => {
-                        if (index >= limit) return;
-                        if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
-                            node.executePendingActions();
-                        }
-
-                        if (node.mode === LiteGraph.ALWAYS) {
-                            node.doExecute?.();
-                        }
-                    });
-
-                    this.fixedtime += this.fixedtime_lapse;
-                    this.processCallbackHandlers("onExecuteStep", {
-                        def_cb: this.onExecuteStep
-                    });
-                }
-
-                this.processCallbackHandlers("onAfterExecute", {
-                    def_cb: this.onAfterExecute
-                });
-                this.errors_in_execution = false;
-            } catch (err) {
-
-                this.errors_in_execution = true;
-                if (LiteGraph.throw_errors) {
-                    throw err;
-                }
-                LiteGraph.log_warn("lgraph", "Error during execution", err);
                 this.stop();
+            } catch (cleanupError) {
+                LiteGraph.log_error("Graph error cleanup failed", cleanupError);
             }
+            if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
+            LiteGraph.log_warn("lgraph", "Error during execution", error);
+        } finally {
+            const now = LiteGraph.getTime();
+            this.execution_time = 0.001 * Math.max(1, now - start);
+            this.globaltime += this.execution_time;
+            this.elapsed_time = (now - this.last_update_time) * 0.001;
+            this.last_update_time = now;
+            resetExecutionState();
         }
-
-        var now = LiteGraph.getTime();
-        var elapsed = now - start;
-        if (elapsed == 0) {
-            elapsed = 1;
-        }
-        this.execution_time = 0.001 * elapsed;
-        this.globaltime += 0.001 * elapsed;
-        this.iteration += 1;
-        this.elapsed_time = (now - this.last_update_time) * 0.001;
-        this.last_update_time = now;
-        this.nodes_executing = [];
-        this.nodes_actioning = [];
-        this.node_ancestorsCalculated = [];
-        this.nodes_executedAction = [];
     }
 
     /**
@@ -3315,7 +3311,7 @@ export class LGraph {
                     }
                 }
                 if (opts.typesOnly && opts.typesOnly.length) {
-                    if (opts.typesOnly.indexOf(input.mode) == -1) {
+                    if (opts.typesOnly.indexOf(inputType) == -1) {
                         // DBG EXCESS (keep) LiteGraph.log_verbose("type only "+input.id+":"+input.order+" :: "+inputType);
                         continue;
                     }
@@ -3412,35 +3408,27 @@ export class LGraph {
      * @param {Array} params parameters in array format
      */
     sendEventToAllNodes(eventname, params, mode = LiteGraph.ALWAYS) {
-        var nodes = this._nodes_in_order ? this._nodes_in_order : this._nodes;
-        if (!nodes) {
-            return;
-        }
-
-        for (let j = 0, l = nodes.length; j < l; ++j) {
-            const node = nodes[j];
-
-            if (
-                node.constructor === LiteGraph.Subgraph &&
-                eventname !== "onExecute"
-            ) {
-                if (node.mode == mode) {
+        const nodes = (this._nodes_in_order || this._nodes || []).slice();
+        const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
+        const errors = [];
+        for (const node of nodes) {
+            if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
+            try {
+                if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
                     node.sendEventToAllNodes(eventname, params, mode);
+                } else {
+                    node.processCallbackHandlers(eventname, {
+                        def_cb: node[eventname]
+                    }, ...args);
                 }
-                continue;
-            }
-
-            if (typeof(node[eventname]) !== "function" || node.mode !== mode) {
-                continue;
-            }
-            if (params === undefined) {
-                node[eventname]();
-            } else if (Array.isArray(params)) {
-                node[eventname].apply(node, params);
-            } else {
-                node[eventname](params);
+            } catch (error) {
+                // Startup and ordinary events abort on failure; shutdown visits everyone.
+                if (eventname !== "onStop") throw error;
+                errors.push(error);
             }
         }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Node stop callbacks failed");
     }
 
     /**
@@ -3476,6 +3464,10 @@ export class LGraph {
         if (!node) {
             return;
         }
+
+        if (this._clearing) throw new Error("Cannot add nodes while clearing a graph");
+        if (node.graph === this) return node;
+        if (node.graph) throw new Error("Remove a node from its current graph before adding it to another");
 
         // groups
         if (node.constructor === LiteGraph.LGraphGroup) {
@@ -3522,6 +3514,7 @@ export class LGraph {
         }
 
         node.graph = this;
+        node.exec_version = undefined;
         this.onGraphChanged({
             action: "nodeAdd",
             doSave: opts.doProcessChange
@@ -3561,6 +3554,7 @@ export class LGraph {
      * @param {LiteGraph.LGraphNode} node the instance of the node
      */
     remove(node) {
+        if (!node || this._clearing || this._removingNodes?.has(node) || node.graph !== this) return;
         if (node.constructor === LiteGraph.LGraphGroup) {
             var index = this._groups.indexOf(node);
             if (index != -1) {
@@ -3575,7 +3569,7 @@ export class LGraph {
             return;
         }
 
-        if (this._nodes_by_id[node.id] == null) {
+        if (this._nodes_by_id[node.id] !== node) {
             return;
         } // not found
 
@@ -3583,77 +3577,92 @@ export class LGraph {
             return;
         } // cannot be removed
 
-        // this.beforeChange(); // sure? - almost sure is wrong
+        this._removingNodes ??= new WeakSet();
+        this._removingNodes.add(node);
+        try {
+            // this.beforeChange(); // sure? - almost sure is wrong
 
-        // disconnect inputs
-        if (node.inputs) {
-            for (let i = 0; i < node.inputs.length; i++) {
-                let slot = node.inputs[i];
-                if (slot.link != null) {
-                    node.disconnectInput(i, {
-                        doProcessChange: false
-                    });
+            // disconnect inputs
+            if (node.inputs) {
+                for (let i = 0; i < node.inputs.length; i++) {
+                    let slot = node.inputs[i];
+                    if (slot.link != null) {
+                        node.disconnectInput(i, {
+                            doProcessChange: false
+                        });
+                    }
                 }
             }
-        }
 
-        // disconnect outputs
-        if (node.outputs) {
-            for (let i = 0; i < node.outputs.length; i++) {
-                let slot = node.outputs[i];
-                if (slot.links != null && slot.links.length) {
-                    node.disconnectOutput(i, false, {
-                        doProcessChange: false
-                    });
+            // disconnect outputs
+            if (node.outputs) {
+                for (let i = 0; i < node.outputs.length; i++) {
+                    let slot = node.outputs[i];
+                    if (slot.links != null && slot.links.length) {
+                        node.disconnectOutput(i, false, {
+                            doProcessChange: false
+                        });
+                    }
                 }
             }
-        }
 
-        // node.id = -1; //why?
+            // node.id = -1; //why?
 
-        // callback
-        node.processCallbackHandlers("onRemoved", {
-            def_cb: node.onRemoved
-        }, this);
+            let removalError;
+            try {
+                node.processCallbackHandlers("onRemoved", {
+                    def_cb: node.onRemoved
+                }, this);
+            } catch (error) {
+                removalError = error;
+            }
+            node.graph = null;
+            node._waiting_actions = [];
 
-        node.graph = null;
-
-        // remove from canvas render
-        if (this.list_of_graphcanvas) {
-            for (let i = 0; i < this.list_of_graphcanvas.length; ++i) {
-                let canvas = this.list_of_graphcanvas[i];
-                if (canvas.selected_nodes[node.id]) {
-                    delete canvas.selected_nodes[node.id];
-                }
-                if (canvas.node_dragged == node) {
-                    canvas.node_dragged = null;
+            // remove from canvas render
+            if (this.list_of_graphcanvas) {
+                for (let i = 0; i < this.list_of_graphcanvas.length; ++i) {
+                    let canvas = this.list_of_graphcanvas[i];
+                    if (canvas.selected_nodes[node.id]) {
+                        delete canvas.selected_nodes[node.id];
+                    }
+                    if (canvas.node_dragged == node) {
+                        canvas.node_dragged = null;
+                    }
                 }
             }
+
+            // remove from containers
+            var pos = this._nodes.indexOf(node);
+            if (pos != -1) {
+                this._nodes.splice(pos, 1);
+            }
+            delete this._nodes_by_id[node.id];
+
+            this.updateExecutionOrder();
+            try {
+                this.processCallbackHandlers("onNodeRemoved", {
+                    def_cb: this.onNodeRemoved
+                }, node);
+            } catch (error) {
+                removalError ??= error;
+            }
+
+            this.onGraphChanged({
+                action: "nodeRemove"
+            });
+
+            // close panels
+            this.sendActionToCanvas("checkPanels");
+
+            this.setDirtyCanvas(true, true);
+            // this.afterChange(); // sure? - almost sure is wrong
+            this.change();
+
+            if (removalError) throw removalError;
+        } finally {
+            this._removingNodes.delete(node);
         }
-
-        // remove from containers
-        var pos = this._nodes.indexOf(node);
-        if (pos != -1) {
-            this._nodes.splice(pos, 1);
-        }
-        delete this._nodes_by_id[node.id];
-
-        this.processCallbackHandlers("onNodeRemoved", {
-            def_cb: this.onNodeRemoved
-        }, node);
-
-        this.onGraphChanged({
-            action: "nodeRemove"
-        });
-
-        // close panels
-        this.sendActionToCanvas("checkPanels");
-
-        this.setDirtyCanvas(true, true);
-        // this.afterChange(); // sure? - almost sure is wrong
-        this.change();
-
-        this.updateExecutionOrder();
     }
 
     /**
@@ -3795,12 +3804,12 @@ export class LGraph {
     }
 
     // TODO check this, investigate, _last_trigger_time ? who calls trigger ? who calls triggerInput ? who calls onTrigger ?
-    trigger(action, param) {
+    trigger(action, param, options) {
         LiteGraph.log_debug("lgraph", "trigger", action, param);
         // this.onTrigger?.(action, param);
         this.processCallbackHandlers("onTrigger", {
             def_cb: this.onTrigger
-        }, action, param);
+        }, action, param, options);
     }
 
     /**
@@ -15249,13 +15258,18 @@ export class LGraphNode {
      * @method executePendingActions
      */
     executePendingActions() {
-        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
-        if (!this._waiting_actions || !this._waiting_actions.length)
+        if (this.mode === LiteGraph.NEVER) {
+            this._waiting_actions = [];
             return;
-        this._waiting_actions.forEach((p) => {
-            this.onAction(p[0], p[1], p[2], p[3], p[4]);
-        });
-        this._waiting_actions.length = 0;
+        }
+        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        // New actions remain queued for the next step. Consume a failing action once,
+        // retaining the remaining queue so recovery cannot replay its side effects.
+        const count = this._waiting_actions?.length || 0;
+        for (let i = 0; i < count && this._waiting_actions.length; i++) {
+            const action = this._waiting_actions.shift();
+            this.actionDo(...action);
+        }
     }
 
     /**
@@ -15265,67 +15279,38 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
-        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        const graph = this.graph;
+        if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
+        if (graph.nodes_executing[this.id]) return;
+        if (LiteGraph.ensureNodeSingleExecution && this.exec_version != null && this.exec_version >= graph.iteration) return;
+        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
 
-        if (this.mode === LiteGraph.NEVER) {
-            LiteGraph.log_verbose("lgraphNODE", "doExecute", "prevent execution in mode NEVER", this.id);
-            return;
-        } else {
-            LiteGraph.log_verbose("lgraphNODE", "doExecute", this.id, this.title);
+        const previousExecution = this.exec_version;
+        const previousAction = graph.nodes_executedAction[this.id];
+        graph.nodes_executedAction[this.id] = options.action_call;
+        graph.nodes_executing[this.id] = true;
+        try {
+            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+            this.processCallbackHandlers("onExecute", {
+                def_cb: this.onExecute
+            }, param, options);
+            this.exec_version = graph.iteration;
+            this.action_call = options.action_call;
+            graph.nodes_executedAction[this.id] = options.action_call;
+            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            this.execute_triggered = 2;
+            this.processCallbackHandlers("onAfterExecuteNode", {
+                def_cb: this.onAfterExecuteNode
+            }, param, options);
+        } catch (error) {
+            this.exec_version = previousExecution;
+            graph.nodes_executedAction[this.id] = previousAction;
+            throw error;
+        } finally {
+            // A callback may remove this node or clear its graph.
+            graph.nodes_executing[this.id] = false;
         }
-
-        // enable this to give the event an ID
-        options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`; // TODO replace all ath.floor(Math.random()*9999) by LiteGraph.uuidv4
-
-        if (this.graph?.nodes_executing && this.graph?.nodes_executing[this.id]) {
-            LiteGraph.log_debug("lgraphNODE", "doExecute", "already executing! Prevent! " + this.id + ":" + this.order);
-            return;
-        }
-        if (LiteGraph.ensureNodeSingleExecution && this.exec_version && this.exec_version >= this.graph.iteration && this.exec_version !== undefined) {
-            LiteGraph.log_debug("lgraphNODE", "doExecute", "!! NODE already EXECUTED THIS STEP !! " + this.exec_version);
-            return;
-        }
-        // LiteGraph.log_debug("Actioned ? "+this.id+":"+this.order+" :: "+this.action_call);
-        if (LiteGraph.ensureUniqueExecutionAndActionCall) {
-            // if(this.action_call && options && options.action_call && this.action_call == options.action_call){
-            if (this.graph.nodes_executedAction[this.id] && options && options.action_call && this.graph.nodes_executedAction[this.id] == options.action_call) {
-                LiteGraph.log_debug("lgraphNODE", "doExecute", "!! NODE already ACTION THIS STEP !! " + options.action_call, this);
-                return;
-            }
-        }
-
-        this.graph.nodes_executing[this.id] = true; // .push(this.id);
-
-        // update binded properties
-        if (LiteGraph.properties_allow_input_binding) {
-            this.doUpdateBindedInputProperties();
-        }
-
-        // --- NODE EXECUTION ---
-        // this.onExecute(param, options);
-        this.processCallbackHandlers("onExecute", {
-            def_cb: this.onExecute
-        }, param, options);
-
-        this.graph.nodes_executing[this.id] = false; // .pop();
-
-        // save execution/action ref
-        this.exec_version = this.graph.iteration;
-        if (options && options.action_call) {
-            this.action_call = options.action_call; // if (param)
-            this.graph.nodes_executedAction[this.id] = options.action_call;
-        }
-
-        // update output slot binded to properties
-        if (LiteGraph.properties_allow_output_binding) {
-            this.doUpdateBindedOutputProperties();
-        }
-
-        this.execute_triggered = 2; // helper to draw currently executing, the nFrames it will be used (-- each step), means "how old" is the event
-
-        this.processCallbackHandlers("onAfterExecuteNode", {
-            def_cb: this.onAfterExecuteNode
-        }, param, options);
     }
     /**
      * retrocompatibility :: old doExecute
@@ -15345,58 +15330,33 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
-        if (this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
-        // if (this.onAction) {
-
-        // enable this to give the event an ID
-        options.action_call ??= `${this.id}_${action?action:"action"}_${LiteGraph.uuidv4()}`;
-
-        if (LiteGraph.ensureNodeSingleAction) {
-            if (this.graph.nodes_actioning && this.graph.nodes_actioning[this.id] == options.action_call) { // == action){
-                LiteGraph.log_debug("lgraphnode", "actionDo", "already actioning! Prevent! " + this.id + ":" + this.order + " :: " + options.action_call);
-                return;
-            }
+        const graph = this.graph;
+        if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
+        if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
+        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        const previousCall = graph.nodes_executedAction[this.id];
+        graph.nodes_executedAction[this.id] = options.action_call;
+        const previousAction = graph.nodes_actioning[this.id];
+        graph.nodes_actioning[this.id] = options.action_call;
+        try {
+            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+            this.processCallbackHandlers("onAction", {
+                def_cb: this.onAction
+            }, action, param, options, action_slot);
+            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            this.action_call = options.action_call;
+            graph.nodes_executedAction[this.id] = options.action_call;
+            this.action_triggered = 2;
+            this.processCallbackHandlers("onAfterActionedNode", {
+                def_cb: this.onAfterActionedNode
+            }, param, options);
+        } catch (error) {
+            graph.nodes_executedAction[this.id] = previousCall;
+            throw error;
+        } finally {
+            graph.nodes_actioning[this.id] = previousAction || false;
         }
-        LiteGraph.log_debug("CheckActioned ? " + this.id + ":" + this.order + " :: " + this.action_call);
-        if (LiteGraph.ensureUniqueExecutionAndActionCall) {
-            // if(this.action_call && options && options.action_call && this.action_call == options.action_call){
-            if (this.graph.nodes_executedAction[this.id] && options && options.action_call && this.graph.nodes_executedAction[this.id] == options.action_call) {
-                LiteGraph.log_debug("lgraphnode", "actionDo", "!! NODE already ACTION THIS STEP !! " + options.action_call);
-                return;
-            }
-        }
-
-        // update binded properties
-        if (LiteGraph.properties_allow_input_binding) {
-            this.doUpdateBindedInputProperties();
-        }
-
-        this.graph.nodes_actioning[this.id] = (action ? action : "actioning"); // .push(this.id);
-
-        // this.onAction(action, param, options, action_slot);
-        this.processCallbackHandlers("onAction", {
-            def_cb: this.onAction
-        }, action, param, options, action_slot);
-
-        this.graph.nodes_actioning[this.id] = false; // .pop();
-
-        // update output slot binded to properties
-        if (LiteGraph.properties_allow_output_binding) {
-            this.doUpdateBindedOutputProperties();
-        }
-
-        // save execution/action ref
-        if (options && options.action_call) {
-            this.action_call = options.action_call; // if (param)
-            this.graph.nodes_executedAction[this.id] = options.action_call;
-        }
-        // }
-        this.action_triggered = 2; // the nFrames it will be used (-- each step), means "how old" is the event
-        // callback on after actioned
-        // TODO check if should trigger slots like when executing or not
-        this.processCallbackHandlers("onAfterActionedNode", {
-            def_cb: this.onAfterActionedNode
-        }, param, options);
     }
 
     /**
@@ -15502,6 +15462,7 @@ export class LGraphNode {
                 LiteGraph.log_warn("lgraphNODE", "triggerSlot", "link has not node", link_info, output, slot, param);
                 continue;
             }
+            if (node.mode === LiteGraph.NEVER) continue;
             var target_slot = node.inputs[link_info.target_slot];
             if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
                 // generate unique trigger ID if not present
@@ -15536,7 +15497,9 @@ export class LGraphNode {
                 // if using use_deferred_actions (alternative to ancestors) instead of executing them now, it will be executed in the next graph loop, to ensure data flow
                 if (LiteGraph.use_deferred_actions && node.onExecute) {
                     node._waiting_actions ??= [];
-                    node._waiting_actions.push([target_connection.name, param, options, link_info.target_slot]);
+                    node._waiting_actions.push([target_connection.name, param, {
+                        ...options
+                    }, link_info.target_slot]);
                     LiteGraph.log_verbose("lgraphnode", "triggerSlot", "push to deferred", target_connection.name, param, options, link_info.target_slot); //+this.id+":"+this.order+" :: "+target_connection.name);
                 } else {
                     // trigger now the action
@@ -17324,7 +17287,7 @@ export class LGraphNode {
         };
         var opts = Object.assign(optsDef, optsIn);
 
-        if (!this.inputs) {
+        if (!this.inputs || !this.graph) {
             return;
         }
         if (LiteGraph.preventAncestorRecalculation) {
@@ -17336,7 +17299,7 @@ export class LGraphNode {
 
         if (!opts.action || opts.action == "")
             opts.action = this.id + "_ancestors";
-        if (!opts.param || opts.param == "")
+        if (opts.param == null)
             opts.param = this.id + "_ancestors";
         if (!opts.options)
             opts.options = {};
@@ -17346,7 +17309,9 @@ export class LGraphNode {
 
         LiteGraph.log_verbose("lgraphnode", "refreshAncestors", "ancestors processing", this.id + ":" + this.order + " " + opts.options.action_call, this);
 
-        this.graph.ancestorsCall = true; // prevent triggering slots
+        const graph = this.graph;
+        const previousAncestorsCall = graph.ancestorsCall;
+        graph.ancestorsCall = true; // prevent triggering slots
 
         var optsAncestors = {
             modesSkip: [LiteGraph.NEVER, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER],
@@ -17354,15 +17319,16 @@ export class LGraphNode {
             typesSkip: [LiteGraph.ACTION],
             typesOnly: [],
         };
-        var aAncestors = this.graph.getAncestors(this, optsAncestors);
-        for (var iN in aAncestors) {
-            LiteGraph.log_verbose("lgraphnode", "refreshAncestors", "doExecute ancestor", iN, aAncestors[iN], opts.param, opts.options);
-            aAncestors[iN].doExecute(opts.param, opts.options);
-            this.graph.node_ancestorsCalculated[aAncestors[iN].id] = true;
+        try {
+            const ancestors = graph.getAncestors(this, optsAncestors);
+            for (const ancestor of ancestors) {
+                ancestor.doExecute(opts.param, opts.options);
+                graph.node_ancestorsCalculated[ancestor.id] = true;
+            }
+            graph.node_ancestorsCalculated[this.id] = true;
+        } finally {
+            graph.ancestorsCall = previousAncestorsCall;
         }
-
-        this.graph.ancestorsCall = false; // restore triggering slots
-        this.graph.node_ancestorsCalculated[this.id] = true;
 
         return true;
     }
@@ -17844,9 +17810,9 @@ export class Subgraph {
     };
     */
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         LiteGraph.log_debug("subgraph", "onAction", ...arguments);
-        this.subgraph.onAction(action, param);
+        this.subgraph.onAction(action, param, options);
     }
 
     onExecute() {
@@ -17880,10 +17846,17 @@ export class Subgraph {
     }
 
     sendEventToAllNodes(eventname, param, mode) {
-        if (this.enabled) {
+        if (this.enabled || eventname === "onStop") {
             LiteGraph.log_debug("subgraph", "sendEventToAllNodes", ...arguments);
             this.subgraph.sendEventToAllNodes(eventname, param, mode);
         }
+    }
+
+    onRemoved() {
+        // Removing a subgraph must release nested resources while retaining its
+        // configuration for undo or reinsertion.
+        if (this.subgraph.status === LiteGraph.LGraph.STATUS_RUNNING) this.subgraph.stop();
+        else this.subgraph.sendEventToAllNodes("onStop", undefined, null);
     }
 
     onDrawBackground(ctx, graphcanvas, canvas, pos) {
@@ -17984,12 +17957,12 @@ export class Subgraph {
     }
 
     //* *** INPUTS ***********************************
-    onSubgraphTrigger(event) {
+    onSubgraphTrigger(event, param, options) {
         LiteGraph.log_debug("subgraph", "onSubgraphTrigger", ...arguments);
         var slot = this.findOutputSlot(event);
         if (slot != -1) {
             LiteGraph.log_debug("subgraph", "onSubgraphTrigger", "triggerSlot", slot);
-            this.triggerSlot(slot);
+            this.triggerSlot(slot, param, null, options);
         }
     }
 
@@ -18372,10 +18345,10 @@ export class GraphInput {
         return this.title;
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (this.properties.type == LiteGraph.EVENT) {
             LiteGraph.log_debug("GraphInput", "onAction", "triggering slot", action, param);
-            this.triggerSlot(0, param);
+            this.triggerSlot(0, param, null, options);
         } else {
             LiteGraph.log_debug("GraphInput", "onAction", "NOT eventAction TYPE", "this", this, "arugments", ...arguments);
         }
@@ -18541,15 +18514,11 @@ export class GraphOutput {
         this.graph.setOutputData(this.properties.name, this._value);
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (this.properties.type == LiteGraph.ACTION) {
             LiteGraph.log_debug("GraphOutput", "onAction", ...arguments);
             LiteGraph.log_debug("GraphOutput", "onAction", "graphTrigger", this.properties.name, param);
-            // ---> subgraph_node.trigger(this.properties.name, param);
-            this.triggerSlot(this.properties.name, param);
-            // this.onTrigger(this.properties.name, param);
-            this.graph.trigger(this.properties.name, param);
-            // node.doExecute?.() !!
+            this.graph.trigger(this.properties.name, param, options);
         } else {
             LiteGraph.log_debug("GraphOutput", "onAction", "skipping not ACTION type", this.properties.type, this.properties);
         }
@@ -45194,6 +45163,10 @@ class BaseServer {
             this.log("Server is already starting or running.");
             return;
         }
+        if (this.status === "stopping") return;
+        this._stopRequested = false;
+        clearTimeout(this._retryTimer);
+        this._retryTimer = null;
         this.status = "starting";
         this.log(`Starting server on port ${this.properties.port}...`);
 
@@ -45210,21 +45183,49 @@ class BaseServer {
     }
 
     stopServer(callback) {
-        if (this.server) {
-            this.status = "stopping";
-            try {
-                this.server.close(() => {
-                    this.status = "stopped";
-                    this.log("Server stopped.");
-                    // Clear the server instance.
-                    this.server = null;
-                    if (callback) callback();
-                });
-            } catch (err) {
-                this.error("Error closing server:", err);
-                this.status = "failed";
-                if (callback) callback(err);
+        this._stopRequested = true;
+        clearTimeout(this._retryTimer);
+        this._retryTimer = null;
+        this._closeServer(callback);
+    }
+
+    _closeServer(callback) {
+        if (this._closeCallbacks) {
+            if (callback) this._closeCallbacks.push(callback);
+            return;
+        }
+        const server = this.server;
+        if (!server) {
+            this.status = "stopped";
+            callback?.();
+            return;
+        }
+        this.status = "stopping";
+        this._closeCallbacks = callback ? [callback] : [];
+        let closed = false;
+        const done = (error) => {
+            if (closed) return;
+            closed = true;
+            if (this.server === server) this.server = null;
+            this.status = "stopped";
+            const callbacks = this._closeCallbacks;
+            this._closeCallbacks = null;
+            if (error) this.error("Error closing server:", error);
+            for (const cb of callbacks) cb(error);
+        };
+        try {
+            // ws.close waits for clients: terminate this node's clients during teardown.
+            this._clients?.forEach((client) => client.terminate());
+            this._clients?.clear();
+            const OSC = LiteGraph.getGlobalVariable("OSC");
+            if (typeof OSC === "function" && server instanceof OSC) {
+                server.on("close", () => done());
+                server.close();
+            } else {
+                server.close(done);
             }
+        } catch (error) {
+            done(error);
         }
     }
 
@@ -45236,16 +45237,24 @@ class BaseServer {
         }
     }
 
-    _attemptRetry() {
-        if (this.properties.retryLimit === 0 || this.retryCount < this.properties.retryLimit) {
-            this.log(`Retrying server start in ${this.properties.retryTimeout}ms...`);
-            setTimeout(() => {
+    _attemptRetry(delay = this.properties.retryTimeout) {
+        if (this._stopRequested || this._retryTimer || this._retryPending) return;
+        if (this.properties.retryLimit !== 0 && this.retryCount >= this.properties.retryLimit) {
+            this.error("Max retry limit reached. Server failed to start.");
+            return;
+        }
+        this._retryPending = true;
+        this._closeServer(() => {
+            this._retryPending = false;
+            if (this._stopRequested) return;
+            this.status = "failed";
+            this._retryTimer = setTimeout(() => {
+                this._retryTimer = null;
+                if (this._stopRequested) return;
                 this.retryCount++;
                 this.startServer();
-            }, this.properties.retryTimeout);
-        } else {
-            this.error("Max retry limit reached. Server failed to start.");
-        }
+            }, delay);
+        });
     }
 
     // Abstract – must be implemented by child classes.
@@ -45265,10 +45274,11 @@ class BaseServer {
         this.log(this.name, "Server stopped.");
     }
 
+    onStop() {
+        this.stopServer();
+    }
     onRemoved() {
-        if (this.server) {
-            this.stopServer();
-        }
+        this.stopServer();
     }
 }
 
@@ -45522,20 +45532,9 @@ class SocketIOServerNode extends BaseServer {
 
     // Create the Socket.io server instance.
     _createServer() {
-        let pkg;
-        // Try to obtain the Socket.io constructor.
-        if (typeof io !== "undefined") {
-            pkg = io;
-        } else {
-            pkg = LiteGraph.getGlobalVariable("ioserver");
-        }
-        if (!pkg) {
-            throw new Error("Socket.io library not available");
-        }
-        // If the package is an object with a Server property, use that.
-        if (typeof pkg === "object" && typeof pkg.Server === "function") {
-            pkg = pkg.Server;
-        }
+        // The client and server constructors are distinct even when both are loaded.
+        const pkg = LiteGraph.LibraryManager.getLib("socket.io");
+        if (typeof pkg !== "function") throw new Error("Socket.io server library not available");
         this.log("Creating Socket.io server instance on port", this.properties.port);
         // Create and return the server.
         return new pkg(this.properties.port, {
@@ -45926,20 +45925,19 @@ class UDPServerNode extends BaseServer {
         });
         this.server.on("error", (err) => {
             this.error("UDP error:", err);
-            this.server.close();
-            if (this.properties.auto_reconnect) {
-                this.log(`Reconnecting UDP socket in ${this.properties.reconnectTimeout}ms`);
-                setTimeout(() => {
-                    this.startServer();
-                }, this.properties.reconnectTimeout);
-            }
+            this.status = "failed";
+            if (this.properties.auto_reconnect) this._attemptRetry(this.properties.reconnectTimeout);
+            else this.stopServer();
         });
         this.server.on("listening", () => {
+            if (this._stopRequested || !this.server) return;
+            this.status = "running";
+            this.retryCount = 0;
             const address = this.server.address();
             this.log(`UDP server listening on ${address.address}:${address.port}`);
         });
         // Bind the socket to the specified port.
-        this.server.bind(this.properties.port);
+        this.server.bind(this.properties.port, this.properties.host);
     }
 
     // onExecute simply updates the output with the latest received data.
