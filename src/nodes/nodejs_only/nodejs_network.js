@@ -139,7 +139,15 @@ class BaseServer {
         this._stopRequested = true;
         clearTimeout(this._retryTimer);
         this._retryTimer = null;
-        this._closeServer(callback);
+        const stopped = new Promise((resolve, reject) => {
+            this._closeServer((error) => {
+                try { callback?.(error); } catch (callbackError) { reject(callbackError); return; }
+                if (error) reject(error); else resolve();
+            });
+        });
+        // Legacy callers can still use the callback form without awaiting.
+        stopped.catch(() => {});
+        return stopped;
     }
 
     _closeServer(callback) {
@@ -225,8 +233,8 @@ class BaseServer {
         this.log(this.name, "Server stopped.");
     }
 
-    onStop() { this.stopServer(); }
-    onRemoved() { this.stopServer(); }
+    onStop() { return this.stopServer(); }
+    onRemoved() { return this.stopServer(); }
 }
 
 // ----------------------------

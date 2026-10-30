@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import net from 'node:net';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 
@@ -53,6 +54,46 @@ test('worker lifecycle, execution updates, validation, and unload', async () => 
     assert.ok((await manager.requestSync('empty.json', logger)).error);
     assert.equal((await manager.openGraph('empty.json', logger)).serializedGraph.nodes.length, 0);
   } finally { await manager.unloadAllGraphs(logger); }
+});
+
+test('worker stop/update acknowledgments wait for bound ports to be released', { timeout: 10000 }, async () => {
+  const reservation = net.createServer();
+  reservation.listen(0, '127.0.0.1');
+  await once(reservation, 'listening');
+  const port = reservation.address().port;
+  await new Promise((resolve) => reservation.close(resolve));
+  const file = 'server.json';
+  const configured = { ...workflow, nodes: [{ id: 1, type: 'server/network/websocketserver', properties: { port, should_autoconnect: true, retryTimeout: 10 } }] };
+  fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, file), JSON.stringify(configured));
+  const clients = [];
+  const connect = async () => {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const client = new WebSocket(`ws://127.0.0.1:${port}`);
+      try { await once(client, 'open'); clients.push(client); return client; }
+      catch { client.terminate(); await new Promise((resolve) => setTimeout(resolve, 20)); }
+    }
+    throw new Error('Worker server did not become reachable');
+  };
+  try {
+    assert.equal((await manager.openGraph(file, logger)).status, 'stopped');
+    assert.equal((await manager.controlGraph(file, 'start', logger)).status, 'running');
+    await connect();
+    const replacement = await manager.updateGraph(file, configured, logger);
+    assert.equal(replacement.status, 'running', replacement.error);
+    await connect();
+    const stopped = await manager.controlGraph(file, 'stop', logger);
+    assert.equal(stopped.status, 'stopped', stopped.error);
+    // Rebind immediately after the acknowledgement, without a settling delay.
+    const probe = net.createServer();
+    try {
+      probe.listen(port, '127.0.0.1');
+      await once(probe, 'listening');
+    } finally { await new Promise((resolve) => probe.close(resolve)); }
+  } finally {
+    for (const client of clients) client.terminate();
+    await manager.unloadAllGraphs(logger);
+  }
 });
 
 test('HTTP and WebSocket protocol on an ephemeral port', async () => {

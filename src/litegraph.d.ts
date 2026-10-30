@@ -401,6 +401,12 @@ export declare class LGraph {
     hasPendingInitialization(): boolean;
     /** Stops the execution loop of the graph */
     stop(): void;
+    /** Await asynchronous cleanup returned by stop/removal callbacks. */
+    whenIdle(): Promise<this>;
+    stopAsync(): Promise<this>;
+    clearAsync(): Promise<this>;
+    removeAsync(node: LGraphNode): Promise<this>;
+    cleanup_error?: Error | null;
     /**
      * Run N steps (cycles) of the graph
      * @param num number of steps to run, default is 1

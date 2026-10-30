@@ -32,7 +32,7 @@ test('graph stop closes WebSocket server and connected clients; graph can restar
         await once(client, 'open');
         const closed = once(server, 'close');
         const disconnected = once(client, 'close');
-        graph.stop();
+        await graph.stopAsync();
         await Promise.all([closed, disconnected]);
         assert.equal(node.server, null);
         assert.equal(node.status, 'stopped');
@@ -42,7 +42,7 @@ test('graph stop closes WebSocket server and connected clients; graph can restar
         const replacement = node.server;
         await once(replacement, 'listening');
         const removed = once(replacement, 'close');
-        graph.clear();
+        await graph.clearAsync();
         await removed;
         assert.equal(node.server, null);
     } finally { client?.terminate(); graph.clear(); }
@@ -62,7 +62,7 @@ test('UDP node receives loopback data and graph stop releases the socket', { tim
         assert.deepEqual(node.getOutputData(node.findOutputSlot('dataOut')), { value: 42 });
         assert.equal(node.status, 'running');
         const closed = once(server, 'close');
-        graph.stop();
+        await graph.stopAsync();
         await closed;
         assert.equal(node.server, null);
         assert.equal(node._retryTimer, null);
@@ -97,7 +97,7 @@ test('Socket.IO server constructor is independent of a loaded client global', { 
         const httpServer = node.server.httpServer;
         if (!httpServer.listening) await once(httpServer, 'listening');
         const closed = once(httpServer, 'close');
-        graph.clear();
+        await graph.clearAsync();
         await closed;
         assert.equal(node.server, null);
     } finally { graph.clear(); }

@@ -28,7 +28,9 @@ async function configure(data) {
     await candidate.whenReady();
     return candidate;
   } catch (error) {
-    candidate.clear();
+    try { await candidate.clearAsync(); } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], `Workflow configuration failed: ${error.message}; cleanup failed: ${cleanupError.message}`);
+    }
     throw error;
   }
 }
@@ -46,14 +48,18 @@ async function handleCommand({ requestId, action, serializedGraph }) {
     let data = {};
     switch (action) {
       case 'start': await graph.startAsync(); break;
-      case 'stop': graph.stop(); break;
-      case 'clear': graph.clear(); break;
+      case 'stop': await graph.stopAsync(); break;
+      case 'clear': await graph.clearAsync(); break;
       case 'status': break;
       case 'sync': data.serializedGraph = graph.serialize(); break;
       case 'update': {
         const replacement = await configure(serializedGraph);
         const wasRunning = status() === 'running';
-        graph.clear();
+        try { await graph.clearAsync(); }
+        catch (error) {
+          await replacement.clearAsync();
+          throw error;
+        }
         graph = replacement;
         if (wasRunning) await graph.startAsync();
         data.serializedGraph = graph.serialize();

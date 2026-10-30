@@ -1533,6 +1533,7 @@ export class CallbackHandler {
          */
         var checkStepRet = function() {
             aResChain.push(stepRet); // cache result
+            opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
             // check result for structured object
             if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stepRet check", stepRet);
             if (stepRet !== null && typeof(stepRet) == "object") {
@@ -2731,11 +2732,13 @@ export class LGraph {
         this._nodes?.slice().forEach((node) => {
             try {
                 node.processCallbackHandlers("onRemoved", {
-                    def_cb: node.onRemoved
+                    def_cb: node.onRemoved,
+                    on_result: (value) => this._trackCleanup(value)
                 }, this);
             } catch (error) {
                 errors.push(error);
             } finally {
+                if (node.subgraph) this._trackCleanup(node.subgraph.whenIdle());
                 node.graph = null;
                 node._waiting_actions = [];
                 node.inputs?.forEach((input) => {
@@ -2915,7 +2918,7 @@ export class LGraph {
         if (this._pending_start) return this._pending_start.promise;
         const request = {};
         this._pending_start = request;
-        request.promise = this.whenReady().then(async () => {
+        request.promise = this.whenIdle().then(() => this.whenReady()).then(async () => {
             // Include nodes added between readiness settlement and this continuation.
             while (this._pending_start === request && this.hasPendingInitialization()) await this.whenReady();
             if (this._pending_start !== request) return false;
@@ -2936,7 +2939,7 @@ export class LGraph {
     /** Start immediately when ready, or return a Promise while dependencies load. */
     start(interval = 0) {
         if (this.status === LGraph.STATUS_RUNNING) return;
-        if (this.hasPendingInitialization()) return this.startAsync(interval);
+        if (this.hasPendingInitialization() || this._pendingCleanup?.size || this._cleanupWait) return this.startAsync(interval);
         this.initialization_error = null;
 
         this.status = LGraph.STATUS_RUNNING;
@@ -3007,7 +3010,8 @@ export class LGraph {
         const errors = [];
         try {
             this.processCallbackHandlers("onStopEvent", {
-                def_cb: this.onStopEvent
+                def_cb: this.onStopEvent,
+                on_result: (value) => this._trackCleanup(value)
             });
         } catch (error) {
             errors.push(error);
@@ -3019,6 +3023,75 @@ export class LGraph {
         }
         if (errors.length === 1) throw errors[0];
         if (errors.length) throw new AggregateError(errors, "Graph stop failed");
+    }
+
+    /** Record all asynchronous cleanup results without creating unhandled rejections. */
+    _trackCleanup(value) {
+        if (!value || typeof value.then !== "function") return;
+        this._cleanupSources ??= new WeakSet();
+        if (this._cleanupSources.has(value)) return;
+        this._cleanupSources.add(value);
+        this._pendingCleanup ??= new Set();
+        const settled = Promise.resolve(value).then(() => null, (error) => {
+            this.cleanup_error = error;
+            return {
+                error
+            };
+        });
+        this._pendingCleanup.add(settled);
+    }
+
+    /** Wait for all cleanup initiated so far, including work queued during cleanup. */
+    whenIdle() {
+        const wait = async () => {
+            const errors = [];
+            while (this._cleanupWait || this._pendingCleanup?.size) {
+                if (!this._cleanupWait) {
+                    const batch = [...this._pendingCleanup];
+                    this._pendingCleanup.clear();
+                    this._cleanupWait = Promise.all(batch).finally(() => {
+                        this._cleanupWait = null;
+                    });
+                }
+                const results = await this._cleanupWait;
+                for (const result of results)
+                    if (result) errors.push(result.error);
+            }
+            if (errors.length === 1) throw errors[0];
+            if (errors.length) throw new AggregateError(errors, "Asynchronous graph cleanup failed");
+            this.cleanup_error = null;
+            return this;
+        };
+        const pending = wait();
+        pending.catch(() => {});
+        return pending;
+    }
+
+    async _cleanupAsync(operation) {
+        const errors = [];
+        try {
+            operation();
+        } catch (error) {
+            errors.push(error);
+        }
+        try {
+            await this.whenIdle();
+        } catch (error) {
+            errors.push(error);
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Graph cleanup failed");
+        return this;
+    }
+
+    stopAsync() {
+        return this._cleanupAsync(() => this.stop());
+    }
+    clearAsync() {
+        return this._cleanupAsync(() => this.clear());
+    }
+    removeAsync(node) {
+        return this._cleanupAsync(() => this.remove(node));
     }
 
     /**
@@ -3415,10 +3488,15 @@ export class LGraph {
             if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
             try {
                 if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
-                    node.sendEventToAllNodes(eventname, params, mode);
+                    try {
+                        node.sendEventToAllNodes(eventname, params, mode);
+                    } finally {
+                        if (eventname === "onStop") this._trackCleanup(node.subgraph.whenIdle());
+                    }
                 } else {
                     node.processCallbackHandlers(eventname, {
-                        def_cb: node[eventname]
+                        def_cb: node[eventname],
+                        on_result: eventname === "onStop" ? (value) => this._trackCleanup(value) : undefined,
                     }, ...args);
                 }
             } catch (error) {
@@ -3611,11 +3689,13 @@ export class LGraph {
             let removalError;
             try {
                 node.processCallbackHandlers("onRemoved", {
-                    def_cb: node.onRemoved
+                    def_cb: node.onRemoved,
+                    on_result: (value) => this._trackCleanup(value)
                 }, this);
             } catch (error) {
                 removalError = error;
             }
+            if (node.subgraph) this._trackCleanup(node.subgraph.whenIdle());
             node.graph = null;
             node._waiting_actions = [];
 
@@ -45186,7 +45266,21 @@ class BaseServer {
         this._stopRequested = true;
         clearTimeout(this._retryTimer);
         this._retryTimer = null;
-        this._closeServer(callback);
+        const stopped = new Promise((resolve, reject) => {
+            this._closeServer((error) => {
+                try {
+                    callback?.(error);
+                } catch (callbackError) {
+                    reject(callbackError);
+                    return;
+                }
+                if (error) reject(error);
+                else resolve();
+            });
+        });
+        // Legacy callers can still use the callback form without awaiting.
+        stopped.catch(() => {});
+        return stopped;
     }
 
     _closeServer(callback) {
@@ -45275,10 +45369,10 @@ class BaseServer {
     }
 
     onStop() {
-        this.stopServer();
+        return this.stopServer();
     }
     onRemoved() {
-        this.stopServer();
+        return this.stopServer();
     }
 }
 
