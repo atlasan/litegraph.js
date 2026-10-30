@@ -13,7 +13,7 @@ npm run editor
 npm run graphrunner
 ```
 
-`npm run check` builds all twelve artifacts, runs Jest and integration regressions, checks JavaScript syntax and initialized exports for every artifact, and verifies npm package contents plus ESM/CommonJS entry points. `--ignore-scripts` avoids installing native integration bindings during core validation; optional native integrations may require their normal installation steps. GitHub Actions runs this gate on Node 22/Linux. The CI workflow has been added; a remote run is not claimed.
+`npm run check` rejects ESLint errors, builds all twelve artifacts, runs Jest and integration regressions, checks JavaScript syntax and initialized exports for every artifact, and verifies npm package contents plus ESM/CommonJS entry points. `--ignore-scripts` avoids installing native integration bindings during core validation; optional native integrations may require their normal installation steps. GitHub Actions runs this gate on Node 22/Linux. The CI workflow has been added; a remote run is not claimed.
 
 Individual checks:
 
@@ -24,7 +24,7 @@ npm run check:build
 npm run lint
 ```
 
-Lint is a separate diagnostic because the baseline had 55 errors and 1,906 warnings (the current follow-up has 50 errors and 1,848 warnings). The stabilization changes do not claim to resolve the repository-wide lint backlog. Browser GPU/audio/MIDI nodes and optional external services are not covered by the automated gate.
+Lint now passes with zero errors. `npm run check` runs it with `--quiet` to enforce errors without flooding CI output. `npm run lint` also shows the remaining style/unused-variable warnings; those remain a maintenance backlog and have not been broadly suppressed. Browser GPU/audio/MIDI nodes and optional external services are not covered by the automated gate.
 
 The builder now finds local npm executables, runs them without shell argument loss, fails on missing sources/tool failures, and emits exported variables in CJS. The Node network nodes no longer overwrite the complete bundle's module.exports. Regenerated bundles include previously stale source changes and formatting; inspect source/build-script changes separately from generated diffs. The custom regular-expression transformer still only supports this repository's known source patterns.
 
@@ -114,4 +114,4 @@ Server-side manager methods now return Promises; callers must await them. Succes
 
 ## Evidence and follow-up
 
-The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: loading/removal races, canvas interaction tests, remaining optional integration fixtures, declarations/version parity, lint errors, and tester scenario contracts. Reproduce relevant upstream/fork defects locally before considering a port.
+The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: loading/removal races, canvas interaction tests, remaining optional integration fixtures, declarations/version parity, and tester scenario contracts. Reproduce relevant upstream/fork defects locally before considering a port.

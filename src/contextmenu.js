@@ -202,7 +202,7 @@ export class ContextMenu {
                         }
                         updateSelected();
                         break;
-                    case "ArrowLeft":
+                    case "ArrowLeft": {
                         const parentMenu = this.parentMenu;
                         this.close(event, true);
                         if(parentMenu){
@@ -216,6 +216,7 @@ export class ContextMenu {
                         selectedIndex = 0;
                         updateSelected(); */
                         break;
+                    }
                     case "Enter":
                         selectedItem?.do_click(event); //click();
                         break;

@@ -384,7 +384,7 @@ class LGraphPoints3D {
                 b = index * 9 + 3;
                 c = index * 9 + 6;
             }
-            var s = Math.random();
+            let s = Math.random();
             var t = Math.random();
             var sqrt_s = Math.sqrt(s);
             var af = 1 - sqrt_s;

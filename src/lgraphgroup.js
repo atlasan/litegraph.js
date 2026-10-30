@@ -31,15 +31,15 @@ export class LGraphGroup {
     registerCallbackHandler(){
         if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.registerCallbackHandler(...arguments);
-    };
+    }
     unregisterCallbackHandler(){
         if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.unregisterCallbackHandler(...arguments);
-    };
+    }
     processCallbackHandlers(){
         if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.processCallbackHandlers(...arguments);
-    };
+    }
 
     set pos(v) {
         if (!v || v.length < 2) {

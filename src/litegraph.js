@@ -646,7 +646,7 @@ export class LiteGraphClass {
                 try{
                     console.info("**",obj[propertyName]["arguments"]);
                 }catch(e){
-                    
+                    // Strict-mode functions do not expose their arguments property.
                 }
                 this.wrapFunctionAsNode(objectNameId+"/"+propertyName, obj[propertyName]);
             }else{
@@ -1151,7 +1151,7 @@ export class LiteGraphClass {
     extendClass = (target, origin) => {
         for (let i in origin) {
             // copy class properties
-            if (target.hasOwnProperty(i)) {
+            if (Object.hasOwn(target, i)) {
                 continue;
             }
             target[i] = origin[i];
@@ -1161,11 +1161,11 @@ export class LiteGraphClass {
             // copy prototype properties
             for (let i in origin.prototype) {
                 // only enumerable
-                if (!origin.prototype.hasOwnProperty(i)) {
+                if (!Object.hasOwn(origin.prototype, i)) {
                     continue;
                 }
 
-                if (target.prototype.hasOwnProperty(i)) {
+                if (Object.hasOwn(target.prototype, i)) {
                     // avoid overwriting existing ones
                     continue;
                 }
@@ -1248,7 +1248,7 @@ export class LiteGraphClass {
      */ 
     formatNumber(n, precision = 3){
         n = Number(n);
-        if(n === NaN){
+        if(Number.isNaN(n)){
             return "";
         }else{
             return n.toFixed(precision).replace(/(\.\d*[1-9])0+$|\.0*$/, '$1');

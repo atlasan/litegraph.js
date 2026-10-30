@@ -62,3 +62,20 @@ test('connected data flow survives graph serialization and configure', () => {
     graph.clear();
     restored.clear();
 });
+
+test('number formatting handles invalid values and strips only trailing decimals', () => {
+    expect(LiteGraph.formatNumber('not a number')).toBe('');
+    expect(LiteGraph.formatNumber(NaN)).toBe('');
+    expect(LiteGraph.formatNumber(12.340)).toBe('12.34');
+    expect(LiteGraph.formatNumber('0')).toBe('0');
+    expect(LiteGraph.formatNumber(-4.5678, 2)).toBe('-4.57');
+});
+
+test('class extension accepts targets without Object.prototype methods', () => {
+    const target = Object.create(null);
+    LiteGraph.extendClass(target, { value: 42 });
+    expect(target.value).toBe(42);
+    LiteGraph.extendClass(target, { value: 99, next: true });
+    expect(target.value).toBe(42);
+    expect(target.next).toBe(true);
+});

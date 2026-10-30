@@ -14,7 +14,7 @@ export let registerExtension_renamer = function(graphcanvas){
     graphcanvas.registerCallbackHandler("onKeyDown",function(oCbInfo, keyEvent){
         if(debug) console.info(ext, "*** renamer onKeyDown handler ***",...arguments);
         switch(keyEvent.keyCode){
-            case 113: // F2
+            case 113: { // F2
                 
                 // skip from second event on
                 if(keyEvent.repeat){
@@ -39,7 +39,7 @@ export let registerExtension_renamer = function(graphcanvas){
                                 : "titleForMany";
                     
                     // set update function
-                    var fCB = function(tIn){
+                    const fCB = function(tIn){
                         for(let iN in graphcanvas.selected_nodes){
                             graphcanvas.selected_nodes[iN].title = tIn;
                         }
@@ -57,7 +57,7 @@ export let registerExtension_renamer = function(graphcanvas){
                     if(groupOver){
                         if(debug) console.warn(ext, "dbg: group to rename",groupOver);
                         // set update function
-                        var fCB = function(tIn){
+                        const fCB = function(tIn){
                             groupOver.title = tIn;
                         }
                         // open prompt
@@ -71,6 +71,7 @@ export let registerExtension_renamer = function(graphcanvas){
                     }
                 }
             break;
+            }
             default:
                 if(debug) console.debug("dbg: ignore key",keyEvent.keyCode);
             break;

@@ -690,7 +690,7 @@ class LiteGraphClass {
                 try {
                     console.info("**", obj[propertyName]["arguments"]);
                 } catch (e) {
-
+                    // Strict-mode functions do not expose their arguments property.
                 }
                 this.wrapFunctionAsNode(objectNameId + "/" + propertyName, obj[propertyName]);
             } else {
@@ -1201,7 +1201,7 @@ class LiteGraphClass {
     extendClass = (target, origin) => {
         for (let i in origin) {
             // copy class properties
-            if (target.hasOwnProperty(i)) {
+            if (Object.hasOwn(target, i)) {
                 continue;
             }
             target[i] = origin[i];
@@ -1211,11 +1211,11 @@ class LiteGraphClass {
             // copy prototype properties
             for (let i in origin.prototype) {
                 // only enumerable
-                if (!origin.prototype.hasOwnProperty(i)) {
+                if (!Object.hasOwn(origin.prototype, i)) {
                     continue;
                 }
 
-                if (target.prototype.hasOwnProperty(i)) {
+                if (Object.hasOwn(target.prototype, i)) {
                     // avoid overwriting existing ones
                     continue;
                 }
@@ -1298,7 +1298,7 @@ class LiteGraphClass {
      */
     formatNumber(n, precision = 3) {
         n = Number(n);
-        if (n === NaN) {
+        if (Number.isNaN(n)) {
             return "";
         } else {
             return n.toFixed(precision).replace(/(\.\d*[1-9])0+$|\.0*$/, '$1');
@@ -1831,7 +1831,7 @@ class ContextMenu {
                         }
                         updateSelected();
                         break;
-                    case "ArrowLeft":
+                    case "ArrowLeft": {
                         const parentMenu = this.parentMenu;
                         this.close(event, true);
                         if (parentMenu) {
@@ -1845,6 +1845,7 @@ class ContextMenu {
                         selectedIndex = 0;
                         updateSelected(); */
                         break;
+                    }
                     case "Enter":
                         selectedItem?.do_click(event); //click();
                         break;
@@ -2692,13 +2693,13 @@ class LGraph {
 
     registerCallbackHandler() {
         return this.cb_handler.registerCallbackHandler(...arguments);
-    };
+    }
     unregisterCallbackHandler() {
         return this.cb_handler.unregisterCallbackHandler(...arguments);
-    };
+    }
     processCallbackHandlers() {
         return this.cb_handler.processCallbackHandlers(...arguments);
-    };
+    }
 
     /**
      * Gets the supported types of the LGraph class, falling back to the default supported types if not defined for the instance.
@@ -4936,15 +4937,15 @@ class LGraphCanvas {
     registerCallbackHandler() {
         // if(!this.cb_handler) this.callbackhandler_setup();
         return this.cb_handler.registerCallbackHandler(...arguments);
-    };
+    }
     unregisterCallbackHandler() {
         // if(!this.cb_handler) this.callbackhandler_setup();
         return this.cb_handler.unregisterCallbackHandler(...arguments);
-    };
+    }
     processCallbackHandlers() {
         // if(!this.cb_handler) this.callbackhandler_setup();
         return this.cb_handler.processCallbackHandlers(...arguments);
-    };
+    }
 
     /**
      * clears all the data inside
@@ -9931,7 +9932,7 @@ class LGraphCanvas {
                     var nvalue = (w.value - w.options.min) / range;
                     if (nvalue < 0.0) nvalue = 0.0;
                     if (nvalue > 1.0) nvalue = 1.0;
-                    ctx.fillStyle = w.options.hasOwnProperty("slider_color") ? w.options.slider_color : (active_widget == w ? "#89A" : "#678");
+                    ctx.fillStyle = Object.hasOwn(w.options, "slider_color") ? w.options.slider_color : (active_widget == w ? "#89A" : "#678");
                     ctx.fillRect(margin, y, nvalue * (widget_width - margin * 2), H);
                     if (show_text && !w.disabled)
                         ctx.strokeRect(margin, y, widget_width - margin * 2, H);
@@ -9939,7 +9940,7 @@ class LGraphCanvas {
                         var marker_nvalue = (w.marker - w.options.min) / range;
                         if (marker_nvalue < 0.0) marker_nvalue = 0.0;
                         if (marker_nvalue > 1.0) marker_nvalue = 1.0;
-                        ctx.fillStyle = w.options.hasOwnProperty("marker_color") ? w.options.marker_color : "#AA9";
+                        ctx.fillStyle = Object.hasOwn(w.options, "marker_color") ? w.options.marker_color : "#AA9";
                         ctx.fillRect(margin + marker_nvalue * (widget_width - margin * 2), y, 2, H);
                     }
                     if (show_text) {
@@ -12329,6 +12330,79 @@ class LGraphCanvas {
                     sOut = false;
                 }
 
+                const inner_test_filter = function(type, optsIn = {}) {
+                    var optsDef = {
+                        skipFilter: false,
+                        inTypeOverride: false,
+                        outTypeOverride: false,
+                    };
+                    var opts = Object.assign(optsDef, optsIn);
+                    var ctor = LiteGraph.registered_node_types[type];
+                    if (filter && ctor.filter != filter)
+                        return false;
+
+                    let str_node = type.toLowerCase();
+                    let a_srch_parts = str.toLowerCase().split(" ");
+                    let passTextSearch = true;
+                    for (let i_srch of a_srch_parts) {
+                        LiteGraph.log_verbose("search", "check", i_srch, str_node); // verbose debug, make new higher level
+                        if (i_srch.trim() === "") continue;
+                        if (str_node.indexOf(i_srch) == -1) {
+                            passTextSearch = false;
+                            LiteGraph.log_verbose("search", "do not pass", i_srch, str_node); // verbose debug, make new higher level
+                            break;
+                        }
+                    }
+
+                    if ((!options.show_all_if_empty || str) && !passTextSearch)
+                        return false;
+
+                    // filter by slot IN, OUT types
+                    if (options.do_type_filter && !opts.skipFilter) {
+                        var sType = type;
+                        let doesInc;
+
+                        var sV = sIn.value;
+                        if (opts.inTypeOverride !== false) sV = opts.inTypeOverride;
+                        // if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
+
+                        if (sIn && sV) {
+                            // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN will check filter against "+sV);
+                            if (LiteGraph.registered_slot_in_types[sV] && LiteGraph.registered_slot_in_types[sV].nodes) { // type is stored
+                                // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN check "+sType+" in "+LiteGraph.registered_slot_in_types[sV].nodes);
+                                doesInc = LiteGraph.registered_slot_in_types[sV].nodes.includes(sType);
+                                if (doesInc !== false) {
+                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+sType+" HAS "+sV);
+                                } else {
+                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+LiteGraph.registered_slot_in_types[sV]," DONT includes "+type);
+                                    return false;
+                                }
+                            }
+                        }
+
+                        sV = sOut.value;
+                        if (opts.outTypeOverride !== false) {
+                            sV = opts.outTypeOverride;
+                        }
+                        // if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
+
+                        if (sOut && sV) {
+                            // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN will check filter against "+sV);
+                            if (LiteGraph.registered_slot_out_types[sV] && LiteGraph.registered_slot_out_types[sV].nodes) { // type is stored
+                                // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN check "+sType+" in "+LiteGraph.registered_slot_in_types[sV].nodes);
+                                doesInc = LiteGraph.registered_slot_out_types[sV].nodes.includes(sType);
+                                if (doesInc !== false) {
+                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+sType+" HAS "+sV);
+                                } else {
+                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+LiteGraph.registered_slot_in_types[sV]," DONT includes "+type);
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    return true;
+                };
+
                 // extras
                 for (let i in LiteGraph.searchbox_extras) {
                     var extra = LiteGraph.searchbox_extras[i];
@@ -12433,78 +12507,7 @@ class LGraphCanvas {
                     }
                 }
 
-                function inner_test_filter(type, optsIn = {}) {
-                    var optsDef = {
-                        skipFilter: false,
-                        inTypeOverride: false,
-                        outTypeOverride: false,
-                    };
-                    var opts = Object.assign(optsDef, optsIn);
-                    var ctor = LiteGraph.registered_node_types[type];
-                    if (filter && ctor.filter != filter)
-                        return false;
 
-                    let str_node = type.toLowerCase();
-                    let a_srch_parts = str.toLowerCase().split(" ");
-                    let passTextSearch = true;
-                    for (let i_srch of a_srch_parts) {
-                        LiteGraph.log_verbose("search", "check", i_srch, str_node); // verbose debug, make new higher level
-                        if (i_srch.trim() === "") continue;
-                        if (str_node.indexOf(i_srch) == -1) {
-                            passTextSearch = false;
-                            LiteGraph.log_verbose("search", "do not pass", i_srch, str_node); // verbose debug, make new higher level
-                            break;
-                        }
-                    }
-
-                    if ((!options.show_all_if_empty || str) && !passTextSearch)
-                        return false;
-
-                    // filter by slot IN, OUT types
-                    if (options.do_type_filter && !opts.skipFilter) {
-                        var sType = type;
-                        let doesInc;
-
-                        var sV = sIn.value;
-                        if (opts.inTypeOverride !== false) sV = opts.inTypeOverride;
-                        // if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
-
-                        if (sIn && sV) {
-                            // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN will check filter against "+sV);
-                            if (LiteGraph.registered_slot_in_types[sV] && LiteGraph.registered_slot_in_types[sV].nodes) { // type is stored
-                                // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN check "+sType+" in "+LiteGraph.registered_slot_in_types[sV].nodes);
-                                doesInc = LiteGraph.registered_slot_in_types[sV].nodes.includes(sType);
-                                if (doesInc !== false) {
-                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+sType+" HAS "+sV);
-                                } else {
-                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+LiteGraph.registered_slot_in_types[sV]," DONT includes "+type);
-                                    return false;
-                                }
-                            }
-                        }
-
-                        sV = sOut.value;
-                        if (opts.outTypeOverride !== false) {
-                            sV = opts.outTypeOverride;
-                        }
-                        // if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
-
-                        if (sOut && sV) {
-                            // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN will check filter against "+sV);
-                            if (LiteGraph.registered_slot_out_types[sV] && LiteGraph.registered_slot_out_types[sV].nodes) { // type is stored
-                                // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN check "+sType+" in "+LiteGraph.registered_slot_in_types[sV].nodes);
-                                doesInc = LiteGraph.registered_slot_out_types[sV].nodes.includes(sType);
-                                if (doesInc !== false) {
-                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+sType+" HAS "+sV);
-                                } else {
-                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "showSearchBox", "inner_test_filter", "IN "+LiteGraph.registered_slot_in_types[sV]," DONT includes "+type);
-                                    return false;
-                                }
-                            }
-                        }
-                    }
-                    return true;
-                }
             }
 
             function addResult(type, className) {
@@ -14055,18 +14058,18 @@ class LGraphCanvas {
                 return;
             } else if (v.content == "Rename Slot") {
                 info = v.slot;
-                var slot_info = info.input ?
+                const slot_info = info.input ?
                     node.getInputInfo(info.slot) :
                     node.getOutputInfo(info.slot);
-                var dialog = that.createDialog(
+                const dialog = that.createDialog(
                     "<span class='name'>Name</span><input autofocus type='text'/><button>OK</button>",
                     options,
                 );
-                var input = dialog.querySelector("input");
+                const input = dialog.querySelector("input");
                 if (input && slot_info) {
                     input.value = slot_info.name || "";
                 }
-                var inner = function() {
+                const inner = function() {
                     node.graph.beforeChange();
                     if (input.value) {
                         if (slot_info) {
@@ -14094,18 +14097,18 @@ class LGraphCanvas {
                 input.focus();
             } else if (v.content == "Rename Label") {
                 info = v.slot;
-                var slot_info = info.input ?
+                const slot_info = info.input ?
                     node.getInputInfo(info.slot) :
                     node.getOutputInfo(info.slot);
-                var dialog = that.createDialog(
+                const dialog = that.createDialog(
                     "<span class='name'>Label</span><input autofocus type='text'/><button>OK</button>",
                     options,
                 );
-                var input = dialog.querySelector("input");
+                const input = dialog.querySelector("input");
                 if (input && slot_info) {
                     input.value = slot_info.label || "";
                 }
-                var inner = function() {
+                const inner = function() {
                     node.graph.beforeChange();
                     if (input.value) {
                         if (slot_info) {
@@ -14278,15 +14281,15 @@ class LGraphGroup {
     registerCallbackHandler() {
         if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.registerCallbackHandler(...arguments);
-    };
+    }
     unregisterCallbackHandler() {
         if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.unregisterCallbackHandler(...arguments);
-    };
+    }
     processCallbackHandlers() {
         if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.processCallbackHandlers(...arguments);
-    };
+    }
 
     set pos(v) {
         if (!v || v.length < 2) {
@@ -14584,15 +14587,15 @@ class LGraphNode {
     registerCallbackHandler() {
         if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.registerCallbackHandler(...arguments);
-    };
+    }
     unregisterCallbackHandler() {
         if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.unregisterCallbackHandler(...arguments);
-    };
+    }
     processCallbackHandlers() {
         if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
         return this.cb_handler.processCallbackHandlers(...arguments);
-    };
+    }
 
     set pos(v) {
         if (!v || v.length < 2) {
@@ -16137,9 +16140,6 @@ class LGraphNode {
             w.y = w.options.y;
         }
 
-        if (!callback && !w.options.callback && !w.options.property) {
-
-        }
         if (type == "combo" && !w.options.values) {
             // throw Error("LiteGraph addWidget('combo',...) requires to pass values in options: { values:['red','blue'] }");
             LiteGraph.log_warn("lgraphnode", "addWidget", "combo requires to pass values in options eg: { values:['red','blue'] }");
@@ -20048,7 +20048,7 @@ class Watch {
         } else if (o.constructor === Number) {
             return o.toFixed(3);
         } else if (o.constructor === Array) {
-            var str = "[";
+            let str = "[";
             for (var i = 0; i < o.length; ++i) {
                 str += WatchAdvanced.toString(o[i]) + (i + 1 != o.length ? "," : "");
             }
@@ -20097,14 +20097,14 @@ class WatchAdvanced {
                 this.value_last = this.value;
             }
         }
-    };
+    }
 
     getTitle() {
         if (this.flags.collapsed) {
             return this.inputs[0].label;
         }
         return this.title;
-    };
+    }
 
     static toString = function(o) {
         if (o == null) {
@@ -20112,7 +20112,7 @@ class WatchAdvanced {
         } else if (o.constructor === Number) {
             return o.toFixed(3);
         } else if (o.constructor === Object) {
-            var str = "";
+            let str = "";
             try {
                 str = JSON.stringify(o, null, 2);
             } catch (e) {
@@ -20120,7 +20120,7 @@ class WatchAdvanced {
             }
             return str;
         } else if (o.constructor === Array) {
-            var str = "[";
+            let str = "[";
             for (var i = 0; i < o.length; ++i) {
                 str += WatchAdvanced.toString(o[i]) + (i + 1 != o.length ? "," : "");
             }
@@ -20162,7 +20162,7 @@ class WatchAdvanced {
             ctx.fillText("... +" + nL_dif + " lines", 15, LiteGraph.NODE_TITLE_HEIGHT + (lS * (iL + 1)));
         }
         this.clip_area = this.properties.clip;
-    };
+    }
 
     fullWidth(menuitem, contextmenu, options, e, that_node, options_node) {
         if (!that_node) that_node = this;
@@ -26561,7 +26561,7 @@ class LGraphTexture {
     // used to replace shader code
     static replaceCode(code, context) {
         return code.replace(/\{\{[a-zA-Z0-9_]*\}\}/g, function(v) {
-            v = v.replace(/[\{\}]/g, ""); // @BUG: These escapes are being flagged as useless
+            v = v.replace(/[{}]/g, "");
             return context[v] || "";
         });
     }
@@ -34555,7 +34555,7 @@ class LGraphPoints3D {
                 b = index * 9 + 3;
                 c = index * 9 + 6;
             }
-            var s = Math.random();
+            let s = Math.random();
             var t = Math.random();
             var sqrt_s = Math.sqrt(s);
             var af = 1 - sqrt_s;
@@ -41174,11 +41174,12 @@ class objMethodWidget {
                 // call execute
                 console.debug?.("NodeObjMethod Execute", this._function, this._obin, parValues);
                 try {
+                    let r;
                     if (this._isClass) {
-                        var r = new this._function(...parValues); // this._function.apply(this, parValues);
+                        r = new this._function(...parValues); // this._function.apply(this, parValues);
                     } else {
                         // TODO: spread arguments
-                        var r = this._function.call(this._obin, ...parValues); // this._function.apply(this, parValues);
+                        r = this._function.call(this._obin, ...parValues); // this._function.apply(this, parValues);
                         console.debug?.("NodeObjMethod Execute", "result", r);
                     }
                     this.setOutputData(2, r); // update method result
@@ -44715,19 +44716,19 @@ class LGLibrary {
     static desc = "LiteGraph object reference";
     onExecute(param, options) {
         this.setOutputData(0, LiteGraph);
-    };
+    }
     onAction(action, param, options) {
         // should probably execute on action
-    };
+    }
     onGetInputs() {
         //return [["in", 0]];
-    };
+    }
     onGetOutputs() {
         //return [["out", 0]];
-    };
+    }
     getTitle() {
         return "LiteGraph";
-    };
+    }
 }
 LiteGraph.registerNodeType("litegraph/litegraph", LGLibrary);
 
@@ -44750,7 +44751,7 @@ class LGGraph {
     onExecute(param, options) {
         this.setOutputData(0, this.graph);
         this.triggerSlot(1, param, null, options);
-    };
+    }
     onAction(action, param, options) {
         console.debug("GraphAction", action);
         switch (action) {
@@ -44771,16 +44772,16 @@ class LGGraph {
                     this.graph.onAfterStep();
                 break;
         }
-    };
+    }
     onGetInputs() {
         //return [["in", 0]];
-    };
+    }
     onGetOutputs() {
         //return [["out", 0]];
-    };
+    }
     getTitle() {
         return "Graph";
-    };
+    }
 }
 LiteGraph.registerNodeType("litegraph/graph", LGGraph);
 // src/nodes/libraries/socket.io.js

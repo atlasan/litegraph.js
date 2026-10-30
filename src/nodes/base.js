@@ -719,7 +719,7 @@ class Watch {
         } else if (o.constructor === Number) {
             return o.toFixed(3);
         } else if (o.constructor === Array) {
-            var str = "[";
+            let str = "[";
             for (var i = 0; i < o.length; ++i) {
                 str += WatchAdvanced.toString(o[i]) + (i + 1 != o.length ? "," : "");
             }
@@ -766,14 +766,14 @@ class WatchAdvanced{
                 this.value_last = this.value;
             }
         }
-    };
+    }
 
     getTitle() {
         if (this.flags.collapsed) {
             return this.inputs[0].label;
         }
         return this.title;
-    };
+    }
 
     static toString = function(o) {
         if (o == null) {
@@ -781,7 +781,7 @@ class WatchAdvanced{
         } else if (o.constructor === Number) {
             return o.toFixed(3);
         } else if (o.constructor === Object) {
-            var str = "";
+            let str = "";
             try{
                 str = JSON.stringify(o,null,2);
             }catch(e){
@@ -789,7 +789,7 @@ class WatchAdvanced{
             }
             return str;
         } else if (o.constructor === Array) {
-            var str = "[";
+            let str = "[";
             for (var i = 0; i < o.length; ++i) {
                 str += WatchAdvanced.toString(o[i]) + (i + 1 != o.length ? "," : "");
             }
@@ -831,7 +831,7 @@ class WatchAdvanced{
             ctx.fillText("... +"+nL_dif+" lines", 15, LiteGraph.NODE_TITLE_HEIGHT+(lS*(iL+1)));
         }
         this.clip_area = this.properties.clip;
-    };
+    }
 
     fullWidth(menuitem,contextmenu,options,e,that_node,options_node){
         if(!that_node) that_node = this;

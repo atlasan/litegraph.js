@@ -10,7 +10,7 @@ Goal: have the full library, core, tester, and runner working well enough to use
 - Node dependencies and hooks initialize once; graph/worker/tester await readiness and report initialization failures.
 - Runner open/start/stop/update/sync/stop-all/unload/reopen is acknowledged by the worker, with path confinement and shutdown checks. Loopback tests verify WebSocket client/server teardown and restart, UDP reception/closure, retry cancellation, and separate Socket.IO client/server constructors.
 - Tester starts in the browser, generates selected scenarios, awaits initialization, injects real inputs, times out asynchronous tests, and reports validation/cleanup errors.
-- Latest complete local gate: 53 core tests, 22 integration tests, 12 distribution artifacts. Browser `math/abs`: 4/4 scenarios.
+- Latest complete local gate: 55 core tests, 22 integration tests, 12 distribution artifacts. Browser `math/abs`: 4/4 scenarios.
 
 ## Remaining acceptance work
 
@@ -23,7 +23,7 @@ Goal: have the full library, core, tester, and runner working well enough to use
 | Tester | Review legacy custom scenarios, stress/performance modes, cancellation semantics, result/coverage accuracy, export escaping, and visible progress/status controls. |
 | Runner UX | Empty/loading/error states, reconnect behavior, edit/apply/sync clarity, and state after worker failure; verify resource-bearing graph lifecycle. |
 | Developer API | Type declarations compile for supported ESM/CJS examples and reflect current APIs; version metadata policy documented; setup works from the lockfile. |
-| Maintenance gate | Resolve lint errors with focused fixes, document warning policy, and retain useful CI checks without blanket suppressions. |
+| Maintenance gate | Complete: zero ESLint errors; lint errors are enforced by `npm run check`/CI. Style warnings remain visible through `npm run lint`; no blanket rule suppression was added. |
 
 ## Scope boundaries
 

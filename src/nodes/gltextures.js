@@ -366,7 +366,7 @@ export class LGraphTexture {
     // used to replace shader code
     static replaceCode(code, context) {
         return code.replace(/\{\{[a-zA-Z0-9_]*\}\}/g, function (v) {
-            v = v.replace(/[\{\}]/g, ""); // @BUG: These escapes are being flagged as useless
+            v = v.replace(/[{}]/g, "");
             return context[v] || "";
         });
     }

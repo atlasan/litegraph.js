@@ -13,12 +13,12 @@
         "graphrunner": "nodemon --exec node headless/graphrunner/server/index.js",
         "start": "concurrently \"npm run editor\" \"npm run graphrunner\"",
         "test": "node --experimental-vm-modules node_modules/jest-cli/bin/jest.js",
-        "lint": "npx eslint src",
-        "lint:fix": "npx eslint --fix src",
+        "lint": "eslint src",
+        "lint:fix": "eslint --fix src",
         "nodemon": "nodemon",
         "test:integration": "node --test tools/tests/*.test.mjs",
         "check:build": "node tools/check-build.mjs",
-        "check": "npm run build && npm test -- --runInBand && npm run test:integration && npm run check:build"
+        "check": "npm run lint -- --quiet && npm run build && npm test -- --runInBand && npm run test:integration && npm run check:build"
     },
     "repository": {
         "type": "git",

@@ -22,7 +22,7 @@ export let registerExtension_autoconnect = function(graphcanvas){
 
         if(debug) console.info(ext, "*** onKeyDown handler ***", ...arguments);
         switch(keyEvent.keyCode){
-            case 65: // a
+            case 65: { // a
             
                 // skip if shift o ctrl
                 if(keyEvent.shiftKey || keyEvent.ctrlKey){
@@ -58,6 +58,7 @@ export let registerExtension_autoconnect = function(graphcanvas){
                 },{ call_once: true }); // register to call only once
 
             break;
+            }
             default:
                 if(debug) console.debug(ext, "### dbg: ignore key", keyEvent.keyCode);
             break;

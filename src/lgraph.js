@@ -45,13 +45,13 @@ export class LGraph {
 
     registerCallbackHandler(){
         return this.cb_handler.registerCallbackHandler(...arguments);
-    };
+    }
     unregisterCallbackHandler(){
         return this.cb_handler.unregisterCallbackHandler(...arguments);
-    };
+    }
     processCallbackHandlers(){
         return this.cb_handler.processCallbackHandlers(...arguments);
-    };
+    }
 
     /**
      * Gets the supported types of the LGraph class, falling back to the default supported types if not defined for the instance.
