@@ -1,3 +1,5 @@
+> Development update (2026-10-30): see [current setup and validation](docs/development/README.md) and [history, upstream, and fork investigation](docs/development/2026-10-30-study.md).
+
 # EXPERIMENTS WITH litegraph.js
 
 A fork of the ecceptional litegraph.js library. This is unofficial and unsupported.
