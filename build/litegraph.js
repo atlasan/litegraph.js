@@ -279,7 +279,7 @@ export class LiteGraphClass {
             return new ContextMenu(...arguments);
         };
         this.CallbackHandler = CallbackHandler;
-        this.LibraryManager = new LibraryManager();
+        this.LibraryManager ??= new LibraryManager();
 
         // base inclusion
         this.includeBasicNodes();
@@ -760,9 +760,6 @@ export class LiteGraphClass {
             node = new base_class(title);
         }
 
-        // extend constructor with the extended always executed (custom class or lgraphnode)
-        node.post_constructor();
-
         // basic size, before computing
         node.size_basic = node.size;
 
@@ -778,6 +775,7 @@ export class LiteGraphClass {
 
         // extra options
         Object.assign(node, options);
+        node.post_constructor();
 
         LiteGraph.log_verbose("createNode", "created", node, node.processCallbackHandlers);
 
@@ -2726,7 +2724,8 @@ export class LGraph {
         this._nodes?.forEach((node) => {
             node.processCallbackHandlers("onRemoved", {
                 def_cb: node.onRemoved
-            });
+            }, this);
+            node.graph = null;
         });
 
         // nodes
@@ -2859,21 +2858,70 @@ export class LGraph {
         return this.list_of_graphcanvas[0];
     }
 
-    /**
-     * Starts running this graph every interval milliseconds.
-     * @method start
-     * @param {number} interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
-     */
-    start(interval = 0) {
-        if (this.status === LGraph.STATUS_RUNNING) {
-            return;
+    /** Whether any node or nested graph is loading or failed initialization. */
+    hasPendingInitialization() {
+        return this._nodes.some((node) => node.initialization_state === "loading" ||
+            node.initialization_error || node.subgraph?.hasPendingInitialization());
+    }
+
+    /** Wait for node dependencies, including nested graphs, before execution. */
+    async whenReady() {
+        const nodes = this._nodes.slice();
+        await Promise.all(nodes.map(async (node) => {
+            await node.ready;
+            if (node.initialization_error) throw node.initialization_error;
+            if (node.subgraph) await node.subgraph.whenReady();
+        }));
+        // Nodes may be added while another dependency is loading.
+        if (nodes.length !== this._nodes.length || nodes.some((node, index) => node !== this._nodes[index])) {
+            return this.whenReady();
         }
+        return this;
+    }
+
+    startAsync(interval = 0) {
+        if (this._pending_start) return this._pending_start.promise;
+        const request = {};
+        this._pending_start = request;
+        request.promise = this.whenReady().then(async () => {
+            // Include nodes added between readiness settlement and this continuation.
+            while (this._pending_start === request && this.hasPendingInitialization()) await this.whenReady();
+            if (this._pending_start !== request) return false;
+            request.starting = true;
+            this.start(interval);
+            return this.status === LGraph.STATUS_RUNNING;
+        }).catch((error) => {
+            if (this._pending_start !== request && !request.starting) return false;
+            this.initialization_error = error;
+            throw error;
+        }).finally(() => {
+            if (this._pending_start === request) this._pending_start = null;
+        });
+        request.promise.catch((error) => LiteGraph.log_error("Graph initialization failed", error));
+        return request.promise;
+    }
+
+    /** Start immediately when ready, or return a Promise while dependencies load. */
+    start(interval = 0) {
+        if (this.status === LGraph.STATUS_RUNNING) return;
+        if (this.hasPendingInitialization()) return this.startAsync(interval);
+        this.initialization_error = null;
 
         this.status = LGraph.STATUS_RUNNING;
-        this.processCallbackHandlers("onPlayEvent", {
-            def_cb: this.onPlayEvent
-        });
-        this.sendEventToAllNodes("onStart");
+        try {
+            this.processCallbackHandlers("onPlayEvent", {
+                def_cb: this.onPlayEvent
+            });
+            this.sendEventToAllNodes("onStart");
+        } catch (error) {
+            try {
+                this.stop();
+            } catch (cleanupError) {
+                LiteGraph.log_error("Graph start cleanup failed", cleanupError);
+            }
+            throw error;
+        }
+        if (this.status !== LGraph.STATUS_RUNNING) return;
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
@@ -2913,19 +2961,20 @@ export class LGraph {
      * @method stop execution
      */
     stop() {
+        this._pending_start = null;
         if (this.status == LGraph.STATUS_STOPPED) {
             return;
         }
         this.status = LGraph.STATUS_STOPPED;
-        this.processCallbackHandlers("onStopEvent", {
-            def_cb: this.onStopEvent
-        });
         if (this.execution_timer_id != null) {
             if (this.execution_timer_id != -1) {
                 clearInterval(this.execution_timer_id);
             }
             this.execution_timer_id = null;
         }
+        this.processCallbackHandlers("onStopEvent", {
+            def_cb: this.onStopEvent
+        });
         this.sendEventToAllNodes("onStop");
 
         // TODO CHECK THIS : TRYING to refresh canvas, for multiview one still need a manual refresh (mouseover) 
@@ -3440,6 +3489,9 @@ export class LGraph {
             });
             return;
         }
+
+        // Directly constructed registered nodes need the same setup as createNode.
+        node.post_constructor?.();
 
         // nodes
         if (node.id != -1 && this._nodes_by_id[node.id] != null) {
@@ -14336,134 +14388,108 @@ export class LGraphNode {
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
 
-    // TODO check when is this called: a default node from the ones included will have his constructor
-    // should every node extend this istead of 
     constructor(title = "") {
-        // a custom registered node will have his custom constructor
-        LiteGraph.log_verbose("lgraphNODE", "ORIGINAL constructor not been replaced", this, title);
-
         this.title = title;
+        this.initializeNodeState();
+        if (new.target === LGraphNode) {
+            this.post_constructor();
+        } else {
+            // Subclass fields and constructor code must exist before initialization hooks.
+            this.ready = Promise.resolve().then(() => this.post_constructor());
+            this.ready.catch(() => {}); // The caller can still observe failure through ready.
+        }
+    }
 
-        this.post_constructor(...arguments);
+    initializeNodeState() {
+        this.executionEnvironment ??= "all";
+        this.requiredLibraries ??= [];
+        this.libraries ??= [];
+        this.graph ??= null;
+        this.id ??= LiteGraph.use_uuids ? LiteGraph.uuidv4() : -1;
+        this.type ??= this.constructor.type ?? null;
+        this.title ??= this.constructor.title ?? "";
+        this.inputs ??= [];
+        this.outputs ??= [];
+        this.connections ??= [];
+        this.properties ??= {};
+        this.properties_info ??= [];
+        this.flags ??= {};
+        this.mode ??= LiteGraph.ALWAYS;
+        this._pos ??= new Float32Array(LiteGraph.DEFAULT_POSITION);
+        this.size ??= [LiteGraph.NODE_WIDTH, 60];
+        this.size_basic ??= this.size;
+        this.callbackhandler_setup();
     }
 
     validateExecutionEnvironment() {
-        const runtime = getRuntime();
-        if (this.executionEnvironment) {
-            if (this.executionEnvironment !== "both" && this.executionEnvironment !== "all" && runtime !== this.executionEnvironment) {
-                throw new Error(`Node ${this.name||this.title||this} cannot run ${this.executionEnvironment} in ${runtime} environment.`);
+        return !this.executionEnvironment || ["all", "both", "any", "*", getRuntime()].includes(this.executionEnvironment);
+    }
+
+    validateRuntime() {
+        return !this.runtime || ["all", "both", "any", "*", getRuntime()].includes(this.runtime);
+    }
+
+    /** Initialize exactly once; basic nodes are ready synchronously, dependencies asynchronously. */
+    post_constructor() {
+        if (this._initializationPromise) return this._initializationPromise;
+        this.initializeNodeState();
+        let resolveReady;
+        let rejectReady;
+        this.ready = this._initializationPromise = new Promise((resolve, reject) => {
+            resolveReady = resolve;
+            rejectReady = reject;
+        });
+        // Creation remains synchronous. Consumers may await ready to handle dependency errors.
+        this.ready.catch(() => {});
+        this.initialization_state = "loading";
+        const fail = (error) => {
+            this.loading_lib = false;
+            this.initialization_state = "error";
+            this.initialization_error = error;
+            rejectReady(error);
+        };
+        const complete = () => {
+            this.loading_lib = false;
+            this.processCallbackHandlers("onPostConstruct", {
+                def_cb: this.onPostConstruct
+            });
+            LiteGraph.processCallbackHandlers("on_lgraphnode_construct", {
+                def_cb: LiteGraph.on_lgraphnode_construct,
+            }, this);
+            this.initialization_state = "ready";
+            resolveReady(this);
+        };
+        try {
+            this.wrong_environment = !this.validateExecutionEnvironment() || !this.validateRuntime();
+            if (this.wrong_environment) {
+                this.mode = LiteGraph.NEVER;
+                throw new Error(`Node ${this.type || this.title} cannot run in ${getRuntime()}`);
             }
+            if (this.libraries.length || this.requiredLibraries.length) {
+                this.loading_lib = true;
+                this.loadLibraries().then(complete).catch(fail);
+            } else {
+                complete();
+            }
+        } catch (error) {
+            fail(error);
+        }
+        return this.ready;
+    }
+
+    async loadLibraries(keys = [...this.libraries, ...this.requiredLibraries]) {
+        for (const key of new Set(keys)) {
+            if (!LiteGraph.LibraryManager) throw new Error("LiteGraph.initialize() must be called before loading node libraries");
+            await LiteGraph.LibraryManager.loadLibrary(key);
         }
     }
 
     loadRequiredLibraries() {
-        for (const libKey of this.requiredLibraries) {
-            const libInfo = LiteGraph.LibraryManager.getLibrary(libKey);
-            if (!libInfo) {
-                console.warn(`Library ${libKey} not found for node ${this.title}`);
-                continue;
-            }
-
-            if ((isBrowser() && libInfo.browser) || (isNode() && libInfo.server)) {
-                try {
-                    LiteGraph.LibraryManager.loadLibrary(libKey); // async
-                } catch (error) {
-                    console.error(`Failed to load library ${libKey} for node ${this.title}:`, error);
-                }
-            } else {
-                console.debug(`Library ${libKey} is not available for the current environment for node ${this.title}.`);
-            }
-        }
-    }
-
-    async post_constructor() {
-
-        if (!this.validateExecutionEnvironment()) {
-            LiteGraph.log_debug("lgraphNODE", "Node not in his environment", this.title);
-            return;
-        }
-
-        this.size ??= LiteGraph.NODE_MIN_SIZE; //this.size ??= [LiteGraph.NODE_WIDTH, 60];
-        this.size_basic ??= this.size;
-        this.graph ??= null;
-
-        this.runtime ??= this.runtime; // Specify where this node can execute, "node", "browser", *any
-        this.libraries ??= this.libraries; // List of required libraries
-
-        this._pos ??= new Float32Array(10, 10);
-
-        if (LiteGraph.use_uuids) {
-            this.id ??= LiteGraph.uuidv4();
-        } else {
-            this.id ??= -1; // not know till not added
-        }
-        this.type ??= null;
-
-        // inputs available: array of inputs
-        this.inputs ??= [];
-        this.outputs ??= [];
-        this.connections ??= [];
-
-        // local data
-        this.properties ??= {}; // for the values
-        this.properties_info ??= []; // for the info
-
-        this.flags ??= {};
-
-        // Validate runtime environment
-        if (!this.validateRuntime()) {
-            console.debug(`Node "${this.title}" will not run in the current environment: ${getRuntime()}`);
-            this.mode = LiteGraph.NEVER;
-        } else {
-            // Load required libraries
-            await this.loadLibraries();
-        }
-
-        // DBG EXCESS LiteGraph.log_verbose("lgraphNODE", "postconstruct",this,...arguments);
-        // register CallbackHandler methods on this
-        this.callbackhandler_setup();
-
-        this.loadRequiredLibraries();
-
-        // this cbhandler is probably not registered by a node that does not inherit default contructor, if that has not called callbackhandler_setup yet
-        this.processCallbackHandlers("onPostConstruct", {
-            def_cb: this.onPostConstruct
-        });
-        LiteGraph.processCallbackHandlers("on_lgraphnode_construct", {
-            def_cb: LiteGraph.on_lgraphnode_construct
-        }, this);
-    }
-
-    validateRuntime() {
-        const currentRuntime = getRuntime();
-        const isValid = !this.runtime || this.runtime === "*" || this.runtime === "any" || this.runtime === currentRuntime;
-        if (!isValid) {
-            this.wrong_environment = true;
-        }
-        return isValid;
-    }
-
-    async loadLibraries() {
-        if (!Array.isArray(this.libraries)) {
-            return;
-        }
-        if (Array.isArray(this.libraries) && this.libraries.length) {
-            this.loading_lib = true;
-            for (const lib of this.libraries) {
-                if (!LiteGraph.LibraryManager.isLibraryLoaded(lib)) {
-                    await LiteGraph.LibraryManager.loadLibrary(lib);
-                }
-            }
-            delete(this.loading_lib);
-        }
+        return this.loadLibraries(this.requiredLibraries || []);
     }
 
     callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        // this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        // this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        // this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
+        if (!this.cb_handler) this.cb_handler = new CallbackHandler(this);
     }
 
     registerCallbackHandler() {
@@ -15223,6 +15249,7 @@ export class LGraphNode {
      * @method executePendingActions
      */
     executePendingActions() {
+        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         if (!this._waiting_actions || !this._waiting_actions.length)
             return;
         this._waiting_actions.forEach((p) => {
@@ -15238,6 +15265,7 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
 
         if (this.mode === LiteGraph.NEVER) {
             LiteGraph.log_verbose("lgraphNODE", "doExecute", "prevent execution in mode NEVER", this.id);
@@ -15317,6 +15345,7 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         // if (this.onAction) {
 
         // enable this to give the event an ID
@@ -18784,9 +18813,7 @@ export class LibraryManager {
         this.path = null;
 
         // Dynamically import Node.js modules (avoid errors in browsers)
-        if (!isBrowser()) {
-            this.importNodeModules();
-        }
+        this.ready = isBrowser() ? Promise.resolve() : this.importNodeModules();
 
         setGlobalVariable("LibraryManager", this);
     }
@@ -18809,7 +18836,6 @@ export class LibraryManager {
         } catch (e) {
             console.warn("Error importing Node.js modules:", e);
         }
-        console.log("imported modules");
     }
 
     /**
@@ -18879,7 +18905,7 @@ export class LibraryManager {
                 existing.serverTarget = "both";
             }
             // Update default export if provided.
-            if (newLib.defaultExport) {
+            if (newLib.defaultExport !== undefined) {
                 existing.defaultExport = newLib.defaultExport;
             }
             // Do not change the load state if already loaded.
@@ -18903,188 +18929,105 @@ export class LibraryManager {
     }
 
     async loadLibrary(key, callback) {
-        if (!this.libraries_known[key]) {
-            console.error(`Library ${key} not registered.`);
-            return;
+        if (!Object.hasOwn(this.libraries_known, key)) {
+            throw new Error(`Library ${key} not registered`);
         }
-
-        // If the library is already loaded, return it immediately
         if (this.libraries_state[key] === "loaded") {
-            console.warn(`Library ${key} is already loaded.`);
-            callback && callback(this.libraries_loaded[key]);
+            callback?.(this.libraries_loaded[key]);
             return this.libraries_loaded[key];
         }
-
-        // If the library is currently loading, wait for its completion
-        if (this.libraries_state[key] === "loading") {
-            console.warn(`Library ${key} is already loading. Waiting for completion...`);
-            return this.loading_promises[key]; // Return the existing promise
-        }
-
-        // Start loading process
-        this.libraries_to_load.push(key);
-        this.libraries_state[key] = "loading";
-
-        // Store the promise in case others try to load it simultaneously
-        this.loading_promises[key] = new Promise(async (resolve, reject) => {
-            try {
-                let loadedModules = [];
-
-                if (isBrowser()) {
-                    loadedModules = await this.loadBrowserLibrary(this.libraries_known[key]);
-                } else if (isNode() || isBun()) {
-                    loadedModules = await this.loadServerLibrary(this.libraries_known[key]);
-                }
-
+        if (!this.loading_promises[key]) {
+            this.libraries_to_load.push(key);
+            this.libraries_state[key] = "loading";
+            this.loading_promises[key] = Promise.resolve().then(async () => {
+                await this.ready;
+                const library = this.libraries_known[key];
+                const modules = isBrowser() ?
+                    await this.loadBrowserLibrary(library) :
+                    await this.loadServerLibrary(library);
+                this.libraries_loaded[key] = modules;
                 this.libraries_state[key] = "loaded";
-                this.libraries_loaded[key] = loadedModules;
-
-                console.log(`Library processed: ${key}`);
-                callback && callback(loadedModules);
-                resolve(loadedModules);
-            } catch (error) {
+                return modules;
+            }).catch((error) => {
                 this.libraries_state[key] = "error";
-                console.error(`Failed to load library ${key}:`, error);
-                reject(error);
-            } finally {
-                delete this.loading_promises[key]; // Clean up after loading is complete
-            }
-        });
-
-        return this.loading_promises[key];
+                throw error;
+            }).finally(() => {
+                delete this.loading_promises[key];
+                this.libraries_to_load = this.libraries_to_load.filter((item) => item !== key);
+            });
+        }
+        const modules = await this.loading_promises[key];
+        callback?.(modules);
+        return modules;
     }
 
-    // **Load all specified browser files**
+    // Each list is an ordered dependency group; remote sources are a fallback group.
     async loadBrowserLibrary(library) {
-        const loadedScripts = [];
-
-        for (const localPath of library.localPaths) {
-            console.log(`Loading local browser script: ${localPath}`);
+        const groups = [library.localPaths, library.remoteUrls].filter((urls) => urls.length);
+        if (!groups.length) {
+            if (library.npmPackages.length || library.serverRemoteUrls.length) {
+                throw new Error(`Library ${library.key} is not available in the browser`);
+            }
+            return [];
+        }
+        let failure;
+        for (const urls of groups) {
             try {
-                loadedScripts.push(await this.loadScript(localPath, library.globalObject));
+                const loaded = [];
+                for (const url of urls) loaded.push(await this.loadScript(url, library.globalObject, library.defaultExport));
+                return loaded;
             } catch (error) {
-                console.warn(`Failed to load local file: ${localPath}`);
-            }
-            return loadedScripts;
-        }
-
-        for (const remoteUrl of library.remoteUrls) {
-            console.log(`Loading remote browser script: ${remoteUrl}`);
-            try {
-                loadedScripts.push(await this.loadScript(remoteUrl, library.globalObject));
-            } catch (error) {
-                console.warn(`Failed to load remote script: ${remoteUrl}`);
-            }
-            return loadedScripts;
-        }
-
-        if (loadedScripts.length === 0) {
-            if (library.localPaths.length == 0 && library.remoteUrls.length == 0) {
-                return []; // no files required
-            } else {
-                throw new Error(`Could not load any files for ${library.key}`);
+                failure = error;
             }
         }
-
-        return loadedScripts;
+        throw new Error(`Could not load browser library ${library.key}`, {
+            cause: failure
+        });
     }
 
-    // **Load all specified server files (Node.js/Bun)**
+    selectExport(namespace, defaultExport) {
+        if (!defaultExport) return namespace;
+        const name = defaultExport === true ? "default" : defaultExport;
+        if (!(name in namespace)) throw new Error(`Library export ${name} was not found`);
+        return namespace[name];
+    }
+
     async loadServerLibrary(library) {
-        if (!this.fs || !this.path) {
-            await this.importNodeModules();
-            if (!this.fs || !this.path) {
-                console.warn("Node.js 'fs' and 'path' modules are not available.");
-                return;
+        await this.ready;
+        const groups = [];
+        if (library.npmPackages.length) groups.push(() => this.loadPackages(library));
+        if (library.serverRemoteUrls.length) groups.push(async () => {
+            const modules = [];
+            for (const url of library.serverRemoteUrls) modules.push(await this.loadServerRemoteScript(url));
+            return modules;
+        });
+        if (!groups.length) {
+            if (library.localPaths.length || library.remoteUrls.length) {
+                throw new Error(`Library ${library.key} is not available on the server`);
             }
+            return [];
         }
-
-        const loadedModules = [];
-        const packageFile = "required-packages.txt";
-
-        // Read existing package list (if available)
-        let existingPackages = new Set();
-        try {
-            if (this.fs.existsSync(packageFile)) {
-                const data = this.fs.readFileSync(packageFile, "utf8");
-                existingPackages = new Set(data.split("\n").map(pkg => pkg.trim()).filter(Boolean));
-            }
-        } catch (error) {
-            console.warn("Failed to read required-packages.txt:", error);
-        }
-
-        for (const npmPackage of library.npmPackages) {
-            console.log(`Loading NPM package: ${npmPackage}`);
+        let failure;
+        for (const load of groups) {
             try {
-                let modX = null;
-                modX = await import(npmPackage);
-
-                if (library.globalObject && library.globalObject !== "") {
-                    if (library.defaultExport && typeof(modX) == "object") {
-                        if (typeof(modX[library.defaultExport]) !== "undefined") {
-                            modX = modX[library.defaultExport];
-                            console.debug(`Library ${npmPackage} got from default export`, modX);
-                        } else {
-                            console.warn(`Library ${npmPackage} NOT FOUND default export`, modX);
-                        }
-                    } else {
-                        // RECHECK WHEN AND IF NEEDED (could use defaultExport? mod to get deep property)
-                        if (typeof(modX.default) !== "undefined" && (library.defaultExport === true)) {
-                            console.debug(`Module has default for package: ${npmPackage}`, modX);
-                            modX = modX.default;
-                            console.debug(`Exporting default for package: ${npmPackage}`, modX);
-                        } else {
-                            console.debug(`Using module standard import package: ${npmPackage}`, modX);
-                        }
-                    }
-                    setGlobalVariable(library.globalObject, modX);
-                    // TODO save in local libs modX;
-                    console.log(`Included package: ${npmPackage} as global ${library.globalObject}`, modX);
-                    // console.log(`${modX}}`);
-                } else {
-                    console.log(`NOT Included package: ${npmPackage} as global ${library.globalObject} result ${modX} of ${loadedModules}`);
-                }
-
-                loadedModules.push(modX);
-
+                const modules = await load();
+                if (library.globalObject) setGlobalVariable(library.globalObject, modules[modules.length - 1]);
+                return modules;
             } catch (error) {
-                console.warn(`Failed to import NPM package: ${npmPackage}`, error);
-
-                // Add missing package to the list
-                if (!existingPackages.has(npmPackage)) {
-                    existingPackages.add(npmPackage);
-                    console.warn(`Adding missing package to required-packages.txt: ${npmPackage}`);
-                }
+                failure = error;
             }
         }
+        throw new Error(`Could not load server library ${library.key}`, {
+            cause: failure
+        });
+    }
 
-        // Write updated package list
-        if (existingPackages.length) {
-            try {
-                this.fs.writeFileSync(packageFile, [...existingPackages].join("\n") + "\n", "utf8");
-            } catch (error) {
-                console.warn("Failed to update required-packages.txt:", error);
-            }
+    async loadPackages(library) {
+        const modules = [];
+        for (const name of library.npmPackages) {
+            modules.push(this.selectExport(await import(name), library.defaultExport));
         }
-
-        for (const remoteUrl of library.serverRemoteUrls) {
-            console.log(`Loading remote module: ${remoteUrl}`);
-            try {
-                loadedModules.push(await this.loadServerRemoteScript(remoteUrl));
-            } catch (error) {
-                console.warn(`Failed to import remote module: ${remoteUrl}`, error);
-            }
-        }
-
-        if (loadedModules.length === 0) {
-            if (library.localPaths.npmPackages == 0 && npmPackages && library.serverRemoteUrls.length == 0) {
-                return []; // no files required
-            } else {
-                throw new Error(`Could not import anything for ${library.key}`);
-            }
-        }
-
-        return loadedModules;
+        return modules;
     }
 
     isLibraryLoaded(libKey) {
@@ -19094,7 +19037,7 @@ export class LibraryManager {
     getLib(libKey) {
         if (!this.isLibraryLoaded(libKey)) {
             console.warn(`[NodeJsSys] Library '${libKey}' is not loaded. Attempting to load...`);
-            this.loadLibrary(libKey);
+            this.loadLibrary(libKey).catch((error) => console.error(error));
             return null;
         }
         const library = this.libraries_known[libKey];
@@ -19109,20 +19052,14 @@ export class LibraryManager {
      */
     waitForLib(libKey, timeout = 9000) {
         return new Promise((resolve, reject) => {
-            const checkInterval = 50;
-            let elapsed = 0;
-            const intervalId = setInterval(() => {
-                if (this.getLibraryState(libKey) === "loaded") {
-                    clearInterval(intervalId);
-                    resolve(getGlobalVariable(this.libraries_known[libKey].globalObject));
-                } else {
-                    elapsed += checkInterval;
-                    if (timeout && elapsed >= timeout) {
-                        clearInterval(intervalId);
-                        reject(new Error(`Library ${libKey} did not load within ${timeout}ms`));
-                    }
-                }
-            }, checkInterval);
+            const timer = timeout ? setTimeout(() => reject(new Error(`Library ${libKey} did not load within ${timeout}ms`)), timeout) : null;
+            this.loadLibrary(libKey).then(() => {
+                clearTimeout(timer);
+                resolve(getGlobalVariable(this.libraries_known[libKey].globalObject));
+            }, (error) => {
+                clearTimeout(timer);
+                reject(error);
+            });
         });
     }
 
@@ -19135,10 +19072,13 @@ export class LibraryManager {
 
         const scriptText = await response.text();
         const script = new this.vm.Script(scriptText);
+        const exports = {};
         const sandbox = {
             window: {},
-            module: {},
-            exports: {}
+            module: {
+                exports
+            },
+            exports
         };
         script.runInNewContext(sandbox);
 
@@ -19146,61 +19086,23 @@ export class LibraryManager {
         return sandbox.module.exports || sandbox.exports;
     }
 
-    // // **Load a script dynamically in a browser**
-    // loadScript(url, globalObject) {
-    //     return new Promise((resolve, reject) => {
-    //         console.log(`Loading script: ${url}`);
-    //         const script = document.createElement("script");
-    //         script.src = url;
-    //         script.type = "text/javascript";
-    //         script.onload = () => resolve(window[globalObject]);
-    //         script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
-    //         document.head.appendChild(script);
-    //     });
-    // }
-
-    // **Detect and Load JavaScript as Module or CommonJS**
-    async loadScript(url, globalObject = "library_last") {
-        /* TODO get slugged file name as default */
-        console.debug("Load script", url, globalObject);
-        return new Promise(async (resolve, reject) => {
-            let isModule = await this.isESModule(url);
-            console.debug("loadScript", isModule ? "MODULE" : "COMMONJS", url);
-            if (isModule) {
-                let script = document.createElement("script");
-                script.type = "module";
-                // WIP CLEAN importing module
-
-                const jsName = this.camelize(globalObject);
-
-                script.textContent = `
-                    var root = {};
-                    if (typeof globalThis !== 'undefined') root = globalThis;
-                    else if (typeof self !== 'undefined') root = self;
-                    else if (typeof window !== 'undefined') root = window;
-                    else if (typeof global !== 'undefined') root = global;
-                    if (LibraryManager){
-                        LibraryManager.${jsName} = ${jsName};
-                        console.log('LibraryManager attached ${jsName}',LibraryManager.${jsName});
-                    }
-                    if (root.LibraryManager){
-                        root.LibraryManager.${jsName} = ${jsName};
-                        console.log('rootLibraryManager attached ${jsName}',root.LibraryManager.${jsName});
-                    }
-                    // LiteGraph.LibraryManager.${jsName} = ${jsName};
-                    // alert('loaded ${jsName}');
-                `;
-                //alert(script.textContent);
-                document.head.appendChild(script);
-                resolve();
-            } else {
-                let script = document.createElement("script");
-                script.type = "text/javascript";
-                script.src = url;
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            }
+    async loadScript(url, globalObject = "library_last", defaultExport) {
+        if (await this.isESModule(url)) {
+            const namespace = await import(new URL(url, document.baseURI).href);
+            const value = this.selectExport(namespace, defaultExport);
+            if (globalObject) setGlobalVariable(globalObject, value);
+            return value;
+        }
+        return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.type = "text/javascript";
+            script.src = url;
+            script.onload = () => resolve(globalObject ? getGlobalVariable(globalObject) : script);
+            script.onerror = () => {
+                script.remove();
+                reject(new Error(`Failed to load script: ${url}`));
+            };
+            document.head.appendChild(script);
         });
     }
 
@@ -19240,14 +19142,7 @@ export class LibraryManager {
         }
 
         const library = this.libraries_known[key];
-        library.localPaths.forEach(file => {
-            if (file.endsWith(".js")) {
-                document.querySelectorAll(`script[src="${file}"]`).forEach(el => el.remove());
-            } else if (file.endsWith(".css")) {
-                document.querySelectorAll(`link[href="${file}"]`).forEach(el => el.remove());
-            }
-        });
-        library.remoteUrls.forEach(file => {
+        if (isBrowser())[...library.localPaths, ...library.remoteUrls].forEach(file => {
             if (file.endsWith(".js")) {
                 document.querySelectorAll(`script[src="${file}"]`).forEach(el => el.remove());
             } else if (file.endsWith(".css")) {
@@ -19270,13 +19165,7 @@ export class LibraryManager {
      * @returns {boolean} True if every library's state is "loaded", false otherwise.
      */
     areAllLibrariesLoaded() {
-        for (const iL in this.libraries_to_load) {
-            let key = this.libraries_to_load[iL];
-            if (this.libraries_state[key] !== "loaded" && this.libraries_state[key] !== "error") {
-                return false;
-            }
-        }
-        return true;
+        return !Object.values(this.libraries_state).some((state) => state === "loading" || state === "error");
     }
 
     /**
@@ -19366,6 +19255,7 @@ export class LibraryManager {
 }
 
 export default LibraryManager;
+
 // this needs to be called after all classes has been included, before registering nodes and creating canvas
 // will setup callback handlers and LiteGraph.CLASSES references ( eg. LitegGraph.LGraph, .. )
 LiteGraph.initialize();
@@ -44849,8 +44739,9 @@ LiteGraph.registerNodeType("litegraph/graph", LGGraph);
 // -- client&server libraries --
 LiteGraph.LibraryManager.registerLibrary({
     key: "io",
+    defaultExport: "io",
     version: "4.6.1",
-    globalObject: "ioclient",
+    globalObject: "io",
     browser: {
         /*local: "/libs/socket.io.js",*/
         remote: "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/dist/socket.io.min.js"
@@ -44919,7 +44810,7 @@ class LGSocketIO {
                 console.debug("Got socketio lib from io", this._io_client);
                 // }else if(typeof(ioclient)=="function"){
             } else {
-                this._io_client = LiteGraph.getGlobalVariable("ioclient");
+                this._io_client = LiteGraph.getGlobalVariable("io");
                 console.debug("Got socketio lib from global", this._io_client);
             }
             // else if(typeof(io)=="object" && typeof(io.Socket)=="function"){
@@ -45048,6 +44939,7 @@ class LGSocketIO {
 }
 
 LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
+
 /* in types :: run in console :: var s=""; LiteGraph.slot_types_in.forEach(function(el){s+=el+"\n";}); console.log?.(s); */
 
 if (typeof LiteGraph.slot_types_default_in == "undefined")
