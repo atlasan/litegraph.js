@@ -394,7 +394,11 @@ export declare class LGraph {
      * Starts running this graph every interval milliseconds.
      * @param interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
      */
-    start(interval?: number): void;
+    /** Basic graphs start immediately; graphs with dependencies return a readiness promise. */
+    start(interval?: number): void | Promise<boolean>;
+    startAsync(interval?: number): Promise<boolean>;
+    whenReady(): Promise<this>;
+    hasPendingInitialization(): boolean;
     /** Stops the execution loop of the graph */
     stop(): void;
     /**
@@ -594,6 +598,18 @@ export type SerializedLGraphNode<T extends LGraphNode = LGraphNode> = {
 
 /** https://github.com/jagenjo/litegraph.js/blob/master/guides/README.md#lgraphnode */
 export declare class LGraphNode {
+    /** Resolves when initialization and declared library loading complete. */
+    ready: Promise<this>;
+    initialization_state: "loading" | "ready" | "error";
+    initialization_error?: Error;
+    wrong_environment?: boolean;
+    loading_lib?: boolean;
+    executionEnvironment: string;
+    runtime?: string;
+    libraries: string[];
+    requiredLibraries: string[];
+    post_constructor(): Promise<this>;
+
     static title_color: string;
     static title: string;
     static type: null | string;

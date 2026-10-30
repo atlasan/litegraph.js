@@ -5,7 +5,7 @@ import { LGraph } from '../src/lgraph.js';
 beforeAll(async () => {
     LiteGraph.initialize();
     // Wait for the optional Node module imports before the test environment closes.
-    await LiteGraph.LibraryManager.importNodeModules();
+    await LiteGraph.LibraryManager.ready;
 });
 
 test('registration preserves inherited custom methods', () => {

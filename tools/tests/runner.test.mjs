@@ -12,6 +12,7 @@ fs.mkdirSync(process.env.WORKFLOWS_DIR);
 const workflow = { nodes: [], links: [], groups: [], config: {}, extra: {}, version: 0.4 };
 fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'empty.json'), JSON.stringify(workflow));
 fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'invalid.json'), '{}');
+fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'file-node.json'), JSON.stringify({ ...workflow, nodes: [{ id: 1, type: 'sys/fileRead', properties: { filePath: '' } }] }));
 fs.writeFileSync(path.join(temp, 'outside.json'), JSON.stringify(workflow));
 fs.symlinkSync(path.join(temp, 'outside.json'), path.join(process.env.WORKFLOWS_DIR, 'escape.json'));
 const manager = await import('../../headless/graphrunner/server/graphManager.js');
@@ -23,6 +24,10 @@ test('worker lifecycle, execution updates, validation, and unload', async () => 
       assert.ok((await manager.openGraph(file, logger)).error, String(file));
     }
     assert.deepEqual(manager.getCurrentProcesses(), []);
+    const dependent = await manager.openGraph('file-node.json', logger);
+    assert.equal(dependent.status, 'stopped', dependent.error);
+    assert.equal((await manager.controlGraph('file-node.json', 'start', logger)).status, 'running');
+    await manager.unloadGraph('file-node.json', logger);
     const opened = await manager.openGraph('empty.json', logger);
     assert.equal(opened.status, 'stopped', opened.error);
     assert.equal(manager.isGraphRunning('empty.json'), false);

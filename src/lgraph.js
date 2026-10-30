@@ -78,7 +78,8 @@ export class LGraph {
         this._nodes?.forEach((node) => {
             node.processCallbackHandlers("onRemoved",{
                 def_cb: node.onRemoved
-            });
+            }, this);
+            node.graph = null;
         });
 
         // nodes
@@ -211,21 +212,66 @@ export class LGraph {
         return this.list_of_graphcanvas[0];
     }
 
-    /**
-     * Starts running this graph every interval milliseconds.
-     * @method start
-     * @param {number} interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
-     */
-    start(interval = 0) {
-        if (this.status === LGraph.STATUS_RUNNING) {
-            return;
+    /** Whether any node or nested graph is loading or failed initialization. */
+    hasPendingInitialization() {
+        return this._nodes.some((node) => node.initialization_state === "loading" ||
+            node.initialization_error || node.subgraph?.hasPendingInitialization());
+    }
+
+    /** Wait for node dependencies, including nested graphs, before execution. */
+    async whenReady() {
+        const nodes = this._nodes.slice();
+        await Promise.all(nodes.map(async (node) => {
+            await node.ready;
+            if (node.initialization_error) throw node.initialization_error;
+            if (node.subgraph) await node.subgraph.whenReady();
+        }));
+        // Nodes may be added while another dependency is loading.
+        if (nodes.length !== this._nodes.length || nodes.some((node, index) => node !== this._nodes[index])) {
+            return this.whenReady();
         }
+        return this;
+    }
+
+    startAsync(interval = 0) {
+        if (this._pending_start) return this._pending_start.promise;
+        const request = {};
+        this._pending_start = request;
+        request.promise = this.whenReady().then(async () => {
+            // Include nodes added between readiness settlement and this continuation.
+            while (this._pending_start === request && this.hasPendingInitialization()) await this.whenReady();
+            if (this._pending_start !== request) return false;
+            request.starting = true;
+            this.start(interval);
+            return this.status === LGraph.STATUS_RUNNING;
+        }).catch((error) => {
+            if (this._pending_start !== request && !request.starting) return false;
+            this.initialization_error = error;
+            throw error;
+        }).finally(() => {
+            if (this._pending_start === request) this._pending_start = null;
+        });
+        request.promise.catch((error) => LiteGraph.log_error("Graph initialization failed", error));
+        return request.promise;
+    }
+
+    /** Start immediately when ready, or return a Promise while dependencies load. */
+    start(interval = 0) {
+        if (this.status === LGraph.STATUS_RUNNING) return;
+        if (this.hasPendingInitialization()) return this.startAsync(interval);
+        this.initialization_error = null;
 
         this.status = LGraph.STATUS_RUNNING;
-        this.processCallbackHandlers("onPlayEvent",{
-            def_cb: this.onPlayEvent
-        });
-        this.sendEventToAllNodes("onStart");
+        try {
+            this.processCallbackHandlers("onPlayEvent",{
+                def_cb: this.onPlayEvent
+            });
+            this.sendEventToAllNodes("onStart");
+        } catch (error) {
+            try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph start cleanup failed", cleanupError); }
+            throw error;
+        }
+        if (this.status !== LGraph.STATUS_RUNNING) return;
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
@@ -265,19 +311,20 @@ export class LGraph {
      * @method stop execution
      */
     stop() {
+        this._pending_start = null;
         if (this.status == LGraph.STATUS_STOPPED) {
             return;
         }
         this.status = LGraph.STATUS_STOPPED;
-        this.processCallbackHandlers("onStopEvent",{
-            def_cb: this.onStopEvent
-        });
         if (this.execution_timer_id != null) {
             if (this.execution_timer_id != -1) {
                 clearInterval(this.execution_timer_id);
             }
             this.execution_timer_id = null;
         }
+        this.processCallbackHandlers("onStopEvent",{
+            def_cb: this.onStopEvent
+        });
         this.sendEventToAllNodes("onStop");
         
         // TODO CHECK THIS : TRYING to refresh canvas, for multiview one still need a manual refresh (mouseover) 
@@ -789,6 +836,9 @@ export class LGraph {
             this.onGraphChanged({action: "groupAdd", doSave: opts.doProcessChange});
             return;
         }
+
+        // Directly constructed registered nodes need the same setup as createNode.
+        node.post_constructor?.();
 
         // nodes
         if (node.id != -1 && this._nodes_by_id[node.id] != null) {

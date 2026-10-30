@@ -243,7 +243,7 @@ export class LiteGraphClass {
         this.ContextMenuClass = ContextMenu;
         this.ContextMenu = function(){ return new ContextMenu(...arguments); };
         this.CallbackHandler = CallbackHandler;
-        this.LibraryManager = new LibraryManager();
+        this.LibraryManager ??= new LibraryManager();
 
         // base inclusion
         this.includeBasicNodes();
@@ -716,9 +716,6 @@ export class LiteGraphClass {
             node = new base_class(title);
         }
 
-        // extend constructor with the extended always executed (custom class or lgraphnode)
-        node.post_constructor();
-        
         // basic size, before computing
         node.size_basic = node.size;
 
@@ -734,6 +731,7 @@ export class LiteGraphClass {
 
         // extra options
         Object.assign(node, options);
+        node.post_constructor();
 
         LiteGraph.log_verbose("createNode","created",node,node.processCallbackHandlers);
 

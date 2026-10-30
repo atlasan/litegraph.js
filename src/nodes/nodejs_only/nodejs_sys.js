@@ -25,6 +25,7 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "diskusage",
+    defaultExport: true,
     version: "1.1.3",
     globalObject: "diskusage",
     server: { npm: "diskusage" }
@@ -32,6 +33,7 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "node-os-utils",
+    defaultExport: true,
     version: "0.3.4",
     globalObject: "nodeOsUtils",
     server: { npm: "node-os-utils" }
@@ -39,6 +41,7 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "ps-list",
+    defaultExport: true,
     version: "latest",
     globalObject: "psList",
     server: { npm: "ps-list" }
@@ -52,12 +55,14 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "chalk",
+    defaultExport: true,
     globalObject: "chalk",
     server: { npm: "chalk" }
 });
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "node-windows",
+    defaultExport: true,
     globalObject: "nodeWindows",
     server: { npm: "node-windows" }
 });

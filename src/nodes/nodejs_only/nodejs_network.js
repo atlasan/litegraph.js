@@ -31,7 +31,8 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "osc-js",
-    globalObject: "oscnode",
+    globalObject: "OSC",
+    defaultExport: true,
     server: { npm: "osc-js" }
 });
 // deferred LiteGraph.LibraryManager.loadLibrary("osc-js");
@@ -41,6 +42,7 @@ LiteGraph.LibraryManager.registerLibrary({
 // ----------------------------
 class BaseServer {
     constructor() {
+        this.runtime = "node";
         // Child classes should set port and any other defaults.
         this.properties = {
             should_autoconnect: true,
@@ -564,7 +566,7 @@ class OSCBridge extends BaseServer {
     }
 
     _createServer() {
-        let OSC = LiteGraph.getGlobalVariable("oscnode");
+        let OSC = LiteGraph.getGlobalVariable("OSC");
         if (typeof OSC === "undefined" || !OSC) {
             throw new Error("osc-js library not available");
         }
@@ -655,6 +657,7 @@ class OSCServerNode extends BaseServer {
 
     constructor() {
         super();
+        this.libraries = ["osc-js"];
         // Set child-specific properties.
         this.properties.open_port = 9001;
         this.properties.open_host = "localhost";
@@ -679,7 +682,7 @@ class OSCServerNode extends BaseServer {
     }
 
     _createServer() {
-        let OSC = LiteGraph.getGlobalVariable("oscnode");
+        let OSC = LiteGraph.getGlobalVariable("OSC");
         if (typeof OSC === "undefined" || !OSC) {
             throw new Error("osc-js library not available");
         }
@@ -759,6 +762,7 @@ class UDPServerNode extends BaseServer {
 
     constructor() {
         super();
+        this.libraries = ["dgram"];
         this.size = [60, 20];
         // Add outputs only – no sending inputs needed.
         this.addOutput("onMessage", LiteGraph.EVENT);

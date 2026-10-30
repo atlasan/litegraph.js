@@ -3,8 +3,9 @@
 // -- client&server libraries --
 LiteGraph.LibraryManager.registerLibrary({
     key: "io",
+    defaultExport: "io",
     version: "4.6.1",
-    globalObject: "ioclient",
+    globalObject: "io",
     browser: { /*local: "/libs/socket.io.js",*/ remote: "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/dist/socket.io.min.js" },
     server: { npm: ["socket.io-client"], /*remote: "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/dist/socket.io.min.js"*/ }
 });
@@ -63,7 +64,7 @@ class LGSocketIO {
                 console.debug("Got socketio lib from io",this._io_client);
             // }else if(typeof(ioclient)=="function"){
             }else{
-                this._io_client = LiteGraph.getGlobalVariable("ioclient");
+                this._io_client = LiteGraph.getGlobalVariable("io");
                 console.debug("Got socketio lib from global",this._io_client);
             }
             // else if(typeof(io)=="object" && typeof(io.Socket)=="function"){

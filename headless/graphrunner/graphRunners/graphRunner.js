@@ -13,7 +13,7 @@ for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
   });
 }
 
-function configure(data) {
+async function configure(data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
     throw new Error('Workflow must contain nodes and links arrays');
   }
@@ -25,6 +25,7 @@ function configure(data) {
   const candidate = new LGraph();
   try {
     if (candidate.configure(data)) throw new Error('Workflow contains unsupported nodes');
+    await candidate.whenReady();
     return candidate;
   } catch (error) {
     candidate.clear();
@@ -32,24 +33,29 @@ function configure(data) {
   }
 }
 
-let graph = configure(JSON.parse(fs.readFileSync(workerData, 'utf8')));
+let graph = await configure(JSON.parse(fs.readFileSync(workerData, 'utf8')));
 const status = () => graph.status === LGraph.STATUS_RUNNING ? 'running' : 'stopped';
 
-parentPort.on('message', ({ requestId, action, serializedGraph }) => {
+let commands = Promise.resolve();
+parentPort.on('message', (message) => {
+  commands = commands.then(() => handleCommand(message));
+});
+
+async function handleCommand({ requestId, action, serializedGraph }) {
   try {
     let data = {};
     switch (action) {
-      case 'start': graph.start(); break;
+      case 'start': await graph.startAsync(); break;
       case 'stop': graph.stop(); break;
       case 'clear': graph.clear(); break;
       case 'status': break;
       case 'sync': data.serializedGraph = graph.serialize(); break;
       case 'update': {
-        const replacement = configure(serializedGraph);
+        const replacement = await configure(serializedGraph);
         const wasRunning = status() === 'running';
         graph.clear();
         graph = replacement;
-        if (wasRunning) graph.start();
+        if (wasRunning) await graph.startAsync();
         data.serializedGraph = graph.serialize();
         break;
       }
@@ -59,4 +65,4 @@ parentPort.on('message', ({ requestId, action, serializedGraph }) => {
   } catch (error) {
     parentPort.postMessage({ requestId, error: error.message, status: status() });
   }
-});
+}

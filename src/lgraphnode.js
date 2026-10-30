@@ -68,134 +68,107 @@ export class LGraphNode {
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
 
-    // TODO check when is this called: a default node from the ones included will have his constructor
-    // should every node extend this istead of 
     constructor(title = "") {
-        // a custom registered node will have his custom constructor
-        LiteGraph.log_verbose("lgraphNODE", "ORIGINAL constructor not been replaced",this,title);
-
         this.title = title;
+        this.initializeNodeState();
+        if (new.target === LGraphNode) {
+            this.post_constructor();
+        } else {
+            // Subclass fields and constructor code must exist before initialization hooks.
+            this.ready = Promise.resolve().then(() => this.post_constructor());
+            this.ready.catch(() => {}); // The caller can still observe failure through ready.
+        }
+    }
 
-        this.post_constructor(...arguments);
+    initializeNodeState() {
+        this.executionEnvironment ??= "all";
+        this.requiredLibraries ??= [];
+        this.libraries ??= [];
+        this.graph ??= null;
+        this.id ??= LiteGraph.use_uuids ? LiteGraph.uuidv4() : -1;
+        this.type ??= this.constructor.type ?? null;
+        this.title ??= this.constructor.title ?? "";
+        this.inputs ??= [];
+        this.outputs ??= [];
+        this.connections ??= [];
+        this.properties ??= {};
+        this.properties_info ??= [];
+        this.flags ??= {};
+        this.mode ??= LiteGraph.ALWAYS;
+        this._pos ??= new Float32Array(LiteGraph.DEFAULT_POSITION);
+        this.size ??= [LiteGraph.NODE_WIDTH, 60];
+        this.size_basic ??= this.size;
+        this.callbackhandler_setup();
     }
 
     validateExecutionEnvironment() {
-        const runtime = getRuntime();
-        if(this.executionEnvironment){
-            if (this.executionEnvironment !== "both" && this.executionEnvironment !== "all" && runtime !== this.executionEnvironment) {
-                throw new Error(`Node ${this.name||this.title||this} cannot run ${this.executionEnvironment} in ${runtime} environment.`);
+        return !this.executionEnvironment ||
+            ["all", "both", "any", "*", getRuntime()].includes(this.executionEnvironment);
+    }
+
+    validateRuntime() {
+        return !this.runtime || ["all", "both", "any", "*", getRuntime()].includes(this.runtime);
+    }
+
+    /** Initialize exactly once; basic nodes are ready synchronously, dependencies asynchronously. */
+    post_constructor() {
+        if (this._initializationPromise) return this._initializationPromise;
+        this.initializeNodeState();
+        let resolveReady;
+        let rejectReady;
+        this.ready = this._initializationPromise = new Promise((resolve, reject) => {
+            resolveReady = resolve;
+            rejectReady = reject;
+        });
+        // Creation remains synchronous. Consumers may await ready to handle dependency errors.
+        this.ready.catch(() => {});
+        this.initialization_state = "loading";
+        const fail = (error) => {
+            this.loading_lib = false;
+            this.initialization_state = "error";
+            this.initialization_error = error;
+            rejectReady(error);
+        };
+        const complete = () => {
+            this.loading_lib = false;
+            this.processCallbackHandlers("onPostConstruct", { def_cb: this.onPostConstruct });
+            LiteGraph.processCallbackHandlers("on_lgraphnode_construct", {
+                def_cb: LiteGraph.on_lgraphnode_construct,
+            }, this);
+            this.initialization_state = "ready";
+            resolveReady(this);
+        };
+        try {
+            this.wrong_environment = !this.validateExecutionEnvironment() || !this.validateRuntime();
+            if (this.wrong_environment) {
+                this.mode = LiteGraph.NEVER;
+                throw new Error(`Node ${this.type || this.title} cannot run in ${getRuntime()}`);
             }
+            if (this.libraries.length || this.requiredLibraries.length) {
+                this.loading_lib = true;
+                this.loadLibraries().then(complete).catch(fail);
+            } else {
+                complete();
+            }
+        } catch (error) {
+            fail(error);
+        }
+        return this.ready;
+    }
+
+    async loadLibraries(keys = [...this.libraries, ...this.requiredLibraries]) {
+        for (const key of new Set(keys)) {
+            if (!LiteGraph.LibraryManager) throw new Error("LiteGraph.initialize() must be called before loading node libraries");
+            await LiteGraph.LibraryManager.loadLibrary(key);
         }
     }
 
     loadRequiredLibraries() {
-        for (const libKey of this.requiredLibraries) {
-            const libInfo = LiteGraph.LibraryManager.getLibrary(libKey);
-            if (!libInfo) {
-                console.warn(`Library ${libKey} not found for node ${this.title}`);
-                continue;
-            }
-
-            if ((isBrowser() && libInfo.browser) || (isNode() && libInfo.server)) {
-                try {
-                    LiteGraph.LibraryManager.loadLibrary(libKey); // async
-                } catch (error) {
-                    console.error(`Failed to load library ${libKey} for node ${this.title}:`, error);
-                }
-            } else {
-                console.debug(`Library ${libKey} is not available for the current environment for node ${this.title}.`);
-            }
-        }
+        return this.loadLibraries(this.requiredLibraries || []);
     }
 
-    async post_constructor(){
-
-        if(!this.validateExecutionEnvironment()){
-            LiteGraph.log_debug("lgraphNODE", "Node not in his environment",this.title);
-            return;
-        }
-
-        this.size ??= LiteGraph.NODE_MIN_SIZE; //this.size ??= [LiteGraph.NODE_WIDTH, 60];
-        this.size_basic ??= this.size;
-        this.graph ??= null;
-
-        this.runtime ??= this.runtime;  // Specify where this node can execute, "node", "browser", *any
-        this.libraries ??= this.libraries;  // List of required libraries
-
-        this._pos ??= new Float32Array(10, 10);
-
-        if (LiteGraph.use_uuids) {
-            this.id ??= LiteGraph.uuidv4();
-        } else {
-            this.id ??= -1; // not know till not added
-        }
-        this.type ??= null;
-
-        // inputs available: array of inputs
-        this.inputs ??= [];
-        this.outputs ??= [];
-        this.connections ??= [];
-
-        // local data
-        this.properties ??= {}; // for the values
-        this.properties_info ??= []; // for the info
-
-        this.flags ??= {};
-
-        // Validate runtime environment
-        if (!this.validateRuntime()) {
-            console.debug(`Node "${this.title}" will not run in the current environment: ${getRuntime()}`);
-            this.mode = LiteGraph.NEVER;
-        }else{
-            // Load required libraries
-            await this.loadLibraries();
-        }
-
-        // DBG EXCESS LiteGraph.log_verbose("lgraphNODE", "postconstruct",this,...arguments);
-        // register CallbackHandler methods on this
-        this.callbackhandler_setup();
-
-        this.loadRequiredLibraries();
-        
-        // this cbhandler is probably not registered by a node that does not inherit default contructor, if that has not called callbackhandler_setup yet
-        this.processCallbackHandlers("onPostConstruct",{
-            def_cb: this.onPostConstruct
-        });
-        LiteGraph.processCallbackHandlers("on_lgraphnode_construct",{
-            def_cb: LiteGraph.on_lgraphnode_construct
-        }, this);
-    }
-
-    validateRuntime() {
-        const currentRuntime = getRuntime();
-        const isValid = !this.runtime || this.runtime === "*" || this.runtime === "any" || this.runtime === currentRuntime;
-        if(!isValid){
-            this.wrong_environment = true;
-        }
-        return isValid;
-    }
-
-    async loadLibraries() {
-        if(!Array.isArray(this.libraries)){
-            return;
-        }
-        if(Array.isArray(this.libraries) && this.libraries.length){
-            this.loading_lib = true;
-            for (const lib of this.libraries) {
-                if (!LiteGraph.LibraryManager.isLibraryLoaded(lib)) {
-                    await LiteGraph.LibraryManager.loadLibrary(lib);
-                }
-            }
-            delete(this.loading_lib);
-        }
-    }
-
-    callbackhandler_setup(){
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        // this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        // this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        // this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
+    callbackhandler_setup() {
+        if (!this.cb_handler) this.cb_handler = new CallbackHandler(this);
     }
 
     registerCallbackHandler(){
@@ -938,6 +911,7 @@ export class LGraphNode {
      * @method executePendingActions
      */
     executePendingActions() {
+        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         if(!this._waiting_actions || !this._waiting_actions.length)
             return;
         this._waiting_actions.forEach((p) => {
@@ -953,6 +927,7 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
 
         if (this.mode === LiteGraph.NEVER){
             LiteGraph.log_verbose("lgraphNODE", "doExecute", "prevent execution in mode NEVER", this.id);
@@ -1032,6 +1007,7 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         // if (this.onAction) {
 
             // enable this to give the event an ID

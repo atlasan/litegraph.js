@@ -4,6 +4,7 @@
  */
 
 import { LiteGraph } from '../../build/litegraph.js';
+import { setNodeInput } from './test-inputs.js';
 const { LGraphNode } = LiteGraph;
 
 export class TestFramework {
@@ -145,6 +146,7 @@ export class TestFramework {
             if (!node) throw new Error(`Failed to create ${test.nodeType}`);
             graph = new LiteGraph.LGraph();
             graph.add(node);
+            await this.executeWithTimeout(() => graph.whenReady(), test.timeout);
             
             // Setup phase
             if (test.setup) {
@@ -217,7 +219,10 @@ export class TestFramework {
                 result.status = 'failed';
                 result.errors.push({ type: 'cleanup_error', message: error.message });
             } finally {
-                graph?.clear();
+                try { graph?.clear(); } catch (error) {
+                    result.status = 'failed';
+                    result.errors.push({ type: 'cleanup_error', message: error.message });
+                }
             }
         }
 
@@ -370,7 +375,7 @@ export class TestFramework {
                 for (let i = 0; i < node.inputs.length; i++) {
                     const input = node.inputs[i];
                     const sampleValue = this.generateSampleValue(input.type);
-                    node.setInputData(i, sampleValue);
+                    if (input.type !== LiteGraph.ACTION) setNodeInput(node, i, sampleValue);
                 }
                 
                 if (typeof node.onExecute === 'function') {

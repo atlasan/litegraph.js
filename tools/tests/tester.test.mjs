@@ -54,3 +54,40 @@ test('test inputs use real graph links and update output data', () => {
     assert.equal(graph._nodes.length, 2);
     graph.clear();
 });
+
+test('default execution supplies real inputs for ordinary data nodes', async () => {
+    const result = await new TestFramework().runSingleTest(definition({ nodeType: 'math/abs' }));
+    assert.equal(result.status, 'passed', JSON.stringify(result.errors));
+    assert.equal(result.details.executionResult.executionCount, 2);
+});
+
+test('tester waits for initialization and reports dependency failures', async () => {
+    class DelayedNode {
+        constructor() { this.libraries = ['tester-dependency']; }
+        onPostConstruct() { this.initialized = true; }
+        onExecute() { assert.equal(this.initialized, true); }
+    }
+    LiteGraph.registerNodeType('test/delayed', DelayedNode);
+    const manager = LiteGraph.LibraryManager;
+    const originalLoad = manager.loadLibrary;
+    let resolve;
+    manager.loadLibrary = () => new Promise((done) => { resolve = done; });
+    const framework = new TestFramework();
+    let setupCalled = false;
+    try {
+        const pending = framework.runSingleTest(definition({ nodeType: 'test/delayed', setup() { setupCalled = true; } }));
+        await new Promise((done) => setTimeout(done, 5));
+        assert.equal(setupCalled, false);
+        resolve([]);
+        const result = await pending;
+        assert.equal(result.status, 'passed', JSON.stringify(result.errors));
+        assert.equal(setupCalled, true);
+        manager.loadLibrary = async () => { throw new Error('dependency failed'); };
+        const failed = await framework.runSingleTest(definition({ nodeType: 'test/delayed' }));
+        assert.equal(failed.status, 'failed');
+        assert.match(failed.errors[0].message, /dependency failed/);
+    } finally {
+        manager.loadLibrary = originalLoad;
+        LiteGraph.unregisterNodeType('test/delayed');
+    }
+});
