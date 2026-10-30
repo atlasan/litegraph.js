@@ -87,6 +87,9 @@ export class LiteGraphClass {
     NODE_DEFAULT_COLOR = "#333";
     NODE_DEFAULT_BGCOLOR = "#353535";
     NODE_DEFAULT_BOXCOLOR = "#666";
+    NODE_BGCOLOR_LOADINGLIB = "#353565";
+    NODE_BGCOLOR_WRONGENV = "#653535";
+    NODE_BGCOLOR_ERROR = "#F33";
     NODE_DEFAULT_SHAPE = "box";
     NODE_BOX_OUTLINE_COLOR = "#FFF";
     DEFAULT_SHADOW_COLOR = "rgba(0,0,0,0.5)";
@@ -224,6 +227,8 @@ export class LiteGraphClass {
     context_menu_filter_enabled = false; // FIX event handler removal
 
     // ,"editor_alpha" //= 1; //used for transition
+
+    canSetSlotsLabels = true; // setting the label should be safe
 
     canRemoveSlots = false; // use removable = true in specific slot
     canRenameSlots = false; // use nameLocked = false in specific slot
@@ -415,7 +420,7 @@ export class LiteGraphClass {
         // Iterate over each property descriptor
         Object.keys(propertyDescriptors).forEach((propertyName) => {
             // Check if the property already exists on the target prototype
-            if (!base_class.prototype.hasOwnProperty(propertyName)) {
+            if (!(propertyName in base_class.prototype)) {
                 // If the property doesn't exist, copy it from the source to the target
                 Object.defineProperty(base_class.prototype, propertyName, propertyDescriptors[propertyName]);
                 // TOO MUCH VERBOSE :: this.log_verbose("registerNodeType","defineProperty",type,base_class.prototype, propertyName, propertyDescriptors[propertyName]);
@@ -733,7 +738,7 @@ export class LiteGraphClass {
         const base_class = this.registered_node_types[type] ?? null;
 
         if (!base_class) {
-            this.log_debug(`GraphNode type "${type}" not registered.`);
+            this.log_warn(`GraphNode type "${type}" not registered.`);
             return null;
         }
 
@@ -747,6 +752,7 @@ export class LiteGraphClass {
             try {
                 node = new base_class(title);
             } catch (err) {
+                console.warn("[ERR] createNode", err);
                 this.log_error("createNode", err);
                 return null;
             }
@@ -938,10 +944,12 @@ export class LiteGraphClass {
      * @return {Boolean} true if they can be connected
      */
     isValidConnection(type_a, type_b) {
+        type_a = type_a === 0 ? "*" : type_a;
+        type_b = type_b === 0 ? "*" : type_b;
         if (!type_a || !type_b) return true; // Empty types are universal
 
         // Handle wildcard cases
-        if (type_a === "*" || type_b === "*") return true;
+        if ((type_a === "*" && type_b != LiteGraph.EVENT) || (type_b === "*" && type_a != LiteGraph.EVENT)) return true;
         if (type_a === LiteGraph.EVENT && type_b === LiteGraph.ACTION) return true;
 
         // Normalize type strings (lowercase, split multiple types by `|` or `,`)
@@ -1346,6 +1354,9 @@ if (!getGlobalVariable("LiteGraph")) {
     let LGInst = getGlobalVariable("LiteGraph");
     LGInst.log_info("LiteGraph instantiated", LGInst.getTime());
     LGInst.root = getGlobalObject();
+    // ? Initialize LiteGraph to set up core classes
+    // LGInst.initialize();
+    // LGInst.log_info("LiteGraph initialized",LGInst.getTime());
 }
 export const LiteGraph = getGlobalVariable("LiteGraph");
 /**
@@ -2771,6 +2782,8 @@ export class LGraph {
         this.change();
 
         this.sendActionToCanvas("clear");
+
+        LiteGraph.log_debug("lgraph", "graph CLEARED");
     }
 
     /**
@@ -2946,11 +2959,12 @@ export class LGraph {
             return;
         }
 
-        limit ||= nodes.length;
+        limit = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
 
         if (do_not_catch_errors) {
             for (let i = 0; i < num; i++) {
-                nodes.forEach((node) => {
+                nodes.forEach((node, index) => {
+                    if (index >= limit) return;
                     if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
                         node.executePendingActions();
                     }
@@ -2971,7 +2985,8 @@ export class LGraph {
         } else { // catch errors
             try {
                 for (let i = 0; i < num; i++) {
-                    nodes.forEach((node) => {
+                    nodes.forEach((node, index) => {
+                        if (index >= limit) return;
                         if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
                             node.executePendingActions();
                         }
@@ -4409,7 +4424,7 @@ export class LGraph {
         // TAG: EXTENSION, COULD extract and MOVE history to feature ?
         if (opts.doSave && LiteGraph.actionHistory_enabled) {
 
-            LiteGraph.log_debug("LG_history", "onGraphChanged SAVE :: " + opts.action); // debug history
+            LiteGraph.log_debug("LG_history", "onGraphChanged couldSAVE :: " + opts.action); // debug history
 
             var oHistory = {
                 actionName: opts.action
@@ -4419,9 +4434,10 @@ export class LGraph {
                 oHistory = Object.assign(oHistory, {
                     graphSave: this.serialize()
                 });
+                LiteGraph.log_debug("LG_history", "onGraphChanged SAVED", oHistory); // debug history
             }
 
-            var obH = this.history;
+            let obH = this.history;
 
             // check if pointer has gone back: remove newest
             while (obH.actionHistoryPtr < obH.actionHistoryVersions.length - 1) {
@@ -4446,7 +4462,7 @@ export class LGraph {
                 iVersion: obH.actionHistoryPtr
             });
 
-            LiteGraph.log_debug("LG_history", "saved: " + obH.actionHistoryPtr, oHistory.actionName); // debug history
+            LiteGraph.log_debug("LG_history", "saved: " + obH.actionHistoryPtr, oHistory.actionName, obH.actionHistoryPtr); // debug history
         }
     }
 
@@ -6862,7 +6878,7 @@ export class LGraphCanvas {
                 }
             }
         }
-        LiteGraph.log_verbose("copyToClipboard", clipboard_info);
+        LiteGraph.log_debug("lgraphcanvas", "copyToClipboard", clipboard_info);
         localStorage.setItem("litegrapheditor_clipboard", JSON.stringify(clipboard_info), );
     }
 
@@ -6872,6 +6888,7 @@ export class LGraphCanvas {
             return;
         }
         var data = localStorage.getItem("litegrapheditor_clipboard");
+        LiteGraph.log_debug("lgraphcanvas", "pasteFromClipboard", data);
         if (!data) {
             return;
         }
@@ -7894,8 +7911,9 @@ export class LGraphCanvas {
                         this.node_dragged.pos[0] = this.graph_mouse[0] - 5;
                         this.node_dragged.pos[1] = this.graph_mouse[1] - 5;
                         this.graph.afterChange();
-                    } else
+                    } else {
                         LiteGraph.log_error("graph input node not found:", type);
+                    }
                 }
                 ctx.fillStyle = "#9C9";
                 ctx.beginPath();
@@ -7966,8 +7984,9 @@ export class LGraphCanvas {
                         this.node_dragged.pos[0] = this.graph_mouse[0] - 5;
                         this.node_dragged.pos[1] = this.graph_mouse[1] - 5;
                         this.graph.afterChange();
-                    } else
+                    } else {
                         LiteGraph.log_error("graph input node not found:", type);
+                    }
                 }
                 ctx.fillStyle = "#9C9";
                 ctx.beginPath();
@@ -8324,8 +8343,14 @@ export class LGraphCanvas {
         }
 
         // draw shape
+        if (node.loading_lib) {
+            bgcolor = LiteGraph.NODE_BGCOLOR_LOADINGLIB;
+        }
+        if (node.wrong_environment) {
+            bgcolor = LiteGraph.NODE_BGCOLOR_WRONGENV;
+        }
         if (node.has_errors) {
-            bgcolor = "red";
+            bgcolor = LiteGraph.NODE_BGCOLOR_ERROR;
         }
         this.drawNodeShape(
             node,
@@ -9111,6 +9136,57 @@ export class LGraphCanvas {
         if (node.execute_triggered > 0) node.execute_triggered--;
         if (node.action_triggered > 0) node.action_triggered--;
     }
+
+    // TODO should implement correct getBounding to do it
+    // drawNodeOutsideBorder(title_mode, fgcolor) {
+    //     var shape = node._shape || node.constructor.shape || LiteGraph.ROUND_SHAPE;
+    //     if (title_mode == LiteGraph.TRANSPARENT_TITLE) {
+    //         area[1] -= LiteGraph.NODE_TITLE_HEIGHT;
+    //         area[3] += LiteGraph.NODE_TITLE_HEIGHT;
+    //     }
+    //     ctx.lineWidth = 1;
+    //     ctx.globalAlpha = 0.8;
+    //     ctx.beginPath();
+    //     if (shape == LiteGraph.BOX_SHAPE) {
+    //         ctx.rect(
+    //             -6 + area[0],
+    //             -6 + area[1],
+    //             12 + area[2],
+    //             12 + area[3],
+    //         );
+    //     } else if (
+    //         shape == LiteGraph.ROUND_SHAPE ||
+    //         (shape == LiteGraph.CARD_SHAPE && node.flags.collapsed)
+    //     ) {
+    //         ctx.roundRect(
+    //             -6 + area[0],
+    //             -6 + area[1],
+    //             12 + area[2],
+    //             12 + area[3],
+    //             [this.round_radius * 2],
+    //         );
+    //     } else if (shape == LiteGraph.CARD_SHAPE) {
+    //         ctx.roundRect(
+    //             -6 + area[0],
+    //             -6 + area[1],
+    //             12 + area[2],
+    //             12 + area[3],
+    //             [this.round_radius * 2,2,this.round_radius * 2,2],
+    //         );
+    //     } else if (shape == LiteGraph.CIRCLE_SHAPE) {
+    //         ctx.arc(
+    //             size[0] * 0.5,
+    //             size[1] * 0.5,
+    //             size[0] * 0.5 + 6,
+    //             0,
+    //             Math.PI * 2,
+    //         );
+    //     }
+    //     ctx.strokeStyle = LiteGraph.NODE_BOX_OUTLINE_COLOR;
+    //     ctx.stroke();
+    //     ctx.strokeStyle = fgcolor;
+    //     ctx.globalAlpha = 1;
+    // }
 
     /**
      * draws every connection visible in the canvas
@@ -11994,12 +12070,13 @@ export class LGraphCanvas {
                                 iS = options.node_from.findOutputSlot(options.slot_from);
                                 break;
                             case "object":
-                                if (options.slot_from.name) {
+                                if (options.slot_from.name || options.slot_from.name === "") {
                                     iS = options.node_from.findOutputSlot(options.slot_from.name);
                                 } else {
                                     iS = -1;
                                 }
                                 if (iS == -1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
+                                LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "slotindexfromobject search", "iS", iS, "ofFromOut", options.node_from.outputs, options.slot_from);
                                 break;
                             case "number":
                                 iS = options.slot_from;
@@ -12012,7 +12089,7 @@ export class LGraphCanvas {
                                 options.node_from.connectByType(iS, node, options.node_from.outputs[iS].type);
                             }
                         } else {
-                            LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "cant find slot node_from to join using from slot type", options.slot_from, options.node_from.outputs);
+                            LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "cant find slot node_from to join using from slot type", "iS", iS, "ofFromOut", options.node_from.outputs, options.slot_from);
                         }
                     }
                     if (options.node_to) {
@@ -12761,14 +12838,15 @@ export class LGraphCanvas {
     }
 
     static getPropertyPrintableValue(value, values) {
-        if (!values)
+        if (!values) {
             if (typeof(value) == "number") {
                 return parseFloat(value.toFixed(5));
                 // TODO add option to format numbers in string
                 // }else if((typeof(value) == "string" && !isNaN(value) && !isNaN(parseFloat(value)))){
                 //     return parseFloat(Number(value).toFixed(5));
             }
-        return String(value);
+            return String(value);
+        }
 
         if (values.constructor === Array) {
             return String(value);
@@ -13723,6 +13801,18 @@ export class LGraphCanvas {
             if (r !== null && (typeof(r) == "object" && typeof(r.return_value) == "object")) {
                 menu_info = r.return_value;
             } else {
+                if (LiteGraph.canSetSlotsLabels) {
+                    menu_info.push({
+                        content: "Set Label",
+                        slot: slot
+                    });
+                }
+                if (_slot.nameLocked === false || LiteGraph.canRenameSlots) {
+                    menu_info.push({
+                        content: "Rename Slot",
+                        slot: slot
+                    });
+                }
                 if (slot?.output?.links?.length || slot.input?.link) {
                     menu_info.push({
                         content: "Disconnect Links",
@@ -13738,13 +13828,6 @@ export class LGraphCanvas {
                             slot: slot
                         });
                 }
-                if (_slot.nameLocked === false || LiteGraph.canRenameSlots) {
-                    menu_info.push({
-                        content: "Rename Slot",
-                        slot: slot
-                    });
-                }
-
             }
             var slotOb = slot.input || slot.output;
             options.title = slotOb.type || "*";
@@ -13836,6 +13919,45 @@ export class LGraphCanvas {
                     node.getOutputInfo(info.slot);
                 var dialog = that.createDialog(
                     "<span class='name'>Name</span><input autofocus type='text'/><button>OK</button>",
+                    options,
+                );
+                var input = dialog.querySelector("input");
+                if (input && slot_info) {
+                    input.value = slot_info.name || "";
+                }
+                var inner = function() {
+                    node.graph.beforeChange();
+                    if (input.value) {
+                        if (slot_info) {
+                            slot_info.name = input.value;
+                        }
+                        that.setDirty(true);
+                    }
+                    dialog.close();
+                    node.graph.afterChange();
+                }
+                dialog.querySelector("button").addEventListener("click", inner);
+                input.addEventListener("keydown", function(e) {
+                    dialog.is_modified = true;
+                    if (e.keyCode == 27) {
+                        // ESC
+                        dialog.close();
+                    } else if (e.keyCode == 13) {
+                        inner(); // save
+                    } else if (e.keyCode != 13 && e.target.localName != "textarea") {
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                input.focus();
+            } else if (v.content == "Rename Label") {
+                info = v.slot;
+                var slot_info = info.input ?
+                    node.getInputInfo(info.slot) :
+                    node.getOutputInfo(info.slot);
+                var dialog = that.createDialog(
+                    "<span class='name'>Label</span><input autofocus type='text'/><button>OK</button>",
                     options,
                 );
                 var input = dialog.querySelector("input");
@@ -14149,6 +14271,7 @@ export class LGraphGroup {
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }
 
+// src/lgraphnode.js
 /*
 title: string
 pos: [x,y]
@@ -14183,8 +14306,8 @@ supported callbacks:
     + onMouseLeave
     + onExecute: execute the node
     + onPropertyChanged: when a property is changed in the panel (return true to skip default behaviour)
-    + onGetInputs: returns an array of possible inputs
-    + onGetOutputs: returns an array of possible outputs
+    + onGetInputs: returns an array of possible extra inputs
+    + onGetOutputs: returns an array of possible extra outputs
     + onBounding: in case this node has a bigger bounding than the node itself (the callback receives the bounding as [x,y,w,h])
     + onDblClick: double clicked in the node
     + onInputDblClick: input slot double clicked (can be used to automatically create a node connected)
@@ -14210,23 +14333,62 @@ supported callbacks:
 export class LGraphNode {
 
     cb_handler = false;
+    executionEnvironment = "all"; // 'browser', 'node', 'all'
+    requiredLibraries = []; // List of library keys
 
     // TODO check when is this called: a default node from the ones included will have his constructor
     // should every node extend this istead of 
     constructor(title = "") {
         // a custom registered node will have his custom constructor
-        LiteGraph.log_verbose("lgraphNODE", "ORIGINAL constructor", this, title);
+        LiteGraph.log_verbose("lgraphNODE", "ORIGINAL constructor not been replaced", this, title);
 
         this.title = title;
 
         this.post_constructor(...arguments);
     }
 
-    post_constructor() {
+    validateExecutionEnvironment() {
+        const runtime = getRuntime();
+        if (this.executionEnvironment) {
+            if (this.executionEnvironment !== "both" && this.executionEnvironment !== "all" && runtime !== this.executionEnvironment) {
+                throw new Error(`Node ${this.name||this.title||this} cannot run ${this.executionEnvironment} in ${runtime} environment.`);
+            }
+        }
+    }
+
+    loadRequiredLibraries() {
+        for (const libKey of this.requiredLibraries) {
+            const libInfo = LiteGraph.LibraryManager.getLibrary(libKey);
+            if (!libInfo) {
+                console.warn(`Library ${libKey} not found for node ${this.title}`);
+                continue;
+            }
+
+            if ((isBrowser() && libInfo.browser) || (isNode() && libInfo.server)) {
+                try {
+                    LiteGraph.LibraryManager.loadLibrary(libKey); // async
+                } catch (error) {
+                    console.error(`Failed to load library ${libKey} for node ${this.title}:`, error);
+                }
+            } else {
+                console.debug(`Library ${libKey} is not available for the current environment for node ${this.title}.`);
+            }
+        }
+    }
+
+    async post_constructor() {
+
+        if (!this.validateExecutionEnvironment()) {
+            LiteGraph.log_debug("lgraphNODE", "Node not in his environment", this.title);
+            return;
+        }
 
         this.size ??= LiteGraph.NODE_MIN_SIZE; //this.size ??= [LiteGraph.NODE_WIDTH, 60];
         this.size_basic ??= this.size;
         this.graph ??= null;
+
+        this.runtime ??= this.runtime; // Specify where this node can execute, "node", "browser", *any
+        this.libraries ??= this.libraries; // List of required libraries
 
         this._pos ??= new Float32Array(10, 10);
 
@@ -14248,9 +14410,21 @@ export class LGraphNode {
 
         this.flags ??= {};
 
+        // Validate runtime environment
+        if (!this.validateRuntime()) {
+            console.debug(`Node "${this.title}" will not run in the current environment: ${getRuntime()}`);
+            this.mode = LiteGraph.NEVER;
+        } else {
+            // Load required libraries
+            await this.loadLibraries();
+        }
+
         // DBG EXCESS LiteGraph.log_verbose("lgraphNODE", "postconstruct",this,...arguments);
         // register CallbackHandler methods on this
         this.callbackhandler_setup();
+
+        this.loadRequiredLibraries();
+
         // this cbhandler is probably not registered by a node that does not inherit default contructor, if that has not called callbackhandler_setup yet
         this.processCallbackHandlers("onPostConstruct", {
             def_cb: this.onPostConstruct
@@ -14258,6 +14432,30 @@ export class LGraphNode {
         LiteGraph.processCallbackHandlers("on_lgraphnode_construct", {
             def_cb: LiteGraph.on_lgraphnode_construct
         }, this);
+    }
+
+    validateRuntime() {
+        const currentRuntime = getRuntime();
+        const isValid = !this.runtime || this.runtime === "*" || this.runtime === "any" || this.runtime === currentRuntime;
+        if (!isValid) {
+            this.wrong_environment = true;
+        }
+        return isValid;
+    }
+
+    async loadLibraries() {
+        if (!Array.isArray(this.libraries)) {
+            return;
+        }
+        if (Array.isArray(this.libraries) && this.libraries.length) {
+            this.loading_lib = true;
+            for (const lib of this.libraries) {
+                if (!LiteGraph.LibraryManager.isLibraryLoaded(lib)) {
+                    await LiteGraph.LibraryManager.loadLibrary(lib);
+                }
+            }
+            delete(this.loading_lib);
+        }
     }
 
     callbackhandler_setup() {
@@ -14307,6 +14505,7 @@ export class LGraphNode {
                 doSave: false
             });
 
+        if (!this.properties) this.properties = {};
         Object.entries(info).forEach(([key, value]) => {
             if (key === "properties") {
                 for (var k in value) {
@@ -14321,7 +14520,7 @@ export class LGraphNode {
             if (LiteGraph.reprocess_slot_while_node_configure) {
                 // process inputs and outputs, checking for name to handle node changes
                 if (key === "inputs" || key === "outputs") {
-                    LiteGraph.log_debug("lgraphnode", "syncObjectByProperty", key, info[key], this[key]);
+                    LiteGraph.log_debug("lgraphnode", "syncObjectByProperty", key, JSON.stringify(info[key]), JSON.stringify(this[key]));
                     const resSync = this.syncObjectByProperty(info[key], this[key], "name");
                     this[key] = resSync.ob_dest;
                     if (resSync.keys_remap && Object.keys(resSync.keys_remap).length) {
@@ -14429,6 +14628,7 @@ export class LGraphNode {
 
         // special case for when there were errors
         if (this.constructor === LGraphNode && this.last_serialization) {
+            LiteGraph.log_debug("lgraphnode", "serialize using last_serialization on LGraphNode");
             return this.last_serialization;
         }
 
@@ -14474,7 +14674,8 @@ export class LGraphNode {
         let r = this.processCallbackHandlers("onSerialize", {
             def_cb: this.onSerialize
         }, o);
-        // DBG EXCESS LiteGraph.log_verbose("lgraphnode", "serialize", "onSerialize", o, r);
+        // DBG EXCESS
+        LiteGraph.log_verbose("lgraphnode", "serialize", "onSerialize", o, r);
 
         if (r !== null && (typeof(r) == "object" && r.return_value !== null)) {
             LiteGraph.log_warn("lgraphnode", "onSerialize shouldnt return anything, data should be stored in the object pass in the first parameter");
@@ -15269,7 +15470,7 @@ export class LGraphNode {
             var node = this.graph.getNodeById(link_info.target_id);
             if (!node) {
                 // node not found?
-                LiteGraph.log_debug("lgraphNODE", "triggerSlot", "link has not node", link_info, output, slot, param);
+                LiteGraph.log_warn("lgraphNODE", "triggerSlot", "link has not node", link_info, output, slot, param);
                 continue;
             }
             var target_slot = node.inputs[link_info.target_slot];
@@ -15295,7 +15496,7 @@ export class LGraphNode {
 
                 // METHOD 1 ancestors
                 if (LiteGraph.refreshAncestorsOnActions) {
-                    LiteGraph.log_debug("lgraphNODE", "triggerSlot", "refreshAncestorsOnActions", target_connection.name, output, slot, options);
+                    LiteGraph.log_verbose("lgraphNODE", "triggerSlot", "refreshAncestorsOnActions", target_connection.name, output, slot, options);
                     node.refreshAncestors({
                         action: target_connection.name,
                         param: param,
@@ -15307,16 +15508,17 @@ export class LGraphNode {
                 if (LiteGraph.use_deferred_actions && node.onExecute) {
                     node._waiting_actions ??= [];
                     node._waiting_actions.push([target_connection.name, param, options, link_info.target_slot]);
-                    LiteGraph.log_debug("lgraphnode", "triggerSlot", "push to deferred", target_connection.name, param, options, link_info.target_slot); //+this.id+":"+this.order+" :: "+target_connection.name);
+                    LiteGraph.log_verbose("lgraphnode", "triggerSlot", "push to deferred", target_connection.name, param, options, link_info.target_slot); //+this.id+":"+this.order+" :: "+target_connection.name);
                 } else {
                     // trigger now the action
                     // wrap node.onAction(target_connection.name, param);
-                    LiteGraph.log_debug("lgraphnode", "triggerSlot", "call actionDo", node, target_connection.name, param, options, link_info.target_slot);
+                    LiteGraph.log_verbose("lgraphnode", "triggerSlot", "call actionDo", node, target_connection.name, param, options, link_info.target_slot);
                     node.actionDo(target_connection.name, param, options, link_info.target_slot);
                 }
             } else {
                 // TODO CHECK
-                LiteGraph.log_debug("lgraphnode", "triggerSlot", "not executing node, what to do with this Node Mode on slot triggered?", node.mode, this);
+                // LiteGraph.log_verbose("lgraphnode", "triggerSlot","not executing node, what to do with this Node Mode on slot triggered?", node.mode, this);
+                LiteGraph.log_debug("lgraphnode", "triggerSlot", "onAction not implemented on node for triggeringSlot", target_slot, node.title, "arguments", slot, param, link_id, options);
             }
         }
     }
@@ -15350,6 +15552,7 @@ export class LGraphNode {
 
     doUpdateBindedInputProperties() {
         let thisNode = this;
+        if (!this.inputs) return;
         this.inputs.forEach((ob_input) => {
             if (ob_input.param_bind) {
                 LiteGraph.log_verbose("lgraphnode", "doUpdateBindedInputProperties", "has bind", ob_input, thisNode);
@@ -15369,6 +15572,7 @@ export class LGraphNode {
 
     doUpdateBindedOutputProperties() {
         let thisNode = this;
+        if (!this.outputs) return;
         this.outputs.forEach((ob_output) => {
             if (ob_output.param_bind) {
                 LiteGraph.log_verbose("lgraphnode", "doUpdateBindedOutputProperties", "has bind", ob_output, thisNode);
@@ -16084,7 +16288,7 @@ export class LGraphNode {
             return -1;
         }
         for (var i = 0, l = this.inputs.length; i < l; ++i) {
-            if (name == this.inputs[i].name) {
+            if (name === this.inputs[i].name) {
                 return !returnObj ? i : this.inputs[i];
             }
         }
@@ -16103,7 +16307,7 @@ export class LGraphNode {
             return -1;
         }
         for (var i = 0, l = this.outputs.length; i < l; ++i) {
-            if (name == this.outputs[i].name) {
+            if (name === this.outputs[i].name) {
                 return !returnObj ? i : this.outputs[i];
             }
         }
@@ -16931,6 +17135,7 @@ export class LGraphNode {
 
     /* Force align to grid */
     alignToGrid() {
+        if (!this.pos) this.pos = [0, 0];
         this.pos[0] =
             LiteGraph.CANVAS_GRID_SIZE *
             Math.round(this.pos[0] / LiteGraph.CANVAS_GRID_SIZE);
@@ -17134,6 +17339,182 @@ export class LGraphNode {
     }
 
     /**
+     * syncObjectByProperty ensures that duplicate slots are merged in a controlled way:
+     * - For each unique slot (as defined by the given property), the total count in the result
+     *   will be the maximum number of occurrences found in either the source or destination.
+     * - When a slot appears in both arrays, the destination order is preserved for those slots.
+     *   However, if the source array provides extra copies (or a different order), those items are
+     *   used (or appended) so that the new order reflects any changes from the source.
+     * - If a destination slot has no matching source item, fallback checks (if provided) are applied.
+     *
+     * @param {Array} ob_from - The source array (new configuration).
+     * @param {Array} ob_dest - The destination array (current configuration).
+     * @param {string} property - The property name used for matching (e.g. a slot name).
+     * @param {object} optsIn - Optional parameters. Options include:
+     *    - only_in_source: "append" (if extra source slots exist, append them)
+     *    - fallback_checks: an array of alternative property checks (e.g. [{name:"type"}])
+     *
+     * @returns {object} An object containing:
+     *   - ob_dest: the new merged array.
+     *   - keys_remap: a mapping from each source item’s original index to its new index.
+     *   - only_in_source: any items found only in the source.
+     *   - only_in_target: any items found only in the destination.
+     */
+    syncObjectByProperty_NEW_DISABLED_WIP(ob_from, ob_dest, property, optsIn) {
+        // Default options.
+        const optsDef = {
+            only_in_source: "append",
+            fallback_checks: [{
+                name: "type"
+            }]
+        };
+        const opts = Object.assign({}, optsDef, optsIn);
+
+        // Ensure we have arrays to work with.
+        ob_from = ob_from || [];
+        ob_dest = ob_dest || [];
+
+        // Compute the unique keys (slots) in order.
+        // Start with the order from destination, then add any keys from source that aren’t already included.
+        const keyOrder = [];
+        const seenKeys = new Set();
+        ob_dest.forEach(item => {
+            const keyVal = item[property];
+            if (!seenKeys.has(keyVal)) {
+                keyOrder.push(keyVal);
+                seenKeys.add(keyVal);
+                LiteGraph.log_verbose("lgraphnode", "syncObjectByProperty", "ob_dest seen", keyVal, item);
+            }
+        });
+        ob_from.forEach(item => {
+            const keyVal = item[property];
+            if (!seenKeys.has(keyVal)) {
+                keyOrder.push(keyVal);
+                seenKeys.add(keyVal);
+                LiteGraph.log_verbose("lgraphnode", "syncObjectByProperty", "ob_from seen", keyVal, item);
+            }
+        });
+
+        // Group items by their key.
+        const groupFrom = {};
+        ob_from.forEach((item, idx) => {
+            const keyVal = item[property];
+            if (!groupFrom[keyVal]) groupFrom[keyVal] = [];
+            groupFrom[keyVal].push({
+                idx,
+                item
+            });
+        });
+        LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "groupFrom", JSON.stringify(groupFrom));
+        const groupDest = {};
+        ob_dest.forEach((item, idx) => {
+            const keyVal = item[property];
+            if (!groupDest[keyVal]) groupDest[keyVal] = [];
+            groupDest[keyVal].push({
+                idx,
+                item
+            });
+        });
+        LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "groupDest", JSON.stringify(groupDest));
+
+        // Global set to record which source indices have been used.
+        const usedSource = new Set();
+        // Mapping from source index to new index.
+        const keys_remap = {};
+        // The new merged destination array.
+        const new_dest = [];
+
+        // Process each unique key in the order defined by destination (with extras from source appended).
+        keyOrder.forEach(keyVal => {
+            const srcGroup = groupFrom[keyVal] || [];
+            const destGroup = groupDest[keyVal] || [];
+            // Allowed number is the greatest count in either array.
+            const allowedCount = Math.max(srcGroup.length, destGroup.length);
+            // For each copy of this slot…
+            for (let i = 0; i < allowedCount; i++) {
+                let chosen = null;
+                if (i < destGroup.length) {
+                    // This slot exists in destination.
+                    LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "slot exists in destination (i?)", i);
+                    if (i < srcGroup.length) {
+                        // Prefer the source item to update the slot.
+                        chosen = LiteGraph.cloneObject(srcGroup[i].item);
+                        usedSource.add(srcGroup[i].idx);
+                        keys_remap[srcGroup[i].idx] = new_dest.length;
+                        LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "prefer source", i, chosen);
+                    } else {
+                        // No matching source item in this position.
+                        // Try fallback matching: search all unused source items for a match on any fallback property.
+                        let fallbackMatched = false;
+                        const destItem = destGroup[i].item;
+                        LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "no matching (i?)", destItem);
+                        if (opts.fallback_checks && opts.fallback_checks.length) {
+                            for (const check of opts.fallback_checks) {
+                                for (let j = 0; j < ob_from.length; j++) {
+                                    if (usedSource.has(j)) continue;
+                                    if (ob_from[j][check.name] === destItem[check.name]) {
+                                        chosen = LiteGraph.cloneObject(ob_from[j]);
+                                        usedSource.add(j);
+                                        keys_remap[j] = new_dest.length;
+                                        fallbackMatched = true;
+                                        break;
+                                    }
+                                }
+                                if (fallbackMatched) {
+                                    LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "fallbackMatched", i, chosen);
+                                    break;
+                                } else {
+                                    LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "fallback NOT Matched");
+                                }
+                            }
+                        }
+                        // If no fallback match, retain the destination item.
+                        if (!fallbackMatched) {
+                            chosen = LiteGraph.cloneObject(destItem);
+                            LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "fallback NOT Matched chosen is dest", chosen);
+                        }
+                    }
+                } else {
+                    // i >= destGroup.length: destination had fewer copies than source.
+                    if (i < srcGroup.length) {
+                        chosen = LiteGraph.cloneObject(srcGroup[i].item);
+                        usedSource.add(srcGroup[i].idx);
+                        keys_remap[srcGroup[i].idx] = new_dest.length;
+                        LiteGraph.log_warn("lgraphnode", "syncObjectByProperty", "destination had fewer copies than source", i, chosen, srcGroup[i].idx, usedSource);
+                    }
+                }
+                if (chosen !== null) {
+                    new_dest.push(chosen);
+                } else {
+                    LiteGraph.log_verbose("lgraphnode", "syncObjectByProperty", "destination had fewer copies than source", i, chosen);
+                }
+            }
+        });
+
+        // Compute any items present only in source (unused items) and only in destination.
+        const only_in_source = ob_from.filter((item, idx) => !usedSource.has(idx));
+        const only_in_target = ob_dest.filter(destItem =>
+            !ob_from.some(srcItem => srcItem[property] === destItem[property])
+        );
+
+        LiteGraph.log_verbose("syncObjectByProperty", "Merge Result", {
+            ob_from,
+            ob_dest,
+            new_dest,
+            keys_remap,
+            only_in_source,
+            only_in_target
+        });
+
+        return {
+            ob_dest: new_dest,
+            keys_remap: keys_remap,
+            only_in_source: only_in_source,
+            only_in_target: only_in_target
+        };
+    }
+
+    /**
      * syncObjectByProperty will ensure using the right index for node inputs and outputs when onConfigure (de-serializing) 
      * @param {*} ob_from 
      * @param {*} ob_dest 
@@ -17283,8 +17664,6 @@ export class LGraphNode {
             only_in_target: only_in_target,
         };
     }
-
-
 }
 
 
@@ -18389,12 +18768,18 @@ export class NodeFunction extends LGraphNode {
 // fs
 // vm
 // node-fetch
+// ws
+// http
+// socket-io
+// socket-io-client
 
 export class LibraryManager {
     constructor() {
         this.libraries_known = {};
         this.libraries_loaded = {};
+        this.libraries_to_load = [];
         this.libraries_state = {};
+        this.loading_promises = {};
         this.fs = null;
         this.path = null;
 
@@ -18429,10 +18814,14 @@ export class LibraryManager {
 
     /**
      * Register a library with flexible options (structured object or simple format).
+     * If the library is already registered, merge new data with the existing one.
+     * Options:
+     *  - key, version, globalObject, defaultExport
+     *  - browser: { local, remote, target } where target can be "client", "both"
+     *  - server: { npm, remote, target } where target can be "server", "both"
      */
     registerLibrary(...args) {
-        let library = {};
-
+        let newLib = {};
         if (typeof args[0] === "object" && !Array.isArray(args[0])) {
             const {
                 key,
@@ -18442,34 +18831,64 @@ export class LibraryManager {
                 server = {},
                 defaultExport
             } = args[0];
-
-            library = {
+            newLib = {
                 key,
                 version,
                 globalObject,
                 localPaths: this.ensureArray(browser.local),
                 remoteUrls: this.ensureArray(browser.remote),
+                browserTarget: browser.target || "both",
                 npmPackages: this.ensureArray(server.npm),
                 serverRemoteUrls: this.ensureArray(server.remote),
+                serverTarget: server.target || "both",
                 defaultExport
             };
         } else {
-            const [key, version, globalObject, localPaths, remoteUrls, npmPackages, serverRemoteUrls] = args;
-
-            library = {
+            const [key, version, globalObject, localPaths, remoteUrls, npmPackages, serverRemoteUrls, defaultExport] = args;
+            newLib = {
                 key,
                 version,
                 globalObject,
                 localPaths: this.ensureArray(localPaths),
                 remoteUrls: this.ensureArray(remoteUrls),
+                browserTarget: "both",
                 npmPackages: this.ensureArray(npmPackages),
                 serverRemoteUrls: this.ensureArray(serverRemoteUrls),
+                serverTarget: "both",
                 defaultExport
             };
         }
 
-        this.libraries_known[library.key] = library;
-        this.libraries_state[library.key] = "not_loaded";
+        // If already registered, merge configurations.
+        if (this.libraries_known[newLib.key]) {
+            const existing = this.libraries_known[newLib.key];
+            // Merge arrays using a Set to ensure uniqueness.
+            existing.localPaths = Array.from(new Set([...existing.localPaths, ...newLib.localPaths]));
+            existing.remoteUrls = Array.from(new Set([...existing.remoteUrls, ...newLib.remoteUrls]));
+            existing.npmPackages = Array.from(new Set([...existing.npmPackages, ...newLib.npmPackages]));
+            existing.serverRemoteUrls = Array.from(new Set([...existing.serverRemoteUrls, ...newLib.serverRemoteUrls]));
+            // Optionally update version if provided new value (here we override if different).
+            if (newLib.version && existing.version !== newLib.version) {
+                existing.version = newLib.version;
+            }
+            // Merge target flags: if they differ, default to "both"
+            if (existing.browserTarget !== newLib.browserTarget) {
+                existing.browserTarget = "both";
+            }
+            if (existing.serverTarget !== newLib.serverTarget) {
+                existing.serverTarget = "both";
+            }
+            // Update default export if provided.
+            if (newLib.defaultExport) {
+                existing.defaultExport = newLib.defaultExport;
+            }
+            // Do not change the load state if already loaded.
+            this.libraries_known[newLib.key] = existing;
+        } else {
+            // First registration: simply add it.
+            this.libraries_known[newLib.key] = newLib;
+            this.libraries_state[newLib.key] = "not_loaded";
+        }
     }
 
     /**
@@ -18483,44 +18902,56 @@ export class LibraryManager {
         return str.replace(/[^a-zA-Z0-9_$]/g, '_').replace(/^[0-9]/, '_$&');
     }
 
-    // **Load a library dynamically (includes all specified files)**
     async loadLibrary(key, callback) {
         if (!this.libraries_known[key]) {
             console.error(`Library ${key} not registered.`);
             return;
         }
 
-        if (this.libraries_state[key] === "loading") {
-            console.warn(`Library ${key} is already loading.`);
-            return;
-        }
-
+        // If the library is already loaded, return it immediately
         if (this.libraries_state[key] === "loaded") {
             console.warn(`Library ${key} is already loaded.`);
             callback && callback(this.libraries_loaded[key]);
-            return;
+            return this.libraries_loaded[key];
         }
 
+        // If the library is currently loading, wait for its completion
+        if (this.libraries_state[key] === "loading") {
+            console.warn(`Library ${key} is already loading. Waiting for completion...`);
+            return this.loading_promises[key]; // Return the existing promise
+        }
+
+        // Start loading process
+        this.libraries_to_load.push(key);
         this.libraries_state[key] = "loading";
-        const library = this.libraries_known[key];
 
-        try {
-            let loadedModules = [];
+        // Store the promise in case others try to load it simultaneously
+        this.loading_promises[key] = new Promise(async (resolve, reject) => {
+            try {
+                let loadedModules = [];
 
-            if (isBrowser()) {
-                loadedModules = await this.loadBrowserLibrary(library);
-            } else if (isNode() || isBun()) {
-                loadedModules = await this.loadServerLibrary(library);
+                if (isBrowser()) {
+                    loadedModules = await this.loadBrowserLibrary(this.libraries_known[key]);
+                } else if (isNode() || isBun()) {
+                    loadedModules = await this.loadServerLibrary(this.libraries_known[key]);
+                }
+
+                this.libraries_state[key] = "loaded";
+                this.libraries_loaded[key] = loadedModules;
+
+                console.log(`Library processed: ${key}`);
+                callback && callback(loadedModules);
+                resolve(loadedModules);
+            } catch (error) {
+                this.libraries_state[key] = "error";
+                console.error(`Failed to load library ${key}:`, error);
+                reject(error);
+            } finally {
+                delete this.loading_promises[key]; // Clean up after loading is complete
             }
+        });
 
-            this.libraries_state[key] = "loaded";
-            this.libraries_loaded[key] = loadedModules;
-            console.log(`Library ${key} loaded.`);
-            callback && callback(loadedModules);
-        } catch (error) {
-            this.libraries_state[key] = "error";
-            console.error(`Failed to load library ${key}:`, error);
-        }
+        return this.loading_promises[key];
     }
 
     // **Load all specified browser files**
@@ -18588,8 +19019,6 @@ export class LibraryManager {
                 let modX = null;
                 modX = await import(npmPackage);
 
-                modX = modX?.default ?? modX;
-
                 if (library.globalObject && library.globalObject !== "") {
                     if (library.defaultExport && typeof(modX) == "object") {
                         if (typeof(modX[library.defaultExport]) !== "undefined") {
@@ -18598,10 +19027,19 @@ export class LibraryManager {
                         } else {
                             console.warn(`Library ${npmPackage} NOT FOUND default export`, modX);
                         }
+                    } else {
+                        // RECHECK WHEN AND IF NEEDED (could use defaultExport? mod to get deep property)
+                        if (typeof(modX.default) !== "undefined" && (library.defaultExport === true)) {
+                            console.debug(`Module has default for package: ${npmPackage}`, modX);
+                            modX = modX.default;
+                            console.debug(`Exporting default for package: ${npmPackage}`, modX);
+                        } else {
+                            console.debug(`Using module standard import package: ${npmPackage}`, modX);
+                        }
                     }
                     setGlobalVariable(library.globalObject, modX);
                     // TODO save in local libs modX;
-                    console.log(`Included package: ${npmPackage} as global ${library.globalObject}`);
+                    console.log(`Included package: ${npmPackage} as global ${library.globalObject}`, modX);
                     // console.log(`${modX}}`);
                 } else {
                     console.log(`NOT Included package: ${npmPackage} as global ${library.globalObject} result ${modX} of ${loadedModules}`);
@@ -18649,6 +19087,44 @@ export class LibraryManager {
         return loadedModules;
     }
 
+    isLibraryLoaded(libKey) {
+        return this.getLibraryState(libKey) === "loaded";
+    }
+
+    getLib(libKey) {
+        if (!this.isLibraryLoaded(libKey)) {
+            console.warn(`[NodeJsSys] Library '${libKey}' is not loaded. Attempting to load...`);
+            this.loadLibrary(libKey);
+            return null;
+        }
+        const library = this.libraries_known[libKey];
+        return library ? getGlobalVariable(library.globalObject) || null : null;
+    }
+
+    /**
+     * Wait for a library to be loaded.
+     * @param {string} libKey - The key of the library.
+     * @param {number} timeout - Maximum wait time in milliseconds.
+     * @returns {Promise<any>} Resolves with the global object for the library.
+     */
+    waitForLib(libKey, timeout = 9000) {
+        return new Promise((resolve, reject) => {
+            const checkInterval = 50;
+            let elapsed = 0;
+            const intervalId = setInterval(() => {
+                if (this.getLibraryState(libKey) === "loaded") {
+                    clearInterval(intervalId);
+                    resolve(getGlobalVariable(this.libraries_known[libKey].globalObject));
+                } else {
+                    elapsed += checkInterval;
+                    if (timeout && elapsed >= timeout) {
+                        clearInterval(intervalId);
+                        reject(new Error(`Library ${libKey} did not load within ${timeout}ms`));
+                    }
+                }
+            }, checkInterval);
+        });
+    }
 
     async loadServerRemoteScript(url) {
         if (!this.fetch || !this.vm) throw new Error("Node.js modules 'fetch' and 'vm' are required.");
@@ -18787,6 +19263,105 @@ export class LibraryManager {
     // **Get the state of a library**
     getLibraryState(key) {
         return this.libraries_state[key] || false;
+    }
+
+    /**
+     * Check if all libraries to load are loaded.
+     * @returns {boolean} True if every library's state is "loaded", false otherwise.
+     */
+    areAllLibrariesLoaded() {
+        for (const iL in this.libraries_to_load) {
+            let key = this.libraries_to_load[iL];
+            if (this.libraries_state[key] !== "loaded" && this.libraries_state[key] !== "error") {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Attempt to install NPM packages required for a library.
+     * This method is only supported in Node.js or Bun environments.
+     * @param {string} libKey The key of the library.
+     * @returns {Promise<string>} The stdout from the npm install command.
+     */
+    async npmInstall(libKey, command = "npm install") {
+        if (!isNode() && !isBun()) {
+            console.warn('npmInstall is only supported in Node.js or Bun environments.');
+            return;
+        }
+        if (!this.libraries_known[libKey]) {
+            console.error(`Library ${libKey} not registered.`);
+            return;
+        }
+        const library = this.libraries_known[libKey];
+        if (!library.npmPackages || library.npmPackages.length === 0) {
+            console.warn(`Library ${libKey} has no npm packages to install.`);
+            return;
+        }
+        let child_process;
+        try {
+            child_process = await import("child_process").then(m => m.default || m);
+        } catch (e) {
+            console.error("Failed to import child_process:", e);
+            return;
+        }
+        const packages = library.npmPackages.join(" ");
+        const cmd = command + ` ${packages}`;
+        return new Promise((resolve, reject) => {
+            child_process.exec(cmd, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`Error installing npm packages for ${libKey}:`, error);
+                    reject(error);
+                    return;
+                }
+                console.log(`npm install output for ${libKey}:`, stdout);
+                resolve(stdout);
+            });
+        });
+    }
+
+    /**
+     * Wait until all registered libraries have been loaded.
+     * @returns {Promise<void>} Resolves when all libraries are in the "loaded" state.
+     */
+    async waitAllLibrariesLoaded() {
+        return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+                if (this.areAllLibrariesLoaded()) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100);
+        });
+    }
+
+    /**
+     * Load all registered libraries concurrently.
+     * @returns {Promise<void>} Resolves when all libraries have attempted to load.
+     */
+    async loadAllLibraries() {
+        const keys = Object.keys(this.libraries_known);
+        await Promise.all(keys.map(key => this.loadLibrary(key)));
+    }
+
+    /**
+     * Unload all loaded libraries.
+     */
+    unloadAllLibraries() {
+        Object.keys(this.libraries_known).forEach(key => {
+            if (this.libraries_state[key] === "loaded") {
+                this.unloadLibrary(key);
+            }
+        });
+    }
+
+    /**
+     * Get a list of all registered library keys.
+     * @returns {string[]} An array of registered library keys.
+     */
+    getRegisteredLibraries() {
+        return Object.keys(this.libraries_known);
     }
 }
 
@@ -19823,7 +20398,7 @@ class Console {
             console.error(msg, param);
         } else {
             console.info("[ConsoleNode]", msg, param);
-            console.verbose("[ConsoleNode]", msg, param, "options:", options);
+            console.debug("[ConsoleNode]", msg, param, "options:", options);
         }
     }
 
@@ -20168,19 +20743,15 @@ class EvSequence {
         if (this.outputs) {
             options = options || {};
             for (var i = 0; i < this.outputs.length; ++i) {
+                // console.debug(this.title, "step", i);
                 // needs more info about this...
                 if (options.action_call)
                     // CREATE A NEW ID FOR THE ACTION
-                    options.action_call = options.action_call + "_seq_" + i;
+                    options.action_call = options.action_call + "_seq_" + i + "_" + Math.floor(Math.random() * 9999);
                 else
                     options.action_call =
-                    this.id +
-                    "_" +
-                    (action ? action : "action") +
-                    "_seq_" +
-                    i +
-                    "_" +
-                    Math.floor(Math.random() * 9999);
+                    this.id + "_" + (action ? action : "action") +
+                    "_seq_" + i + "_" + Math.floor(Math.random() * 9999);
                 this.triggerSlot(i, param, null, options);
             }
         }
@@ -20697,6 +21268,66 @@ class DataStore {
 }
 LiteGraph.registerNodeType("basic/data_store", DataStore);
 
+class EventSwitch {
+
+    static title = "Switch";
+    static desc = "Switch trigger on data";
+
+    constructor() {
+        this.addInput("in", 0, {
+            param_bind: true
+        });
+        this.addProperty("in");
+        this.addOutput("default", LiteGraph.EVENT);
+        this.selected = 0;
+        // this.clip_area = true;
+    }
+
+    // onDrawBackground(ctx) {
+    //     if (this.flags.collapsed) {
+    //         return;
+    //     }
+    //     ctx.fillStyle = "#AFB";
+    //     const y = (this.selected) * LiteGraph.NODE_SLOT_HEIGHT + 6;
+    //     const x = this.size[0];
+    //     ctx.beginPath();
+    //     ctx.moveTo(x - 50, y);
+    //     ctx.lineTo(x - 50, y + LiteGraph.NODE_SLOT_HEIGHT);
+    //     ctx.lineTo(x - 34, y + LiteGraph.NODE_SLOT_HEIGHT * 0.5);
+    //     ctx.fill();
+    // }
+
+    onExecute() {
+        // var sel = this.getInputData("in");
+        const sel = String(this.getInputOrProperty("in"));
+        let found = false;
+        for (let iS in this.outputs) {
+            let outSlot = this.outputs[iS];
+            if (outSlot.type == LiteGraph.EVENT && (outSlot.name == sel || outSlot.label == sel)) {
+                this.selected = outSlot.name; //iS;
+                found = true;
+                this.triggerSlot(outSlot.name); //iS);
+                console.debug("SWITCH FoundAndTrigger", sel, outSlot.name);
+                break;
+            }
+        }
+        if (!found) {
+            this.selected = 0;
+            this.triggerSlot("default");
+            console.debug("SWITCH NotFound", sel);
+        }
+    }
+
+    onGetOutputs() {
+        return [
+            ["val", LiteGraph.EVENT, {
+                removable: true,
+                nameLocked: false
+            }]
+        ];
+    }
+}
+LiteGraph.registerNodeType("events/switch", EventSwitch);
 class WidgetButton {
 
     static title = "Button";
@@ -39570,12 +40201,12 @@ class LGAudioDestination {
 LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 
 class LGWebSocket {
-
     static title = "WS Client";
     static desc = "Connect to a WebSocket to send and receive data";
 
     constructor() {
         this.size = [60, 20];
+        // Fixed inputs and outputs
         this.addInput("msg_w_data", LiteGraph.ACTION, {
             nameLocked: true,
             removable: false
@@ -39601,30 +40232,39 @@ class LGWebSocket {
             nameLocked: false,
             removable: true
         });
+
+        // Configurable properties
         this.properties = {
-            url: "ws://127.0.0.1:8080",
+            url: "ws://127.0.0.1:8010",
             room: null,
             auto_send_input: false,
             only_send_changes: true,
-            runOnServerToo: false
+            runOnServerToo: false,
+            auto_reconnect: true, // New property: attempt reconnection if disconnected
+            reconnectInterval: 3000 // milliseconds before trying to reconnect
         };
+
         this._ws = null;
         this._last_sent_data = [];
         this._last_received_data = [];
-        this._hasWarned = false; // To ensure warning is only logged once
+        this._hasWarned = false; // To warn only once in server mode
     }
 
     onPropertyChanged(name, _value) {
-        if (name === "url") {
+        if (name === "url" && this.properties.url !== _value) {
             this.connectSocket();
         }
+        // For any property change, you could consider reconnecting if needed.
     }
 
     onExecute() {
-        if (!this._ws && this.properties.url && !this._ws?.readyState == WebSocket.CONNECTING) {
+        // If no websocket exists or if it is closed, attempt to connect.
+        if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
+            console.debug("WSClient try to connect", this._ws?.readyState, this._ws);
             this.connectSocket();
         }
 
+        // Only proceed if the socket is open.
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
             return;
         }
@@ -39633,54 +40273,47 @@ class LGWebSocket {
         const only_changes = this.properties.only_send_changes;
 
         if (this.properties.auto_send_input) {
+            // Loop through dynamic data inputs (starting at index 1)
             for (let i = 1; i < this.inputs.length; ++i) {
                 const data = this.getInputData(i);
-                if (data == null) {
-                    continue;
-                }
+                if (data == null) continue;
 
-                let json;
+                let payload;
                 try {
-                    json = {
+                    payload = {
                         type: 0,
                         channel: i,
                         data: data,
                     };
-                    if (room) json.room = room;
-                    json = JSON.stringify(json);
+                    if (room) payload.room = room;
+                    payload = JSON.stringify(payload);
                 } catch (err) {
                     console.error("Error stringifying data:", err);
                     continue;
                 }
 
-                if (only_changes && this._last_sent_data[i] === json) {
+                if (only_changes && this._last_sent_data[i] === payload) {
                     continue;
                 }
-                this._last_sent_data[i] = json;
+                this._last_sent_data[i] = payload;
                 try {
-                    this._ws.send(json);
-                    console.log("WS sent by execute:", i, json);
+                    this._ws.send(payload);
+                    console.log("WS sent by execute:", i, payload);
                 } catch (err) {
                     console.error("Error sending data:", err);
                 }
             }
         }
 
-        // force update output?
-        // for (let i = 1; i < this.outputs.length; ++i) {
-        //     if(i in this._last_received_data){
-        //         this.setOutputData(i, this._last_received_data[i]);
-        //     }
-        // }
-
-        // reset color
+        // Reset box color if needed.
         if (this.boxcolor === "#AFA") {
             this.boxcolor = "#6C6";
         }
     }
 
     connectSocket() {
-        if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        // In Node.js, only allow connection if runOnServerToo is true.
+        if (typeof process !== "undefined" && process.versions && process.versions.node) {
             if (!this.properties.runOnServerToo) {
                 if (!this._hasWarned) {
                     console.warn("WsClient: not allowed to run on the server. Set 'runOnServerToo' to true to enable.");
@@ -39690,13 +40323,30 @@ class LGWebSocket {
             }
         }
 
+        // If already connected, close existing connection.
         if (this._ws) {
             this._ws.close();
         }
 
+        // Ensure a proper WebSocket constructor is available.
+        let WSConstructor = typeof WebSocket !== "undefined" ? WebSocket : null;
+        if (!WSConstructor && typeof require !== "undefined") {
+            try {
+                WSConstructor = require("ws");
+            } catch (err) {
+                console.error("WebSocket module not found:", err);
+                return;
+            }
+        }
+        if (!WSConstructor) {
+            console.error("WebSocket is not available in this environment.");
+            return;
+        }
+
+        // Ensure URL has ws:// or wss:// prefix.
         const url = this.properties.url.startsWith("ws") ? this.properties.url : "ws://" + this.properties.url;
         try {
-            this._ws = new WebSocket(url);
+            this._ws = new WSConstructor(url);
         } catch (err) {
             console.error("Error creating WebSocket:", err);
             return;
@@ -39710,10 +40360,9 @@ class LGWebSocket {
         this._ws.onmessage = (e) => {
             this.boxcolor = "#AFA";
             console.info("WS on message:", e.data);
-
             let data = e.data;
 
-            if (typeof data === 'string') {
+            if (typeof data === "string") {
                 try {
                     data = JSON.parse(data);
                 } catch (err) {
@@ -39722,10 +40371,9 @@ class LGWebSocket {
             } else if (data instanceof ArrayBuffer) {
                 console.log("Received binary data");
                 const byteArray = new Uint8Array(data);
-                const binaryString = new TextDecoder('utf-8').decode(byteArray);
+                const binaryString = new TextDecoder("utf-8").decode(byteArray);
                 console.log("Binary data as string:", binaryString);
-                const binaryBase64 = btoa(String.fromCharCode.apply(null, byteArray));
-                console.log("Binary data as base64:", binaryBase64);
+                // Optionally, you can also convert binary data to Base64.
                 data = binaryString;
             }
 
@@ -39734,46 +40382,45 @@ class LGWebSocket {
                 return;
             }
 
-            // TODO data.channel is i, or 1 default : this.setOutputData(i, this._last_received_data[i]);
-
             const channelX = data.channel !== undefined ? data.channel : 1;
-            const dataData_defined = typeof(data.data) !== "undefined";
-            const dataX = dataData_defined ? data.data : data;
-            const slotX = data?.action || 0;
-            // data.type == 1 comes from unknown source: it will create a temporary LiteGraph object
-            if (data?.type === 1) {
-                if (data.data?.object_class && LiteGraph[data.data.object_class]) {
+            const dataDefined = typeof data.data !== "undefined";
+            let dataX = dataDefined ? data.data : data;
+            let slotX = data && data.action ? data.action : 0;
+
+            // Handle type 1 messages (intended to create temporary LiteGraph objects)
+            if (data && data.type === 1) {
+                if (data.data && data.data.object_class && LiteGraph[data.data.object_class]) {
                     try {
-                        console.debug("WS executing LiteGraph object:", obj, data.data);
                         const obj = new LiteGraph[data.data.object_class](data.data);
-                        // channelX = data.data.object_class;
-                        dataX = data.data.object_class;
                         console.debug("WS created temporary LG object:", obj);
+                        dataX = obj;
                     } catch (err) {
                         console.error("WS Error creating object:", err);
                     }
-                } else if (dataData_defined) {
+                } else if (dataDefined) {
                     console.debug("WS type1 received data:", data.data);
+                    dataX = data.data;
                 } else {
                     console.debug("WS type1 received UNKNOWN data:", data);
                 }
             } else {
-                if (dataData_defined) {
+                if (dataDefined) {
                     console.debug("WS received channel data:", data.channel, data.data);
                 } else {
                     console.debug("WS received UNKNOWN data:", data);
                 }
             }
             this._last_received_data[channelX] = dataX;
-            console.debug("WS updating data and triggers:", "channelX", channelX, "dataX", dataX, "slotX", slotX);
-            // set any data to default dataRec slot
-            this.setOutputData(1, dataX);
-            // if not an action, set output data to specific channel
-            if (slotX == 0) {
+            console.debug("WS updating data and triggers:", "channel", channelX, "data:", dataX, "slot:", slotX);
+            // Set default output (dataRec)
+            this.setOutputData("dataRec", dataX);
+            // Set dynamic output if defined (for channel-specific data)
+            if (slotX === 0) {
                 this.setOutputData("DATA_" + channelX, dataX);
             }
+            // Trigger default event slot
             this.triggerSlot(0, dataX);
-            // if an action, trigger relative slot
+            // If an action is specified, trigger that slot
             if (slotX !== 0) {
                 this.triggerSlot(slotX, dataX);
             }
@@ -39787,6 +40434,15 @@ class LGWebSocket {
         this._ws.onclose = () => {
             console.log("WS connection closed");
             this.boxcolor = "#000";
+            // Optionally, auto-reconnect if enabled.
+            if (this.properties.auto_reconnect) {
+                setTimeout(() => {
+                    if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
+                        console.log("Attempting to reconnect WS...");
+                        this.connectSocket();
+                    }
+                }, this.properties.reconnectInterval);
+            }
         };
     }
 
@@ -39804,10 +40460,11 @@ class LGWebSocket {
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
             return;
         }
-        const msg = {
+        const msgObj = {
             type: 1,
             data: data
-        }; //JSON.stringify();
+        };
+        const msg = JSON.stringify(msgObj);
         try {
             this._ws.send(msg);
             console.log("WS sent:", msg);
@@ -39835,49 +40492,23 @@ class LGWebSocket {
         }
     }
 
+    // Return additional dynamic input slots only if they exist beyond the fixed ones.
     onGetInputs() {
-        let nIn = 1;
-        let nAct = 1;
-        this.inputs.forEach(element => {
-            console.warn(element);
-            if (element.name.startsWith("DATA_")) nIn++;
-            if (element.name.startsWith("EV_")) nAct++;
-        });
-        return [
-            ["DATA_" + nIn, 0, {
-                nameLocked: true,
-                removable: true
-            }],
-            ["EV_" + nAct, LiteGraph.ACTION, {
-                nameLocked: true,
-                removable: true
-            }]
-        ];
+        // Fixed inputs are: "msg_w_data", "DATA_1", "EV_1" (total 3)
+        return this.inputs.length > 3 ? this.inputs.slice(3) : [];
     }
 
+    // Return additional dynamic output slots only if they exist beyond the fixed ones.
     onGetOutputs() {
-        let nOut = 1;
-        let nEv = 1;
-        this.inputs.forEach(element => {
-            if (element.name.startsWith("DATA_")) nOut++;
-            if (element.name.startsWith("EV_")) nEv++;
-        });
-        return [
-            ["DATA_" + nOut, 0, {
-                nameLocked: true,
-                removable: true
-            }],
-            ["EV_" + nEv, LiteGraph.EVENT, {
-                nameLocked: true,
-                removable: true
-            }]
-        ];
+        // Fixed outputs are: "onReceived", "dataRec", "DATA_1", "EV_1" (total 4)
+        return this.outputs && this.outputs.length > 4 ? this.outputs.slice(4) : [];
     }
 
     onRemoved() {
         this.disconnectSocket();
     }
 }
+
 LiteGraph.registerNodeType("network/websocket", LGWebSocket);
 
 
@@ -41582,7 +42213,7 @@ class CDNLibrarySelector {
 
     // Get list of registered libraries
     getLibraries() {
-        return Object.keys(LiteGraph.LibraryManager?.libraries_known);
+        return Object.keys(LiteGraph.LibraryManager?.libraries_known || {});
     }
 
     // Refresh library list
@@ -44213,19 +44844,11 @@ class LGGraph {
     };
 }
 LiteGraph.registerNodeType("litegraph/graph", LGGraph);
-// TODO move and implement library inclusion
-// add minimum version
-// add and use global identifier :: check if exists after inclusion and tie with LiteGraph.LibraryManager[identifier] for not modules
-// manage loaded etc
-// nodepack with inclusion aside
-// manage local script repository too
-
-// LiteGraph.LibraryManager.registerLibrary("socket.io", "4.8.1", "socket.io", [], ["https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.8.1/socket.io.min.js"]);
-// LiteGraph.LibraryManager.loadLibrary("socket.io");
+// src/nodes/libraries/socket.io.js
 
 // -- client&server libraries --
 LiteGraph.LibraryManager.registerLibrary({
-    key: "socket.io-client",
+    key: "io",
     version: "4.6.1",
     globalObject: "ioclient",
     browser: {
@@ -44237,37 +44860,35 @@ LiteGraph.LibraryManager.registerLibrary({
         /*remote: "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/dist/socket.io.min.js"*/
     }
 });
-LiteGraph.LibraryManager.loadLibrary("socket.io-client");
+// deferred LiteGraph.LibraryManager.loadLibrary("io");
 
 class LGSocketIO {
     static title = "Socket.IO Client";
     static desc = "Connect to a Socket.IO server to send and receive data";
 
     constructor() {
+        this.libraries = ["io"];
         this.size = [60, 20];
         this.properties = {
-            url: "http://127.0.0.1:3000",
+            url: "http://127.0.0.1:3030",
             room: null,
             auto_send_input: false,
             only_send_changes: true,
             runOnServerToo: false
         };
-        this.addProperty("type", "message", "string");
-        this.addProperty("content", "", "string");
+        this.addProperty("eventOut", "message", "string");
+        this.addProperty("dataOut", "", "string");
 
         this.addInput("SEND", LiteGraph.ACTION);
-        this.addInput("type", "string", {
-            nameLocked: true,
-            removable: false,
+        this.addInput("eventOut", "string", {
             param_bind: true
         });
-        this.addInput("content", "string", {
-            nameLocked: true,
-            removable: false,
+        this.addInput("dataOut", "string", {
             param_bind: true
         });
         this.addOutput("onReceived", LiteGraph.EVENT);
-        this.addOutput("dataRec", 0);
+        this.addOutput("eventIn", 0);
+        this.addOutput("dataIn", 0);
 
         this._io_client = null;
         this._socket = null;
@@ -44363,16 +44984,17 @@ class LGSocketIO {
                 });
             });
 
-            this._socket.on("message", (data) => {
-                this._last_received_data = data;
-                this.setOutputData(1, data);
-                this.triggerSlot(0, data);
-            });
-            /* TODO tmp remove, use custom event and output instead */
-            this._socket.on("chatMessage", (data) => {
-                this._last_received_data = data;
-                this.setOutputData(1, data);
-                this.triggerSlot(0, data);
+            this._socket.onAny((event, ...args) => {
+                let data = args?.length == 1 ? args[0] : args;
+                if (typeof(data) == "object" && Object.keys(data).length == 1 && typeof(data["0"]) !== "undefined") {
+                    data = data["0"];
+                }
+                this.setOutputData("eventIn", event);
+                this.setOutputData("dataIn", data);
+                this.triggerSlot("onReceived", {
+                    "event": event,
+                    "data": data
+                });
             });
 
             this._socket.on("reconnect_attempt", () => {
@@ -44410,14 +45032,17 @@ class LGSocketIO {
     }
 
     onAction(action, param) {
+        if (!this._socket && this.properties.url) {
+            this.connectSocket();
+        }
         if (!this._socket) {
             return;
         }
         if (action === "msg_w_data") {
-            this._socket.emit("message", param);
+            this._socket.emit("data", param);
         }
         if (action === "SEND") {
-            this._socket.emit(this.getInputOrProperty("type"), this.getInputOrProperty("content"));
+            this._socket.emit(this.getInputOrProperty("eventOut"), this.getInputOrProperty("dataOut"));
         }
     }
 }
@@ -44549,455 +45174,117 @@ LiteGraph.slot_types_default_out["image"] = ["graphics/frame", "graphics/drawIma
 LiteGraph.slot_types_default_out["quat"] = ["math3d/rotate_vec3", "math3d/rotation"];
 LiteGraph.slot_types_default_out["table"] = "string/toTable";
 
-// WIP NODE_ONLY NETWORK
-
-// TODO use librarymanager to include dgram
-// TODO use librarymanager to include ws
-
-/**
- * To use this WebSocket server node, ensure you have the 'ws' package installed.
- * Install it using the following command:
- * 
- * npm install ws
- */
-class LGWebSocketServer {
-    static title = "WebSocket Server";
-    static desc = "WebSocket server node";
-
-    constructor() {
-        this.size = [60, 20];
-        this.addInput("send", LiteGraph.ACTION);
-        this.addOutput("received", LiteGraph.EVENT);
-        this.addInput("in", 0);
-        this.addOutput("out", 0);
-        this.properties = {
-            port: 8080,
-            room: false,
-            only_send_changes: true,
-            broadcast: true,
-        };
-        this._wsServer = null;
-        this._clients = new Set();
-        this._last_sent_data = [];
-        this._last_received_data = [];
-
-        if (typeof process === 'undefined' || process.browser) {
-            console.warn("WebSocket Server node is designed to run in Node.js, not in a browser.");
-            this.boxcolor = "#FF0000";
-            this.title = "WSServer (run on server)";
-        } else {
-            this.startWebSocketServer();
-        }
-    }
-
-    onPropertyChanged(name, _value) {
-        if (name == "port" && this._wsServer) {
-            this.restartWebSocketServer();
-        }
-    }
-
-    onExecute() {
-        if (!this._wsServer) {
-            return;
-        }
-
-        // const room = this.properties.room;
-        const only_changes = this.properties.only_send_changes;
-
-        for (let i = 1; i < this.inputs.length; ++i) {
-            const data = this.getInputData(i);
-            if (data == null) {
-                continue;
-            }
-
-            let json;
-            try {
-                json = JSON.stringify({
-                    type: 0,
-                    // room: room,
-                    channel: i,
-                    data: data,
-                });
-            } catch (err) {
-                console.error("Error stringifying data:", err);
-                continue;
-            }
-
-            if (only_changes && this._last_sent_data[i] == json) {
-                continue;
-            }
-
-            this._last_sent_data[i] = json;
-            for (const client of this._clients) {
-                if (client.readyState === 1) { // WebSocket.OPEN
-                    client.send(json);
-                }
-            }
-            console.log?.("WS sent by execute:", i, json);
-        }
-
-        for (let i = 1; i < this.outputs.length; ++i) {
-            this.setOutputData(i, this._last_received_data[i]);
-        }
-
-        if (this.boxcolor == "#AFA") {
-            this.boxcolor = "#6C6";
-        }
-    }
-
-    startWebSocketServer() {
-        const WebSocket = require('ws');
-        const port = this.properties.port;
-
-        this._wsServer = new WebSocket.Server({
-            port
-        });
-        this._wsServer.on('connection', (ws) => {
-            this._clients.add(ws);
-            ws.on('message', (message) => this.handleMessage(ws, message));
-            ws.on('close', () => this._clients.delete(ws));
-            console.log?.("New client connected");
-        });
-
-        this._wsServer.on('listening', () => {
-            console.log(`WebSocket server is running on ws://localhost:${port}`);
-            this.boxcolor = "#6C6";
-        });
-
-        this._wsServer.on('error', (error) => {
-            console.error("WebSocket server error:", error);
-            this.boxcolor = "#E88";
-        });
-    }
-
-    restartWebSocketServer() {
-        if (this._wsServer) {
-            this._wsServer.close(() => {
-                this.startWebSocketServer();
-            });
-        }
-    }
-
-    handleMessage(ws, message) {
-        this.boxcolor = "#AFA";
-        console.info("WS on message:", message);
-
-        let data;
-        try {
-            data = JSON.parse(message);
-        } catch (err) {
-            console.error("Error parsing message:", err);
-            return;
-        }
-
-        // if (data.room && data.room !== this.properties.room) {
-        //     console.debug("Message room mismatch:", data.room);
-        //     return;
-        // }
-
-        if (data.type === 1) {
-            if (data.data.object_class && LiteGraph[data.data.object_class]) {
-                try {
-                    const obj = new LiteGraph[data.data.object_class](data.data);
-                    this.triggerSlot(0, obj);
-                    console.debug("WS received object:", obj);
-                } catch (err) {
-                    console.error("Error creating object:", err);
-                }
-            } else {
-                this.triggerSlot(0, data.data);
-                console.debug("WS received data:", data.data);
-            }
-        } else {
-            this._last_received_data[data.channel ?? 0] = data.data;
-            console.debug("WS received channel data:", data.channel, data.data);
-        }
-
-        // Broadcast message to other clients if broadcasting is enabled
-        if (this.properties.broadcast) {
-            const broadcastMessage = JSON.stringify(data);
-            for (const client of this._clients) {
-                if (client !== ws && client.readyState === 1) { // WebSocket.OPEN
-                    client.send(broadcastMessage);
-                }
-            }
-            console.debug("WS broadcasted message:", broadcastMessage);
-        }
-    }
-
-    send(data) {
-        if (!this._wsServer) {
-            return;
-        }
-        const msg = JSON.stringify({
-            type: 1,
-            data: data
-        });
-        for (const client of this._clients) {
-            if (client.readyState === 1) { // WebSocket.OPEN
-                client.send(msg);
-            }
-        }
-        console.log?.("WS sent:", msg);
-    }
-
-    onAction(action, param, options) {
-        if (!this._wsServer) {
-            return;
-        }
-        const data = this.getInputData("in");
-        if (data == null) {
-            return; // continue; // 
-        }
-        const msg = JSON.stringify({
-            type: 1,
-            // room: this.properties.room,
-            action: action,
-            data: data, //param,
-        });
-        for (const client of this._clients) {
-            if (client.readyState === 1) { // WebSocket.OPEN
-                client.send(msg);
-            }
-        }
-        console.debug?.("WS sent by Action:", msg, options);
-    }
-
-    onGetInputs() {
-        return [
-            ["in", 0]
-        ];
-    }
-
-    onGetOutputs() {
-        return [
-            ["out", 0]
-        ];
-    }
-}
-LiteGraph.registerNodeType("network/websocketserver", LGWebSocketServer);
-
-
-// Note: This node requires the 'dgram' module to be available in Node.js.
-// To install, run: npm install dgram
-
-class UDPNode {
-    static title = "UDP";
-    static desc = "Send and receive data through UDP";
-
-    constructor() {
-        this.size = [60, 20];
-        this.addInput("send", LiteGraph.ACTION);
-        this.addInput("data", 0);
-        this.addOutput("received", LiteGraph.EVENT);
-        this.addOutput("data", 0);
-        this.properties = {
-            host: "127.0.0.1",
-            port: 41234,
-            only_send_changes: true,
-        };
-        this._dgram = null;
-        this._last_sent_data = null;
-        this._last_received_data = null;
-        this.isNode = (typeof process !== 'undefined' && process.versions && process.versions.node);
-
-        if (this.isNode) {
-            console.debug("UDPNode initialized in Node.js environment");
-            this.connectSocket();
-        } else {
-            console.warn("UDPNode can only run on Node.js server");
-            this.boxcolor = "#FF0000";
-            this.title = "UDP (run on server)";
-        }
-    }
-
-    onPropertyChanged(name, value) {
-        if (name == "host" || name == "port") {
-            if (this.isNode) {
-                console.debug("Property changed:", name, value);
-                this.connectSocket();
-            }
-        }
-    }
-
-    onExecute() {
-        if (!this._dgram) {
-            if (this.isNode) {
-                this.connectSocket();
-            } else {
-                return;
-            }
-        }
-
-        var only_changes = this.properties.only_send_changes;
-
-        // Send data
-        var data = this.getInputData(1);
-        if (data != null) {
-            var message = Buffer.from(JSON.stringify(data));
-
-            if (only_changes && this._last_sent_data == message.toString()) {
-                return;
-            }
-
-            this._last_sent_data = message.toString();
-
-            this._dgram.send(message, 0, message.length, this.properties.port, this.properties.host, (err) => {
-                if (err) {
-                    console.error('UDP send error:', err);
-                } else {
-                    console.debug("UDP message sent", message.toString());
-                }
-            });
-        }
-
-        // Receive data
-        this.setOutputData(1, this._last_received_data);
-
-        if (this.boxcolor == "#AFA") {
-            this.boxcolor = "#6C6";
-        }
-    }
-
-    connectSocket() {
-        const dgram = require('dgram'); // Ensure 'dgram' module is available in Node.js
-        if (this._dgram) {
-            this._dgram.close();
-        }
-
-        this._dgram = dgram.createSocket('udp4');
-
-        this._dgram.on('message', (msg, rinfo) => {
-            this._last_received_data = JSON.parse(msg.toString());
-            this.triggerSlot(0, this._last_received_data);
-            console.debug('UDP message received', msg.toString());
-        });
-
-        this._dgram.on('error', (err) => {
-            console.error('UDP error:', err);
-            this._dgram.close();
-        });
-
-        this._dgram.on('listening', () => {
-            const address = this._dgram.address();
-            console.debug(`UDP server listening ${address.address}:${address.port}`);
-        });
-
-        this._dgram.bind(this.properties.port);
-    }
-
-    onAction(action, param) {
-        this.send(param);
-    }
-
-    onGetInputs() {
-        return [
-            ["data", 0]
-        ];
-    }
-
-    onGetOutputs() {
-        return [
-            ["data", 0]
-        ];
-    }
-
-    onRemoved() {
-        if (this._dgram) {
-            this._dgram.close();
-        }
-    }
-}
-LiteGraph.registerNodeType("network/udp", UDPNode);
-// WIP (not yet good) TESTING on NODE litegraph-executor
-
-// const { getGlobalObject } = require("../../global");
-// import { LiteGraph } from "../../litegraph.js";
-
-// TODO use librarymanager to include ws
-
-// conditional include (only on server)
-// if(typeof(require)!=="undefined"){
-//     const WebSocket = require('ws');
-// }
-//>>NODEJS_ENABLE_CODE_START>>
-//const WebSocket = require('ws');
-//<<NODEJS_ENABLE_CODE_END<<
-
-// -- client only libraries --
-
-// -- client&server libraries --
-// LiteGraph.LibraryManager.registerLibrary({
-//     key: "socket.io-client",
-//     version: "4.6.1",
-//     globalObject: "ioclient",
-//     browser: { /*local: "/libs/socket.io.js",*/ remote: "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/dist/socket.io.min.js" },
-//     server: { npm: ["socket.io-client"], /*remote: "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/dist/socket.io.min.js"*/ }
-// });
-// LiteGraph.LibraryManager.loadLibrary("socket.io-client");
-
 // -- server only libraries --
 LiteGraph.LibraryManager.registerLibrary({
-    key: "socket.io",
-    // version: "4.6.1",
-    globalObject: "ioserver",
-    browser: {},
-    server: {
-        npm: "socket.io" // server-side package for Node.js
-    },
-    defaultExport: "Server"
-});
-LiteGraph.LibraryManager.loadLibrary("socket.io");
-
-LiteGraph.LibraryManager.registerLibrary({
     key: "http",
-    // version: "4.6.1",
     globalObject: "http",
-    browser: {},
     server: {
         npm: "http"
     }
 });
-LiteGraph.LibraryManager.loadLibrary("http");
+// deferred LiteGraph.LibraryManager.loadLibrary("http");
 
-class LocalWebSocketServer {
-    static title = "WebSocket Server";
-    static desc = "Instantiate a local WebSocket server";
+LiteGraph.LibraryManager.registerLibrary({
+    key: "ws",
+    globalObject: "ws",
+    server: {
+        npm: "ws"
+    },
+    // defaultExport: "WebSocketServer"
+});
+// deferred LiteGraph.LibraryManager.loadLibrary("ws");
 
+LiteGraph.LibraryManager.registerLibrary({
+    key: "socket.io",
+    globalObject: "ioserver",
+    server: {
+        npm: "socket.io"
+    },
+    defaultExport: "Server"
+});
+// deferred LiteGraph.LibraryManager.loadLibrary("socket.io");
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "dgram",
+    globalObject: "dgram",
+    server: {
+        npm: "dgram"
+    }
+});
+// deferred LiteGraph.LibraryManager.loadLibrary("dgram");
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "osc-js",
+    globalObject: "oscnode",
+    server: {
+        npm: "osc-js"
+    }
+});
+// deferred LiteGraph.LibraryManager.loadLibrary("osc-js");
+
+// ----------------------------
+// BaseServer Class (common)
+// ----------------------------
+class BaseServer {
     constructor() {
-        this.server = null;
-        this.clients = new Set();
+        // Child classes should set port and any other defaults.
         this.properties = {
-            port: 8080,
-            should_autoconnect: true
+            should_autoconnect: true,
+            retryTimeout: 3000, // milliseconds
+            retryLimit: 0 // 0 = unlimited retries
         };
-        this.status = 'stopped'; // possible values: stopped, starting, running, stopping, failed
-        this.retryTimeout = 5000; // Retry interval in milliseconds
-        this.retryLimit = 5; // Max number of retries
         this.retryCount = 0;
+        this.status = "stopped"; // stopped, starting, running, stopping, failed
+        this.server = null;
+        this._logged_once = [];
+    }
 
-        if (typeof process === 'undefined' || process.browser) {
-            console.warn("WebSocket Server node is designed to run in Node.js, not in a browser.");
-            this.boxcolor = "#FF0000";
-            this.title = "WSServer (run on server)";
-        } else {
-            this.startServer();
+    // Helper: Return server title or class name.
+    _getServerName() {
+        return this.constructor.title || this.constructor.name;
+    }
+
+    // Logging helpers
+    log(...args) {
+        console.log(`[${this._getServerName()}]`, ...args);
+    }
+    warn(...args) {
+        console.warn(`[${this._getServerName()}]`, ...args);
+    }
+    error(...args) {
+        console.error(`[${this._getServerName()}]`, ...args);
+    }
+    log_once(first) {
+        if (!this._logged_once.includes(first)) {
+            this._logged_once.push(first);
+            return this.log(...arguments);
+        }
+    }
+    warn_once(first) {
+        if (!this._logged_once.includes(first)) {
+            this._logged_once.push(first);
+            return this.warn(...arguments);
+        }
+    }
+    error_once(first) {
+        if (!this._logged_once.includes(first)) {
+            this._logged_once.push(first);
+            return this.log(...arguments);
         }
     }
 
     onPropertyChanged(name, value) {
-        console.log(`Property changed: ${name} = ${value}`);
-        if (name === 'port' && this.status === 'running') {
+        this.log(`Property changed: ${name} = ${value}`);
+        // Restart if a critical property like "port" changes.
+        if (name === "port" && this.server && this.status === "running") {
             if (this.properties.port !== value) {
                 this.stopServer(() => {
                     this.properties.port = value;
                     if (this.properties.should_autoconnect) {
-                        console.log(`WSServer autoconnect on property change, port ${this.properties.port}`);
+                        this.log(`Auto-restarting server on new port ${value}`);
                         this.startServer();
                     }
                 });
-            } else {
-                console.log(`WSServer port unchanged ${this.properties.port}`);
             }
         } else {
             this.properties[name] = value;
@@ -45005,158 +45292,438 @@ class LocalWebSocketServer {
     }
 
     startServer() {
-        if (typeof process === 'undefined' || process.browser) {
-            // console.warn("WebSocket Server node is designed to run in Node.js, not in a browser.");
+        if (typeof process === "undefined" || process.browser) {
+            this.warn_once("This server node is designed to run in Node.js.");
             return false;
         }
-        if (this.status === 'starting' || this.status === 'running') {
-            console.log('WebSocket server is already starting or running.');
+        if (this.status === "starting" || this.status === "running") {
+            this.log("Server is already starting or running.");
             return;
         }
-
-        this.status = 'starting';
-        console.log(`WSServer will start on port ${this.properties.port}`);
+        this.status = "starting";
+        this.log(`Starting server on port ${this.properties.port}...`);
 
         try {
-            this.server = new WebSocket.Server({
-                port: this.properties.port
-            });
-            console.log("WebSocketServer object created");
-
-            this.server.on('listening', () => {
-                this.status = 'running';
-                this.retryCount = 0; // Reset retry count on successful start
-                console.log(`WSServer server listening on port ${this.properties.port}`);
-                this.onStarted();
-            });
-
-            this.server.on('connection', (ws) => {
-                this.clients.add(ws);
-                console.log('New client connected');
-                ws.on('message', this._onMessage.bind(this, ws));
-                ws.on('close', () => {
-                    this.clients.delete(ws);
-                    console.log('Client disconnected');
-                });
-                ws.on('error', (error) => {
-                    console.error('WebSocket error:', error);
-                });
-                ws.send('Welcome to the WebSocket server!');
-            });
-
-            this.server.on('error', (error) => {
-                console.error('WebSocket server error:', error);
-                this.status = 'failed';
-                if (this.retryCount < this.retryLimit) {
-                    console.log(`Retrying to start the server in ${this.retryTimeout / 1000} seconds...`);
-                    setTimeout(() => {
-                        this.retryCount++;
-                        this.startServer();
-                    }, this.retryTimeout);
-                } else {
-                    console.error('Max retry limit reached. Server failed to start.');
-                }
-            });
-
+            // Child class must implement _createServer()
+            this.server = this._createServer();
+            // Child class may override _setupServerListeners() to attach events.
+            this._setupServerListeners();
         } catch (e) {
-            console.error("WebSocketServer failed", e);
-            this.status = 'failed';
-            if (this.retryCount < this.retryLimit) {
-                console.log(`Retrying to start the server in ${this.retryTimeout / 1000} seconds...`);
-                setTimeout(() => {
-                    this.retryCount++;
-                    this.startServer();
-                }, this.retryTimeout);
-            } else {
-                console.error('Max retry limit reached. Server failed to start.');
-            }
+            this.error("Error starting server:", e);
+            this.status = "failed";
+            this._attemptRetry();
         }
-
-        setTimeout(() => {
-            if (this.status === "starting") {
-                if (this.retryCount < this.retryLimit) {
-                    console.log(`Retrying to start the server in ${this.retryTimeout / 1000} seconds...`);
-                    this.retryCount++;
-                    this.startServer();
-                } else {
-                    console.error('Max retry limit reached. Server failed to start.');
-                }
-            } else {
-                console.log("Checked ws server started");
-            }
-        }, this.retryTimeout);
-
-        console.log("startServer processed, should be connected or retry on fail");
-    }
-
-    _onMessage(ws, message) {
-        const receivedMessage = typeof message === 'string' ? message : message.toString();
-        console.log('Received:', receivedMessage);
-        // Echo the message back to all connected clients
-        this.sendToAllClients(receivedMessage);
     }
 
     stopServer(callback) {
-        this.status = 'stopping';
         if (this.server) {
-            this.server.close(() => {
-                this.status = 'stopped';
-                this.onStopped();
-                console.log('WebSocket server stopped');
-                if (callback) callback();
+            this.status = "stopping";
+            try {
+                this.server.close(() => {
+                    this.status = "stopped";
+                    this.log("Server stopped.");
+                    // Clear the server instance.
+                    this.server = null;
+                    if (callback) callback();
+                });
+            } catch (err) {
+                this.error("Error closing server:", err);
+                this.status = "failed";
+                if (callback) callback(err);
+            }
+        }
+    }
+
+    restartServer() {
+        if (this.server) {
+            this.stopServer(() => {
+                this.startServer();
             });
         }
     }
 
-    sendToAllClients(message) {
-        this.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(message);
-            }
-        });
+    _attemptRetry() {
+        if (this.properties.retryLimit === 0 || this.retryCount < this.properties.retryLimit) {
+            this.log(`Retrying server start in ${this.properties.retryTimeout}ms...`);
+            setTimeout(() => {
+                this.retryCount++;
+                this.startServer();
+            }, this.properties.retryTimeout);
+        } else {
+            this.error("Max retry limit reached. Server failed to start.");
+        }
+    }
+
+    // Abstract – must be implemented by child classes.
+    _createServer() {
+        throw new Error("_createServer() must be implemented by subclass");
+    }
+
+    // Optional – child classes can override to add listeners.
+    _setupServerListeners() {
+        // Default: do nothing.
     }
 
     onStarted() {
-        console.log('Server started');
-        // Trigger onStarted output event
-        this.triggerSlot('onStarted');
+        this.log(this.name, "Server started.");
     }
-
     onStopped() {
-        console.log('Server stopped');
-        // Trigger onStopped output event
-        this.triggerSlot('onStopped');
+        this.log(this.name, "Server stopped.");
     }
 
+    onRemoved() {
+        if (this.server) {
+            this.stopServer();
+        }
+    }
+}
+
+// ----------------------------
+// WebSocketServer Class (child)
+// ----------------------------
+class WebSocketServer extends BaseServer {
+    static title = "WebSocket Server";
+    static desc = "WebSocket server: receive, send, and broadcast messages.";
+
+    constructor() {
+        super();
+        this.libraries = ["ws"];
+        // Set default properties specific to WebSocket.
+        this.properties.port = 8010;
+        this.properties.only_send_changes = true;
+        this.properties.broadcast = true;
+        // Internal state
+        this._clients = new Set();
+        this._last_sent_data = null;
+        this._last_received_data = null;
+
+        // In Node.js, auto-start if should_autoconnect is enabled.
+        if (typeof process !== "undefined" && !process.browser) {
+            // ok
+        } else {
+            this.warn_once("WebSocket Server node is designed to run in Node.js.");
+            this.boxcolor = "#FF0000";
+            this.title = WebSocketServer.title + " (run on server)";
+        }
+    }
+
+    // Create the actual WebSocket server using the "ws" library.
+    _createServer() {
+        // let WebSocket = (typeof ws !== "undefined" ? ws : require("ws"));
+        // if (typeof WebSocket !== "object") {
+        //     WebSocket = LiteGraph.getGlobalVariable("ws");
+        // }
+        let WebSocketPkg = LiteGraph.LibraryManager.getLib("ws");
+        if (!WebSocketPkg) {
+            throw new Error("WebSocket library not available");
+        } else {
+            this.log("Got WebSocket package", WebSocketPkg);
+        }
+        this.log("Creating WebSocket server instance on port", this.properties.port);
+        return new WebSocketPkg.WebSocketServer({
+            port: this.properties.port
+        });
+    }
+
+    // Attach event listeners specific to WebSocket.
+    _setupServerListeners() {
+        if (!this.server) return;
+        this.server.on("listening", () => {
+            this.status = "running";
+            this.retryCount = 0;
+            this.log(`Server is listening on port ${this.properties.port}`);
+            this.onStarted();
+        });
+        this.server.on("connection", (ws) => {
+            this._clients.add(ws);
+            this.log("New client connected.");
+            ws.on("message", (message) => this.handleMessage(ws, message));
+            ws.on("close", () => {
+                this._clients.delete(ws);
+                this.log("Client disconnected.");
+            });
+            ws.on("error", (error) => {
+                this.error("Client error:", error);
+            });
+            try {
+                ws.send("Welcome to the WebSocket server!");
+            } catch (err) {
+                this.error("Error sending welcome message:", err);
+            }
+        });
+        this.server.on("error", (error) => {
+            this.error("Server error:", error);
+            this.status = "failed";
+            this._attemptRetry();
+        });
+    }
+
+    // Process incoming messages.
+    handleMessage(ws, message) {
+        let receivedMessage = message;
+        if (typeof message !== "string") {
+            try {
+                receivedMessage = message.toString();
+            } catch (e) {
+                this.error("Error converting message to string:", e);
+            }
+        }
+        this.log("Received message:", receivedMessage);
+        let data = receivedMessage;
+        try {
+            data = JSON.parse(receivedMessage);
+        } catch (err) {
+            this.log("Message is not JSON formatted; processing as raw text.");
+        }
+        this._last_received_data = data;
+        this.triggerSlot("onMessage", data);
+        // Broadcast to all clients except the sender if enabled.
+        if (this.properties.broadcast) {
+            this.sendToAllClients(data);
+        }
+    }
+
+    // Helper method to send a message to all connected clients.
+    sendToAllClients(message) {
+        let msg;
+        try {
+            msg = typeof message === "string" ? message : JSON.stringify(message);
+        } catch (e) {
+            this.error("Error stringifying message for broadcast:", e);
+            return;
+        }
+        for (const client of this._clients) {
+            if (client.readyState === client.OPEN) {
+                try {
+                    client.send(msg);
+                } catch (err) {
+                    this.error("Error sending message to client:", err);
+                }
+            }
+        }
+        this.log("Sent message to all clients:", msg);
+    }
+
+    // onExecute: update properties from inputs, auto-start if needed, and process incoming data.
     onExecute() {
-        const port = this.getInputOrProperty('port');
-        const should_autoconnect = this.getInputOrProperty('should_autoconnect');
-
-        if (port) {
-            this.properties.port = port;
+        if (typeof process == "undefined" || process.browser) {
+            return;
         }
-
-        if (should_autoconnect !== undefined) {
-            this.properties.should_autoconnect = should_autoconnect;
-        }
-
-        if (this.status === 'stopped' && this.properties.should_autoconnect) {
-            console.log(`WSServer autoconnect on execute, port ${this.properties.port}`);
+        if (this.status === "stopped" && this.properties.should_autoconnect) {
+            this.log(`Autoconnect triggered on execute, port ${this.properties.port}`);
             this.startServer();
         }
+        const inputMessage = this.getInputData("dataIn");
+        if (inputMessage != null && this.properties.broadcast) {
+            let jsonMessage;
+            try {
+                jsonMessage = JSON.stringify({
+                    type: 0,
+                    data: inputMessage
+                });
+            } catch (err) {
+                this.error("Error stringifying input message:", err);
+            }
+            if (jsonMessage) {
+                if (this.properties.only_send_changes && jsonMessage === this._last_sent_data) {
+                    this.log("Message unchanged, not sending (only_send_changes enabled).");
+                } else {
+                    this._last_sent_data = jsonMessage;
+                    this.sendToAllClients(jsonMessage);
+                }
+            }
+        }
+        // Update outputs
+        this.setOutputData("status", this.status);
+        this.setOutputData("dataOut", this._last_received_data);
+    }
 
-        this.setOutputData(0, this.status);
+    restartServer() {
+        if (this.server) {
+            this.log("Restarting WSServer");
+            this.stopServer(() => {
+                this.startServer();
+            });
+        }
+    }
+
+    onAction(action, param) {
+        if (!this.server || this.server.readyState !== this.server.OPEN) return;
+        if (action === "doSend") {
+            const data = this.getInputData("dataIn");
+            if (data != null) {
+                let msg;
+                try {
+                    msg = JSON.stringify({
+                        type: 1,
+                        data: data
+                    });
+                } catch (err) {
+                    this.error("Error stringifying data in action:", err);
+                }
+                if (msg) {
+                    this.sendToAllClients(msg);
+                }
+            }
+        }
     }
 
     onGetInputs() {
         return [
+            ["doSend", LiteGraph.ACTION],
+            ["dataIn", 0],
             ["port", "number"],
-            ["should_autoconnect", "boolean"]
         ];
     }
 
     onGetOutputs() {
         return [
+            ["onMessage", LiteGraph.EVENT],
+            ["dataOut", 0],
+            ["status", "string"],
+            ["onStarted", LiteGraph.EVENT],
+            ["onStopped", LiteGraph.EVENT]
+        ];
+    }
+
+    onStarted() {
+        this.log("WSServer started");
+        this.triggerSlot("onStarted");
+    }
+
+    onStopped() {
+        this.log("WSServer stopped");
+        this.triggerSlot("onStopped");
+    }
+}
+
+// Register the node type with LiteGraph
+LiteGraph.registerNodeType("server/network/websocketserver", WebSocketServer);
+
+
+
+
+// ======================
+// Socket.io Server Node
+// ======================
+class SocketIOServerNode extends BaseServer {
+    static title = "Socket.io Server";
+    static desc = "Creates a Socket.io server for real-time communication.";
+
+    constructor() {
+        super();
+        this.libraries = ["socket.io"];
+        // Set child-specific defaults.
+        this.properties.port = 3030;
+        // Initialize internal state.
+        this.clients = new Set();
+        if (typeof process !== "undefined" && !process.browser) {
+            // ok
+        } else {
+            this.warn_once("Socket.io Server Node is designed to run in Node.js.");
+            this.boxcolor = "#FF0000";
+            this.title = SocketIOServerNode.title + " (run on server)";
+        }
+    }
+
+    // Create the Socket.io server instance.
+    _createServer() {
+        let pkg;
+        // Try to obtain the Socket.io constructor.
+        if (typeof io !== "undefined") {
+            pkg = io;
+        } else {
+            pkg = LiteGraph.getGlobalVariable("ioserver");
+        }
+        if (!pkg) {
+            throw new Error("Socket.io library not available");
+        }
+        // If the package is an object with a Server property, use that.
+        if (typeof pkg === "object" && typeof pkg.Server === "function") {
+            pkg = pkg.Server;
+        }
+        this.log("Creating Socket.io server instance on port", this.properties.port);
+        // Create and return the server.
+        return new pkg(this.properties.port, {
+            cors: {
+                origin: "*",
+                methods: ["GET", "POST"]
+            }
+        });
+    }
+
+    // Attach Socket.io specific listeners.
+    _setupServerListeners() {
+        // Socket.io is ready immediately after creation.
+        this.status = "running";
+        this.retryCount = 0;
+        this.log(`Socket.io server is running on port ${this.properties.port}`);
+        this.onStarted();
+        this.server.on("connection", (socket) => {
+            this.clients.add(socket);
+            this.log("New client connected:", socket.id);
+            socket.on("message", (data) => {
+                this.log("SocketIO Received message:", data);
+                this.setOutputData("dataOut", data);
+                this.triggerSlot("onMessage", data);
+                this.broadcast("message", data);
+            });
+            socket.onAny((event, ...args) => {
+                this.log(`SocketIO Received event: ${event} with data:`, args);
+                this.setOutputData("dataOut", arguments);
+                this.triggerSlot("onMessage", event);
+                this.broadcast(event, args);
+            });
+            socket.on("disconnect", () => {
+                this.clients.delete(socket);
+                this.log("Client disconnected:", socket.id);
+            });
+            socket.emit("welcome", "Welcome to the Socket.io server!");
+        });
+        this.server.on("error", (err) => {
+            this.error("Socket.io server error:", err);
+            this.status = "failed";
+            this._attemptRetry();
+        });
+    }
+
+    // Broadcast a message to all clients.
+    broadcast(event, data) {
+        if (this.server) {
+            this.server.emit(event, data);
+        }
+    }
+
+    // Example onExecute method: update status output.
+    onExecute() {
+        if (typeof process == "undefined" || process.browser) {
+            return;
+        }
+        if (this.status === "stopped" && this.properties.should_autoconnect) {
+            this.log(`Auto-restarting on port ${this.properties.port}`);
+            this.startServer();
+        }
+        this.setOutputData("status", this.status);
+    }
+
+    onStarted() {
+        this.log("SocketIOServer started");
+        this.triggerSlot("onStarted");
+    }
+
+    onStopped() {
+        this.log("SocketIOServer stopped");
+        this.triggerSlot("onStopped");
+    }
+
+    onGetInputs() {
+
+    }
+
+    onGetOutputs() {
+        return [
+            ["onMessage", LiteGraph.EVENT],
+            ["dataOut", 0],
             ["status", "string"],
             ["onStarted", LiteGraph.EVENT],
             ["onStopped", LiteGraph.EVENT]
@@ -45164,645 +45731,347 @@ class LocalWebSocketServer {
     }
 }
 
-// Register the node type for LiteGraph
-LiteGraph.registerNodeType("nodejs/network/websocket_server", LocalWebSocketServer);
+// Register Socket.io server node.
+LiteGraph.registerNodeType("nodejs/network/SocketIO_server", SocketIOServerNode);
 
-// Export the class for Node.js
-if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-    module.exports = LocalWebSocketServer;
-}
-
-
-// if(typeof(require) == "function"){
-//     const WebSocket = require('ws');
-// }
-
-// class LocalWebSocketServer {
-//     static title = "WebSocket Server";
-//     static desc = "Instantiate a local WebSocket server";
-
-//     constructor() {
-//         // this._checkNodeEnvironment();
-//         this.server = null;
-//         this.clients = new Set();
-//         this.properties = {
-//             port: 8080,
-//             should_autoconnect: true
-//         };
-//         this.status = 'stopped'; // possible values: stopped, starting, running, stopping, failed
-//     }
-
-//     _checkNodeEnvironment() {
-//         if (typeof process === 'undefined' || !process.versions || !process.versions.node) {
-//             throw new Error('This class can only be run in a Node.js environment.');
-//         }
-//     }
-
-//     onPropertyChanged(name, value) {
-//         if (name === 'port' && this.status === 'running') {
-//             this.stopServer(() => {
-//                 this.properties.port = value;
-//                 if (this.properties.should_autoconnect) {
-//                     this.startServer();
-//                 }
-//             });
-//         } else {
-//             // no need to update
-//             // this.properties[name] = value;
-//         }
-//     }
-
-//     startServer() {
-//         this.status = 'starting';
-
-//         try{
-//             this.server = new WebSocket.Server({ port: this.properties.port }, () => {
-//                 this.status = 'running';
-//                 this.onStarted();
-//                 console.log(`WSServer server started on port ${this.properties.port}`);
-//             });
-//         }catch(e){
-//             console.warn("WebSocketServer","failed",e);
-//             this.status = 'failed';
-//             return;
-//         }
-
-//         this.server.on('connection', (ws) => {
-//             this.clients.add(ws);
-//             console.log('New client connected');
-//             ws.on('message', this._onMessage.bind(this, ws));
-//             ws.on('close', () => {
-//                 this.clients.delete(ws);
-//                 console.log('Client disconnected');
-//             });
-//             ws.on('error', (error) => {
-//                 console.error('WebSocket error:', error);
-//             });
-//         });
-
-//         this.server.on('error', (error) => {
-//             console.error('WebSocket server error:', error);
-//             this.status = 'stopped';
-//         });
-//     }
-
-//     _onMessage(ws, message) {
-//         console.log('Received:', message, ws);
-//         // Echo the message back to all connected clients
-//         this.clients.forEach(client => {
-//             if (client.readyState === WebSocket.OPEN) {
-//                 client.send(message);
-//             }
-//         });
-//     }
-
-//     stopServer(callback) {
-//         this.status = 'stopping';
-//         if (this.server) {
-//             this.server.close(() => {
-//                 this.status = 'stopped';
-//                 this.onStopped();
-//                 console.log('WebSocket server stopped');
-//                 if (callback) callback();
-//             });
-//         }
-//     }
-
-//     sendToAllClients(message) {
-//         this.clients.forEach(client => {
-//             if (client.readyState === WebSocket.OPEN) {
-//                 client.send(message);
-//             }
-//         });
-//     }
-
-//     onStarted() {
-//         console.log('Server started');
-//         // Trigger onStarted output event
-//         this.triggerSlot('onStarted');
-//     }
-
-//     onStopped() {
-//         console.log('Server stopped');
-//         // Trigger onStopped output event
-//         this.triggerSlot('onStopped');
-//     }
-
-//     onExecute() {
-//         const port = this.getInputOrProperty('port');
-//         const should_autoconnect = this.getInputOrProperty('should_autoconnect');
-
-//         if (port) {
-//             this.properties.port = port;
-//         }
-
-//         if (should_autoconnect !== undefined) {
-//             this.properties.should_autoconnect = should_autoconnect;
-//         }
-
-//         if (this.status === 'stopped' && this.properties.should_autoconnect) {
-//             this.startServer();
-//         }
-
-//         this.setOutputData(0, this.status);
-//     }
-
-//     onGetInputs() {
-//         return [["port", "number"], ["should_autoconnect", "boolean"]];
-//     }
-
-//     onGetOutputs() {
-//         return [["status", "string"], ["onStarted", LiteGraph.EVENT], ["onStopped", LiteGraph.EVENT]];
-//     }
-// }
-// LiteGraph.registerNodeType("nodejs/network/websocket_server", LocalWebSocketServer);
-
-// if(typeof module !== "undefined"){
-//     module.exports = LocalWebSocketServer;
-// }
-
-
-class SocketIOServerNode {
-    static title = "Socket.io Server";
-    static desc = "Creates a Socket.io server for real-time communication.";
-
-    constructor() {
-        this.addOutput("status", "string");
-        this.addOutput("onStarted", LiteGraph.EVENT);
-        this.addOutput("onStopped", LiteGraph.EVENT);
-        this.addOutput("message", "string");
-
-        this.properties = {
-            port: 3000,
-            should_autoconnect: true
-        };
-
-        this.server = null;
-        this.io = null;
-        this._io_server_pkg = null;
-        this.clients = new Set();
-        this.status = "stopped"; // stopped, starting, running, stopping, failed
-
-        if (typeof process === "undefined" || process.browser) {
-            console.warn("Socket.io Server Node is designed to run in Node.js.");
-            this.boxcolor = "#FF0000";
-            this.title = "Socket.io (run on server)";
-        } else if (this.properties.should_autoconnect) {
-            this.startServer();
-        }
-    }
-
-    onPropertyChanged(name, value) {
-        if (name === "port" && this.status === "running") {
-            this.stopServer(() => {
-                this.properties.port = value;
-                this.startServer();
-            });
-        } else {
-            this.properties[name] = value;
-        }
-    }
-
-    startServer() {
-        if (typeof(io) == "undefined") {
-            console.warn("please install socketio library");
-            return;
-        }
-        if (!this._io_server_pkg) {
-            if (typeof(io) == "function") {
-                this._io_server_pkg = io;
-            } else if (typeof(io) == "object" && typeof(io.Server) == "function") {
-                this._io_server_pkg = io.Server; // server constructor from socket.io package
-                // }
-                // if (typeof(ioserver) == "function") {
-                //     this._io_server_pkg = io;
-                // } else if (typeof(io) == "object" && typeof(ioserver.Server) == "function") {
-                //     this._io_server_pkg = ioserver.Server; // server constructor from socket.io package
-            } else {
-                const gloIo = LiteGraph.getGlobalVariable("ioserver");
-                console.warn("socketio library not ready");
-                if (typeof(gloIo) == "function") {
-                    this._io_server_pkg = gloIo;
-                } else if (typeof(gloIo) == "object" && typeof(gloIo.Server) == "function") {
-                    this._io_server_pkg = gloIo.Server; // server constructor from socket.io package
-                }
-            }
-        }
-        if (!this._io_server_pkg) {
-            return;
-        }
-        if (typeof process === "undefined" || process.browser) {
-            console.warn("Socket.io Server Node is designed to run in Node.js.");
-            return;
-        }
-        if (this.status === "starting" || this.status === "running") {
-            console.log("Socket.io server is already running.");
-            return;
-        }
-
-        this.status = "starting";
-        console.log(`Starting Socket.io server on port ${this.properties.port}...`);
-
-        try {
-            // const server = require("http").createServer();
-            this.io = new this._io_server_pkg(this.properties.port, {
-                cors: {
-                    origin: "*", // Allow all origins (or specify allowed domains)
-                    methods: ["GET", "POST"] // Allow specific HTTP methods
-                }
-            });
-
-            this.io.on("connection", (socket) => {
-                this.clients.add(socket);
-                console.log("New client connected:", socket.id);
-
-                socket.on("message", (data) => {
-                    console.log("Received:", data);
-                    this.triggerSlot("message", data);
-                    this.broadcast("message", data);
-                });
-
-                socket.on("disconnect", () => {
-                    this.clients.delete(socket);
-                    console.log("Client disconnected:", socket.id);
-                });
-
-                socket.emit("welcome", "Welcome to the Socket.io server!");
-            });
-
-            console.log(`Socket.io constructed ${this.io}...`);
-
-        } catch (e) {
-            console.error("Socket.io Server failed to start:", e);
-            this.status = "failed";
-        }
-    }
-
-    stopServer(callback) {
-        if (this.server) {
-            this.status = "stopping";
-            this.server.close(() => {
-                this.status = "stopped";
-                console.log("Socket.io server stopped.");
-                this.triggerSlot("onStopped");
-                if (callback) callback();
-            });
-        }
-    }
-
-    broadcast(event, data) {
-        if (this.io) {
-            this.io.emit(event, data);
-        }
-    }
-
-    onExecute() {
-        const port = this.getInputOrProperty("port");
-        if (port) this.properties.port = port;
-
-        if (this.status === "stopped" && this.properties.should_autoconnect) {
-            this.startServer();
-        }
-
-        this.setOutputData(0, this.status);
-    }
-
-    onGetInputs() {
-        return [
-            ["port", "number"],
-            ["should_autoconnect", "boolean"]
-        ];
-    }
-
-    onGetOutputs() {
-        return [
-            ["status", "string"],
-            ["onStarted", LiteGraph.EVENT],
-            ["onStopped", LiteGraph.EVENT],
-            ["message", "string"]
-        ];
-    }
-
-    triggerSlot(name, data) {
-        console.log(`Event triggered: ${name} ->`, data);
-    }
-}
-
-// Register for LiteGraph
-LiteGraph.registerNodeType("nodejs/network/socketio_server", SocketIOServerNode);
-
-// Export for Node.js
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = SocketIOServerNode;
-}
-
-
-// --------------------- OSC -----------------------
-
-LiteGraph.LibraryManager.registerLibrary({
-    key: "osc-js-node",
-    version: "2.4.1",
-    globalObject: "oscnode",
-    // browser: { remote: "https://cdn.jsdelivr.net/npm/osc-js@2.4.1/lib/osc.min.js" },
-    server: {
-        npm: "osc-js"
-    },
-    defaultExport: "OSC"
-});
-LiteGraph.LibraryManager.loadLibrary("osc-js-node");
-
-class OSCBridge {
+// ======================
+// OSC Bridge Node
+// ======================
+class OSCBridge extends BaseServer {
     static title = "OSC Bridge";
-    static desc = "Creates an OSC bridge";
+    static desc = "Creates an OSC bridge with configurable UDP and WebSocket properties";
 
     constructor() {
-        this.addOutput("status", "string");
-        this.addOutput("onStarted", LiteGraph.EVENT);
-        this.addOutput("onStopped", LiteGraph.EVENT);
-        this.addOutput("message", "object"); // OSC messages
-
-        this.properties = {
-            UDPPort: 8001,
-            WSSPort: 8008,
-            should_autoconnect: true
-        };
-
-        this.server = null;
-        this.osc = null;
-        this.status = "stopped"; // stopped, starting, running, stopping, failed
-
-        if (typeof process === "undefined" || process.browser) {
-            console.warn("OSC Server Node is designed to run in Node.js.");
-            this.boxcolor = "#FF0000";
-            this.title = "OSC (run on server)";
-        } else if (this.properties.should_autoconnect) {
-            this.startServer();
-        }
-    }
-
-    onPropertyChanged(name, value) {
-        if (name === "port" && this.status === "running") {
-            this.stopServer(() => {
-                this.properties.port = value;
-                this.startServer();
-            });
+        super();
+        this.libraries = ["ws", "osc-js"];
+        // Define child-specific default properties.
+        this.properties.udpServer_host = "localhost";
+        this.properties.udpServer_port = 41234;
+        this.properties.udpServer_exclusive = false;
+        this.properties.udpClient_host = "localhost";
+        this.properties.udpClient_port = 41235;
+        this.properties.wsServer_host = "localhost";
+        this.properties.wsServer_port = 8002;
+        this.properties.receiver = "ws";
+        // Auto-start if in Node.js.
+        if (typeof process !== "undefined" && !process.browser) {
+            // OK
         } else {
-            this.properties[name] = value;
+            this.warn_once("OSC Bridge Node is designed to run in Node.js.");
+            this.boxcolor = "#FF0000";
+            this.title = OSCBridge.title + " (run on server)";
         }
     }
 
-    startServer() {
+    _createServer() {
         let OSC = LiteGraph.getGlobalVariable("oscnode");
         if (typeof OSC === "undefined" || !OSC) {
-            console.warn("Please install the 'osc' library.");
-            return;
+            throw new Error("osc-js library not available");
         }
-
-        if (this.status === "starting" || this.status === "running") {
-            console.log("OSC server is already running.");
-            return;
-        }
-
-        this.status = "starting";
-        console.log(`Starting OSC server on port ${this.properties.UDPPort}...`);
-
-        try {
-            // const { UDPPort } = osc;
-            // this.server = new UDPPort({
-            //     localAddress: "0.0.0.0",
-            //     localPort: this.properties.port
-            // });
-            const config = {
-                udpClient: {
-                    port: this.properties.UDPPort
-                }
-            }
-            this.server = new OSC({
-                plugin: new OSC.BridgePlugin(config)
-            })
-
-            this.server.on("message", (oscMsg) => {
-                console.log("Received OSC message:", oscMsg);
-                this.triggerSlot("message", oscMsg);
-            });
-
-            this.server.on("error", (err) => {
-                console.error("OSC Server Error:", err);
-                this.status = "failed";
-            });
-
-            this.server.open();
-
-            this.server.on("ready", () => {
-                console.log(`OSC server is running on port ${this.properties.port}`);
-                this.status = "running";
-                this.triggerSlot("onStarted");
-            });
-
-        } catch (e) {
-            console.error("OSC Server failed to start:", e);
-            this.status = "failed";
-        }
+        const config = {
+            udpServer: {
+                host: this.properties.udpServer_host,
+                port: parseInt(this.properties.udpServer_port, 10),
+                exclusive: this.properties.udpServer_exclusive
+            },
+            udpClient: {
+                host: this.properties.udpClient_host,
+                port: parseInt(this.properties.udpClient_port, 10)
+            },
+            wsServer: {
+                host: this.properties.wsServer_host,
+                port: parseInt(this.properties.wsServer_port, 10)
+            },
+            receiver: this.properties.receiver
+        };
+        this.log("Creating OSC Bridge with config:", config);
+        return new OSC({
+            plugin: new OSC.BridgePlugin(config)
+        });
     }
 
-    stopServer(callback) {
-        if (this.server) {
-            this.status = "stopping";
-            this.server.close(() => {
-                this.status = "stopped";
-                console.log("OSC server stopped.");
-                this.triggerSlot("onStopped");
-                if (callback) callback();
-            });
-        }
+    _setupServerListeners() {
+        this.server.on("ready", () => {
+            this.status = "running";
+            this.retryCount = 0;
+            this.log("OSC Bridge is running.");
+            this.onStarted();
+        });
+        this.server.on("message", (oscMsg) => {
+            this.log("Received OSC message:", oscMsg);
+            this.setOutputData("dataOut", oscMsg);
+            this.triggerSlot("onMessage", oscMsg);
+        });
+        this.server.on("error", (err) => {
+            this.error("OSC Bridge error:", err);
+            this.status = "failed";
+        });
+        this.server.open();
     }
 
     onExecute() {
-        const port = this.getInputOrProperty("port");
-        if (port) this.properties.port = port;
-
+        if (typeof process == "undefined" || process.browser) {
+            return;
+        }
         if (this.status === "stopped" && this.properties.should_autoconnect) {
             this.startServer();
         }
-
-        this.setOutputData(0, this.status);
+        this.setOutputData("status", this.status);
     }
 
     onGetInputs() {
-        return [
-            ["port", "number"],
-            ["should_autoconnect", "boolean"]
-        ];
+
     }
 
     onGetOutputs() {
         return [
+            ["dataOut", 0],
             ["status", "string"],
             ["onStarted", LiteGraph.EVENT],
-            ["onStopped", LiteGraph.EVENT],
-            ["message", "object"]
+            ["onStopped", LiteGraph.EVENT]
         ];
+    }
+
+    onStarted() {
+        this.log("OscBridgeServer started");
+        this.triggerSlot("onStarted");
+    }
+
+    onStopped() {
+        this.log("OscBridgeServer stopped");
+        this.triggerSlot("onStopped");
     }
 }
 
-// Register for LiteGraph
+// Register OSC Bridge node.
 if (typeof LiteGraph !== "undefined") {
     LiteGraph.registerNodeType("nodejs/network/osc_bridge", OSCBridge);
 }
-// Export for Node.js
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = OSCBridge;
-}
 
-class OSCServerNode {
+// ======================
+// OSC Server Node
+// ======================
+class OSCServerNode extends BaseServer {
     static title = "OSC Server";
     static desc = "Creates an OSC server";
 
     constructor() {
+        super();
+        // Set child-specific properties.
+        this.properties.open_port = 9001;
+        this.properties.open_host = "localhost";
+        this.properties.send_port = 9002;
+        this.properties.send_host = "localhost";
+        // Fixed outputs and action inputs can be added via LiteGraph API.
+        this.addOutput("onMessage", LiteGraph.EVENT);
+        this.addOutput("dataOut", 0);
         this.addOutput("status", "string");
         this.addOutput("onStarted", LiteGraph.EVENT);
         this.addOutput("onStopped", LiteGraph.EVENT);
-        this.addOutput("onMessage", LiteGraph.EVENT);
-        this.addOutput("message", "object");
-
-        this.properties = {
-            open_port: 8001,
-            open_host: "localhost",
-            send_port: 8002,
-            send_host: "localhost",
-            should_autoconnect: true
-        };
-
-        this.server = null;
-        this.osc = null;
-        this.status = "stopped"; // stopped, starting, running, stopping, failed
+        this.addInput("start", LiteGraph.ACTION);
+        this.addInput("stop", LiteGraph.ACTION);
 
         if (typeof process === "undefined" || process.browser) {
-            console.warn("OSC Server Node is designed to run in Node.js.");
+            this.warn_once("OSC Server Node is designed to run in Node.js.");
             this.boxcolor = "#FF0000";
             this.title = "OSC (run on server)";
-        } else if (this.properties.should_autoconnect) {
-            this.startServer();
-        }
-    }
-
-    onPropertyChanged(name, value) {
-        if (name === "UDPPort" && this.status === "running") {
-            this.stopServer(() => {
-                this.properties.UDPPort = value;
-                this.startServer();
-            });
         } else {
-            this.properties[name] = value;
+            // OK
         }
     }
 
-    startServer() {
-        if (LiteGraph.LibraryManager.getLibraryState("osc-js-node") !== "loaded") {
-            return;
-        }
-        const OSC = LiteGraph.getGlobalVariable("oscnode");
+    _createServer() {
+        let OSC = LiteGraph.getGlobalVariable("oscnode");
         if (typeof OSC === "undefined" || !OSC) {
-            console.warn("Please install the 'osc-js' library.");
-            return;
+            throw new Error("osc-js library not available");
         }
+        const dgramOpts = {
+            open: {
+                host: this.properties.open_host,
+                port: this.properties.open_port
+            },
+            send: {
+                host: this.properties.send_host,
+                port: this.properties.send_port
+            }
+        };
+        this.log("Creating OSC Server with dgram options:", dgramOpts);
+        return new OSC({
+            plugin: new OSC.DatagramPlugin(dgramOpts)
+        });
+    }
 
-        if (this.status === "starting" || this.status === "running") {
-            console.log("OSC server is already running.");
-            return;
-        }
-
-        this.status = "starting";
-        console.log(`Starting OSC server on UDP port ${this.properties.UDPPort}...`);
-
-        try {
-            const dgramOpts = {
-                open: {
-                    host: this.properties.open_host,
-                    port: this.properties.open_port
-                },
-                send: {
-                    host: this.properties.send_host,
-                    port: this.properties.send_port
-                },
-            };
-            this.server = new OSC({
-                plugin: new OSC.DatagramPlugin(dgramOpts)
-            });
-
-            this.server.on("open", () => {
-                console.log(`OSC server is running on UDP port ${this.properties.UDPPort}`);
-                this.status = "running";
-                this.triggerSlot("onStarted");
-            });
-
-            this.server.on("message", (message) => {
-                console.log("Received OSC message:", message);
-                this.setOutputData("message", message);
-                this.triggerSlot("onMessage");
-            });
-
-            this.server.on("error", (err) => {
-                console.error("OSC Server Error:", err);
-                this.status = "failed";
-            });
-
-            this.server.open({
-                port: this.properties.UDPPort
-            });
-
-        } catch (e) {
-            console.error("OSC Server failed to start:", e);
+    _setupServerListeners() {
+        this.server.on("open", () => {
+            this.log(`OSC server is running on ${this.properties.open_host}:${this.properties.open_port}`);
+            this.status = "running";
+            this.onStarted();
+        });
+        this.server.on("message", (msg) => {
+            this.log("Received OSC message:", msg);
+            this.setOutputData("message", msg);
+            this.triggerSlot("onMessage", msg);
+        });
+        this.server.on("*", (msg) => {
+            this.log("Received OSC message (catch-all):", msg);
+            this.setOutputData("message", msg);
+            this.triggerSlot("onMessage", msg);
+        });
+        this.server.on("error", (err) => {
+            this.error("OSC Server error:", err);
             this.status = "failed";
-        }
+        });
+        this.server.open({
+            port: this.properties.open_port,
+            host: this.properties.open_host
+        });
     }
 
-    stopServer(callback) {
-        if (this.server) {
-            this.status = "stopping";
-            this.server.close(() => {
-                this.status = "stopped";
-                console.log("OSC server stopped.");
-                this.triggerSlot("onStopped");
-                if (callback) callback();
-            });
+    onAction(action, param) {
+        if (action === "start") {
+            if (this.status !== "running") {
+                this.startServer();
+            }
+        } else if (action === "stop") {
+            if (this.status === "running") {
+                this.stopServer();
+            }
         }
     }
-
-    // sendOSCMessage(address, args = []) {
-    //     if (this.server && this.status === "running") {
-    //         const OSC = LiteGraph.getGlobalVariable("oscnode");
-    //         const message = new OSC.Message(address, ...args);
-    //         this.server.send(message);
-    //         console.log("Sent OSC message:", message);
-    //     } else {
-    //         console.warn("OSC server is not running. Cannot send message.");
-    //     }
-    // }
 
     onExecute() {
+        if (typeof process == "undefined" || process.browser) {
+            return;
+        }
         if (this.status === "stopped" && this.properties.should_autoconnect) {
             this.startServer();
         }
-        this.setOutputData(0, this.status);
+        this.setOutputData("status", this.status);
     }
 
-    // onAction(){
-    //     const address = this.getInputData("send_address");
-    //     const data = this.getInputData("send_data");
-    //     if (address && data) {
-    //         this.sendOSCMessage(address, data);
-    //     }else{
-    //         console.debug("missing data to send OSC",address,data);
-    //     }
-    // }
+    onGetInputs() {
+        return [];
+    }
+
+    onGetOutputs() {
+        return [];
+    }
 }
 
-// Register for LiteGraph
-LiteGraph.registerNodeType("nodejs/network/osc_server", OSCServerNode);
-// Export for Node.js
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = OSCServerNode;
+// Register OSC Server node.
+if (typeof LiteGraph !== "undefined") {
+    LiteGraph.registerNodeType("nodejs/network/OSC_server", OSCServerNode);
+}
+
+// ======================
+// UDPServerNode (receiving only, extends BaseServer)
+// ======================
+class UDPServerNode extends BaseServer {
+    static title = "UDP Server";
+    static desc = "Receives data through UDP";
+
+    constructor() {
+        super();
+        this.size = [60, 20];
+        // Add outputs only – no sending inputs needed.
+        this.addOutput("onMessage", LiteGraph.EVENT);
+        this.addOutput("dataOut", 0);
+
+        // Set UDP-specific default properties.
+        this.properties.host = "127.0.0.1";
+        this.properties.port = 41234;
+        this.properties.auto_reconnect = true;
+        this.properties.reconnectTimeout = 5000;
+
+        // Internal state for message tracking.
+        this._last_received_data = null;
+
+        // Only run in Node.js environment.
+        if (typeof process !== "undefined" && process.versions && process.versions.node) {
+            // OK
+        } else {
+            this.warn_once("UDPServerNode can only run on Node.js server");
+            this.boxcolor = "#FF0000";
+            this.title = "UDP Server (run on server)";
+        }
+    }
+
+    // Create the UDP socket.
+    _createServer() {
+        let dgramPkg = LiteGraph.LibraryManager.getLib("dgram");
+        if (!dgramPkg) {
+            throw new Error("dgram library not available");
+        } else {
+            this.log("Got dgram package", dgramPkg);
+        }
+        try {
+            return dgramPkg.createSocket("udp4");
+        } catch (e) {
+            this.error(e.message ?? e);
+        }
+    }
+
+    // Set up UDP event listeners.
+    _setupServerListeners() {
+        if (!this.server) return;
+        this.server.on("message", (msg, rinfo) => {
+            let msgStr = msg.toString();
+            let parsed;
+            try {
+                parsed = JSON.parse(msgStr);
+            } catch (err) {
+                this.error("Error parsing UDP message:", err);
+                parsed = msgStr;
+            }
+            this._last_received_data = parsed;
+            this.setOutputData("dataOut", this._last_received_data);
+            this.triggerSlot("onMessage", this._last_received_data);
+            this.log("UDP message received:", msgStr, "from", rinfo);
+        });
+        this.server.on("error", (err) => {
+            this.error("UDP error:", err);
+            this.server.close();
+            if (this.properties.auto_reconnect) {
+                this.log(`Reconnecting UDP socket in ${this.properties.reconnectTimeout}ms`);
+                setTimeout(() => {
+                    this.startServer();
+                }, this.properties.reconnectTimeout);
+            }
+        });
+        this.server.on("listening", () => {
+            const address = this.server.address();
+            this.log(`UDP server listening on ${address.address}:${address.port}`);
+        });
+        // Bind the socket to the specified port.
+        this.server.bind(this.properties.port);
+    }
+
+    // onExecute simply updates the output with the latest received data.
+    onExecute() {
+        if (typeof process == "undefined" || process.browser) {
+            return;
+        }
+        if (!this.server) {
+            this.startServer();
+        }
+        this.setOutputData("dataOut", this._last_received_data);
+        this.setOutputData("status", this.status);
+    }
+
+    onGetInputs() {
+        return [];
+    }
+
+    onGetOutputs() {
+        return [
+            ["onMessage", LiteGraph.EVENT],
+            ["dataOut", 0]
+        ];
+    }
+}
+// Register UDP Server node.
+if (typeof LiteGraph !== "undefined") {
+    LiteGraph.registerNodeType("nodejs/network/UDP_server", UDPServerNode);
 }
 
 class NodeProcessInfo {
@@ -45828,6 +46097,1390 @@ class NodeProcessInfo {
 }
 
 LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
+/**
+ * NodeJsSysHelper - Centralized Library Manager for Node.js System Utilities
+ */
+class NodeJsSysHelper {
+    static getLib(libKey) {
+        return LiteGraph.LibraryManager.getLib(libKey);
+    }
+    static logError(nodeTitle, error) {
+        console.warn(`SysUtil Error: ${nodeTitle}: ${error.message || error} (line ${error.line || "?"})`);
+    }
+}
+
+// ------------------ Register Node.js Libraries ------------------ //
+LiteGraph.LibraryManager.registerLibrary({
+    key: "os",
+    globalObject: "os",
+    server: {
+        npm: "os"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "fs",
+    globalObject: "fs",
+    server: {
+        npm: "fs"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "diskusage",
+    version: "1.1.3",
+    globalObject: "diskusage",
+    server: {
+        npm: "diskusage"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "node-os-utils",
+    version: "0.3.4",
+    globalObject: "nodeOsUtils",
+    server: {
+        npm: "node-os-utils"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "ps-list",
+    version: "latest",
+    globalObject: "psList",
+    server: {
+        npm: "ps-list"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "child_process",
+    globalObject: "child_process",
+    server: {
+        npm: "child_process"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "chalk",
+    globalObject: "chalk",
+    server: {
+        npm: "chalk"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "node-windows",
+    globalObject: "nodeWindows",
+    server: {
+        npm: "node-windows"
+    }
+});
+
+LiteGraph.LibraryManager.registerLibrary({
+    key: "node-linux-systemd",
+    globalObject: "nodeLinuxSystemd",
+    server: {
+        npm: "node-linux-systemd"
+    }
+});
+
+// Load libraries at runtime
+// ["os", "fs", "diskusage", "node-os-utils", "ps-list", "child_process", "chalk"].forEach(lib => LiteGraph.LibraryManager.loadLibrary(lib));
+
+/**
+ * SysUtil_InfoNode - Retrieves System Information (OS, CPU, Memory, Network, Disk)
+ */
+class SysUtil_InfoNode {
+    static title = "System Info";
+    static desc = "Get OS, CPU, Memory, Uptime, Disk, Network, and system details";
+
+    constructor() {
+        this.runtime = "node";
+        this.libraries = ["os", "diskusage", "node-os-utils"];
+        this.addInput("refresh", LiteGraph.ACTION);
+        this.addOutput("onRefresh", LiteGraph.EVENT);
+        this.addOutput("info", "object");
+        this.properties = {};
+        this.cachedData = {};
+        this.libsReady = false;
+    }
+
+    onGetOutputs() {
+        return [
+            ["os", "string"],
+            ["cpuModel", "string"],
+            ["memoryUsage", "string"],
+            ["uptime", "number"],
+            ["hostname", "string"],
+            ["ipAddress", "string"],
+            ["cpuLoad", "number"],
+            ["diskUsage", "string"],
+            ["networkSpeed", "string"]
+        ].filter(([key]) => !this.outputs.some(o => o.name === key));
+    }
+
+    onAction(action) {
+        if (action === "refresh") {
+            this.fetchSystemInfo();
+        }
+    }
+
+    async fetchSystemInfo() {
+        let os = NodeJsSysHelper.getLib("os");
+        let diskusage = NodeJsSysHelper.getLib("diskusage");
+        let network = NodeJsSysHelper.getLib("node-os-utils");
+
+        if (!os) return NodeJsSysHelper.logError(this.title, "Missing required system libraries.");
+
+        try {
+            const totalMem = os.totalmem();
+            const freeMem = os.freemem();
+            const usedMem = totalMem - freeMem;
+            const memUsagePercent = ((usedMem / totalMem) * 100).toFixed(1);
+
+            let data = {
+                os: os.platform() + " " + os.release(),
+                cpuModel: os.cpus()[0]?.model || "Unknown",
+                memoryUsage: `${(usedMem / 1e9).toFixed(2)}GB / ${(totalMem / 1e9).toFixed(2)}GB (${memUsagePercent}%)`,
+                uptime: os.uptime(),
+                hostname: os.hostname(),
+                ipAddress: Object.values(os.networkInterfaces())
+                    .flat()
+                    .filter(iface => iface.family === "IPv4" && !iface.internal)
+                    .map(iface => iface.address)
+                    .join(", ")
+            };
+
+            data.cpuLoad = await network?.cpu.loadavg();
+            data.diskUsage = await diskusage?.check("/").then(info => {
+                const totalDisk = info.total;
+                const freeDisk = info.available;
+                const usedDisk = totalDisk - freeDisk;
+                const diskUsagePercent = ((usedDisk / totalDisk) * 100).toFixed(1);
+                return `${(usedDisk / 1e9).toFixed(2)}GB / ${(totalDisk / 1e9).toFixed(2)}GB (${diskUsagePercent}%)`;
+            });
+            data.networkSpeed = await network?.netstat.inOut().then(net => {
+                return typeof net === "object" && net.total ?
+                    `In: ${net.total.inputMb} MB/s, Out: ${net.total.outputMb} MB/s` : net;
+            });
+
+            this.cachedData = data;
+            this.updateOutputs(data);
+            this.triggerSlot("onRefresh");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+        }
+    }
+
+    updateOutputs(data) {
+        Object.entries(data).forEach(([key, value]) => {
+            this.setOutputData(key, value);
+        });
+        this.setOutputData("info", data);
+    }
+}
+LiteGraph.registerNodeType("sys/info", SysUtil_InfoNode);
+
+/**
+ * SysUtil_ProcessListNode - Retrieves Running Processes
+ */
+class SysUtil_ProcessListNode {
+    static title = "Process List";
+    static desc = "Lists running processes with CPU and Memory usage";
+
+    constructor() {
+        this.runtime = "node";
+        this.libraries = ["ps-list"];
+        this.addInput("refresh", LiteGraph.ACTION);
+        this.addInput("filterByName", "string", {
+            param_bind: true
+        });
+
+        this.addOutput("onRefresh", LiteGraph.EVENT);
+        this.addOutput("processes", "array");
+
+        this.properties = {
+            filterByName: ""
+        };
+        this.cachedData = [];
+        this.libsReady = false;
+    }
+
+    onGetOutputs() {
+        return [
+            ["processes", "array"],
+            ["onRefresh", LiteGraph.EVENT]
+        ].filter(([key]) => !this.outputs.some(o => o.name === key));
+    }
+
+    onAction(action) {
+        if (action === "refresh") {
+            this.fetchProcessList();
+        }
+    }
+
+    async fetchProcessList() {
+        let psList = NodeJsSysHelper.getLib("ps-list");
+
+        if (!psList || typeof psList !== "function") return NodeJsSysHelper.logError(this.title, "ps-list function unavailable.");
+
+        try {
+            let filter = this.getInputOrProperty("filterByName");
+
+            let processes = await psList();
+            if (!Array.isArray(processes)) return NodeJsSysHelper.logError(this.title, "Unexpected process list format.");
+
+            let filteredProcesses = processes
+                .filter(proc => proc && typeof proc === "object" && "name" in proc)
+                .filter(proc => (filter ? proc.name.includes(filter) : true))
+                .map(proc => ({
+                    pid: proc.pid || "N/A",
+                    name: proc.name || "Unknown",
+                    cpu: proc.cpu || 0,
+                    memory: proc.memory || 0
+                }));
+
+            this.cachedData = filteredProcesses;
+            this.updateOutputs(filteredProcesses);
+            this.triggerSlot("onRefresh");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+        }
+    }
+
+    updateOutputs(processes) {
+        this.setOutputData("processes", processes);
+    }
+}
+LiteGraph.registerNodeType("sys/processList", SysUtil_ProcessListNode);
+
+
+class SysUtil_RunCommandNode {
+    static title = "Run Command";
+    static desc = "Executes a shell command and returns the output.";
+
+    constructor() {
+        this.runtime = "node";
+        this.libraries = ["child_process"];
+        this.addInput("run", LiteGraph.ACTION);
+        this.addInput("command", "string", {
+            param_bind: true
+        });
+        this.addInput("timeout", "number", {
+            param_bind: true
+        });
+        this.addInput("keepRunning", "boolean", {
+            param_bind: true
+        });
+        this.addInput("killPrevious", "boolean", {
+            param_bind: true
+        });
+
+        this.addOutput("stdout", "string");
+        this.addOutput("stderr", "string");
+        this.addOutput("exitCode", "number");
+        this.addOutput("processInstance", "object");
+        this.addOutput("onData", LiteGraph.EVENT);
+        this.addOutput("onClose", LiteGraph.EVENT);
+        this.addOutput("onError", LiteGraph.EVENT);
+
+        this.properties = {
+            command: "",
+            timeout: 12000, // Default timeout: 12 seconds
+            keepRunning: false,
+            killPrevious: true // Determines if previous process should be terminated
+        };
+
+        this.process = null; // Track running process
+    }
+
+    onGetOutputs() {
+        return [
+            ["stdout", "string"],
+            ["stderr", "string"],
+            ["exitCode", "number"],
+            ["processInstance", "object"],
+            ["onData", LiteGraph.EVENT],
+            ["onClose", LiteGraph.EVENT],
+            ["onError", LiteGraph.EVENT]
+        ].filter(([key]) => !this.outputs.some(o => o.name === key));
+    }
+
+    onAction(action) {
+        if (action === "run") {
+            this.executeCommand();
+        }
+    }
+
+    async executeCommand() {
+        let child_process = NodeJsSysHelper.getLib("child_process");
+        if (!child_process) {
+            NodeJsSysHelper.logError(this.title, "Missing child_process module.");
+            return;
+        }
+
+        let command = this.getInputOrProperty("command");
+        let timeout = this.getInputOrProperty("timeout") || this.properties.timeout;
+        let keepRunning = this.getInputOrProperty("keepRunning") || this.properties.keepRunning;
+        let killPrevious = this.getInputOrProperty("killPrevious") || this.properties.killPrevious;
+
+        if (!command) {
+            NodeJsSysHelper.logError(this.title, "No command specified.");
+            return;
+        }
+
+        try {
+            if (this.process && killPrevious) {
+                this.process.kill(); // Ensure any previous process is terminated
+                this.process = null;
+            }
+
+            if (keepRunning) {
+                this.runPersistentCommand(command, child_process);
+            } else {
+                this.runSingleExecution(command, timeout, child_process);
+            }
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+        }
+    }
+
+    runSingleExecution(command, timeout, child_process) {
+        child_process.exec(command, {
+            timeout
+        }, (error, stdout, stderr) => {
+            const out = stdout?.toString().trim() || "";
+            const err = stderr?.toString().trim() || "";
+            this.setOutputData("stdout", out);
+            this.setOutputData("stderr", err);
+            this.setOutputData("exitCode", error ? error.code : 0);
+            this.triggerSlot("onData");
+            this.triggerSlot("onClose");
+
+            if (error) {
+                this.setOutputData("stderr", "Error " + this.title + " :: " + (error.message || error) + (err ? " :: stderr: " + err : ""));
+                this.triggerSlot("onError");
+                NodeJsSysHelper.logError(this.title, error);
+            }
+        });
+    }
+
+    runPersistentCommand(command, child_process) {
+        this.process = child_process.spawn(command, {
+            shell: true
+        });
+
+        this.setOutputData("processInstance", this.process);
+
+        this.process.stdout.on("data", (data) => {
+            this.setOutputData("stdout", data.toString().trim());
+            this.triggerSlot("onData");
+        });
+
+        this.process.stderr.on("data", (data) => {
+            this.setOutputData("stderr", data.toString().trim());
+            this.triggerSlot("onError");
+        });
+
+        this.process.on("close", (code) => {
+            this.setOutputData("exitCode", code);
+            this.triggerSlot("onClose");
+            this.process = null;
+        });
+
+        this.process.on("error", (error) => {
+            this.setOutputData("stderr", "Error " + this.title + " :: " + (error.message || error));
+            this.triggerSlot("onError");
+            NodeJsSysHelper.logError(this.title, error);
+            this.process = null;
+        });
+    }
+}
+LiteGraph.registerNodeType("sys/runCommand", SysUtil_RunCommandNode);
+
+
+// class SysUtil_FileSystemNode {
+//     static title = "File System";
+//     static desc = "Performs file operations: Read, Write, Delete, Check Exists, List Directory";
+
+//     constructor() {
+//         this.addInput("do", LiteGraph.ACTION);
+//         this.addInput("filePath", "string", { param_bind: true });
+//         this.addInput("content", "string", { param_bind: true });
+//         this.addInput("action", "string", { param_bind: true }); // "read", "write", "delete", "exists", "list"
+
+//         this.addOutput("fileContent", "string");
+//         this.addOutput("fileList", "array");
+//         this.addOutput("exists", "boolean");
+//         this.addOutput("onSuccess", LiteGraph.EVENT);
+//         this.addOutput("onError", LiteGraph.EVENT);
+
+//         this.properties = {
+//             defaultFilePath: "",
+//             defaultContent: "",
+//             defaultAction: "read" // Default file action
+//         };
+
+//         this.fs = null; // Track File System module
+//     }
+
+//     onGetOutputs() {
+//         return [
+//             ["fileContent", "string"],
+//             ["fileList", "array"],
+//             ["exists", "boolean"],
+//             ["onSuccess", LiteGraph.EVENT],
+//             ["onError", LiteGraph.EVENT]
+//         ].filter(([key]) => !this.outputs.some(o => o.name === key));
+//     }
+
+//     onAction(action) {
+//         if (action === "do") {
+//             this.handleFileOperation();
+//         }
+//     }
+
+//     async handleFileOperation() {
+//         this.fs = NodeJsSysHelper.getLib("fs");
+//         if (!this.fs) {
+//             NodeJsSysHelper.logError(this.title, "Missing fs module.");
+//             return;
+//         }
+
+//         let filePath = this.getInputOrProperty("filePath") || this.properties.defaultFilePath;
+//         let content = this.getInputOrProperty("content") || this.properties.defaultContent;
+//         let action = this.getInputOrProperty("action") || this.properties.defaultAction;
+
+//         if (!filePath) {
+//             NodeJsSysHelper.logError(this.title, "No file path specified.");
+//             return;
+//         }
+
+//         try {
+//             switch (action) {
+//                 case "read":
+//                     this.readFile(filePath);
+//                     break;
+//                 case "write":
+//                     this.writeFile(filePath, content);
+//                     break;
+//                 case "delete":
+//                     this.deleteFile(filePath);
+//                     break;
+//                 case "exists":
+//                     this.checkFileExists(filePath);
+//                     break;
+//                 case "list":
+//                     this.listDirectory(filePath);
+//                     break;
+//                 default:
+//                     NodeJsSysHelper.logError(this.title, `Unknown action: ${action}`);
+//             }
+//         } catch (error) {
+//             NodeJsSysHelper.logError(this.title, error);
+//             this.triggerSlot("onError");
+//         }
+//     }
+
+//     readFile(filePath) {
+//         try {
+//             let data = this.fs.readFileSync(filePath, "utf8");
+//             this.setOutputData("fileContent", data);
+//             this.triggerSlot("onSuccess");
+//         } catch (error) {
+//             NodeJsSysHelper.logError(this.title, `Error reading file: ${filePath}`);
+//             this.triggerSlot("onError");
+//         }
+//     }
+
+//     writeFile(filePath, content) {
+//         try {
+//             this.fs.writeFileSync(filePath, content, "utf8");
+//             this.triggerSlot("onSuccess");
+//         } catch (error) {
+//             NodeJsSysHelper.logError(this.title, `Error writing to file: ${filePath}`);
+//             this.triggerSlot("onError");
+//         }
+//     }
+
+//     deleteFile(filePath) {
+//         try {
+//             if (this.fs.existsSync(filePath)) {
+//                 this.fs.unlinkSync(filePath);
+//                 this.triggerSlot("onSuccess");
+//             } else {
+//                 NodeJsSysHelper.logError(this.title, `File not found: ${filePath}`);
+//                 this.triggerSlot("onError");
+//             }
+//         } catch (error) {
+//             NodeJsSysHelper.logError(this.title, `Error deleting file: ${filePath}`);
+//             this.triggerSlot("onError");
+//         }
+//     }
+
+//     checkFileExists(filePath) {
+//         try {
+//             let exists = this.fs.existsSync(filePath);
+//             this.setOutputData("exists", exists);
+//             this.triggerSlot("onSuccess");
+//         } catch (error) {
+//             NodeJsSysHelper.logError(this.title, `Error checking file: ${filePath}`);
+//             this.triggerSlot("onError");
+//         }
+//     }
+
+//     listDirectory(filePath) {
+//         try {
+//             if (!this.fs.existsSync(filePath) || !this.fs.lstatSync(filePath).isDirectory()) {
+//                 NodeJsSysHelper.logError(this.title, `Directory not found: ${filePath}`);
+//                 this.triggerSlot("onError");
+//                 return;
+//             }
+//             let files = this.fs.readdirSync(filePath);
+//             this.setOutputData("fileList", files);
+//             this.triggerSlot("onSuccess");
+//         } catch (error) {
+//             NodeJsSysHelper.logError(this.title, `Error listing directory: ${filePath}`);
+//             this.triggerSlot("onError");
+//         }
+//     }
+// }
+// LiteGraph.registerNodeType("sys/fileSystem", SysUtil_FileSystemNode);
+
+class SysUtil_FileBaseNode {
+    constructor(actionTitle, actionDesc) {
+        this.runtime = "node";
+        this.libraries = ["fs"];
+        this.title = actionTitle;
+        this.desc = actionDesc;
+
+        this.addInput("do", LiteGraph.ACTION);
+        this.addInput("filePath", "string", {
+            param_bind: true
+        });
+
+        this.addOutput("onSuccess", LiteGraph.EVENT);
+        this.addOutput("onError", LiteGraph.EVENT);
+
+        this.properties = {
+            filePath: ""
+        };
+    }
+
+    onAction(action) {
+        if (action === "do") {
+            this.handleFileOperation();
+        }
+    }
+
+    async handleFileOperation() {
+        let fs = NodeJsSysHelper.getLib("fs");
+        if (!fs) return;
+
+        let filePath = this.getInputOrProperty("filePath");
+        if (!filePath) {
+            NodeJsSysHelper.logError(this.title, "No file path specified.");
+            this.triggerSlot("onError");
+            return;
+        }
+
+        this.performOperation(fs, filePath);
+    }
+
+    performOperation(fs, filePath) {
+        throw new Error("performOperation must be implemented by subclasses");
+    }
+}
+
+class SysUtil_FileReadNode extends SysUtil_FileBaseNode {
+    constructor() {
+        super("Read File", "Reads content from a file.");
+        this.addOutput("fileContent", "string");
+    }
+
+    performOperation(fs, filePath) {
+        try {
+            let data = fs.readFileSync(filePath, "utf8");
+            this.setOutputData("fileContent", data);
+            this.triggerSlot("onSuccess");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, `Error reading file: ${filePath}`);
+            this.triggerSlot("onError");
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/fileRead", SysUtil_FileReadNode);
+
+
+class SysUtil_FileWriteNode extends SysUtil_FileBaseNode {
+    constructor() {
+        super("Write File", "Writes content to a file.");
+        this.addInput("content", "string", {
+            param_bind: true
+        });
+        this.properties.content = "";
+    }
+
+    performOperation(fs, filePath) {
+        let content = this.getInputOrProperty("content");
+        try {
+            fs.writeFileSync(filePath, content, "utf8");
+            this.triggerSlot("onSuccess");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, `Error writing to file: ${filePath}`);
+            this.triggerSlot("onError");
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/fileWrite", SysUtil_FileWriteNode);
+
+
+class SysUtil_FileDeleteNode extends SysUtil_FileBaseNode {
+    constructor() {
+        super("Delete File", "Deletes a file.");
+    }
+
+    performOperation(fs, filePath) {
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                this.triggerSlot("onSuccess");
+            } else {
+                NodeJsSysHelper.logError(this.title, `File not found: ${filePath}`);
+                this.triggerSlot("onError");
+            }
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, `Error deleting file: ${filePath}`);
+            this.triggerSlot("onError");
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/fileDelete", SysUtil_FileDeleteNode);
+
+
+class SysUtil_FileExistsNode extends SysUtil_FileBaseNode {
+    constructor() {
+        super("File Exists", "Checks if a file exists.");
+        this.addOutput("exists", "boolean");
+    }
+
+    performOperation(fs, filePath) {
+        try {
+            let exists = fs.existsSync(filePath);
+            this.setOutputData("exists", exists);
+            this.triggerSlot("onSuccess");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, `Error checking file: ${filePath}`);
+            this.triggerSlot("onError");
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/fileExists", SysUtil_FileExistsNode);
+
+
+class SysUtil_FileListNode extends SysUtil_FileBaseNode {
+    constructor() {
+        super("List Directory", "Lists files in a directory.");
+        this.addOutput("fileList", "array");
+    }
+
+    performOperation(fs, filePath) {
+        try {
+            if (!fs.existsSync(filePath) || !fs.lstatSync(filePath).isDirectory()) {
+                NodeJsSysHelper.logError(this.title, `Directory not found: ${filePath}`);
+                this.triggerSlot("onError");
+                return;
+            }
+            let files = fs.readdirSync(filePath);
+            this.setOutputData("fileList", files);
+            this.triggerSlot("onSuccess");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, `Error listing directory: ${filePath}`);
+            this.triggerSlot("onError");
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/fileList", SysUtil_FileListNode);
+
+
+// Ensure required Node.js `child_process` library is available
+LiteGraph.LibraryManager.registerLibrary({
+    key: "child_process",
+    globalObject: "child_process",
+    server: {
+        npm: "child_process"
+    }
+});
+LiteGraph.LibraryManager.loadLibrary("child_process");
+
+class SysUtil_ProcessControlNode {
+    static title = "Process Control";
+    static desc = "Controls system processes: Start, Kill, Restart, Check Status";
+
+    constructor() {
+        this.runtime = "node";
+        this.libraries = ["child_process"];
+        this.addInput("start", LiteGraph.ACTION);
+        this.addInput("kill", LiteGraph.ACTION);
+        this.addInput("restart", LiteGraph.ACTION);
+        this.addInput("processCommand", "string", {
+            param_bind: true
+        });
+        this.addInput("args", "array", {
+            param_bind: true
+        });
+        this.addInput("envVars", "object", {
+            param_bind: true
+        });
+
+        this.addOutput("processInstance", "object");
+        this.addOutput("stdout", "string");
+        this.addOutput("stderr", "string");
+        this.addOutput("status", "string");
+        this.addOutput("exitCode", "number");
+        this.addOutput("onStarted", LiteGraph.EVENT);
+        this.addOutput("onStopped", LiteGraph.EVENT);
+        this.addOutput("onRestarted", LiteGraph.EVENT);
+        this.addOutput("onSuccess", LiteGraph.EVENT);
+        this.addOutput("onError", LiteGraph.EVENT);
+        this.addOutput("onDataUpdate", LiteGraph.EVENT);
+
+        this.properties = {
+            processCommand: "",
+            args: [],
+            envVars: {}
+        };
+
+        this.process = null; // Track process instance
+        this.updateProcessStatus();
+    }
+
+    onGetOutputs() {
+        return [
+            ["processInstance", "object"],
+            ["stdout", "string"],
+            ["stderr", "string"],
+            ["status", "string"],
+            ["exitCode", "number"],
+            ["onStarted", LiteGraph.EVENT],
+            ["onStopped", LiteGraph.EVENT],
+            ["onRestarted", LiteGraph.EVENT],
+            ["onSuccess", LiteGraph.EVENT],
+            ["onError", LiteGraph.EVENT],
+            ["onDataUpdate", LiteGraph.EVENT]
+        ].filter(([key]) => !this.outputs.some(o => o.name === key));
+    }
+
+    onExecute() {
+        // Ensure process status is up-to-date every frame
+        this.updateProcessStatus();
+    }
+
+    onAction(action) {
+        let child_process = NodeJsSysHelper.getLib("child_process");
+        if (!child_process) {
+            NodeJsSysHelper.logError(this.title, "Missing child_process module.");
+            return;
+        }
+
+        let processCommand = this.getInputOrProperty("processCommand");
+        let args = this.getInputOrProperty("args");
+        let envVars = this.getInputOrProperty("envVars");
+
+        if (!processCommand && action === "start") {
+            NodeJsSysHelper.logError(this.title, "No process command specified.");
+            return;
+        }
+
+        try {
+            switch (action) {
+                case "start":
+                    this.startProcess(child_process, processCommand, args, envVars);
+                    break;
+                case "kill":
+                    this.killProcess();
+                    break;
+                case "restart":
+                    this.restartProcess(child_process, processCommand, args, envVars);
+                    break;
+                default:
+                    NodeJsSysHelper.logError(this.title, `Unknown action: ${action}`);
+            }
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+            this.triggerSlot("onError");
+        }
+    }
+
+    async startProcess(child_process, command, args, envVars) {
+        try {
+            this.process = await child_process.spawn(command, args, {
+                env: {
+                    ...process.env,
+                    ...envVars
+                },
+                shell: true
+            });
+
+            this.setOutputData("processInstance", this.process);
+            this.updateProcessStatus();
+            this.triggerSlot("onStarted");
+            this.triggerSlot("onSuccess");
+
+            this.process.stdout.on("data", (data) => {
+                this.setOutputData("stdout", data.toString().trim());
+                this.triggerSlot("onDataUpdate");
+            });
+
+            this.process.stderr.on("data", (data) => {
+                this.setOutputData("stderr", data.toString().trim());
+                this.triggerSlot("onDataUpdate");
+            });
+
+            this.process.on("close", (code) => {
+                this.process = null;
+                this.updateProcessStatus();
+                this.setOutputData("exitCode", code);
+                this.setOutputData("status", "stopped");
+                this.triggerSlot("onStopped");
+                this.triggerSlot("onSuccess");
+            });
+
+            this.process.on("error", (error) => {
+                NodeJsSysHelper.logError(this.title, error);
+                this.process = null;
+                this.updateProcessStatus();
+                this.setOutputData("status", "error");
+                this.triggerSlot("onError");
+            });
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+            this.triggerSlot("onError");
+        }
+    }
+
+    async killProcess() {
+        try {
+            if (this.process) {
+                await this.process.kill();
+                this.process = null;
+                this.updateProcessStatus();
+                this.setOutputData("status", "killed");
+                this.triggerSlot("onStopped");
+                this.triggerSlot("onSuccess");
+            } else {
+                NodeJsSysHelper.logError(this.title, "No running process to kill.");
+                this.triggerSlot("onError");
+            }
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, `Error killing process.`);
+            this.triggerSlot("onError");
+        }
+    }
+
+    async restartProcess(child_process, command, args, envVars) {
+        await this.killProcess();
+        await this.startProcess(child_process, command, args, envVars);
+        this.triggerSlot("onRestarted");
+    }
+
+    updateProcessStatus() {
+        if (this.process) {
+            this.setOutputData("status", "running");
+        } else {
+            this.setOutputData("status", "stopped");
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/processControl", SysUtil_ProcessControlNode);
+
+
+class SysUtil_LogNode {
+    static title = "Log";
+    static desc = "Structured logging with console styling and optional file writing.";
+
+    constructor() {
+        this.runtime = "node";
+        this.libraries = ["fs", "chalk"];
+        this.addInput("log", LiteGraph.ACTION);
+        this.addInput("message", "*", {
+            param_bind: true
+        });
+        // this.addInput("logToFile", "boolean", { param_bind: true });
+        this.addInput("filePath", "string", {
+            param_bind: true
+        });
+
+        this.addOutput("onLogged", LiteGraph.EVENT);
+        this.addOutput("formattedLog", "string");
+
+        this.addProperty("message", "log message", "string");
+        this.addProperty("level", "info", "enum", {
+            values: ["info", "warn", "error", "debug"]
+        });
+        this.addProperty("truncateConsoleOutput", true, "boolean");
+        this.addProperty("truncateLength", 500, "number"); // Cutoff for console display
+        this.addProperty("logToFile", false, "boolean");
+        this.addProperty("filePath", "logs/system.log", "string");
+
+        this.fs = null;
+        this.chalk = null;
+
+        this.updateNodeStyle();
+    }
+
+    updateNodeStyle() {
+        const levelColors = {
+            info: "#3498db", // Blue
+            warn: "#f1c40f", // Yellow
+            error: "#e74c3c", // Red
+            debug: "#9b59b6" // Purple
+        };
+        this.color = levelColors[this.properties.level] || "#bdc3c7"; // Default gray
+        this.title = `Log (${this.properties.level.toUpperCase()})`;
+    }
+
+    onPropertyChanged(name, value) {
+        if (name === "level") {
+            this.updateNodeStyle();
+        }
+        return true;
+    }
+
+    onGetOutputs() {
+        return [
+            ["onLogged", LiteGraph.EVENT],
+            ["formattedLog", "string"]
+        ].filter(([key]) => !this.outputs.some(o => o.name === key));
+    }
+
+    onAction(action) {
+        if (action === "log") {
+            this.writeLog();
+        }
+    }
+
+    async writeLog() {
+        this.fs = NodeJsSysHelper.getLib("fs");
+        this.chalk = NodeJsSysHelper.getLib("chalk");
+
+        if (!this.chalk && typeof console !== "undefined") {
+            console.warn("SysUtil_LogNode: Chalk library is missing, proceeding without styling.");
+        }
+
+        let message = this.getInputOrProperty("message"); // Message can be any data type
+        let level = this.properties.level.toLowerCase();
+        let logToFile = this.getInputOrProperty("logToFile");
+        let filePath = this.getInputOrProperty("filePath");
+
+        if (message === undefined) {
+            NodeJsSysHelper.logError(this.title, "No message provided for logging.");
+            return;
+        }
+
+        const timestamp = new Date().toISOString();
+        const logLevels = {
+            info: this.chalk ? this.chalk.blue("[INFO]") : "[INFO]",
+            warn: this.chalk ? this.chalk.yellow("[WARN]") : "[WARN]",
+            error: this.chalk ? this.chalk.red("[ERROR]") : "[ERROR]",
+            debug: this.chalk ? this.chalk.magenta("[DEBUG]") : "[DEBUG]"
+        };
+
+        let logLevelTag = logLevels[level] || logLevels.info;
+        let formattedLog = `${timestamp} ${logLevelTag} ${this.formatMessage(message)}`;
+
+        // Print to console (with truncation for long data)
+        if (typeof console !== "undefined") {
+            if (this.properties.truncateConsoleOutput && formattedLog.length > this.properties.truncateLength) {
+                console.log(formattedLog.substring(0, this.properties.truncateLength) + " ... (truncated)");
+            } else {
+                console.log(formattedLog);
+            }
+        }
+
+        this.setOutputData("formattedLog", formattedLog);
+        this.triggerSlot("onLogged");
+
+        // Save full log to file
+        if (logToFile && this.fs) {
+            try {
+                this.fs.appendFileSync(filePath, formattedLog + "\n", "utf8");
+            } catch (error) {
+                NodeJsSysHelper.logError(this.title, `Error writing log to file: ${filePath}`);
+            }
+        }
+    }
+
+    formatMessage(message) {
+        if (typeof message === "object") {
+            try {
+                return JSON.stringify(message, null, 2);
+            } catch {
+                return "[Invalid JSON]";
+            }
+        }
+        return String(message);
+    }
+}
+LiteGraph.registerNodeType("sys/log", SysUtil_LogNode);
+
+
+class SysUtil_ServiceManagerNode {
+    static title = "Service Manager";
+    static desc = "Manages system services (start, stop, restart) across Windows, Linux, and MacOS";
+
+    constructor() {
+        this.runtime = "node";
+        if (this.platform === "win32") {
+            this.libraries = ["node-windows"];
+        } else if (this.platform === "linux" || this.platform === "darwin") {
+            this.libraries = ["node-linux-systemd"];
+        }
+        this.addInput("start", LiteGraph.ACTION);
+        this.addInput("stop", LiteGraph.ACTION);
+        this.addInput("restart", LiteGraph.ACTION);
+        this.addInput("serviceName", "string", {
+            param_bind: true
+        });
+
+        this.addOutput("serviceStatus", "string");
+        this.addOutput("responseLog", "string");
+        this.addOutput("onStarted", LiteGraph.EVENT);
+        this.addOutput("onStopped", LiteGraph.EVENT);
+        this.addOutput("onRestarted", LiteGraph.EVENT);
+        this.addOutput("onError", LiteGraph.EVENT);
+
+        this.properties = {
+            serviceName: ""
+        };
+        this.currentStatus = "unknown";
+
+        // Prevent execution in browsers
+        if (typeof process === "undefined" || process.browser) {
+            console.warn(`${this.title}: Running in browser. Service management is disabled.`);
+            return;
+        }
+
+        this.platform = process.platform;
+        this.windowsService = null;
+        this.linuxService = null;
+        this.initializeLibrary();
+    }
+
+    async initializeLibrary() {
+        if (typeof process === "undefined") return;
+        if (this.platform === "win32") {
+            this.windowsService = NodeJsSysHelper.getLib("node-windows");
+        } else if (this.platform === "linux" || this.platform === "darwin") {
+            this.linuxService = NodeJsSysHelper.getLib("node-linux-systemd");
+        }
+    }
+
+    onExecute() {
+        if (typeof process === "undefined") return;
+        let serviceName = this.getInputOrProperty("serviceName");
+        if (serviceName) {
+            this.updateServiceStatus(serviceName);
+        }
+    }
+
+    onAction(action) {
+        if (typeof process === "undefined") {
+            console.warn(`${this.title}: Running in browser. Actions are disabled.`);
+            return;
+        }
+
+        let serviceName = this.getInputOrProperty("serviceName");
+        if (!serviceName) {
+            NodeJsSysHelper.logError(this.title, "No service name provided.");
+            return;
+        }
+
+        try {
+            switch (action) {
+                case "start":
+                    this.controlService(serviceName, "start");
+                    break;
+                case "stop":
+                    this.controlService(serviceName, "stop");
+                    break;
+                case "restart":
+                    this.controlService(serviceName, "restart");
+                    break;
+                default:
+                    NodeJsSysHelper.logError(this.title, `Unknown action: ${action}`);
+            }
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+            this.triggerSlot("onError");
+        }
+    }
+
+    controlService(serviceName, action) {
+        if (this.platform === "win32") {
+            this.controlWindowsService(serviceName, action);
+        } else {
+            this.controlLinuxService(serviceName, action);
+        }
+    }
+
+    controlWindowsService(serviceName, action) {
+        if (!this.windowsService) {
+            NodeJsSysHelper.logError(this.title, "Windows service management library not available.");
+            return;
+        }
+
+        const Service = this.windowsService.Service;
+        const svc = new Service({
+            name: serviceName
+        });
+
+        svc[action]();
+        this.currentStatus = action === "start" ? "running" : "stopped";
+        this.setOutputData("serviceStatus", this.currentStatus);
+        this.setOutputData("responseLog", `Windows service ${serviceName} ${action} executed.`);
+        this.triggerEvent(action);
+    }
+
+    controlLinuxService(serviceName, action) {
+        if (!this.linuxService) {
+            NodeJsSysHelper.logError(this.title, "Linux service management library not available.");
+            return;
+        }
+
+        this.linuxService[action](serviceName)
+            .then(() => {
+                this.currentStatus = action === "start" ? "running" : "stopped";
+                this.setOutputData("serviceStatus", this.currentStatus);
+                this.setOutputData("responseLog", `Linux service ${serviceName} ${action} executed.`);
+                this.triggerEvent(action);
+            })
+            .catch((error) => {
+                NodeJsSysHelper.logError(this.title, `Error controlling service ${serviceName}: ${error}`);
+                this.triggerSlot("onError");
+            });
+    }
+}
+LiteGraph.registerNodeType("sys/serviceManager", SysUtil_ServiceManagerNode);
+
+
+class SysUtil_ServiceListNode {
+    static title = "Service List";
+    static desc = "Lists system services on Windows, Linux, and MacOS";
+
+    constructor() {
+        this.runtime = "node";
+        if (this.platform === "win32") {
+            this.libraries = ["node-windows"];
+        } else if (this.platform === "linux" || this.platform === "darwin") {
+            this.libraries = ["node-linux-systemd"];
+        }
+        this.addInput("refresh", LiteGraph.ACTION);
+        this.addInput("filter", "string", {
+            param_bind: true
+        });
+
+        this.addOutput("services", "array");
+        this.addOutput("onListed", LiteGraph.EVENT);
+        this.addOutput("onError", LiteGraph.EVENT);
+
+        this.properties = {
+            filter: ""
+        };
+
+        if (typeof process === "undefined" || process.browser) {
+            console.warn(`${this.title}: Running in browser. Service listing is disabled.`);
+            return;
+        }
+
+        this.platform = process.platform;
+        this.windowsService = null;
+        this.linuxService = null;
+        this.initializeLibrary();
+    }
+
+    async initializeLibrary() {
+        if (typeof process === "undefined") return;
+        if (this.platform === "win32") {
+            this.windowsService = NodeJsSysHelper.getLib("node-windows");
+        } else if (this.platform === "linux" || this.platform === "darwin") {
+            this.linuxService = NodeJsSysHelper.getLib("node-linux-systemd");
+        }
+    }
+
+    onAction(action) {
+        if (typeof process === "undefined") {
+            console.warn(`${this.title}: Running in browser. Actions are disabled.`);
+            return;
+        }
+
+        if (action === "refresh") {
+            this.listServices();
+        }
+    }
+
+    async listServices() {
+        if (typeof process === "undefined") return;
+
+        try {
+            let services = [];
+            if (this.platform === "win32") {
+                services = await this.listWindowsServices();
+            } else {
+                services = await this.listLinuxServices();
+            }
+
+            let filter = this.getInputOrProperty("filter");
+            if (filter) {
+                services = services.filter(svc => svc.name.toLowerCase().includes(filter.toLowerCase()));
+            }
+
+            this.setOutputData("services", services);
+            this.triggerSlot("onListed");
+        } catch (error) {
+            NodeJsSysHelper.logError(this.title, error);
+            this.triggerSlot("onError");
+        }
+    }
+
+    async listWindowsServices() {
+        return new Promise((resolve, reject) => {
+            let nodeWindows = NodeJsSysHelper.getLib("node-windows");
+
+            if (nodeWindows && nodeWindows.list) {
+                try {
+                    nodeWindows.list((error, services) => {
+                        if (error) {
+                            NodeJsSysHelper.logError(this.title, `node-windows service list error: ${error.message}`);
+                            return this.fallbackListWindowsServices().then(resolve).catch(reject);
+                        }
+
+                        if (!Array.isArray(services)) {
+                            NodeJsSysHelper.logError(this.title, "Unexpected format from node-windows.");
+                            return reject("Invalid service list format.");
+                        }
+
+                        let formattedServices = services
+                            .filter(service => service && typeof service === "object")
+                            .map(service => ({
+                                name: service.name || "Unknown",
+                                displayName: service.displayName || service.name || "Unknown",
+                                status: service.status || "unknown",
+                                description: service.description || "No description"
+                            }));
+
+                        resolve(formattedServices);
+                    });
+                } catch (error) {
+                    NodeJsSysHelper.logError(this.title, `node-windows service list error: ${error.message}`);
+                    this.fallbackListWindowsServices().then(resolve).catch(reject);
+                }
+            } else {
+                console.warn(`${this.title}: node-windows not available. Using fallback method.`);
+                this.fallbackListWindowsServices().then(resolve).catch(reject);
+            }
+        });
+    }
+
+
+    fallbackListWindowsServices() {
+        return new Promise((resolve, reject) => {
+            let child_process = NodeJsSysHelper.getLib("child_process");
+            if (!child_process) {
+                // reject("Missing child_process module.");
+                return;
+            }
+
+            child_process.exec("sc query type= service", (error, stdout, stderr) => {
+                if (error) {
+                    reject(stderr || error.message);
+                    return;
+                }
+
+                let services = [];
+                let serviceBlocks = stdout.split("\n\n"); // Split each service block
+
+                serviceBlocks.forEach((block) => {
+                    let nameMatch = block.match(/SERVICE_NAME:\s+(.+)/);
+                    let displayNameMatch = block.match(/DISPLAY_NAME:\s+(.+)/);
+                    let stateMatch = block.match(/STATE\s+:\s+\d+\s+(.+)/);
+
+                    if (nameMatch && stateMatch) {
+                        services.push({
+                            name: nameMatch[1].trim(),
+                            displayName: displayNameMatch ? displayNameMatch[1].trim() : nameMatch[1].trim(),
+                            status: stateMatch[1].trim().split(" ")[0] // Extract RUNNING, STOPPED, etc.
+                        });
+                    }
+                });
+
+                resolve(services);
+            });
+        });
+    }
+
+    listLinuxServices() {
+        return new Promise((resolve, reject) => {
+            let child_process = NodeJsSysHelper.getLib("child_process");
+            if (!child_process) {
+                // reject("Missing child_process module.");
+                return;
+            }
+
+            let command = this.commandExists("systemctl") ? "systemctl list-units --type=service --no-pager" :
+                this.commandExists("service") ? "service --status-all" : null;
+
+            if (!command) {
+                reject("No valid command found for listing services.");
+                return;
+            }
+
+            child_process.exec(command, (error, stdout, stderr) => {
+                if (error) {
+                    reject(stderr || error.message);
+                    return;
+                }
+
+                let services = [];
+                const lines = stdout.split("\n").filter(line => line.trim() !== "");
+
+                lines.forEach(line => {
+                    let parts = line.trim().split(/\s+/);
+                    if (command.includes("systemctl")) {
+                        let status = parts[2] === "running" ? "running" : "stopped";
+                        services.push({
+                            name: parts[0],
+                            status
+                        });
+                    } else if (command.includes("service")) {
+                        let name = parts.slice(1).join(" ");
+                        let status = parts[0] === "+" ? "running" : "stopped";
+                        services.push({
+                            name,
+                            status
+                        });
+                    }
+                });
+
+                resolve(services);
+            });
+        });
+    }
+
+    commandExists(cmd) {
+        try {
+            require("child_process").execSync(`command -v ${cmd}`, {
+                stdio: "ignore"
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+LiteGraph.registerNodeType("sys/serviceList", SysUtil_ServiceListNode);
+
 // Creates an interface to access extra features from a graph (like play, stop, live, etc)
 export class Editor {
 
@@ -46279,7 +47932,7 @@ export let registerExtension_autoconnect = function(graphcanvas) {
 
                 // skip if shift o ctrl
                 if (keyEvent.shiftKey || keyEvent.ctrlKey) {
-                    if (debug) console.verbose(ext, "skip shift or ctlr", ...arguments);
+                    if (debug) console.debug(ext, "skip shift or ctlr", ...arguments);
                     break;
                 }
 
