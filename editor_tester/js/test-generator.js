@@ -3,7 +3,9 @@
  * Automatically generates test cases for LiteGraph nodes based on their structure
  */
 
-import { LiteGraph } from "/src/litegraph.js";
+import { LiteGraph } from "../../build/litegraph.js";
+
+import { setNodeInput } from './test-inputs.js';
 
 export class TestCaseGenerator {
     constructor() {
@@ -84,24 +86,8 @@ export class TestCaseGenerator {
      * Generate basic test cases for a node type
      */
     generateBasicTests(nodeType) {
-        const tests = [];
-        
-        // Analyze node structure
         const analysis = this.analyzeNodeType(nodeType);
-        
-        // Generate tests based on templates
-        for (const [templateId, template] of this.testTemplates) {
-            try {
-                const test = template.generate(nodeType, analysis);
-                if (test) {
-                    tests.push(test);
-                }
-            } catch (error) {
-                console.warn(`Failed to generate ${templateId} test for ${nodeType}:`, error);
-            }
-        }
-        
-        return tests;
+        return [this.generateBasicTest(nodeType, analysis)];
     }
 
     /**
@@ -174,10 +160,11 @@ export class TestCaseGenerator {
         // Create temporary instance for analysis
         let node;
         try {
-            node = new NodeClass();
+            node = LiteGraph.createNode(nodeType);
+            if (!node) throw new Error(`Failed to create ${nodeType}`);
         } catch (error) {
             console.warn(`Failed to create instance of ${nodeType}:`, error);
-            return null;
+            throw error;
         }
         
         const analysis = {
@@ -502,7 +489,7 @@ export class TestCaseGenerator {
                     
                     for (const testValue of testValues) {
                         try {
-                            node.setInputData(i, testValue.value);
+                            setNodeInput(node, i, testValue.value);
                             
                             if (typeof node.onExecute === 'function') {
                                 node.onExecute();
@@ -788,7 +775,7 @@ export class TestCaseGenerator {
                     for (const invalidValue of invalidValues) {
                         try {
                             // Set invalid input
-                            node.setInputData(0, invalidValue.value);
+                            setNodeInput(node, 0, invalidValue.value);
                             
                             if (typeof node.onExecute === 'function') {
                                 node.onExecute();

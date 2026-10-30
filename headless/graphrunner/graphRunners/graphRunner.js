@@ -1,112 +1,62 @@
-// graphRunners/graphRunner.js
-
-// This is LiteGraph runner
-
-import { parentPort, workerData } from 'worker_threads';
-import fs from 'fs';
-import { createLogger } from '../logger.js'; // Our dedicated logger factory.
-import { createRequire } from 'module';
+import { parentPort, workerData } from 'node:worker_threads';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import { format } from 'node:util';
 
 const require = createRequire(import.meta.url);
-require("../../../build_node/litegraph_nodejs.full.cjs");
+const { LiteGraph, LGraph } = require('../../../build_node/litegraph_nodejs.full.cjs');
+LiteGraph.logging_set_level(process.env.LOG_LEVEL === 'debug' ? 4 : 2);
 
-// Create a dedicated logger instance for this worker.
-const logger = createLogger({ level: 'info', logFile: 'custom.log' });
-
-const workflowPath = workerData;
-logger.info(`[GR] GraphRunner starting for ${workflowPath}`);
-
-// Helper function to pipe messages to parent.
-function pipeConsoleEvent(level, ...args) {
-  const message = args.join(" ");
-  // Send the message to parent (UI) along with its log level.
-  if (parentPort) {
-    parentPort.postMessage({ event: 'console', level, message });
-  }
+for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
+  console[level] = (...args) => parentPort.postMessage({
+    event: 'console', level: level === 'log' ? 'info' : level, message: format(...args),
+  });
 }
 
-// Redirect console methods to our dedicated logger and pipe events.
-console.log = (...args) => {
-  const msg = args.join(" ");
-  logger.info(msg);
-  pipeConsoleEvent('info', msg);
-};
-console.info = (...args) => {
-  const msg = args.join(" ");
-  logger.info(msg);
-  pipeConsoleEvent('info', msg);
-};
-console.error = (...args) => {
-  const msg = args.join(" ");
-  logger.error(msg);
-  pipeConsoleEvent('error', msg);
-};
-console.warn = (...args) => {
-  const msg = args.join(" ");
-  logger.warn(msg);
-  pipeConsoleEvent('warn', msg);
-};
-
-// Handle uncaught exceptions.
-process.on('uncaughtException', (err) => {
-  logger.error(`[GR] Uncaught Exception: ${err.message}`);
-  pipeConsoleEvent('error', `[GR] Uncaught Exception: ${err.message}`);
-  process.exit(1);
-});
-
-const graph = new LiteGraph.LGraph();
-
-function safeLoadGraph() {
-  try {
-    if (!fs.existsSync(workflowPath)) {
-      throw new Error(`File not found: ${workflowPath}`);
+function configure(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
+    throw new Error('Workflow must contain nodes and links arrays');
+  }
+  for (const node of data.nodes) {
+    if (!node || !Object.hasOwn(LiteGraph.registered_node_types, node.type)) {
+      throw new Error(`Unknown node type: ${node?.type}`);
     }
-    const graphData = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
-    graph.configure(graphData);
-    logger.info(`[GR] GraphRunner initialized for ${workflowPath}`);
-    parentPort.postMessage({ event: 'graphInitialized' });
+  }
+  const candidate = new LGraph();
+  try {
+    if (candidate.configure(data)) throw new Error('Workflow contains unsupported nodes');
+    return candidate;
   } catch (error) {
-    logger.error(`[GR] Error loading graph from ${workflowPath}: ${error.message}`);
-    pipeConsoleEvent('error', `[GR] Error loading graph from ${workflowPath}: ${error.message}`);
-    parentPort.postMessage({ event: 'graphLoadFailed' });
-    process.exit(1);
+    candidate.clear();
+    throw error;
   }
 }
 
-safeLoadGraph();
+let graph = configure(JSON.parse(fs.readFileSync(workerData, 'utf8')));
+const status = () => graph.status === LGraph.STATUS_RUNNING ? 'running' : 'stopped';
 
-graph.onExecute = function () {
+parentPort.on('message', ({ requestId, action, serializedGraph }) => {
   try {
-    parentPort.postMessage({ event: 'graphExecuted' });
-  } catch (error) {
-    logger.error(`[GR] Execution error: ${error.message}`);
-    pipeConsoleEvent('error', `[GR] Execution error: ${error.message}`);
-  }
-};
-
-parentPort.on('message', (message) => {
-  try {
-    switch (message.action) {
-      case 'start':
-        graph.start();
-        parentPort.postMessage({ event: 'graphStarted' });
-        break;
-      case 'stop':
-        graph.stop();
-        parentPort.postMessage({ event: 'graphStopped' });
-        break;
-      case 'status':
-        parentPort.postMessage({ event: 'graphStatus', running: graph.running });
-        break;
-      case 'clear':
+    let data = {};
+    switch (action) {
+      case 'start': graph.start(); break;
+      case 'stop': graph.stop(); break;
+      case 'clear': graph.clear(); break;
+      case 'status': break;
+      case 'sync': data.serializedGraph = graph.serialize(); break;
+      case 'update': {
+        const replacement = configure(serializedGraph);
+        const wasRunning = status() === 'running';
         graph.clear();
-        parentPort.postMessage({ event: 'graphCleared' });
+        graph = replacement;
+        if (wasRunning) graph.start();
+        data.serializedGraph = graph.serialize();
         break;
-      default:
-        parentPort.postMessage({ event: 'unknownCommand', command: message.action });
+      }
+      default: throw new Error(`Unknown command: ${action}`);
     }
+    parentPort.postMessage({ requestId, status: status(), iteration: graph.iteration, ...data });
   } catch (error) {
-    logger.error(`[GR] GraphRunner error processing command: ${error.message}`);
-    pipeConsoleEvent('error', `[GR] GraphRunner error processing command: ${error.message}`);
+    parentPort.postMessage({ requestId, error: error.message, status: status() });
   }
 });

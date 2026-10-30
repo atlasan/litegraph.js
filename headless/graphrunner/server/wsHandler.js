@@ -1,166 +1,57 @@
-// server/wsHandler.js
-import { WebSocketServer } from 'ws';
-import { 
-  openGraph, 
-  controlGraph, 
-  updateGraph, 
-  requestSync, 
-  getCurrentProcesses, 
-  isGraphRunning,
-  unloadGraph,
-  setConsolePipeCallback
+import { WebSocketServer, WebSocket } from 'ws';
+import {
+  openGraph, controlGraph, updateGraph, requestSync, getCurrentProcesses,
+  getGraphStatus, unloadGraph, stopAllGraphs, setConsolePipeCallback, setStatusCallback,
 } from './graphManager.js';
 import { logger } from '../logger.js';
 
 export function setupWebSocket(server) {
-  const wss = new WebSocketServer({ server });
-
-  // Register a callback to pipe console events from workers to all clients.
-  setConsolePipeCallback((graphId, level, message) => {
-    const consoleMsg = JSON.stringify({
-      type: "console",
-      data: { graphId, level, message }
-    });
-    wss.clients.forEach(client => {
-      if (client.readyState === client.OPEN) {
-        client.send(consoleMsg);
-      }
+  const wss = new WebSocketServer({ server, maxPayload: 4 * 1024 * 1024 });
+  const send = (ws, message) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+  };
+  const broadcast = (message) => wss.clients.forEach((ws) => send(ws, message));
+  const activeGraphs = () => ({ type: 'active_graphs', data: {
+    graphs: getCurrentProcesses().map((graphId) => ({ graphId, status: getGraphStatus(graphId) })),
+  } });
+  setConsolePipeCallback((graphId, level, message) => broadcast({ type: 'console', data: { graphId, level, message } }));
+  setStatusCallback((graphId, status) => {
+    broadcast({ type: 'graph_status', data: { graphId, status } });
+    broadcast(activeGraphs());
+  });
+  wss.on('connection', (ws) => {
+    send(ws, activeGraphs());
+    // Preserve command order for each client, including open -> start -> update.
+    let queue = Promise.resolve();
+    ws.on('message', (message) => {
+      queue = queue.then(async () => {
+        const packet = JSON.parse(message.toString());
+        if (!packet || typeof packet !== 'object' || typeof packet.type !== 'string') throw new Error('Invalid message');
+        const payload = packet.data || {};
+        let result;
+        let type;
+        switch (packet.type) {
+          case 'open_graph': result = await openGraph(payload.file, logger); type = 'graph_opened'; break;
+          case 'control_graph': result = await controlGraph(payload.graphId, payload.action, logger); type = 'graph_status'; break;
+          case 'update_graph': result = await updateGraph(payload.graphId, payload.serializedGraph, logger); type = 'graph_updated'; break;
+          case 'request_sync': result = await requestSync(payload.graphId, logger); type = 'graph_sync'; break;
+          case 'unload_graph': result = await unloadGraph(payload.graphId, logger); type = 'graph_status'; break;
+          case 'stop_all_graphs': {
+            const results = await stopAllGraphs(logger);
+            const failed = results.find((item) => item.error);
+            if (failed) throw new Error(failed.error);
+            broadcast(activeGraphs());
+            return;
+          }
+          case 'get_active_graphs': send(ws, activeGraphs()); return;
+          default: throw new Error('Unknown event type');
+        }
+        if (result.error) throw new Error(result.error);
+        if (type === 'graph_updated') broadcast({ type, data: result });
+        else send(ws, { type, data: result });
+      }).catch((error) => send(ws, { type: 'error', data: { message: error.message } }));
     });
   });
-
-  // Helper: Broadcast a message to all connected clients.
-  function broadcast(messageObj) {
-    const msg = JSON.stringify(messageObj);
-    wss.clients.forEach(client => {
-      if (client.readyState === client.OPEN) {
-        client.send(msg);
-      }
-    });
-  }
-
-  // Broadcast the active graphs list to all connected clients.
-  function sendActiveGraphs() {
-    const activeGraphs = getCurrentProcesses().map(graphId => ({
-      graphId,
-      status: isGraphRunning(graphId) ? 'running' : 'stopped'
-    }));
-    const message = JSON.stringify({ type: 'active_graphs', data: { graphs: activeGraphs } });
-    logger.debug("Broadcast active graphs: " + activeGraphs.length);
-    wss.clients.forEach(client => {
-      if (client.readyState === client.OPEN) {
-        client.send(message);
-      }
-    });
-  }
-
-  wss.on("connection", (ws) => {
-    logger.info("Client connected via WebSocket");
-
-    ws.on("message", (message) => {
-      let data;
-      try {
-        data = JSON.parse(message);
-      } catch (err) {
-        logger.error("Invalid JSON received: " + err.message);
-        ws.send(JSON.stringify({ type: "error", data: { message: "Invalid JSON" } }));
-        return;
-      }
-
-      logger.debug("WS received: " + message);
-
-      // Process the message based on its type.
-      switch(data.type) {
-        case "open_graph":
-          handleOpenGraph(ws, data.data, logger);
-          break;
-        case "control_graph":
-          handleControlGraph(ws, data.data, logger, broadcast);
-          break;
-        case "update_graph":
-          handleUpdateGraph(ws, data.data, logger, broadcast);
-          break;
-        case "request_sync":
-          handleRequestSync(ws, data.data, logger);
-          break;
-        case "unload_graph":
-          handleUnloadGraph(ws, data.data, logger, broadcast);
-          break;
-        case "get_active_graphs":
-          sendActiveGraphs();
-          break;
-        default:
-          ws.send(JSON.stringify({ type: "error", data: { message: "Unknown event type" } }));
-      }
-    });
-  });
-}
-
-function handleOpenGraph(ws, payload, logger) {
-  if (!payload || !payload.file) {
-    ws.send(JSON.stringify({ type: "error", data: { message: "Invalid parameters for open_graph" } }));
-    return;
-  }
-  const result = openGraph(payload.file, logger);
-  if (result.error) {
-    ws.send(JSON.stringify({ type: "error", data: { message: result.error } }));
-  } else {
-    // if returning objGraph
-    ws.send(JSON.stringify({ type: "graph_opened", data: result }));
-    // if returning jsonGraph
-    // const sSend = '{ type: "graph_opened", data: '+result+' }';
-    // ws.send(sSend);
-    logger.info(`Graph ${result.graphId} opened by a client`);
-  }
-}
-
-function handleControlGraph(ws, payload, logger, broadcast) {
-  if (!payload || !payload.graphId || !payload.action) {
-    ws.send(JSON.stringify({ type: "error", data: { message: "Invalid parameters for control_graph" } }));
-    return;
-  }
-  const result = controlGraph(payload.graphId, payload.action, logger);
-  if (result.error) {
-    ws.send(JSON.stringify({ type: "error", data: { message: result.error } }));
-  } else {
-    broadcast({ type: "graph_status", data: { graphId: payload.graphId, status: result.status } });
-    logger.info(`Graph ${payload.graphId} ${payload.action} command processed`);
-  }
-}
-
-function handleUpdateGraph(ws, payload, logger, broadcast) {
-  if (!payload || !payload.graphId || !payload.serializedGraph) {
-    ws.send(JSON.stringify({ type: "error", data: { message: "Invalid parameters for update_graph" } }));
-    return;
-  }
-  const result = updateGraph(payload.graphId, payload.serializedGraph, logger);
-  if (result.error) {
-    ws.send(JSON.stringify({ type: "error", data: { message: result.error } }));
-  } else {
-    broadcast({ type: "graph_updated", data: { graphId: payload.graphId, serializedGraph: result.serializedGraph } });
-    logger.info(`Graph ${payload.graphId} updated`);
-  }
-}
-
-function handleRequestSync(ws, payload, logger) {
-  if (!payload || !payload.graphId) {
-    ws.send(JSON.stringify({ type: "error", data: { message: "Invalid parameters for request_sync" } }));
-    return;
-  }
-  const result = requestSync(payload.graphId, logger);
-  if (result.error) {
-    ws.send(JSON.stringify({ type: "error", data: { message: result.error } }));
-  } else {
-    ws.send(JSON.stringify({ type: "graph_sync", data: result }));
-    logger.info(`Graph ${payload.graphId} sync sent to client`);
-  }
-}
-
-function handleUnloadGraph(ws, payload, logger, broadcast) {
-  if (!payload || !payload.graphId) {
-    ws.send(JSON.stringify({ type: "error", data: { message: "Invalid parameters for unload_graph" } }));
-    return;
-  }
-  unloadGraph(payload.graphId, logger);
-  broadcast({ type: "graph_status", data: { graphId: payload.graphId, status: "unloaded" } });
-  logger.info(`Graph ${payload.graphId} unloaded`);
+  wss.on('close', () => { setConsolePipeCallback(null); setStatusCallback(null); });
+  return wss;
 }

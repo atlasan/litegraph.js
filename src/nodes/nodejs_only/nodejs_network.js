@@ -533,9 +533,6 @@ class SocketIOServerNode extends BaseServer {
 
 // Register Socket.io server node.
 LiteGraph.registerNodeType("nodejs/network/SocketIO_server", SocketIOServerNode);
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = SocketIOServerNode;
-}
 
 // ======================
 // OSC Bridge Node
@@ -648,9 +645,6 @@ class OSCBridge extends BaseServer {
 if (typeof LiteGraph !== "undefined") {
     LiteGraph.registerNodeType("nodejs/network/osc_bridge", OSCBridge);
 }
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = OSCBridge;
-}
 
 // ======================
 // OSC Server Node
@@ -754,9 +748,6 @@ class OSCServerNode extends BaseServer {
 // Register OSC Server node.
 if (typeof LiteGraph !== "undefined") {
     LiteGraph.registerNodeType("nodejs/network/OSC_server", OSCServerNode);
-}
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = OSCServerNode;
 }
 
 // ======================
@@ -865,7 +856,4 @@ class UDPServerNode extends BaseServer {
 // Register UDP Server node.
 if (typeof LiteGraph !== "undefined") {
     LiteGraph.registerNodeType("nodejs/network/UDP_server", UDPServerNode);
-}
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = UDPServerNode;
 }

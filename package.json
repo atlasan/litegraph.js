@@ -2,7 +2,7 @@
     "name": "@litegraph/litegraph",
     "version": "0.10.10",
     "description": "A flow graph node editor on the web.",
-    "main": "build/litegraph.js",
+    "main": "build_node/litegraph.cjs",
     "type": "module",
     "types": "src/litegraph.d.ts",
     "private": false,
@@ -15,7 +15,10 @@
         "test": "node --experimental-vm-modules node_modules/jest-cli/bin/jest.js",
         "lint": "npx eslint src",
         "lint:fix": "npx eslint --fix src",
-        "nodemon": "nodemon"
+        "nodemon": "nodemon",
+        "test:integration": "node --test tools/tests/*.test.mjs",
+        "check:build": "node tools/check-build.mjs",
+        "check": "npm run build && npm test -- --runInBand && npm run test:integration && npm run check:build"
     },
     "repository": {
         "type": "git",
@@ -25,6 +28,7 @@
     "license": "MIT",
     "files": [
         "build",
+        "build_node",
         "css/litegraph.css",
         "src/litegraph.d.ts"
     ],
@@ -75,6 +79,24 @@
         "socket.io-client": "^4.8.1",
         "uglifyjs": "^2.4.11",
         "vm": "^0.1.0",
-        "winston": "^3.17.0"
+        "winston": "^3.17.0",
+        "ws": "^8.18.0"
+    },
+    "module": "build/litegraph.js",
+    "exports": {
+        ".": {
+            "types": "./src/litegraph.d.ts",
+            "import": "./build/litegraph.js",
+            "require": "./build_node/litegraph.cjs"
+        },
+        "./node": {
+            "types": "./src/litegraph.d.ts",
+            "import": "./build_node/litegraph_nodejs.full.cjs",
+            "require": "./build_node/litegraph_nodejs.full.cjs"
+        },
+        "./build/*": "./build/*",
+        "./build_node/*": "./build_node/*",
+        "./css/*": "./css/*",
+        "./package.json": "./package.json"
     }
 }

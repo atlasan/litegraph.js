@@ -3,6 +3,18 @@ import subprocess
 import json
 import sys
 import re
+import shutil
+
+# Resolve inputs and output paths relative to this script.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+def run_tool(name, *args, capture=False):
+    local = os.path.join("node_modules", ".bin", name + (".cmd" if os.name == "nt" else ""))
+    executable = os.path.abspath(local) if os.path.isfile(local) else shutil.which(name)
+    if not executable:
+        raise RuntimeError(f"Missing build tool {name}; run npm install first")
+    return subprocess.run([executable, *args], check=True, text=True, encoding="utf-8",
+                          stdout=subprocess.PIPE if capture else None)
 
 # ** CAREFUL THIS NOT A STANDARD BUILDER nor BUILD **
 
@@ -155,7 +167,7 @@ def concatenate_js_files(js_files, output_filename, output_folder, remove_import
                 concatenated_data += file_data + "\n"
                 print("\033[92mOK\033[0m")
         except FileNotFoundError:
-            print("\033[91mJS File not found\033[0m")
+            raise
 
     print(f"Concatenated JS files saving to: {output_filename}")
     output_path = os.path.join(output_folder, output_filename)
@@ -164,21 +176,15 @@ def concatenate_js_files(js_files, output_filename, output_folder, remove_import
     print(f"Concatenated JS files saved to: {output_filename}")
 
     if options["prettify"] and ".mini." not in output_filename:
-        subprocess.run(["js-beautify", output_path, "-r"], shell=True)
+        run_tool("js-beautify", output_path, "-r")
 
 def pack_js_files(input_filepath, output_filename, output_folder, minify=True):
     if minify:
         print(f"Processing {input_filepath} ", end="")
         if os.path.exists(input_filepath):
-            # minified_js = subprocess.run(["uglifyjs", input_filepath, "-c"], stdout=subprocess.PIPE, text=True, shell=True)
-            minified_js = subprocess.run(
-                ["uglifyjs", input_filepath, "-c"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,  # Capture errors too
-                text=True,
-                shell=True,
-                encoding="utf-8"  # ✅ Ensure UTF-8 encoding
-            )
+            minified_js = run_tool("uglifyjs", input_filepath, "-c", capture=True)
+            if not minified_js.stdout.strip():
+                raise RuntimeError(f"Minifier returned empty output for {input_filepath}")
             packed_data = "/*packed*/\n" + minified_js.stdout + "\n"
             print("\033[92mMinified\033[0m")
         else:
@@ -275,20 +281,20 @@ def convert_es6_to_commonjs(data):
         return match.group(1)
 
     # Strip export keywords and collect class/function names
-    data = re.sub(r'export\s+default\s+class\s+([a-zA-Z0-9_]+)', export_default_class_replacer, data)
-    data = re.sub(r'export\s+class\s+([a-zA-Z0-9_]+)', export_class_replacer, data)
-    data = re.sub(r'export\s+var\s+([a-zA-Z0-9_]+)', export_var_replacer, data)
-    data = re.sub(r'export\s+const\s+([a-zA-Z0-9_]+)', export_const_replacer, data)
-    data = re.sub(r'export\s+let\s+([a-zA-Z0-9_]+)', export_let_replacer, data)
+    data = re.sub(r'(?m)^export\s+default\s+class\s+([a-zA-Z0-9_]+)', export_default_class_replacer, data)
+    data = re.sub(r'(?m)^export\s+class\s+([a-zA-Z0-9_]+)', export_class_replacer, data)
+    data = re.sub(r'(?m)^export\s+var\s+([a-zA-Z0-9_]+)', export_var_replacer, data)
+    data = re.sub(r'(?m)^export\s+const\s+([a-zA-Z0-9_]+)', export_const_replacer, data)
+    data = re.sub(r'(?m)^export\s+let\s+([a-zA-Z0-9_]+)', export_let_replacer, data)
     data = re.sub(r'export\s+default\s+([a-zA-Z0-9_]+)', export_default_replacer, data)
-    data = re.sub(r'export\s+function\s+([a-zA-Z0-9_]+)', export_function_replacer, data)
+    data = re.sub(r'(?m)^export\s+function\s+([a-zA-Z0-9_]+)', export_function_replacer, data)
     data = re.sub(r'export\s+\{([a-zA-Z0-9_,\s]+)\};', r'\1;', data)
     data = re.sub(r'import\s+([a-zA-Z0-9_,{}\s*]+)\s+from\s+["\']([a-zA-Z0-9_./-]+)["\'];', lambda match: "var " + match.group(1).strip() + " = require('" + match.group(2).strip() + "');", data)
     # data = re.sub(r'\let\b', 'var', data)
 
     # Add exports at the end of the file
-    if class_names or function_names:
-        exports = '\n'.join([f'exports.{name} = {name};' for name in class_names + function_names])
+    if class_names or function_names or var_names or const_names or let_names:
+        exports = '\n'.join([f'exports.{name} = {name};' for name in dict.fromkeys(class_names + function_names + var_names + const_names + let_names)])
         data += '\n' + exports
 
     return data

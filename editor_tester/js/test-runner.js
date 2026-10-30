@@ -6,6 +6,7 @@
 import { testFramework } from './test-framework.js';
 import TestCaseGenerator from './test-generator.js';
 import testConfig from './test-config.js';
+import { setNodeInput } from './test-inputs.js';
 
 export class TestRunner {
     constructor(app) {
@@ -41,9 +42,9 @@ export class TestRunner {
         const config = testConfig.get('execution');
         
         // Update framework settings
-        this.framework.setTimeout(config.timeout);
-        this.framework.setMemoryTracking(config.memoryTracking);
-        this.framework.setCoverageTracking(config.coverageTracking);
+        this.framework.config.timeout = config.timeout;
+        this.framework.config.validateMemory = config.memoryTracking;
+
     }
 
     /**
@@ -161,7 +162,6 @@ export class TestRunner {
             this.currentExecution.abort();
         }
         
-        this.endExecution();
     }
 
     /**
@@ -335,11 +335,11 @@ export class TestRunner {
                 testCases.push(...stateTests);
             }
 
-            return testCases;
+            return testCases.map((testCase, index) => ({ ...testCase, id: `${nodeType}_${index}`, nodeType }));
             
         } catch (error) {
             console.error(`Failed to generate tests for ${nodeType}:`, error);
-            return [];
+            throw error;
         }
     }
 
@@ -348,7 +348,7 @@ export class TestRunner {
      */
     async executeNodeTests(nodeType, testCases, config) {
         const results = [];
-        const maxConcurrent = config.execution.maxConcurrentTests;
+        const maxConcurrent = Math.max(1, config.execution.maxConcurrent || 1);
         
         if (maxConcurrent <= 1) {
             // Sequential execution
@@ -411,7 +411,14 @@ export class TestRunner {
      */
     async executeTestCase(nodeType, testCase, config) {
         const startTime = performance.now();
-        
+        if (typeof testCase.execute === 'function' || typeof testCase.setup === 'function') {
+            const result = await this.framework.runSingleTest({
+                expectedInputs: [], expectedOutputs: [], testData: {}, ...testCase,
+                nodeType, timeout: testCase.timeout || config.execution.timeout,
+            });
+            return { ...result, testCase, timestamp: Date.now() };
+        }
+
         try {
             // Create execution context
             const context = this.createExecutionContext(nodeType, testCase, config);
@@ -495,7 +502,7 @@ export class TestRunner {
                 executeGraph: () => this.app.executeGraph(),
                 clearGraph: () => this.app.clearGraph(),
                 getNodeOutput: (node, index) => node.getOutputData(index),
-                setNodeInput: (node, index, data) => node.setInputData(index, data),
+                setNodeInput: (node, index, data) => setNodeInput(node, index, data),
                 triggerNodeExecution: (node) => node.onExecute && node.onExecute()
             }
         };

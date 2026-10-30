@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { TestFramework } from '../../editor_tester/js/test-framework.js';
+import { TestCaseGenerator } from '../../editor_tester/js/test-generator.js';
+import { LiteGraph } from '../../build/litegraph.js';
+import { setNodeInput } from '../../editor_tester/js/test-inputs.js';
+
+const definition = (extra = {}) => ({ nodeType: 'basic/const', id: 'test', timeout: 100, expectedInputs: [], expectedOutputs: [], ...extra });
+
+test('async timeout remains armed until completion', async () => {
+    const framework = new TestFramework();
+    await assert.rejects(framework.executeWithTimeout(() => new Promise(() => {}), 20), /timed out/);
+    assert.equal(await framework.executeWithTimeout(async () => 42, 100), 42);
+});
+
+test('failed execution still runs cleanup and clears graph', async () => {
+    const framework = new TestFramework();
+    let graph;
+    let cleaned = false;
+    const result = await framework.runSingleTest(definition({
+        setup(_node, current) { graph = current; },
+        execute() { throw new Error('expected failure'); },
+        cleanup() { cleaned = true; },
+    }));
+    assert.equal(result.status, 'failed');
+    assert.equal(cleaned, true);
+    assert.equal(graph._nodes.length, 0);
+});
+
+test('failed custom validation is not reported as a pass', async () => {
+    const result = await new TestFramework().runSingleTest(definition({ validate: () => ({ passed: false, issues: ['wrong output'] }) }));
+    assert.equal(result.status, 'failed');
+    assert.match(result.errors[0].message, /wrong output/);
+});
+
+test('generated basic test executes through the framework', async () => {
+    const generated = new TestCaseGenerator().generateBasicTests('basic/const');
+    assert.equal(generated.length, 1);
+    const result = await new TestFramework().runSingleTest(definition(generated[0]));
+    assert.equal(result.status, 'passed', JSON.stringify(result.errors));
+    assert.equal(result.details.executionResult.outputs[0].value, 1);
+});
+
+test('test inputs use real graph links and update output data', () => {
+    const graph = new LiteGraph.LGraph();
+    const node = LiteGraph.createNode('math/abs');
+    graph.add(node);
+    setNodeInput(node, 0, -7);
+    node.onExecute();
+    assert.equal(node.getOutputData(0), 7);
+    setNodeInput(node, 0, -3);
+    node.onExecute();
+    assert.equal(node.getOutputData(0), 3);
+    assert.equal(graph._nodes.length, 2);
+    graph.clear();
+});

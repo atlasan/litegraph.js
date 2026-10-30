@@ -3,7 +3,7 @@
  * Comprehensive testing system for validating node functionality
  */
 
-import { LiteGraph } from '/src/litegraph.js';
+import { LiteGraph } from '../../build/litegraph.js';
 const { LGraphNode } = LiteGraph;
 
 export class TestFramework {
@@ -129,6 +129,8 @@ export class TestFramework {
             memoryUsage: null
         };
 
+        let node;
+        let graph;
         try {
             // Memory baseline
             const memoryBefore = this.getMemoryUsage();
@@ -139,8 +141,9 @@ export class TestFramework {
                 throw new Error(`Node type '${test.nodeType}' not registered`);
             }
             
-            const node = new NodeClass();
-            const graph = new LiteGraph.LGraph();
+            node = LiteGraph.createNode(test.nodeType);
+            if (!node) throw new Error(`Failed to create ${test.nodeType}`);
+            graph = new LiteGraph.LGraph();
             graph.add(node);
             
             // Setup phase
@@ -169,6 +172,7 @@ export class TestFramework {
             } else if (this.config.validateExecution) {
                 // Default execution test
                 result.details.executionResult = this.testNodeExecution(node, graph);
+                result.errors.push(...result.details.executionResult.errors);
             }
             
             // Custom validation
@@ -176,13 +180,12 @@ export class TestFramework {
                 result.details.validationResult = await this.executeWithTimeout(
                     test.validate, test.timeout, node, graph, result.details.executionResult
                 );
+                const validation = result.details.validationResult;
+                if (validation === false || validation?.passed === false || validation?.issues?.length) {
+                    result.errors.push({ type: 'validation_error', message: validation?.issues?.join('; ') || 'Custom validation failed' });
+                }
             }
-            
-            // Cleanup phase
-            if (test.cleanup) {
-                await this.executeWithTimeout(test.cleanup, test.timeout, node, graph);
-            }
-            
+
             // Memory check
             if (this.config.validateMemory) {
                 const memoryAfter = this.getMemoryUsage();
@@ -197,8 +200,6 @@ export class TestFramework {
                 }
             }
             
-            // Clean up graph
-            graph.clear();
             
             result.status = result.errors.length > 0 ? 'failed' : 'passed';
             
@@ -209,8 +210,17 @@ export class TestFramework {
                 message: error.message,
                 stack: error.stack
             });
+        } finally {
+            try {
+                if (test.cleanup && node && graph) await this.executeWithTimeout(test.cleanup, test.timeout, node, graph);
+            } catch (error) {
+                result.status = 'failed';
+                result.errors.push({ type: 'cleanup_error', message: error.message });
+            } finally {
+                graph?.clear();
+            }
         }
-        
+
         result.endTime = performance.now();
         result.duration = result.endTime - result.startTime;
         
@@ -415,19 +425,10 @@ export class TestFramework {
                 reject(new Error(`Test timed out after ${timeout}ms`));
             }, timeout);
             
-            try {
-                const result = fn(...args);
-                clearTimeout(timer);
-                
-                if (result instanceof Promise) {
-                    result.then(resolve).catch(reject);
-                } else {
-                    resolve(result);
-                }
-            } catch (error) {
-                clearTimeout(timer);
-                reject(error);
-            }
+            Promise.resolve().then(() => fn(...args)).then(
+                (value) => { clearTimeout(timer); resolve(value); },
+                (error) => { clearTimeout(timer); reject(error); }
+            );
         });
     }
 

@@ -311,11 +311,12 @@ export class LGraph {
             return;
         }
 
-        limit ||= nodes.length;
+        limit = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
 
         if (do_not_catch_errors) {
             for (let i = 0; i < num; i++) {
-                nodes.forEach((node) => {
+                nodes.forEach((node, index) => {
+                    if (index >= limit) return;
                     if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
                         node.executePendingActions();
                     }
@@ -336,7 +337,8 @@ export class LGraph {
         } else { // catch errors
             try {
                 for (let i = 0; i < num; i++) {
-                    nodes.forEach((node) => {
+                    nodes.forEach((node, index) => {
+                        if (index >= limit) return;
                         if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
                             node.executePendingActions();
                         }

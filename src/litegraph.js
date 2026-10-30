@@ -378,7 +378,7 @@ export class LiteGraphClass {
         // Iterate over each property descriptor
         Object.keys(propertyDescriptors).forEach((propertyName) => {
             // Check if the property already exists on the target prototype
-            if (!base_class.prototype.hasOwnProperty(propertyName)) {
+            if (!(propertyName in base_class.prototype)) {
                 // If the property doesn't exist, copy it from the source to the target
                 Object.defineProperty(base_class.prototype, propertyName, propertyDescriptors[propertyName]);
                 // TOO MUCH VERBOSE :: this.log_verbose("registerNodeType","defineProperty",type,base_class.prototype, propertyName, propertyDescriptors[propertyName]);

@@ -96,7 +96,7 @@ class FileExplorer {
           this.loadFiles();
         } else {
           // File: send open_graph request.
-          this.onFileSelect(this.currentPath + file);
+          this.onFileSelect(file);
         }
       };
       this.element.appendChild(li);
@@ -108,7 +108,7 @@ class FileExplorer {
 class TabManager {
   constructor(elementId, onLastTabClosed) {
     this.element = document.getElementById(elementId);
-    this.tabs = {};
+    this.tabs = Object.create(null);
     this.onLastTabClosed = onLastTabClosed;
   }
 
@@ -120,8 +120,11 @@ class TabManager {
     const a = document.createElement("a");
     a.className = "nav-link";
     a.href = "#";
-    // Visualization state is always "paused"
-    a.innerHTML = `${title} <span class="badge bg-secondary">paused</span>`;
+    a.append(document.createTextNode(title + ' '));
+    const badge = document.createElement('span');
+    badge.className = 'badge bg-secondary';
+    badge.textContent = state;
+    a.append(badge);
     a.onclick = (e) => {
       e.preventDefault();
       this.activateTab(tabId);
@@ -144,11 +147,7 @@ class TabManager {
 
   updateTabState(tabId, state) {
     if (this.tabs[tabId]) {
-      const regex = /<span.*<\/span>/;
-      this.tabs[tabId].a.innerHTML = this.tabs[tabId].a.innerHTML.replace(
-        regex,
-        `<span class="badge bg-secondary">${state}</span>`
-      );
+      this.tabs[tabId].a.querySelector('span').textContent = state;
     }
   }
 
@@ -157,9 +156,15 @@ class TabManager {
       this.element.removeChild(this.tabs[tabId].li);
       delete this.tabs[tabId];
     }
-    // If no tabs remain, clear the canvas.
-    if (Object.keys(this.tabs).length === 0 && typeof clearCanvas === "function") {
-      clearCanvas();
+    if (currentGraphId === tabId) {
+      const nextId = Object.keys(this.tabs)[0];
+      if (nextId && graphsStore[nextId]) {
+        currentGraphId = nextId;
+        this.activateTab(nextId);
+        graphViewer.loadGraph(graphsStore[nextId].serializedGraph);
+      } else {
+        this.onLastTabClosed?.();
+      }
     }
   }
 
@@ -178,6 +183,7 @@ class GraphViewer {
   }
 
   loadGraph(serializedGraph) {
+    this.clearCanvas();
     this.graph = new LiteGraph.LGraph();
     try {
       this.graph.configure(serializedGraph);
@@ -208,6 +214,12 @@ class GraphViewer {
   }
 
   clearCanvas() {
+    if (this.editor) {
+      this.editor.stopRendering();
+      this.editor.unbindEvents();
+      this.editor.setGraph(null);
+    }
+    this.graph?.clear();
     if (this.canvas.getContext) {
       const ctx = this.canvas.getContext("2d");
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -266,18 +278,23 @@ class ActiveGraphsList {
   }
 
   updateGraphs(graphs) {
+    const snapshot = JSON.stringify(graphs);
+    if (snapshot === this.lastSnapshot) return;
+    this.lastSnapshot = snapshot;
     this.element.innerHTML = "";
     graphs.forEach(({ graphId, status }) => {
       const li = document.createElement("li");
       li.className = "list-group-item d-flex justify-content-between align-items-center";
       li.innerHTML = `
-        ${graphId} - <span class="badge bg-secondary">${status}</span>
+        <span class="graph-label"></span> <span class="badge bg-secondary"></span>
         <div>
           <button class="btn btn-sm btn-success">Start</button>
           <button class="btn btn-sm btn-warning">Stop</button>
           <button class="btn btn-sm btn-danger">Unload</button>
         </div>
       `;
+      li.querySelector('.graph-label').textContent = graphId;
+      li.querySelector('.badge').textContent = status;
       const [startBtn, stopBtn, unloadBtn] = li.querySelectorAll("button");
       // Send commands: "start" to run, "stop" to pause.
       startBtn.onclick = () => this.wsClient.send("control_graph", { graphId, action: "start" });
@@ -289,11 +306,11 @@ class ActiveGraphsList {
 }
 
 /* =================== Global State =================== */
-const graphsStore = {}; // { graphId: { serializedGraph, status } }
+const graphsStore = Object.create(null); // { graphId: { serializedGraph, status } }
 let currentGraphId = null;
 
 /* =================== Instantiate Components =================== */
-const wsClient = new WebSocketClient("ws://localhost:3000", handleWebSocketMessage);
+const wsClient = new WebSocketClient(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`, handleWebSocketMessage);
 const fileExplorer = new FileExplorer("filesList", (file) =>
   wsClient.send("open_graph", { file })
 );
@@ -305,6 +322,7 @@ const activeGraphsList = new ActiveGraphsList("graphsList", wsClient);
 
 /* Global function to clear the canvas when no tabs are open */
 function clearCanvas() {
+  currentGraphId = null;
   graphViewer.clearCanvas();
 }
 
@@ -315,12 +333,12 @@ function handleWebSocketMessage(message) {
       activeGraphsList.updateGraphs(message.data.graphs);
       break;
     case "graph_opened": {
-      const { graphId, serializedGraph } = message.data;
+      const { graphId, serializedGraph, status } = message.data;
       // Normalize graphId across visualization and execution.
-      graphsStore[graphId] = { serializedGraph, status: "paused" };
-      tabManager.addTab(graphId, graphId, "paused", () => {
+      graphsStore[graphId] = { serializedGraph, status };
+      tabManager.addTab(graphId, graphId, status, () => {
         currentGraphId = graphId;
-        graphViewer.loadGraph(serializedGraph);
+        graphViewer.loadGraph(graphsStore[graphId].serializedGraph);
       });
       tabManager.activateTab(graphId);
       currentGraphId = graphId;
@@ -332,15 +350,20 @@ function handleWebSocketMessage(message) {
       // Update Active Graphs list with execution state.
       if (graphsStore[graphId]) {
         graphsStore[graphId].status = status;
-        // The visualization (tab) remains "paused" but execution state is shown in the list.
-        tabManager.updateTabState(graphId, "paused");
+        tabManager.updateTabState(graphId, status);
         consoleLogger.log(`Graph ${graphId} execution status: ${status}`);
+      }
+      if (status === 'unloaded') {
+        delete graphsStore[graphId];
+        tabManager.removeTab(graphId);
+        if (currentGraphId === graphId) clearCanvas();
       }
       break;
     }
     case "graph_updated":
     case "graph_sync": {
       const { graphId, serializedGraph } = message.data;
+      if (graphsStore[graphId]) graphsStore[graphId].serializedGraph = serializedGraph;
       if (currentGraphId === graphId) {
         graphViewer.updateGraph(serializedGraph);
       }
@@ -393,3 +416,12 @@ document.getElementById("clearConsoleBtn").onclick = () => {
 setInterval(() => {
   wsClient.fetchActiveGraphs();
 }, 5000);
+
+// Edits replace the worker graph in memory; workflow files are not overwritten.
+document.getElementById('applyBtn').onclick = () => {
+  if (!currentGraphId || !graphViewer.graph) return;
+  wsClient.send('update_graph', { graphId: currentGraphId, serializedGraph: graphViewer.graph.serialize() });
+};
+document.getElementById('syncBtn').onclick = () => {
+  if (currentGraphId) wsClient.send('request_sync', { graphId: currentGraphId });
+};

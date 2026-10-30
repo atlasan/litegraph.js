@@ -3,7 +3,7 @@
  * Integrates the testing framework with the UI and manages user interactions
  */
 
-import { LiteGraph } from "/src/litegraph.js";
+import { LiteGraph } from "../../build/litegraph.js";
 const { LGraphCanvas } = LiteGraph;
 import { testFramework } from "./test-framework.js";
 import { TestCaseGenerator } from "./test-generator.js";
@@ -46,7 +46,6 @@ class EditorTesterApp {
             }
         };
         
-        this.init();
     }
 
     /**
@@ -72,10 +71,10 @@ class EditorTesterApp {
             this.initializeTestFramework();
             
             // Load available nodes
-            await this.loadNodeTypes();
+            this.uiManager.updateNodeList();
             
             // Generate default test cases
-            await this.generateDefaultTests();
+            this.log('Tests are generated when a node is selected for testing.', 'info');
             
             this.log('Editor Tester initialized successfully', 'info');
             this.log(`Discovered ${this.availableNodeTypes.length} node types`, 'info');
@@ -195,31 +194,7 @@ class EditorTesterApp {
         // Window resize
         window.addEventListener('resize', () => this.resizeCanvas());
         
-        // Control buttons
-        if (this.elements.runButton) {
-            this.elements.runButton.addEventListener('click', () => this.runTests());
-        }
-        
-        if (this.elements.runSelectedButton) {
-            this.elements.runSelectedButton.addEventListener('click', () => this.runSelectedTests());
-        }
-        
-        if (this.elements.stopButton) {
-            this.elements.stopButton.addEventListener('click', () => this.stopTests());
-        }
-        
-        if (this.elements.clearButton) {
-            this.elements.clearButton.addEventListener('click', () => this.clearResults());
-        }
-        
-        if (this.elements.exportButton) {
-            this.elements.exportButton.addEventListener('click', () => this.exportResults());
-        }
-        
-        if (this.elements.configButton) {
-            this.elements.configButton.addEventListener('click', () => this.showConfigModal());
-        }
-        
+        // UIManager owns the main controls.
         if (this.elements.saveTestButton) {
             this.elements.saveTestButton.addEventListener('click', () => this.saveTestCase());
         }
@@ -776,7 +751,8 @@ class EditorTesterApp {
         }
         
         try {
-            const node = new nodeClass();
+            const node = LiteGraph.createNode(nodeType);
+            if (!node) throw new Error(`Failed to create ${nodeType}`);
             
             // Add to graph for testing
             this.graph.add(node);
@@ -1121,7 +1097,7 @@ class EditorTesterApp {
             // Try to get inputs/outputs from constructor or onConstructor
             if (proto.onNodeCreated || proto.constructor) {
                 try {
-                    const tempNode = new nodeClass();
+                    const tempNode = LiteGraph.createNode(nodeType);
                     
                     if (tempNode.inputs) {
                         info.inputs = tempNode.inputs.map(input => ({
@@ -1300,6 +1276,7 @@ let app;
 EditorTesterApp.initialize = async function() {
     try {
         app = new EditorTesterApp();
+        window.app = app;
         await app.init();
     } catch (error) {
         console.error('Failed to initialize EditorTesterApp:', error);
