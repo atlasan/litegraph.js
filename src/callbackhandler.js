@@ -168,7 +168,7 @@ export class CallbackHandler {
             aResChain.push(stepRet); // cache result
             // check result for structured object
             if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","stepRet check",stepRet);
-            if(typeof(stepRet)=="object"){
+            if(stepRet !== null && typeof(stepRet)=="object"){
                 if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","result is object",stepRet);
                 if(typeof(stepRet.prevent_default)!=="undefined" && stepRet.prevent_default){
                     preventDefCb = true;

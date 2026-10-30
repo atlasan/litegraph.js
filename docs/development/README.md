@@ -24,7 +24,7 @@ npm run check:build
 npm run lint
 ```
 
-Lint is a separate diagnostic because the baseline had 55 errors and 1,906 warnings (the current follow-up has 50 errors and 1,879 warnings). The stabilization changes do not claim to resolve the repository-wide lint backlog. Browser GPU/audio/MIDI nodes and optional external services are not covered by the automated gate.
+Lint is a separate diagnostic because the baseline had 55 errors and 1,906 warnings (the current follow-up has 50 errors and 1,848 warnings). The stabilization changes do not claim to resolve the repository-wide lint backlog. Browser GPU/audio/MIDI nodes and optional external services are not covered by the automated gate.
 
 The builder now finds local npm executables, runs them without shell argument loss, fails on missing sources/tool failures, and emits exported variables in CJS. The Node network nodes no longer overwrite the complete bundle's module.exports. Regenerated bundles include previously stale source changes and formatting; inspect source/build-script changes separately from generated diffs. The custom regular-expression transformer still only supports this repository's known source patterns.
 
@@ -64,6 +64,16 @@ try {
 
 LibraryManager shares concurrent loads and propagates errors. Ordered local/npm dependency groups fall back to ordered remote groups; a group succeeds only when all its entries load. `defaultExport: true` selects the default export; a string selects a named export. `waitForLib()` initiates loading and rejects on load failure or its timeout. Failed library loads can be retried. Browser module detection remains heuristic; external service/native binding compatibility is not established by core checks.
 
+## Execution and cleanup
+
+`runStep(n)` advances `iteration` once per completed cycle. Per-cycle action/ancestor tracking is reset between cycles and after errors. The single-execution option also applies to iteration zero. Deferred actions run through `actionDo` and registered callbacks; actions queued while a node is draining its queue remain for the next cycle. A failing deferred action is consumed once, leaving the unprocessed queue available for recovery. Disabled nodes do not receive queued actions.
+
+ON_REQUEST ancestors are refreshed in dependency order when explicitly requested or when the ancestor-refresh options are enabled. Ancestor refresh restores event delivery even if a node throws. The optional unique action-call guard breaks synchronous event cycles using the same action identity. Nested graph ports preserve both data and event payloads, including action identity.
+
+Execution failures stop the graph and clear execution guards; propagation follows `do_not_catch_errors`/`LiteGraph.throw_errors`. `stop()` releases its timer before notifications and visits all nodes, including non-ALWAYS modes and disabled subgraphs. `clear()` detaches nodes/groups and clears queued actions and link references even when stop/removal hooks fail. Cleanup still reports failures: one error is rethrown, multiple errors are collected in `AggregateError`. Removing a node preserves graph indexes after a failing removal hook; recursive removal hooks run once. Remove a node from its current graph before adding it to another.
+
+Built-in server nodes close their servers on stop/removal and cancel pending retries. WebSocket teardown terminates connected clients, and UDP binds the configured host. Graph stop is synchronous: it initiates asynchronous socket closure but is not yet a general awaitable resource barrier. This distinction matters for immediate replacement of graphs binding the same ports; worker shutdown/update barriers remain on the readiness checklist.
+
 ## Editor and tester
 
 - Editor: http://127.0.0.1:8000/
@@ -102,4 +112,4 @@ Server-side manager methods now return Promises; callers must await them. Succes
 
 ## Evidence and follow-up
 
-The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: graph-specific ON_REQUEST/deferred-action fixtures, cleanup after throwing callbacks, canvas interaction tests, real network/resource lifecycle fixtures, declarations/version parity, and remaining tester scenario contracts. Reproduce relevant upstream/fork defects locally before considering a port.
+The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: awaitable resource shutdown/update barriers, loading/removal races, canvas interaction tests, remaining optional integration fixtures, declarations/version parity, lint errors, and tester scenario contracts. Reproduce relevant upstream/fork defects locally before considering a port.

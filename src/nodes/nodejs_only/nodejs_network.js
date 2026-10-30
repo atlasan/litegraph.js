@@ -116,6 +116,10 @@ class BaseServer {
             this.log("Server is already starting or running.");
             return;
         }
+        if (this.status === "stopping") return;
+        this._stopRequested = false;
+        clearTimeout(this._retryTimer);
+        this._retryTimer = null;
         this.status = "starting";
         this.log(`Starting server on port ${this.properties.port}...`);
 
@@ -132,22 +136,48 @@ class BaseServer {
     }
 
     stopServer(callback) {
-        if (this.server) {
-            this.status = "stopping";
-            try {
-                this.server.close(() => {
-                    this.status = "stopped";
-                    this.log("Server stopped.");
-                    // Clear the server instance.
-                    this.server = null;
-                    if (callback) callback();
-                });
-            } catch (err) {
-                this.error("Error closing server:", err);
-                this.status = "failed";
-                if (callback) callback(err);
-            }
+        this._stopRequested = true;
+        clearTimeout(this._retryTimer);
+        this._retryTimer = null;
+        this._closeServer(callback);
+    }
+
+    _closeServer(callback) {
+        if (this._closeCallbacks) {
+            if (callback) this._closeCallbacks.push(callback);
+            return;
         }
+        const server = this.server;
+        if (!server) {
+            this.status = "stopped";
+            callback?.();
+            return;
+        }
+        this.status = "stopping";
+        this._closeCallbacks = callback ? [callback] : [];
+        let closed = false;
+        const done = (error) => {
+            if (closed) return;
+            closed = true;
+            if (this.server === server) this.server = null;
+            this.status = "stopped";
+            const callbacks = this._closeCallbacks;
+            this._closeCallbacks = null;
+            if (error) this.error("Error closing server:", error);
+            for (const cb of callbacks) cb(error);
+        };
+        try {
+            // ws.close waits for clients: terminate this node's clients during teardown.
+            this._clients?.forEach((client) => client.terminate());
+            this._clients?.clear();
+            const OSC = LiteGraph.getGlobalVariable("OSC");
+            if (typeof OSC === "function" && server instanceof OSC) {
+                server.on("close", () => done());
+                server.close();
+            } else {
+                server.close(done);
+            }
+        } catch (error) { done(error); }
     }
 
     restartServer() {
@@ -158,16 +188,24 @@ class BaseServer {
         }
     }
 
-    _attemptRetry() {
-        if (this.properties.retryLimit === 0 || this.retryCount < this.properties.retryLimit) {
-            this.log(`Retrying server start in ${this.properties.retryTimeout}ms...`);
-            setTimeout(() => {
+    _attemptRetry(delay = this.properties.retryTimeout) {
+        if (this._stopRequested || this._retryTimer || this._retryPending) return;
+        if (this.properties.retryLimit !== 0 && this.retryCount >= this.properties.retryLimit) {
+            this.error("Max retry limit reached. Server failed to start.");
+            return;
+        }
+        this._retryPending = true;
+        this._closeServer(() => {
+            this._retryPending = false;
+            if (this._stopRequested) return;
+            this.status = "failed";
+            this._retryTimer = setTimeout(() => {
+                this._retryTimer = null;
+                if (this._stopRequested) return;
                 this.retryCount++;
                 this.startServer();
-            }, this.properties.retryTimeout);
-        } else {
-            this.error("Max retry limit reached. Server failed to start.");
-        }
+            }, delay);
+        });
     }
 
     // Abstract – must be implemented by child classes.
@@ -187,11 +225,8 @@ class BaseServer {
         this.log(this.name, "Server stopped.");
     }
 
-    onRemoved() {
-        if (this.server) {
-            this.stopServer();
-        }
-    }
+    onStop() { this.stopServer(); }
+    onRemoved() { this.stopServer(); }
 }
 
 // ----------------------------
@@ -436,20 +471,9 @@ class SocketIOServerNode extends BaseServer {
 
     // Create the Socket.io server instance.
     _createServer() {
-        let pkg;
-        // Try to obtain the Socket.io constructor.
-        if (typeof io !== "undefined") {
-            pkg = io;
-        } else {
-            pkg = LiteGraph.getGlobalVariable("ioserver");
-        }
-        if (!pkg) {
-            throw new Error("Socket.io library not available");
-        }
-        // If the package is an object with a Server property, use that.
-        if (typeof pkg === "object" && typeof pkg.Server === "function") {
-            pkg = pkg.Server;
-        }
+        // The client and server constructors are distinct even when both are loaded.
+        const pkg = LiteGraph.LibraryManager.getLib("socket.io");
+        if (typeof pkg !== "function") throw new Error("Socket.io server library not available");
         this.log("Creating Socket.io server instance on port", this.properties.port);
         // Create and return the server.
         return new pkg(this.properties.port, {
@@ -821,20 +845,19 @@ class UDPServerNode extends BaseServer {
         });
         this.server.on("error", (err) => {
             this.error("UDP error:", err);
-            this.server.close();
-            if (this.properties.auto_reconnect) {
-                this.log(`Reconnecting UDP socket in ${this.properties.reconnectTimeout}ms`);
-                setTimeout(() => {
-                    this.startServer();
-                }, this.properties.reconnectTimeout);
-            }
+            this.status = "failed";
+            if (this.properties.auto_reconnect) this._attemptRetry(this.properties.reconnectTimeout);
+            else this.stopServer();
         });
         this.server.on("listening", () => {
+            if (this._stopRequested || !this.server) return;
+            this.status = "running";
+            this.retryCount = 0;
             const address = this.server.address();
             this.log(`UDP server listening on ${address.address}:${address.port}`);
         });
         // Bind the socket to the specified port.
-        this.server.bind(this.properties.port);
+        this.server.bind(this.properties.port, this.properties.host);
     }
 
     // onExecute simply updates the output with the latest received data.

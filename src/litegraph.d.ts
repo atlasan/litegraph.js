@@ -510,8 +510,8 @@ export declare class LGraph {
      */
     getGroupOnPos(x: number, y: number): LGraphGroup | null;
 
-    onAction(action: any, param: any): void;
-    trigger(action: any, param: any): void;
+    onAction(action: any, param: any, options?: object): void;
+    trigger(action: any, param: any, options?: object): void;
     /** Tell this graph it has a global graph input of this type */
     addInput(name: string, type: string, value?: any): void;
     /** Assign a data to the global graph input */

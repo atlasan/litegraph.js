@@ -911,13 +911,15 @@ export class LGraphNode {
      * @method executePendingActions
      */
     executePendingActions() {
+        if (this.mode === LiteGraph.NEVER) { this._waiting_actions = []; return; }
         if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
-        if(!this._waiting_actions || !this._waiting_actions.length)
-            return;
-        this._waiting_actions.forEach((p) => {
-            this.onAction(p[0], p[1], p[2], p[3], p[4]);
-        });
-        this._waiting_actions.length = 0;
+        // New actions remain queued for the next step. Consume a failing action once,
+        // retaining the remaining queue so recovery cannot replay its side effects.
+        const count = this._waiting_actions?.length || 0;
+        for (let i = 0; i < count && this._waiting_actions.length; i++) {
+            const action = this._waiting_actions.shift();
+            this.actionDo(...action);
+        }
     }
 
     /**
@@ -927,67 +929,34 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
-        if (this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        const graph = this.graph;
+        if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
+        if (graph.nodes_executing[this.id]) return;
+        if (LiteGraph.ensureNodeSingleExecution && this.exec_version != null && this.exec_version >= graph.iteration) return;
+        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
 
-        if (this.mode === LiteGraph.NEVER){
-            LiteGraph.log_verbose("lgraphNODE", "doExecute", "prevent execution in mode NEVER", this.id);
-            return;
-        }else{
-            LiteGraph.log_verbose("lgraphNODE", "doExecute", this.id, this.title);
+        const previousExecution = this.exec_version;
+        const previousAction = graph.nodes_executedAction[this.id];
+        graph.nodes_executedAction[this.id] = options.action_call;
+        graph.nodes_executing[this.id] = true;
+        try {
+            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+            this.processCallbackHandlers("onExecute", { def_cb: this.onExecute }, param, options);
+            this.exec_version = graph.iteration;
+            this.action_call = options.action_call;
+            graph.nodes_executedAction[this.id] = options.action_call;
+            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            this.execute_triggered = 2;
+            this.processCallbackHandlers("onAfterExecuteNode", { def_cb: this.onAfterExecuteNode }, param, options);
+        } catch (error) {
+            this.exec_version = previousExecution;
+            graph.nodes_executedAction[this.id] = previousAction;
+            throw error;
+        } finally {
+            // A callback may remove this node or clear its graph.
+            graph.nodes_executing[this.id] = false;
         }
-
-        // enable this to give the event an ID
-        options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`; // TODO replace all ath.floor(Math.random()*9999) by LiteGraph.uuidv4
-
-        if (this.graph?.nodes_executing && this.graph?.nodes_executing[this.id]) {
-            LiteGraph.log_debug("lgraphNODE", "doExecute", "already executing! Prevent! "+this.id+":"+this.order);
-            return;
-        }
-        if (LiteGraph.ensureNodeSingleExecution && this.exec_version && this.exec_version >= this.graph.iteration && this.exec_version !== undefined) {
-            LiteGraph.log_debug("lgraphNODE", "doExecute", "!! NODE already EXECUTED THIS STEP !! "+this.exec_version);
-            return;
-        }
-        // LiteGraph.log_debug("Actioned ? "+this.id+":"+this.order+" :: "+this.action_call);
-        if (LiteGraph.ensureUniqueExecutionAndActionCall) {
-            // if(this.action_call && options && options.action_call && this.action_call == options.action_call){
-            if(this.graph.nodes_executedAction[this.id] && options && options.action_call && this.graph.nodes_executedAction[this.id] == options.action_call) {
-                LiteGraph.log_debug("lgraphNODE", "doExecute", "!! NODE already ACTION THIS STEP !! "+options.action_call, this);
-                return;
-            }
-        }
-
-        this.graph.nodes_executing[this.id] = true; // .push(this.id);
-
-        // update binded properties
-        if(LiteGraph.properties_allow_input_binding){
-            this.doUpdateBindedInputProperties();
-        }
-
-        // --- NODE EXECUTION ---
-        // this.onExecute(param, options);
-        this.processCallbackHandlers("onExecute",{
-            def_cb: this.onExecute
-        }, param, options);
-
-        this.graph.nodes_executing[this.id] = false; // .pop();
-
-        // save execution/action ref
-        this.exec_version = this.graph.iteration;
-        if(options && options.action_call) {
-            this.action_call = options.action_call; // if (param)
-            this.graph.nodes_executedAction[this.id] = options.action_call;
-        }
-
-        // update output slot binded to properties
-        if(LiteGraph.properties_allow_output_binding){
-            this.doUpdateBindedOutputProperties();
-        }
-
-        this.execute_triggered = 2; // helper to draw currently executing, the nFrames it will be used (-- each step), means "how old" is the event
-        
-        this.processCallbackHandlers("onAfterExecuteNode",{
-            def_cb: this.onAfterExecuteNode
-        }, param, options);
     }
     /**
      * retrocompatibility :: old doExecute
@@ -1007,58 +976,29 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
-        if (this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
-        // if (this.onAction) {
-
-            // enable this to give the event an ID
-            options.action_call ??= `${this.id}_${action?action:"action"}_${LiteGraph.uuidv4()}`;
-
-            if (LiteGraph.ensureNodeSingleAction) {
-                if (this.graph.nodes_actioning && this.graph.nodes_actioning[this.id] == options.action_call) { // == action){
-                    LiteGraph.log_debug("lgraphnode", "actionDo", "already actioning! Prevent! "+this.id+":"+this.order+" :: "+options.action_call);
-                    return;
-                }
-            }
-            LiteGraph.log_debug("CheckActioned ? "+this.id+":"+this.order+" :: "+this.action_call);
-            if (LiteGraph.ensureUniqueExecutionAndActionCall) {
-                // if(this.action_call && options && options.action_call && this.action_call == options.action_call){
-                if(this.graph.nodes_executedAction[this.id] && options && options.action_call && this.graph.nodes_executedAction[this.id] == options.action_call) {
-                    LiteGraph.log_debug("lgraphnode", "actionDo", "!! NODE already ACTION THIS STEP !! "+options.action_call);
-                    return;
-                }
-            }
-
-            // update binded properties
-            if(LiteGraph.properties_allow_input_binding){
-                this.doUpdateBindedInputProperties();
-            }
-
-            this.graph.nodes_actioning[this.id] = (action?action:"actioning"); // .push(this.id);
-
-            // this.onAction(action, param, options, action_slot);
-            this.processCallbackHandlers("onAction",{
-                def_cb: this.onAction
-            }, action, param, options, action_slot);
-
-            this.graph.nodes_actioning[this.id] = false; // .pop();
-
-            // update output slot binded to properties
-            if(LiteGraph.properties_allow_output_binding){
-                this.doUpdateBindedOutputProperties();
-            }
-
-            // save execution/action ref
-            if(options && options.action_call) {
-                this.action_call = options.action_call; // if (param)
-                this.graph.nodes_executedAction[this.id] = options.action_call;
-            }
-        // }
-        this.action_triggered = 2; // the nFrames it will be used (-- each step), means "how old" is the event
-        // callback on after actioned
-        // TODO check if should trigger slots like when executing or not
-        this.processCallbackHandlers("onAfterActionedNode",{
-            def_cb: this.onAfterActionedNode
-        }, param, options);
+        const graph = this.graph;
+        if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
+        options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
+        if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
+        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        const previousCall = graph.nodes_executedAction[this.id];
+        graph.nodes_executedAction[this.id] = options.action_call;
+        const previousAction = graph.nodes_actioning[this.id];
+        graph.nodes_actioning[this.id] = options.action_call;
+        try {
+            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+            this.processCallbackHandlers("onAction", { def_cb: this.onAction }, action, param, options, action_slot);
+            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            this.action_call = options.action_call;
+            graph.nodes_executedAction[this.id] = options.action_call;
+            this.action_triggered = 2;
+            this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
+        } catch (error) {
+            graph.nodes_executedAction[this.id] = previousCall;
+            throw error;
+        } finally {
+            graph.nodes_actioning[this.id] = previousAction || false;
+        }
     }
 
     /**
@@ -1164,6 +1104,7 @@ export class LGraphNode {
                 LiteGraph.log_warn("lgraphNODE", "triggerSlot", "link has not node", link_info, output, slot, param);
                 continue;
             }
+            if (node.mode === LiteGraph.NEVER) continue;
             var target_slot = node.inputs[link_info.target_slot];
             if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
                 // generate unique trigger ID if not present
@@ -1190,7 +1131,7 @@ export class LGraphNode {
                 // if using use_deferred_actions (alternative to ancestors) instead of executing them now, it will be executed in the next graph loop, to ensure data flow
                 if(LiteGraph.use_deferred_actions && node.onExecute) {
                     node._waiting_actions ??= [];
-                    node._waiting_actions.push([target_connection.name, param, options, link_info.target_slot]);
+                    node._waiting_actions.push([target_connection.name, param, { ...options }, link_info.target_slot]);
                     LiteGraph.log_verbose("lgraphnode", "triggerSlot","push to deferred", target_connection.name, param, options, link_info.target_slot);//+this.id+":"+this.order+" :: "+target_connection.name);
                 } else {
                     // trigger now the action
@@ -2928,7 +2869,7 @@ export class LGraphNode {
         };
         var opts = Object.assign(optsDef,optsIn);
 
-        if (!this.inputs) {
+        if (!this.inputs || !this.graph) {
             return;
         }
         if (LiteGraph.preventAncestorRecalculation) {
@@ -2940,7 +2881,7 @@ export class LGraphNode {
 
         if (!opts.action || opts.action == "")
             opts.action = this.id+"_ancestors";
-        if (!opts.param || opts.param == "")
+        if (opts.param == null)
             opts.param = this.id+"_ancestors";
         if (!opts.options)
             opts.options = {};
@@ -2948,7 +2889,9 @@ export class LGraphNode {
 
         LiteGraph.log_verbose("lgraphnode", "refreshAncestors", "ancestors processing", this.id+":"+this.order+" "+opts.options.action_call, this);
 
-        this.graph.ancestorsCall = true; // prevent triggering slots
+        const graph = this.graph;
+        const previousAncestorsCall = graph.ancestorsCall;
+        graph.ancestorsCall = true; // prevent triggering slots
 
         var optsAncestors = {
             modesSkip: [LiteGraph.NEVER, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER],
@@ -2956,15 +2899,16 @@ export class LGraphNode {
             typesSkip: [LiteGraph.ACTION],
             typesOnly: [],
         };
-        var aAncestors = this.graph.getAncestors(this,optsAncestors);
-        for(var iN in aAncestors) {
-            LiteGraph.log_verbose("lgraphnode", "refreshAncestors", "doExecute ancestor", iN, aAncestors[iN], opts.param, opts.options);
-            aAncestors[iN].doExecute(opts.param, opts.options);
-            this.graph.node_ancestorsCalculated[aAncestors[iN].id] = true;
+        try {
+            const ancestors = graph.getAncestors(this, optsAncestors);
+            for (const ancestor of ancestors) {
+                ancestor.doExecute(opts.param, opts.options);
+                graph.node_ancestorsCalculated[ancestor.id] = true;
+            }
+            graph.node_ancestorsCalculated[this.id] = true;
+        } finally {
+            graph.ancestorsCall = previousAncestorsCall;
         }
-
-        this.graph.ancestorsCall = false; // restore triggering slots
-        this.graph.node_ancestorsCalculated[this.id] = true;
 
         return true;
     }

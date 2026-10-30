@@ -66,7 +66,10 @@ export class LGraph {
      * @method clear
      */
     clear() {
-        this.stop();
+        if (this._clearing) return;
+        this._clearing = true;
+        const errors = [];
+        try { this.stop(); } catch (error) { errors.push(error); }
         this.status = LGraph.STATUS_STOPPED;
 
         this.last_node_id = 0;
@@ -75,12 +78,19 @@ export class LGraph {
         this._version = -1; // used to detect changes
 
         // safe clear
-        this._nodes?.forEach((node) => {
-            node.processCallbackHandlers("onRemoved",{
-                def_cb: node.onRemoved
-            }, this);
-            node.graph = null;
+        this._nodes?.slice().forEach((node) => {
+            try {
+                node.processCallbackHandlers("onRemoved", { def_cb: node.onRemoved }, this);
+            } catch (error) {
+                errors.push(error);
+            } finally {
+                node.graph = null;
+                node._waiting_actions = [];
+                node.inputs?.forEach((input) => { input.link = null; });
+                node.outputs?.forEach((output) => { output.links = null; });
+            }
         });
+        this._groups?.forEach((group) => { group.graph = null; });
 
         // nodes
         this._nodes = [];
@@ -131,12 +141,14 @@ export class LGraph {
         this.inputs = {};
         this.outputs = {};
 
-        // notify canvas to redraw
-        this.change();
-
-        this.sendActionToCanvas("clear");
-        
-        LiteGraph.log_debug("lgraph","graph CLEARED");
+        this.ancestorsCall = false;
+        this.initialization_error = null;
+        this._clearing = false;
+        // Notification failures must not prevent the remaining cleanup notifications.
+        try { this.change(); } catch (error) { errors.push(error); }
+        try { this.sendActionToCanvas("clear"); } catch (error) { errors.push(error); }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Graph cleanup failed");
     }
 
     /**
@@ -322,24 +334,13 @@ export class LGraph {
             }
             this.execution_timer_id = null;
         }
-        this.processCallbackHandlers("onStopEvent",{
-            def_cb: this.onStopEvent
-        });
-        this.sendEventToAllNodes("onStop");
-        
-        // TODO CHECK THIS : TRYING to refresh canvas, for multiview one still need a manual refresh (mouseover) 
-        // var thisGraph = this;
-        // let fRefreshOnStop = function(){
-        //     thisGraph.change();
-        //     // thisGraph.setDirtyCanvas(true,true);
-        //     thisGraph.sendActionToCanvas("draw");
-        //     LiteGraph.log_warn("finally drawing on stop");
-        // };
-        // if(window.requestAnimationFrame){
-        //     window.requestAnimationFrame(fRefreshOnStop);
-        // }
-        // setTimeout(fRefreshOnStop,972);
-        
+        const errors = [];
+        try { this.processCallbackHandlers("onStopEvent", { def_cb: this.onStopEvent }); }
+        catch (error) { errors.push(error); }
+        try { this.sendEventToAllNodes("onStop", undefined, null); }
+        catch (error) { errors.push(error); }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Graph stop failed");
     }
 
     /**
@@ -350,86 +351,45 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
-        var start = LiteGraph.getTime();
+        const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
-
-        var nodes = this._nodes_executable ?? this._nodes;
-        if (!nodes) {
-            return;
-        }
-
-        limit = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
-
-        if (do_not_catch_errors) {
-            for (let i = 0; i < num; i++) {
-                nodes.forEach((node, index) => {
-                    if (index >= limit) return;
-                    if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
-                        node.executePendingActions();
-                    }
-
-                    if (node.mode === LiteGraph.ALWAYS) {
-                        node.doExecute?.();
-                    }
-                });
-
+        const resetExecutionState = () => {
+            this.nodes_executing = [];
+            this.nodes_actioning = [];
+            this.node_ancestorsCalculated = [];
+            this.nodes_executedAction = [];
+        };
+        try {
+            for (let step = 0; step < num; step++) {
+                // Changes made during one cycle take effect in the following cycle.
+                const nodes = this._nodes_executable ?? this._nodes;
+                const count = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
+                for (let index = 0; index < count; index++) {
+                    const node = nodes[index];
+                    if (node.graph !== this) continue;
+                    if (LiteGraph.use_deferred_actions) node.executePendingActions();
+                    if (node.mode === LiteGraph.ALWAYS) node.doExecute?.();
+                }
                 this.fixedtime += this.fixedtime_lapse;
-                this.processCallbackHandlers("onExecuteStep",{
-                    def_cb: this.onExecuteStep
-                });
+                this.processCallbackHandlers("onExecuteStep", { def_cb: this.onExecuteStep });
+                this.iteration++;
+                if (step + 1 < num) resetExecutionState();
             }
-            this.processCallbackHandlers("onAfterExecute",{
-                def_cb: this.onAfterExecute
-            });
-        } else { // catch errors
-            try {
-                for (let i = 0; i < num; i++) {
-                    nodes.forEach((node, index) => {
-                        if (index >= limit) return;
-                        if (LiteGraph.use_deferred_actions && node._waiting_actions?.length) {
-                            node.executePendingActions();
-                        }
-
-                        if (node.mode === LiteGraph.ALWAYS) {
-                            node.doExecute?.();
-                        }
-                    });
-
-                    this.fixedtime += this.fixedtime_lapse;
-                    this.processCallbackHandlers("onExecuteStep",{
-                        def_cb: this.onExecuteStep
-                    });
-                }
-
-                this.processCallbackHandlers("onAfterExecute",{
-                    def_cb: this.onAfterExecute
-                });
-                this.errors_in_execution = false;
-            } catch (err) {
-
-                this.errors_in_execution = true;
-                if (LiteGraph.throw_errors) {
-                    throw err;
-                }
-                LiteGraph.log_warn("lgraph","Error during execution",err);
-                this.stop();
-            }
+            this.processCallbackHandlers("onAfterExecute", { def_cb: this.onAfterExecute });
+            this.errors_in_execution = false;
+        } catch (error) {
+            this.errors_in_execution = true;
+            try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
+            if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
+            LiteGraph.log_warn("lgraph", "Error during execution", error);
+        } finally {
+            const now = LiteGraph.getTime();
+            this.execution_time = 0.001 * Math.max(1, now - start);
+            this.globaltime += this.execution_time;
+            this.elapsed_time = (now - this.last_update_time) * 0.001;
+            this.last_update_time = now;
+            resetExecutionState();
         }
-
-        var now = LiteGraph.getTime();
-        var elapsed = now - start;
-        if (elapsed == 0) {
-            elapsed = 1;
-        }
-        this.execution_time = 0.001 * elapsed;
-        this.globaltime += 0.001 * elapsed;
-        this.iteration += 1;
-        this.elapsed_time = (now - this.last_update_time) * 0.001;
-        this.last_update_time = now;
-        this.nodes_executing = [];
-        this.nodes_actioning = [];
-        this.node_ancestorsCalculated = [];
-        this.nodes_executedAction = [];
     }
 
     /**
@@ -665,7 +625,7 @@ export class LGraph {
                     }
                 }
                 if (opts.typesOnly && opts.typesOnly.length) {
-                    if (opts.typesOnly.indexOf(input.mode) == -1) {
+                    if (opts.typesOnly.indexOf(inputType) == -1) {
                         // DBG EXCESS (keep) LiteGraph.log_verbose("type only "+input.id+":"+input.order+" :: "+inputType);
                         continue;
                     }
@@ -762,35 +722,25 @@ export class LGraph {
      * @param {Array} params parameters in array format
      */
     sendEventToAllNodes(eventname, params, mode = LiteGraph.ALWAYS) {
-        var nodes = this._nodes_in_order ? this._nodes_in_order : this._nodes;
-        if (!nodes) {
-            return;
-        }
-
-        for (let j = 0, l = nodes.length; j < l; ++j) {
-            const node = nodes[j];
-
-            if (
-                node.constructor === LiteGraph.Subgraph &&
-                eventname !== "onExecute"
-            ) {
-                if (node.mode == mode) {
+        const nodes = (this._nodes_in_order || this._nodes || []).slice();
+        const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
+        const errors = [];
+        for (const node of nodes) {
+            if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
+            try {
+                if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
                     node.sendEventToAllNodes(eventname, params, mode);
+                } else {
+                    node.processCallbackHandlers(eventname, { def_cb: node[eventname] }, ...args);
                 }
-                continue;
-            }
-
-            if (typeof(node[eventname])!=="function" || node.mode !== mode) {
-                continue;
-            }
-            if (params === undefined) {
-                node[eventname]();
-            } else if (Array.isArray(params)) {
-                node[eventname].apply(node, params);
-            } else {
-                node[eventname](params);
+            } catch (error) {
+                // Startup and ordinary events abort on failure; shutdown visits everyone.
+                if (eventname !== "onStop") throw error;
+                errors.push(error);
             }
         }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Node stop callbacks failed");
     }
 
     /**
@@ -826,6 +776,10 @@ export class LGraph {
         if (!node) {
             return;
         }
+
+        if (this._clearing) throw new Error("Cannot add nodes while clearing a graph");
+        if (node.graph === this) return node;
+        if (node.graph) throw new Error("Remove a node from its current graph before adding it to another");
 
         // groups
         if (node.constructor === LiteGraph.LGraphGroup) {
@@ -869,6 +823,7 @@ export class LGraph {
         }
 
         node.graph = this;
+        node.exec_version = undefined;
         this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
 
         this._nodes.push(node);
@@ -905,6 +860,7 @@ export class LGraph {
      * @param {LiteGraph.LGraphNode} node the instance of the node
      */
     remove(node) {
+        if (!node || this._clearing || this._removingNodes?.has(node) || node.graph !== this) return;
         if (node.constructor === LiteGraph.LGraphGroup) {
             var index = this._groups.indexOf(node);
             if (index != -1) {
@@ -917,7 +873,7 @@ export class LGraph {
             return;
         }
 
-        if (this._nodes_by_id[node.id] == null) {
+        if (this._nodes_by_id[node.id] !== node) {
             return;
         } // not found
 
@@ -925,71 +881,76 @@ export class LGraph {
             return;
         } // cannot be removed
 
-        // this.beforeChange(); // sure? - almost sure is wrong
+        this._removingNodes ??= new WeakSet();
+        this._removingNodes.add(node);
+        try {
+            // this.beforeChange(); // sure? - almost sure is wrong
 
-        // disconnect inputs
-        if (node.inputs) {
-            for (let i = 0; i < node.inputs.length; i++) {
-                let slot = node.inputs[i];
-                if (slot.link != null) {
-                    node.disconnectInput(i, {doProcessChange: false});
+            // disconnect inputs
+            if (node.inputs) {
+                for (let i = 0; i < node.inputs.length; i++) {
+                    let slot = node.inputs[i];
+                    if (slot.link != null) {
+                        node.disconnectInput(i, {doProcessChange: false});
+                    }
                 }
             }
-        }
 
-        // disconnect outputs
-        if (node.outputs) {
-            for (let i = 0; i < node.outputs.length; i++) {
-                let slot = node.outputs[i];
-                if (slot.links != null && slot.links.length) {
-                    node.disconnectOutput(i, false, {doProcessChange: false});
+            // disconnect outputs
+            if (node.outputs) {
+                for (let i = 0; i < node.outputs.length; i++) {
+                    let slot = node.outputs[i];
+                    if (slot.links != null && slot.links.length) {
+                        node.disconnectOutput(i, false, {doProcessChange: false});
+                    }
                 }
             }
-        }
 
-        // node.id = -1; //why?
+            // node.id = -1; //why?
 
-        // callback
-        node.processCallbackHandlers("onRemoved",{
-            def_cb: node.onRemoved
-        }, this);
+            let removalError;
+            try { node.processCallbackHandlers("onRemoved", { def_cb: node.onRemoved }, this); }
+            catch (error) { removalError = error; }
+            node.graph = null;
+            node._waiting_actions = [];
 
-        node.graph = null;
-
-        // remove from canvas render
-        if (this.list_of_graphcanvas) {
-            for (let i = 0; i < this.list_of_graphcanvas.length; ++i) {
-                let canvas = this.list_of_graphcanvas[i];
-                if (canvas.selected_nodes[node.id]) {
-                    delete canvas.selected_nodes[node.id];
-                }
-                if (canvas.node_dragged == node) {
-                    canvas.node_dragged = null;
+            // remove from canvas render
+            if (this.list_of_graphcanvas) {
+                for (let i = 0; i < this.list_of_graphcanvas.length; ++i) {
+                    let canvas = this.list_of_graphcanvas[i];
+                    if (canvas.selected_nodes[node.id]) {
+                        delete canvas.selected_nodes[node.id];
+                    }
+                    if (canvas.node_dragged == node) {
+                        canvas.node_dragged = null;
+                    }
                 }
             }
+
+            // remove from containers
+            var pos = this._nodes.indexOf(node);
+            if (pos != -1) {
+                this._nodes.splice(pos, 1);
+            }
+            delete this._nodes_by_id[node.id];
+
+            this.updateExecutionOrder();
+            try { this.processCallbackHandlers("onNodeRemoved", { def_cb: this.onNodeRemoved }, node); }
+            catch (error) { removalError ??= error; }
+
+            this.onGraphChanged({action: "nodeRemove"});
+
+            // close panels
+            this.sendActionToCanvas("checkPanels");
+
+            this.setDirtyCanvas(true, true);
+            // this.afterChange(); // sure? - almost sure is wrong
+            this.change();
+
+            if (removalError) throw removalError;
+        } finally {
+            this._removingNodes.delete(node);
         }
-
-        // remove from containers
-        var pos = this._nodes.indexOf(node);
-        if (pos != -1) {
-            this._nodes.splice(pos, 1);
-        }
-        delete this._nodes_by_id[node.id];
-
-        this.processCallbackHandlers("onNodeRemoved",{
-            def_cb: this.onNodeRemoved
-        }, node);
-
-        this.onGraphChanged({action: "nodeRemove"});
-
-        // close panels
-        this.sendActionToCanvas("checkPanels");
-
-        this.setDirtyCanvas(true, true);
-        // this.afterChange(); // sure? - almost sure is wrong
-        this.change();
-
-        this.updateExecutionOrder();
     }
 
     /**
@@ -1131,12 +1092,12 @@ export class LGraph {
     }
 
     // TODO check this, investigate, _last_trigger_time ? who calls trigger ? who calls triggerInput ? who calls onTrigger ?
-    trigger(action, param) {
+    trigger(action, param, options) {
         LiteGraph.log_debug("lgraph","trigger",action, param);
         // this.onTrigger?.(action, param);
         this.processCallbackHandlers("onTrigger",{
             def_cb: this.onTrigger
-        }, action, param);
+        }, action, param, options);
     }
 
     /**
