@@ -3,8 +3,20 @@ export * from './litegraph.cjs';
 import { LGraphNode, LGraph } from './litegraph.cjs';
 export declare class DOMSelector extends LGraphNode {}
 export declare class DOMSelectorAll extends LGraphNode {}
-export declare class HtmlNode extends LGraphNode {}
-export declare class JsonViewerNode extends LGraphNode {}
+export declare class HtmlNode extends LGraphNode {
+    static size: [number, number];
+    setHtml(html: string): void;
+    htmlCreateElement(): void;
+    htmlRefreshElement(): void;
+    htmlRemoveElement(): void;
+}
+export declare class JsonViewerNode extends LGraphNode {
+    static size: [number, number];
+    setHtml(html: string): void;
+    htmlCreateElement(): void;
+    htmlRefreshElement(): void;
+    htmlRemoveElement(): void;
+}
 export declare class HtmlEventListener extends LGraphNode {}
 export declare class HtmlEventListenerRemove extends LGraphNode {}
 export declare class HtmlValue extends LGraphNode {}

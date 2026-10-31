@@ -42112,108 +42112,82 @@ LiteGraph.registerNodeType("libraries/selector", CDNLibrarySelector);
  * @param {object} nodeX
  */
 function nodeEmpower_htmlElement(nodeX) {
-    nodeX.htmlCreateElement = (function() {
-        if (this._added) return;
-        const myGCanvas = this.graph?.getCanvas();
-        if (myGCanvas) {
-            const htEl = document.createElement("div");
-            this._el = htEl;
-            this._el.classList.add('lg-html-element');
-            this._el.style.position = "absolute";
-            // this._el.style.pointerEvents = "";
-            myGCanvas.canvas?.parentNode?.appendChild(this._el);
-            this._el_cont = document.createElement("div");
-
-            // centered content
-            // this._el_cont.style.display = "flex";
-            // // this._el_cont.style.alignItems = "center";
-            // this._el_cont.style.justifyContent = "center";
-
-            this._el_cont.style.overflow = "auto";
-            this._el_cont.style.position = "relative";
-            this._el_cont.style.width = "100%";
-            this._el_cont.style.height = "100%";
-            this._el_cont.style.margin = "0px";
-            this._el_cont.style.padding = "0px";
-            this._el.appendChild(this._el_cont);
-            this._added = true;
-            this.htmlRefreshElement();
-            const htGraph = myGCanvas.graph;
-            myGCanvas.registerCallbackHandler("onOpenSubgraph", function(info, graph, prev_graph) {
-                // should hide or remove?
-                if (htGraph == graph) {
-                    console.debug("htmlEmpoweredNode", "restore on onOpenSubgraph", this, graph);
-                    htEl.style.display = htEl.style.display_prev ? htEl.style.display_prev : "block";
-                } else {
-                    console.debug("htmlEmpoweredNode", "hide on onOpenSubgraph", this, graph);
-                    htEl.style.display_prev = htEl.style.display;
-                    htEl.style.display = "none";
-                }
-            });
-            myGCanvas.registerCallbackHandler("onCloseSubgraph", function(info, graph, prev_graph, subgraph_node) {
-                // should restore hide or recreate? 
-                if (htGraph == graph) {
-                    console.debug("htmlEmpoweredNode", "restore on onCloseSubgraph", this, graph);
-                    htEl.style.display = htEl.style.display_prev ? htEl.style.display_prev : "block";
-                } else {
-                    console.debug("htmlEmpoweredNode", "hide on onCloseSubgraph", this, graph);
-                    htEl.style.display_prev = htEl.style.display;
-                    htEl.style.display = "none";
-                }
-            });
-        } else {
-            console.warn(this, "NO CANVAS");
+    nodeX.htmlRemoveElement = function() {
+        for (const [event, id] of this._htmlCanvasHandlers || []) {
+            this._htmlCanvas.unregisterCallbackHandler(event, id);
         }
-    }).bind(nodeX);
-    nodeX.htmlRefreshElement = (function() {
-        if (!this._added) {
-            this.htmlCreateElement();
-        }
-        if (!this.pos) return;
-        if (!this.size) return;
-        const myGCanvas = this.graph?.getCanvas();
-        if (!myGCanvas) {
-            console.warn("htmlRefreshElement", "has no graphcanvas", this);
-            return;
-        }
-        const absPos = myGCanvas.convertOffsetToCanvas(this.pos);
-        this._el.style.left = absPos[0] + "px";
-        this._el.style.top = (absPos[1] + this.getSlotsHeight()) + "px";
-        this._el.style.width = Math.round(this.size[0] * myGCanvas.ds.scale) + "px";
-        this._el.style.height = (Math.round(this.size[1] * myGCanvas.ds.scale) - this.getSlotsHeight()) + "px";
-    }).bind(nodeX);
+        this._htmlCanvasHandlers = [];
+        this._htmlCanvas = null;
+        this._el?.remove();
+        this._el = null;
+        this._el_cont = null;
+        this._added = false;
+    };
+    nodeX.htmlCreateElement = function() {
+        const canvas = this.graph?.getCanvas();
+        if (!canvas?.canvas?.parentNode || (this._added && this._htmlCanvas === canvas)) return;
+        this.htmlRemoveElement();
+        const document = canvas.canvas.ownerDocument;
+        const element = this._el = document.createElement("div");
+        element.classList.add("lg-html-element");
+        element.style.position = "absolute";
+        canvas.canvas.parentNode.appendChild(element);
+        const content = this._el_cont = document.createElement("div");
+        Object.assign(content.style, {
+            overflow: "auto",
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            margin: "0px",
+            padding: "0px",
+        });
+        content.innerHTML = this._html || "";
+        element.appendChild(content);
+        this._added = true;
+        this._htmlCanvas = canvas;
+        const ownerGraph = this.graph;
+        let displayBeforeHide;
+        const updateVisibility = (_info, graph) => {
+            if (graph === ownerGraph) {
+                element.style.display = displayBeforeHide ?? "";
+            } else {
+                // Nested navigation must not replace the saved display with "none".
+                if (element.style.display !== "none") displayBeforeHide = element.style.display;
+                element.style.display = "none";
+            }
+        };
+        this._htmlCanvasHandlers = ["onOpenSubgraph", "onCloseSubgraph"].map((event) => [
+            event, canvas.registerCallbackHandler(event, updateVisibility),
+        ]);
+    };
+    nodeX.htmlRefreshElement = function() {
+        const canvas = this.graph?.getCanvas();
+        if (!canvas || !this.pos || !this.size) return;
+        this.htmlCreateElement();
+        if (!this._el) return;
+        const position = canvas.convertOffsetToCanvas(this.pos);
+        const scale = canvas.ds.scale;
+        const slotsHeight = this.getSlotsHeight();
+        Object.assign(this._el.style, {
+            left: position[0] + "px",
+            top: (position[1] + slotsHeight * scale) + "px",
+            width: Math.round(this.size[0] * scale) + "px",
+            height: Math.max(0, Math.round((this.size[1] - slotsHeight) * scale)) + "px",
+        });
+    };
     nodeX.setHtml = function(html) {
         this._html = html;
-        if (typeof(this._el) == "undefined" || typeof(this._el_cont) == "undefined" ||
-            !this._el || !this._el_cont
-        ) {
-            this.htmlRefreshElement();
-        }
-        if (typeof(this._el_cont) !== "undefined") {
-            this._el_cont.innerHTML = this._html;
-        }
-    }
-    nodeX.registerCallbackHandler("onConfigure", function(info) {
-        console.info("empoweredHtmlNode", this, "onConfigure", ...arguments);
-        console.info(this, "configure", info);
-        this.refreshSlots();
         this.htmlRefreshElement();
+        if (this._el_cont) this._el_cont.innerHTML = html;
+    };
+    nodeX.registerCallbackHandler("onConfigure", function() {
+        this.refreshSlots();
     });
     nodeX.registerCallbackHandler("onDrawForeground", function() {
-        // console.info("empoweredHtmlNode",this,"onDrawForeground",...arguments);
         this.htmlRefreshElement();
     });
-    nodeX.registerCallbackHandler("onSelected", function() {
-        console.info("empoweredHtmlNode", this, "onSelected", ...arguments);
-        // if(this._el) this._el.style.pointerEvents = "none";
-    });
-    nodeX.registerCallbackHandler("onDeselected", function() {
-        console.info("empoweredHtmlNode", this, "onDeselected", ...arguments);
-        // if(this._el) this._el.style.pointerEvents = "";
-    });
     nodeX.registerCallbackHandler("onRemoved", function() {
-        console.info("empoweredHtmlNode", this, "onRemoved", ...arguments);
-        this._el?.parentNode?.removeChild(this._el);
+        this.htmlRemoveElement();
     });
 }
 
@@ -42246,6 +42220,7 @@ LiteGraph.registerNodeType("html/dom_selector", DOMSelector);
 export class HtmlNode {
 
     static title = "Html Node";
+    static size = [210, 130];
     static desc = "Have html inside a node";
 
     constructor() {
@@ -42289,6 +42264,7 @@ LiteGraph.registerNodeType("html/node_html", HtmlNode);
 
 export class JsonViewerNode {
     static title = "Json View";
+    static size = [210, 130];
     static desc = "Show and navigate a value structure";
     constructor() {
         this.addInput("value", 0);
