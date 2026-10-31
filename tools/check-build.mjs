@@ -30,9 +30,17 @@ assert.ifError(packed.error);
 assert.equal(packed.status, 0, packed.stderr);
 const files = JSON.parse(packed.stdout)[0].files.map((entry) => entry.path);
 assert.ok(files.includes('build_node/litegraph.cjs'));
+for (const file of ['src/litegraph.d.ts', 'src/litegraph.d.cts', 'src/litegraph.full.d.cts', 'src/litegraph.core.d.ts', 'src/litegraph.node.d.cts']) assert.ok(files.includes(file), `Missing declaration: ${file}`);
 assert.ok(files.includes('build_node/litegraph_nodejs.full.cjs'));
 for (const code of ["const m=require('@litegraph/litegraph'); if(!m.LiteGraph) throw Error('CJS entry');", "import {LiteGraph} from '@litegraph/litegraph'; if(!LiteGraph) throw Error('ESM entry');"]) {
   const result = spawnSync(process.execPath, [code.startsWith('import') ? '--input-type=module' : '--input-type=commonjs', '-e', code], { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
+}
+for (const subpath of ['@litegraph/litegraph/core', '@litegraph/litegraph/node']) {
+  for (const esm of [true, false]) {
+    const code = esm ? `import {LGraph} from '${subpath}'; new LGraph().clear();` : `const {LGraph}=require('${subpath}'); new LGraph().clear();`;
+    const result = spawnSync(process.execPath, [esm ? '--input-type=module' : '--input-type=commonjs', '-e', code], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
 }
 console.log(`Validated ${checked} build artifacts, package contents, and ESM/CommonJS entry points.`);

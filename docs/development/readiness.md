@@ -5,7 +5,7 @@ Goal: have the full library, core, tester, and runner working well enough to use
 ## Verified foundation
 
 - Repository/history/upstream/fork investigation and branch rationale are recorded in [the study](2026-10-30-study.md).
-- Twelve ESM/CommonJS artifacts build, parse, initialize, and package correctly; package entry points work.
+- Twelve ESM/CommonJS artifacts build, parse, initialize, and package correctly; main/core/Node package entry points work. Strict ESM/CommonJS consumer fixtures compile against isolated published declarations and verify runtime export parity.
 - Registration preserves inherited overrides; connected execution, limits, ON_REQUEST ancestor refresh, deferred actions, event-cycle guards, repeated steps, exception recovery, and nested data/event serialization have fixtures.
 - Node dependencies and hooks initialize once; graph/worker/tester await readiness and report initialization failures.
 - Runner open/start/stop/update/sync/stop-all/unload/reopen is acknowledged by the worker, with path confinement and shutdown checks. Loopback tests verify WebSocket client/server teardown and restart, UDP reception/closure, retry cancellation, and separate Socket.IO client/server constructors.
@@ -22,11 +22,11 @@ Goal: have the full library, core, tester, and runner working well enough to use
 | Canvas/editor | Add/connect/edit/delete, serialize/reload, subgraph navigation and representative widgets/HTML nodes verified in the browser; no new console errors. |
 | Tester | Review legacy custom scenarios, stress/performance modes, cancellation semantics, result/coverage accuracy, export escaping, and visible progress/status controls. |
 | Runner UX | Empty/loading/error states, reconnect behavior, edit/apply/sync clarity, and state after worker failure; verify resource-bearing graph lifecycle. |
-| Developer API | Type declarations compile for supported ESM/CJS examples and reflect current APIs; version metadata policy documented; setup works from the lockfile. |
+| Developer API | Strict TypeScript 5.4.5 ESM/CJS graph, readiness, callback, and library examples pass against workspace and isolated published declarations. Main/core/Node value exports match runtime; version policy is documented. Setup was validated from the lockfile; optional native bindings remain separate. Legacy signatures outside these fixtures are not exhaustively audited. |
 | Maintenance gate | Complete: zero ESLint errors; lint errors are enforced by `npm run check`/CI. Style warnings remain visible through `npm run lint`; no blanket rule suppression was added. |
 
 ## Scope boundaries
 
 The runner is a local trusted-workflow development tool. Public authentication/hosting and sandboxing arbitrary graph code are separate product requirements. Hardware-dependent GPU/audio/MIDI behavior needs appropriate devices; a missing device should be distinguished from a library defect. Arbitrary user JavaScript cannot be forcibly canceled in the current in-page tester. These boundaries must be visible in usage documentation, not hidden by generic pass counts.
 
-Continue with developer API/lint gates, remaining lifecycle edge cases, and browser/tool UX validation. Update this checklist with concrete evidence as each area is completed.
+Continue with remaining lifecycle edge cases, node runtime requirements, and browser/tool UX validation. Update this checklist with concrete evidence as each area is completed.

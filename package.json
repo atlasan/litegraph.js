@@ -18,7 +18,8 @@
         "nodemon": "nodemon",
         "test:integration": "node --test tools/tests/*.test.mjs",
         "check:build": "node tools/check-build.mjs",
-        "check": "npm run lint -- --quiet && npm run build && npm test -- --runInBand && npm run test:integration && npm run check:build"
+        "check": "npm run lint -- --quiet && npm run build && npm run check:types && npm test -- --runInBand && npm run test:integration && npm run check:build",
+        "check:types": "node tools/check-types.mjs"
     },
     "repository": {
         "type": "git",
@@ -30,7 +31,11 @@
         "build",
         "build_node",
         "css/litegraph.css",
-        "src/litegraph.d.ts"
+        "src/litegraph.d.ts",
+        "src/litegraph.d.cts",
+        "src/litegraph.core.d.ts",
+        "src/litegraph.full.d.cts",
+        "src/litegraph.node.d.cts"
     ],
     "bugs": {
         "url": "https://github.com/atlasan/litegraph.js/issues"
@@ -47,6 +52,7 @@
         "jsdoc": "^4.0.3",
         "jsdom": "^17.0.0",
         "nodemon": "^3.1.0",
+        "typescript": "5.4.5",
         "uglify-js": "^3.0.0"
     },
     "keywords": [
@@ -85,18 +91,32 @@
     "module": "build/litegraph.js",
     "exports": {
         ".": {
-            "types": "./src/litegraph.d.ts",
-            "import": "./build/litegraph.js",
-            "require": "./build_node/litegraph.cjs"
+            "import": {
+                "types": "./src/litegraph.d.ts",
+                "default": "./build/litegraph.js"
+            },
+            "require": {
+                "types": "./src/litegraph.full.d.cts",
+                "default": "./build_node/litegraph.cjs"
+            }
         },
         "./node": {
-            "types": "./src/litegraph.d.ts",
-            "import": "./build_node/litegraph_nodejs.full.cjs",
-            "require": "./build_node/litegraph_nodejs.full.cjs"
+            "types": "./src/litegraph.node.d.cts",
+            "default": "./build_node/litegraph_nodejs.full.cjs"
         },
         "./build/*": "./build/*",
         "./build_node/*": "./build_node/*",
         "./css/*": "./css/*",
-        "./package.json": "./package.json"
+        "./package.json": "./package.json",
+        "./core": {
+            "import": {
+                "types": "./src/litegraph.core.d.ts",
+                "default": "./build/litegraph.core.js"
+            },
+            "require": {
+                "types": "./src/litegraph.d.cts",
+                "default": "./build_node/litegraph.core.cjs"
+            }
+        }
     }
 }

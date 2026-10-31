@@ -13,7 +13,7 @@ npm run editor
 npm run graphrunner
 ```
 
-`npm run check` rejects ESLint errors, builds all twelve artifacts, runs Jest and integration regressions, checks JavaScript syntax and initialized exports for every artifact, and verifies npm package contents plus ESM/CommonJS entry points. `--ignore-scripts` avoids installing native integration bindings during core validation; optional native integrations may require their normal installation steps. GitHub Actions runs this gate on Node 22/Linux. The CI workflow has been added; a remote run is not claimed.
+`npm run check` rejects ESLint errors, builds all twelve artifacts, compiles strict TypeScript consumers, runs Jest and integration regressions, checks JavaScript syntax and initialized exports for every artifact, and verifies npm package contents plus ESM/CommonJS entry points. `--ignore-scripts` avoids installing native integration bindings during core validation; optional native integrations may require their normal installation steps. GitHub Actions runs this gate on Node 22/Linux. The CI workflow has been added; a remote run is not claimed.
 
 Individual checks:
 
@@ -21,6 +21,7 @@ Individual checks:
 npm test -- --runInBand
 npm run test:integration
 npm run check:build
+npm run check:types
 npm run lint
 ```
 
@@ -41,6 +42,31 @@ graph.clear();
 
 CommonJS: `const { LiteGraph, LGraph } = require('@litegraph/litegraph')`.
 Node-specific nodes: `require('@litegraph/litegraph/node')` or ESM import from that subpath. Browser consumers can use `/build/litegraph.js` directly. Direct source imports require initialization after classes load (`src/init_litegraph.js`); bundled entry points initialize themselves. Both `build/` and `build_node/` ship in the npm file list. No version bump or publication has been performed; package 0.10.10 and runtime a0.11.1 remain historical version identifiers pending a release decision.
+
+## TypeScript and version policy
+
+Use named imports from `@litegraph/litegraph` for the standard node catalog, `@litegraph/litegraph/core` for graph classes without the catalog, or `@litegraph/litegraph/node` for Node-specific nodes. All three support ESM and CommonJS with TypeScript `module`/`moduleResolution: "NodeNext"`. The core entry point is initialized and ready for custom node registration.
+
+```ts
+import { LiteGraph, LGraph, LGraphNode } from '@litegraph/litegraph/core';
+class Counter extends LGraphNode {
+    count = 0;
+    onExecute() { this.count++; }
+}
+LiteGraph.registerNodeType('example/counter', Counter);
+const graph = new LGraph();
+const counter = LiteGraph.createNode<Counter>('example/counter');
+if (counter) graph.add(counter);
+await graph.whenReady();
+graph.runStep(1, true);
+await graph.clearAsync();
+```
+
+Prefer named imports: the historical ESM default export is the `LibraryManager` constructor, whereas the CommonJS default imported from ESM is the module namespace object. The `/node` entry uses CommonJS under both import styles. Its exported browser editor still requires a DOM; exporting a class does not make its runtime dependencies available in Node.
+
+Core declarations live in `src/litegraph.d.cts`, shared by the ESM facades and catalog declarations to preserve class identity. `npm run check:types` uses pinned TypeScript 5.4.5, strict checking with `skipLibCheck: false`, ESM/CommonJS consumer fixtures, and a temporary consumer containing only the published declarations. It also compares value exports with the built main/core/Node modules and rejects phantom singleton members. Run `npm run build` first after runtime changes. This verifies covered graph/readiness/callback workflows and export shape; it is not exhaustive proof of every legacy method signature. Optional LiteGL objects remain `unknown` where this package cannot supply their types.
+
+Package version `0.10.10` and runtime `a0.11.1` are historical identifiers, not a new release guarantee. Identify development builds by branch and commit. A future release should choose and align version metadata explicitly, rebuild, run the full gate, and review compatibility before publishing; this stabilization work does not publish or change version numbers.
 
 ## Initialization and dependencies
 
@@ -114,4 +140,4 @@ Server-side manager methods now return Promises; callers must await them. Succes
 
 ## Evidence and follow-up
 
-The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: loading/removal races, canvas interaction tests, remaining optional integration fixtures, declarations/version parity, and tester scenario contracts. Reproduce relevant upstream/fork defects locally before considering a port.
+The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: loading/removal races, canvas interaction tests, remaining optional integration fixtures, and tester scenario contracts. Reproduce relevant upstream/fork defects locally before considering a port.
