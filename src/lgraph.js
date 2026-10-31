@@ -95,6 +95,7 @@ export class LGraph {
 
         // nodes
         this._nodes = [];
+        this._notifyReadinessChange();
         this._nodes_by_id = {};
         this._nodes_in_order = []; // nodes sorted in execution order
         this._nodes_executable = null; // nodes that contain onExecute sorted in execution order
@@ -231,19 +232,37 @@ export class LGraph {
             node.initialization_error || node.subgraph?.hasPendingInitialization());
     }
 
-    /** Wait for node dependencies, including nested graphs, before execution. */
+    _notifyReadinessChange() {
+        this._readinessVersion = (this._readinessVersion || 0) + 1;
+        this._readinessWaiters?.forEach((resolve) => resolve());
+        this._readinessWaiters?.clear();
+    }
+
+    /** Wait for the current graph's dependencies; detached nodes keep their own readiness. */
     async whenReady() {
-        const nodes = this._nodes.slice();
-        await Promise.all(nodes.map(async (node) => {
-            await node.ready;
-            if (node.initialization_error) throw node.initialization_error;
-            if (node.subgraph) await node.subgraph.whenReady();
-        }));
-        // Nodes may be added while another dependency is loading.
-        if (nodes.length !== this._nodes.length || nodes.some((node, index) => node !== this._nodes[index])) {
-            return this.whenReady();
+        for (;;) {
+            const nodes = this._nodes.slice();
+            if (!nodes.length) return this;
+            const version = this._readinessVersion;
+            let changed;
+            const mutation = new Promise((resolve) => {
+                changed = resolve;
+                (this._readinessWaiters ??= new Set()).add(resolve);
+            });
+            const ready = Promise.all(nodes.map(async (node) => {
+                try {
+                    await node.ready;
+                    if (node.graph !== this) return;
+                    if (node.initialization_error) throw node.initialization_error;
+                    if (node.subgraph) await node.subgraph.whenReady();
+                } catch (error) {
+                    if (node.graph === this) throw error;
+                }
+            }));
+            try { await Promise.race([ready, mutation]); }
+            finally { this._readinessWaiters.delete(changed); }
+            if (this._readinessVersion === version) return this;
         }
-        return this;
     }
 
     startAsync(interval = 0) {
@@ -883,6 +902,7 @@ export class LGraph {
 
         this._nodes.push(node);
         this._nodes_by_id[node.id] = node;
+        this._notifyReadinessChange();
 
         node.processCallbackHandlers("onAdded",{
             def_cb: node.onAdded
@@ -938,6 +958,8 @@ export class LGraph {
 
         this._removingNodes ??= new WeakSet();
         this._removingNodes.add(node);
+        const errors = [];
+        const cleanup = (fn) => { try { fn(); } catch (error) { errors.push(error); } };
         try {
             // this.beforeChange(); // sure? - almost sure is wrong
 
@@ -946,7 +968,7 @@ export class LGraph {
                 for (let i = 0; i < node.inputs.length; i++) {
                     let slot = node.inputs[i];
                     if (slot.link != null) {
-                        node.disconnectInput(i, {doProcessChange: false});
+                        cleanup(() => node.disconnectInput(i, {doProcessChange: false}));
                     }
                 }
             }
@@ -956,16 +978,14 @@ export class LGraph {
                 for (let i = 0; i < node.outputs.length; i++) {
                     let slot = node.outputs[i];
                     if (slot.links != null && slot.links.length) {
-                        node.disconnectOutput(i, false, {doProcessChange: false});
+                        cleanup(() => node.disconnectOutput(i, false, {doProcessChange: false}));
                     }
                 }
             }
 
             // node.id = -1; //why?
 
-            let removalError;
-            try { node.processCallbackHandlers("onRemoved", { def_cb: node.onRemoved, on_result: (value) => this._trackCleanup(value) }, this); }
-            catch (error) { removalError = error; }
+            cleanup(() => node.processCallbackHandlers("onRemoved", { def_cb: node.onRemoved, on_result: (value) => this._trackCleanup(value) }, this));
             if (node.subgraph) this._trackCleanup(node.subgraph.whenIdle());
             node.graph = null;
             node._waiting_actions = [];
@@ -989,21 +1009,21 @@ export class LGraph {
                 this._nodes.splice(pos, 1);
             }
             delete this._nodes_by_id[node.id];
+            this._notifyReadinessChange();
 
             this.updateExecutionOrder();
-            try { this.processCallbackHandlers("onNodeRemoved", { def_cb: this.onNodeRemoved }, node); }
-            catch (error) { removalError ??= error; }
+            cleanup(() => this.processCallbackHandlers("onNodeRemoved", { def_cb: this.onNodeRemoved }, node));
 
-            this.onGraphChanged({action: "nodeRemove"});
+            cleanup(() => this.onGraphChanged({action: "nodeRemove"}));
 
             // close panels
-            this.sendActionToCanvas("checkPanels");
+            cleanup(() => this.sendActionToCanvas("checkPanels"));
 
-            this.setDirtyCanvas(true, true);
-            // this.afterChange(); // sure? - almost sure is wrong
-            this.change();
+            cleanup(() => this.setDirtyCanvas(true, true));
+            cleanup(() => this.change());
 
-            if (removalError) throw removalError;
+            if (errors.length === 1) throw errors[0];
+            if (errors.length) throw new AggregateError(errors, "Node removal failed");
         } finally {
             this._removingNodes.delete(node);
         }

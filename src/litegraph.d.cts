@@ -933,13 +933,13 @@ export declare class LGraphNode {
      * @param target_node the target node to which this slot is connected [Optional, if not target_node is specified all nodes will be disconnected]
      * @return if it was disconnected successfully
      */
-    disconnectOutput(slot: number | string, targetNode?: LGraphNode): boolean;
+    disconnectOutput(slot: number | string, targetNode?: LGraphNode | GraphId | false | null, options?: { doProcessChange?: boolean }): boolean;
     /**
      * disconnect one input
      * @param slot (could be the number of the slot or the string with the name of the slot)
      * @return if it was disconnected successfully
      */
-    disconnectInput(slot: number | string): boolean;
+    disconnectInput(slot: number | string, options?: { doProcessChange?: boolean }): boolean;
     /**
      * returns the center of a connection point in canvas coords
      * @param is_input true if if a input slot, false if it is an output
