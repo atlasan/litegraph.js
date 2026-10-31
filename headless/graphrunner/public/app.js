@@ -1,53 +1,7 @@
 // public/app.js
 import { LiteGraph } from "../../build/litegraph.full.js";
 
-/* =================== WebSocket Client =================== */
-class WebSocketClient {
-  constructor(url, onMessage) {
-    this.url = url;
-    this.onMessage = onMessage;
-    this.reconnect();
-  }
-
-  reconnect() {
-    this.ws = new WebSocket(this.url);
-
-    this.ws.onopen = () => {
-      console.log("WebSocket connected.");
-      this.fetchActiveGraphs();
-    };
-
-    this.ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        this.onMessage(message);
-      } catch (error) {
-        console.error("Invalid WebSocket message:", error);
-      }
-    };
-
-    this.ws.onclose = () => {
-      console.warn("WebSocket connection lost. Reconnecting...");
-      setTimeout(() => this.reconnect(), 3000);
-    };
-
-    this.ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-  }
-
-  send(type, data) {
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type, data }));
-    } else {
-      console.warn("WebSocket not connected. Cannot send message.", type, data);
-    }
-  }
-
-  fetchActiveGraphs() {
-    this.send("get_active_graphs", {});
-  }
-}
+import { WebSocketClient } from './connection.js';
 
 /* =================== File Explorer =================== */
 class FileExplorer {
@@ -59,15 +13,16 @@ class FileExplorer {
   }
 
   loadFiles() {
-    // Using the /api/list_files endpoint.
+    this.element.textContent = 'Loading workflows…';
     fetch(`/api/list_files?path=${encodeURIComponent(this.currentPath)}`)
-      .then(res => res.json())
+      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
       .then(files => this.renderFiles(files))
-      .catch(err => console.error("Error fetching files:", err));
+      .catch(err => { this.element.textContent = `Could not load workflows: ${err.message}`; });
   }
 
   renderFiles(files) {
     this.element.innerHTML = "";
+    if (!files.length) this.element.textContent = 'No JSON workflows found.';
     // Add parent folder navigation if not at root.
     if (this.currentPath !== "/") {
       const li = document.createElement("li");
@@ -166,6 +121,7 @@ class TabManager {
         this.onLastTabClosed?.();
       }
     }
+    refreshControls();
   }
 
   activateTab(tabId) {
@@ -278,10 +234,12 @@ class ActiveGraphsList {
   }
 
   updateGraphs(graphs) {
+    this.graphs = graphs;
     const snapshot = JSON.stringify(graphs);
     if (snapshot === this.lastSnapshot) return;
     this.lastSnapshot = snapshot;
     this.element.innerHTML = "";
+    if (!graphs.length) this.element.textContent = 'No loaded workers. Open a workflow to begin.';
     graphs.forEach(({ graphId, status }) => {
       const li = document.createElement("li");
       li.className = "list-group-item d-flex justify-content-between align-items-center";
@@ -308,9 +266,39 @@ class ActiveGraphsList {
 /* =================== Global State =================== */
 const graphsStore = Object.create(null); // { graphId: { serializedGraph, status } }
 let currentGraphId = null;
+let connected = false;
+let commandPending = false;
+
+function notice(message) {
+  document.getElementById('commandStatus').textContent = message;
+}
+function refreshControls() {
+  const ready = connected && !commandPending;
+  const loaded = ['running', 'stopped'].includes(graphsStore[currentGraphId]?.status);
+  for (const id of ['runBtn', 'pauseBtn', 'applyBtn', 'syncBtn']) document.getElementById(id).disabled = !ready || !loaded;
+  document.getElementById('toggleBtn').disabled = !graphViewer.editor;
+  document.getElementById('stopAllBtn').disabled = !ready;
+  document.querySelectorAll('#graphsList button').forEach(button => { button.disabled = !ready; });
+  document.getElementById('filesList').setAttribute('aria-busy', String(commandPending));
+  document.getElementById('emptyState').hidden = !!currentGraphId;
+}
+function connectionState(state, pending) {
+  const wasConnected = connected;
+  connected = state === 'connected'; commandPending = pending > 0;
+  document.getElementById('connectionStatus').textContent = `${state}${pending ? ' — waiting for runner acknowledgment' : ''}`;
+  if (connected && !wasConnected) {
+    notice('Connected. Refreshing worker status…');
+    fileExplorer.loadFiles();
+  }
+  if (!connected) {
+    activeGraphsList.updateGraphs((activeGraphsList.graphs || []).map(worker => ({ ...worker, status: 'unknown' })));
+    for (const id of Object.keys(graphsStore)) { graphsStore[id].status = 'unknown'; tabManager.updateTabState(id, 'unknown'); }
+  }
+  refreshControls();
+}
 
 /* =================== Instantiate Components =================== */
-const wsClient = new WebSocketClient(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`, handleWebSocketMessage);
+const wsClient = new WebSocketClient(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`, handleWebSocketMessage, { onState: connectionState, onError: notice });
 const fileExplorer = new FileExplorer("filesList", (file) =>
   wsClient.send("open_graph", { file })
 );
@@ -324,6 +312,7 @@ const activeGraphsList = new ActiveGraphsList("graphsList", wsClient);
 function clearCanvas() {
   currentGraphId = null;
   graphViewer.clearCanvas();
+  refreshControls();
 }
 
 /* =================== WebSocket Message Handler =================== */
@@ -331,6 +320,12 @@ function handleWebSocketMessage(message) {
   switch (message.type) {
     case "active_graphs":
       activeGraphsList.updateGraphs(message.data.graphs);
+      if (document.getElementById('commandStatus').textContent === 'Connected. Refreshing worker status…') notice('Connected. Worker status refreshed.');
+      for (const [id, stored] of Object.entries(graphsStore)) {
+        const worker = message.data.graphs.find(item => item.graphId === id);
+        stored.status = worker?.status || (stored.status === 'error' ? 'error' : 'unloaded');
+        tabManager.updateTabState(id, stored.status);
+      }
       break;
     case "graph_opened": {
       const { graphId, serializedGraph, status } = message.data;
@@ -380,10 +375,14 @@ function handleWebSocketMessage(message) {
     }
     case "error":
       consoleLogger.log("Error: " + message.data.message);
+      notice(message.data.message);
       break;
     default:
       console.warn("Unknown message type:", message.type);
   }
+  if (message.requestId && message.type !== 'error') notice('Runner acknowledged the command.');
+  if (currentGraphId && ['unloaded', 'error'].includes(graphsStore[currentGraphId]?.status)) notice('Worker unavailable. Local view retained; reopen the workflow to load a worker.');
+  refreshControls();
 }
 
 /* =================== Controls Events =================== */
@@ -413,7 +412,7 @@ document.getElementById("clearConsoleBtn").onclick = () => {
 };
 
 /* Optionally, periodically refresh active graphs */
-setInterval(() => {
+const refreshTimer = setInterval(() => {
   wsClient.fetchActiveGraphs();
 }, 5000);
 
@@ -425,3 +424,7 @@ document.getElementById('applyBtn').onclick = () => {
 document.getElementById('syncBtn').onclick = () => {
   if (currentGraphId) wsClient.send('request_sync', { graphId: currentGraphId });
 };
+
+refreshControls();
+wsClient.connect();
+window.addEventListener('pagehide', () => { clearInterval(refreshTimer); wsClient.close(); });

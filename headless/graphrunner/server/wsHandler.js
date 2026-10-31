@@ -24,9 +24,11 @@ export function setupWebSocket(server) {
     // Preserve command order for each client, including open -> start -> update.
     let queue = Promise.resolve();
     ws.on('message', (message) => {
+      let requestId;
       queue = queue.then(async () => {
         const packet = JSON.parse(message.toString());
         if (!packet || typeof packet !== 'object' || typeof packet.type !== 'string') throw new Error('Invalid message');
+        requestId = typeof packet.requestId === 'string' ? packet.requestId.slice(0, 128) : undefined;
         const payload = packet.data || {};
         let result;
         let type;
@@ -41,15 +43,17 @@ export function setupWebSocket(server) {
             const failed = results.find((item) => item.error);
             if (failed) throw new Error(failed.error);
             broadcast(activeGraphs());
+            if (requestId) send(ws, { ...activeGraphs(), requestId });
             return;
           }
           case 'get_active_graphs': send(ws, activeGraphs()); return;
           default: throw new Error('Unknown event type');
         }
         if (result.error) throw new Error(result.error);
-        if (type === 'graph_updated') broadcast({ type, data: result });
-        else send(ws, { type, data: result });
-      }).catch((error) => send(ws, { type: 'error', data: { message: error.message } }));
+        if (type === 'graph_updated') {
+          for (const client of wss.clients) send(client, { type, data: result, requestId: client === ws ? requestId : undefined });
+        } else send(ws, { type, data: result, requestId });
+      }).catch((error) => send(ws, { type: 'error', data: { message: error.message }, requestId }));
     });
   });
   wss.on('close', () => { setConsolePipeCallback(null); setStatusCallback(null); });

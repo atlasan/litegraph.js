@@ -109,11 +109,15 @@ Startup waits for pending cleanup. Runner stop/clear/update and unload now await
 
 The tester imports one initialized bundle, initializes once, and uses UIManager for main controls and node selection. It generates scenarios on demand, rather than constructing every registered node at startup. Filter for `basic/const`, click **Test**, and inspect the results. Test definitions produced by the generator run through TestFramework; basic-only generation no longer silently includes stress/performance scenarios. Input injection uses actual graph links. The framework awaits node readiness before setup/execution and uses linked inputs in its default path too. Async timeouts remain active until settlement, failed custom validation is reflected in status, and cleanup runs on failure.
 
-Browser acceptance on 2026-10-31 covered node search/add, dragging connections, editing a numeric widget, stepping `-7 → abs → 7`, deleting the middle node, and restoring the saved graph. Subgraph entry/return and slider/toggle/text widgets also passed with no captured browser errors. See [reload evidence](evidence/editor-reload.jpg) and [widget evidence](evidence/editor-widgets.jpg). HTML node property editing, deletion, and save/reload also passed on 2026-11-01; [HTML evidence](evidence/editor-html.jpg). The remaining tester/runner UX checks are pending.
+Browser acceptance on 2026-10-31 covered node search/add, dragging connections, editing a numeric widget, stepping `-7 → abs → 7`, deleting the middle node, and restoring the saved graph. Subgraph entry/return and slider/toggle/text widgets also passed with no captured browser errors. See [reload evidence](evidence/editor-reload.jpg) and [widget evidence](evidence/editor-widgets.jpg). HTML node property editing, deletion, and save/reload also passed on 2026-11-01; [HTML evidence](evidence/editor-html.jpg). Tester `math/abs` passed all four scenarios with completed progress and 0.4% coverage; [tester evidence](evidence/tester-progress.jpg).
 
 HTML and JSON-viewer overlays release their canvas callbacks and DOM elements on removal, recreate bindings when reinserted, preserve visibility through nested subgraph navigation, and position their content below scaled slots. Their default size reserves a visible content area. DOM lifecycle fixtures cover repeated removal, movement between canvas hosts, nested visibility, and scaling. HTML content is rendered as markup through the existing `html` property.
 
-The generic scenarios are exploratory checks, not assertions that all node types share identical input/error contracts. A failing scenario needs node-specific review. A timeout cannot cancel arbitrary user JavaScript or stop a synchronous infinite loop; a timed-out async callback can still finish later. The legacy custom scenario runner and complex stress/cancellation behavior require further work before treating the tool as a general isolation harness.
+Generated and legacy scenarios now run through the same readiness/timeout/cleanup path, each in its own graph. **Stop Tests** aborts all active asynchronous phases, skips later validation and queued cases, and keeps the run active until cleanup settles or times out. Canceled cases are `skipped`; cleanup failures remain failures. Custom setup/execute callbacks receive `{ signal }` as a third argument, and custom validation receives it as a fourth argument. Cleanup is deliberately not aborted. Cases that never started have no result record.
+
+Coverage counts distinct registered node types with a passed or failed result in the current run, excluding canceled/skipped cases; it is not code coverage. Progress measures processed node groups separately from pass rate. HTML result text is escaped, CSV fields are quoted and formula-like text neutralized, JSON preserves statistics maps, and JUnit marks skipped cases and escapes XML text. Markdown formatting is outside this escaping audit.
+
+The generic scenarios are exploratory checks, not assertions that all node types share identical input/error contracts. A failing scenario needs node-specific review. Cancellation and timeouts cannot stop arbitrary user JavaScript or a synchronous infinite loop; an async callback that ignores its signal can still finish after cleanup. Stress/performance contracts, retries, and broad legacy scenario semantics still need review before treating the tool as a general isolation harness.
 
 ## Worker runner
 
@@ -128,7 +132,11 @@ Edits are in memory and are not saved to the workflow file. Serialization return
 
 The WebSocket address follows the browser host and protocol. Commands are ordered per connection and within each worker, and responses come from the worker. Initial load and replacement await node dependencies before acknowledgment; start awaits graph readiness. Errors and unexpected worker exits update clients rather than claiming successful execution. Shutdown waits for graph cleanup, with worker termination after a failed/timed-out clear command.
 
-Protocol requests retain `{ "type": "...", "data": { ... } }`:
+The browser displays connection state and allows one outstanding command at a time. A matching acknowledgment releases the controls; unrelated status broadcasts do not. After 15 seconds without an acknowledgment, it reports an unknown outcome and refreshes worker inventory. On disconnect, worker statuses become unknown and execution controls disable. Reconnect refreshes statuses and workflows without replaying commands or replacing the current local graph view. Sync retrieves worker configuration and can replace local edits; Apply sends the local configuration. Neither writes the JSON file.
+
+Browser checks verified empty/loading states, open/start/stop acknowledgments, disconnect disabling, and reconnection after server restart. [Runner evidence](evidence/runner-reconnect.jpg) shows an acknowledged stopped worker. The runner bundle still warns when optional glmatrix is absent; this pure-node example does not validate Math3D behavior.
+
+Protocol requests accept `{ "type": "...", "data": { ... }, "requestId": "optional-client-id" }`. Replies and errors echo the top-level request ID to the requester; legacy requests without IDs still work:
 
 | Request | Payload | Response |
 | --- | --- | --- |
@@ -144,4 +152,4 @@ Server-side manager methods now return Promises; callers must await them. Succes
 
 ## Evidence and follow-up
 
-The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: node runtime/dependency documentation, remaining optional integration fixtures, tester scenario contracts, and runner reconnect/error UX. Reproduce relevant upstream/fork defects locally before considering a port.
+The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: node runtime/dependency documentation, optional integration fixtures, tester stress/performance contracts, and runner edit/apply/sync and worker-crash browser validation. Reproduce relevant upstream/fork defects locally before considering a port.

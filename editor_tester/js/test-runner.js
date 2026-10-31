@@ -3,6 +3,7 @@
  * Handles test execution, coordination, and result collection
  */
 
+import { LiteGraph } from '../../build/litegraph.js';
 import { testFramework } from './test-framework.js';
 import TestCaseGenerator from './test-generator.js';
 import testConfig from './test-config.js';
@@ -16,6 +17,7 @@ export class TestRunner {
         this.isRunning = false;
         this.shouldStop = false;
         this.currentExecution = null;
+        this.activeExecutions = new Set();
         this.executionQueue = [];
         this.results = [];
         this.startTime = null;
@@ -158,9 +160,7 @@ export class TestRunner {
 
         this.shouldStop = true;
         
-        if (this.currentExecution) {
-            this.currentExecution.abort();
-        }
+        for (const controller of this.activeExecutions) controller.abort();
         
     }
 
@@ -198,6 +198,7 @@ export class TestRunner {
         
         // Clear previous test results in framework
         this.framework.clearResults();
+        this.app.uiManager?.updateControls();
     }
 
     /**
@@ -209,6 +210,7 @@ export class TestRunner {
         this.endTime = Date.now();
         this.currentExecution = null;
         this.executionQueue = [];
+        this.app.uiManager?.updateControls();
     }
 
     /**
@@ -251,9 +253,8 @@ export class TestRunner {
                 completedNodes++;
                 
                 // Add delay between nodes if configured
-                if (config.execution.delayBetweenTests > 0) {
-                    await this.delay(config.execution.delayBetweenTests);
-                }
+                // Yield to browser input/paint even when no artificial delay is configured.
+                await this.delay(Math.max(0, config.execution.delayBetweenTests || 0));
                 
             } catch (error) {
                 console.error(`Failed to test node ${nodeType}:`, error);
@@ -279,7 +280,7 @@ export class TestRunner {
 
         // Final progress update
         if (progressCallback) {
-            progressCallback(100, `Completed ${completedNodes} nodes`);
+            progressCallback(this.shouldStop ? (completedNodes / Math.max(1, nodeTypes.length)) * 100 : 100, `${this.shouldStop ? "Stopped after" : "Completed"} ${completedNodes} of ${nodeTypes.length} nodes`);
         }
 
         this.results = allResults;
@@ -359,9 +360,8 @@ export class TestRunner {
                 results.push(result);
                 
                 // Add delay between tests if configured
-                if (config.execution.delayBetweenTests > 0) {
-                    await this.delay(config.execution.delayBetweenTests);
-                }
+                // Yield to browser input/paint even when no artificial delay is configured.
+                await this.delay(Math.max(0, config.execution.delayBetweenTests || 0));
             }
         } else {
             // Concurrent execution
@@ -397,9 +397,8 @@ export class TestRunner {
                 }
                 
                 // Add delay between batches if configured
-                if (config.execution.delayBetweenTests > 0) {
-                    await this.delay(config.execution.delayBetweenTests);
-                }
+                // Yield to browser input/paint even when no artificial delay is configured.
+                await this.delay(Math.max(0, config.execution.delayBetweenTests || 0));
             }
         }
 
@@ -410,101 +409,54 @@ export class TestRunner {
      * Execute a single test case
      */
     async executeTestCase(nodeType, testCase, config) {
-        const startTime = performance.now();
-        if (typeof testCase.execute === 'function' || typeof testCase.setup === 'function') {
-            const result = await this.framework.runSingleTest({
+        const controller = new AbortController();
+        this.activeExecutions.add(controller);
+        if (this.shouldStop) controller.abort();
+        try {
+            const generated = typeof testCase.execute === 'function' || typeof testCase.setup === 'function';
+            const definition = {
                 expectedInputs: [], expectedOutputs: [], testData: {}, ...testCase,
                 nodeType, timeout: testCase.timeout || config.execution.timeout,
-            });
-            return { ...result, testCase, timestamp: Date.now() };
-        }
-
-        try {
-            // Create execution context
-            const context = this.createExecutionContext(nodeType, testCase, config);
-            
-            // Set up abort controller for timeout
-            const abortController = new AbortController();
-            const timeoutId = setTimeout(() => {
-                abortController.abort();
-            }, config.execution.timeout);
-            
-            this.currentExecution = abortController;
-            
-            try {
-                // Execute the test
-                const result = await this.runTestWithContext(context, abortController.signal);
-                
-                clearTimeout(timeoutId);
-                
-                const duration = performance.now() - startTime;
-                
-                return {
-                    testId: testCase.id,
-                    nodeType: nodeType,
-                    status: result.success ? 'passed' : 'failed',
-                    duration: duration,
-                    errors: result.errors || [],
-                    warnings: result.warnings || [],
-                    memoryUsage: result.memoryUsage,
-                    coverage: result.coverage,
-                    timestamp: Date.now(),
-                    testCase: testCase
-                };
-                
-            } catch (error) {
-                clearTimeout(timeoutId);
-                
-                if (error.name === 'AbortError') {
-                    throw new Error(`Test timed out after ${config.execution.timeout}ms`);
-                }
-                
-                throw error;
-            }
-            
-        } catch (error) {
-            const duration = performance.now() - startTime;
-            
-            return {
-                testId: testCase.id,
-                nodeType: nodeType,
-                status: 'failed',
-                duration: duration,
-                errors: [{
-                    type: error.constructor.name,
-                    message: error.message,
-                    stack: error.stack
-                }],
-                warnings: [],
-                timestamp: Date.now(),
-                testCase: testCase
             };
+            if (!generated) {
+                // Legacy scenario expectations describe values, not slot definitions.
+                definition.expectedInputs = [];
+                definition.expectedOutputs = [];
+                definition.execute = async (node, graph) => {
+                    const utils = this.createExecutionContext(nodeType, testCase, config, graph).utils;
+                    await this.executeTestCaseLogic(node, testCase, utils, controller.signal);
+                };
+            }
+            const result = await this.framework.runSingleTest(definition, { signal: controller.signal });
+            this.framework.results.set(result.testId, result);
+            const recorded = this.framework.getResults();
+            this.framework.stats.total = recorded.length;
+            for (const status of ['passed', 'failed', 'skipped']) {
+                this.framework.stats[status] = recorded.filter(item => item.status === status).length;
+            }
+            this.framework.calculateCoverage();
+            if (result.status === 'failed' && config.execution.stopOnFirstFailure) this.stopTests();
+            return { ...result, testCase, timestamp: Date.now() };
         } finally {
-            this.currentExecution = null;
+            this.activeExecutions.delete(controller);
         }
     }
 
     /**
      * Create execution context for test
      */
-    createExecutionContext(nodeType, testCase, config) {
+    createExecutionContext(nodeType, testCase, config, graph = new LiteGraph.LGraph()) {
         return {
-            nodeType: nodeType,
-            testCase: testCase,
-            config: config,
-            graph: this.app.getGraph(),
-            canvas: this.app.getCanvas(),
-            framework: this.framework,
+            nodeType, testCase, config, graph, canvas: null, framework: this.framework,
             utils: {
-                createNode: (type) => this.app.createNode(type),
-                connectNodes: (nodeA, outputIndex, nodeB, inputIndex) => 
-                    this.app.connectNodes(nodeA, outputIndex, nodeB, inputIndex),
-                executeGraph: () => this.app.executeGraph(),
-                clearGraph: () => this.app.clearGraph(),
+                createNode: (type) => { const node = LiteGraph.createNode(type); if (node) graph.add(node); return node; },
+                connectNodes: (a, output, b, input) => a.connect(output, b, input),
+                executeGraph: () => graph.runStep(1, true),
+                clearGraph: () => graph.clearAsync(),
                 getNodeOutput: (node, index) => node.getOutputData(index),
-                setNodeInput: (node, index, data) => setNodeInput(node, index, data),
-                triggerNodeExecution: (node) => node.onExecute && node.onExecute()
-            }
+                setNodeInput,
+                triggerNodeExecution: (node) => node.doExecute(),
+            },
         };
     }
 
@@ -674,10 +626,6 @@ export class TestRunner {
                 utils.setNodeInput(node, index, invalidInput);
                 utils.triggerNodeExecution(node);
                 
-                if (expectedBehavior === 'error') {
-                    throw new Error(`Expected error for invalid input ${JSON.stringify(invalidInput)}, but node executed successfully`);
-                }
-                
             } catch (error) {
                 if (expectedBehavior === 'error') {
                     // Expected error, test passes
@@ -687,6 +635,7 @@ export class TestRunner {
                     throw error;
                 }
             }
+            if (expectedBehavior === 'error') throw new Error(`Expected error for invalid input ${JSON.stringify(invalidInput)}, but node executed successfully`);
         }
     }
 
@@ -808,7 +757,9 @@ export class TestRunner {
                     throw error;
                 }
                 // Expected error, continue
+                continue;
             }
+            if (condition.shouldThrow) throw new Error(`Expected error for condition ${condition.type}, but node executed successfully`);
         }
     }
 

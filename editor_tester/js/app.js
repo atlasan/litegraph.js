@@ -594,6 +594,7 @@ class EditorTesterApp {
     stopTests() {
         if (this.testRunner) {
             this.testRunner.stopTests();
+            return;
         }
         
         if (!this.isTestRunning) {

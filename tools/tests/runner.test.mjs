@@ -122,9 +122,13 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     assert.equal((await fetch(`http://${address}/build/litegraph.full.js`)).status, 200);
     ws.send('null');
     assert.match((await waitFor((m) => m.type === 'error')).data.message, /Invalid message/);
-    ws.send(JSON.stringify({ type: 'open_graph', data: { file: 'empty.json' } }));
+    ws.send(JSON.stringify({ type: 'open_graph', requestId: 'open-fixture', data: { file: 'empty.json' } }));
     ws.send(JSON.stringify({ type: 'control_graph', data: { graphId: 'empty.json', action: 'start' } }));
-    assert.equal((await waitFor((m) => m.type === 'graph_opened')).data.status, 'stopped');
+    const openedReply = await waitFor((m) => m.type === 'graph_opened');
+    assert.equal(openedReply.requestId, 'open-fixture');
+    assert.equal(openedReply.data.status, 'stopped');
+    ws.send(JSON.stringify({type:'unsupported', requestId:'error-fixture'}));
+    assert.equal((await waitFor(m => m.type === 'error')).requestId, 'error-fixture');
     await waitFor((m) => m.type === 'graph_status' && m.data.status === 'running');
     messages.length = 0;
     ws.send(JSON.stringify({ type: 'stop_all_graphs' }));

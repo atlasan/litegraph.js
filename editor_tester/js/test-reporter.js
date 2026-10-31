@@ -1,3 +1,4 @@
+import { csvCell, escapeReportResult } from './report-utils.js';
 /**
  * Test Reporter
  * Handles formatting and displaying test results in various formats
@@ -123,7 +124,7 @@ export class TestReporter {
             for (const [nodeType, nodeStats] of stats.nodeTypes) {
                 const status = nodeStats.failed > 0 ? 
                     (colorize ? this.colorize('FAILED', 'red') : 'FAILED') :
-                    (colorize ? this.colorize('PASSED', 'green') : 'PASSED');
+                    nodeStats.passed === nodeStats.total ? (colorize ? this.colorize('PASSED', 'green') : 'PASSED') : 'SKIPPED';
                 lines.push(`  ${nodeType}: ${status} (${nodeStats.passed}/${nodeStats.total})`);
             }
             lines.push('');
@@ -137,7 +138,7 @@ export class TestReporter {
             for (const result of results) {
                 const status = result.status === 'passed' ?
                     (colorize ? this.colorize('✓ PASS', 'green') : '✓ PASS') :
-                    (colorize ? this.colorize('✗ FAIL', 'red') : '✗ FAIL');
+                    result.status === 'skipped' ? 'SKIPPED' : (colorize ? this.colorize('✗ FAIL', 'red') : '✗ FAIL');
 
                 lines.push(`${status} ${result.nodeType} - ${result.testId}`);
                 lines.push(`      Duration: ${result.duration.toFixed(2)}ms`);
@@ -183,6 +184,7 @@ export class TestReporter {
      * Format results as HTML report
      */
     formatHTML(results, options = {}) {
+        results = results.map(escapeReportResult);
         const { includeCharts = true, theme = 'light' } = options;
         const stats = this.calculateStats(results);
 
@@ -489,7 +491,7 @@ export class TestReporter {
                     <span class="breakdown-name">${nodeType}</span>
                     <span class="breakdown-stats">
                         <span class="${nodeStats.failed > 0 ? 'failed' : 'passed'}">
-                            ${nodeStats.failed > 0 ? 'FAILED' : 'PASSED'}
+                            ${nodeStats.failed > 0 ? 'FAILED' : nodeStats.passed === nodeStats.total ? 'PASSED' : 'SKIPPED'}
                         </span>
                         (${nodeStats.passed}/${nodeStats.total})
                     </span>
@@ -558,7 +560,7 @@ export class TestReporter {
             data.statistics = this.calculateStats(results);
         }
         
-        return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+        return JSON.stringify(data, (_key, value) => value instanceof Map ? Object.fromEntries(value) : value, pretty ? 2 : undefined);
     }
 
     /**
@@ -584,8 +586,8 @@ export class TestReporter {
         
         for (const result of results) {
             const row = [
-                `"${result.testId}"`,
-                `"${result.nodeType}"`,
+                result.testId,
+                result.nodeType,
                 result.status,
                 result.duration.toFixed(2),
                 result.errors.length,
@@ -595,10 +597,10 @@ export class TestReporter {
             if (includeDetails) {
                 const errorMessages = result.errors.map(e => e.message).join('; ');
                 const warningMessages = result.warnings.join('; ');
-                row.push(`"${errorMessages}"`, `"${warningMessages}"`);
+                row.push(errorMessages, warningMessages);
             }
             
-            rows.push(row.join(','));
+            rows.push(row.map(csvCell).join(','));
         }
         
         return rows.join('\n');
@@ -708,7 +710,7 @@ export class TestReporter {
         
         const xml = [];
         xml.push('<?xml version="1.0" encoding="UTF-8"?>');
-        xml.push(`<testsuites name="${suiteName}" tests="${stats.total}" failures="${stats.failed}" time="${(stats.totalDuration / 1000).toFixed(3)}">`);
+        xml.push(`<testsuites name="${this.escapeXml(suiteName)}" tests="${stats.total}" failures="${stats.failed}" time="${(stats.totalDuration / 1000).toFixed(3)}">`);
         
         // Group by node type
         const suites = new Map();
@@ -722,21 +724,22 @@ export class TestReporter {
         for (const [nodeType, suiteResults] of suites) {
             const suiteStats = this.calculateStats(suiteResults);
             
-            xml.push(`  <testsuite name="${nodeType}" tests="${suiteStats.total}" failures="${suiteStats.failed}" time="${(suiteStats.totalDuration / 1000).toFixed(3)}">`);
+            xml.push(`  <testsuite name="${this.escapeXml(nodeType)}" tests="${suiteStats.total}" failures="${suiteStats.failed}" time="${(suiteStats.totalDuration / 1000).toFixed(3)}">`);
             
             for (const result of suiteResults) {
-                xml.push(`    <testcase name="${result.testId}" classname="${result.nodeType}" time="${(result.duration / 1000).toFixed(3)}">`);
+                xml.push(`    <testcase name="${this.escapeXml(result.testId)}" classname="${this.escapeXml(result.nodeType)}" time="${(result.duration / 1000).toFixed(3)}">`);
                 
                 if (result.status === 'failed') {
                     const errorMessage = result.errors.map(e => e.message).join('; ');
                     xml.push(`      <failure message="${this.escapeXml(errorMessage)}">`);
-                    xml.push(`        <![CDATA[${result.errors.map(e => `${e.type || 'Error'}: ${e.message}`).join('\n')}]]>`);
+                    xml.push(`        <![CDATA[${result.errors.map(e => `${e.type || 'Error'}: ${e.message}`).join('\n').replaceAll(']]>', ']]]]><![CDATA[>')}]]>`);
                     xml.push('      </failure>');
                 }
                 
+                if (result.status === 'skipped') xml.push('      <skipped/>');
                 if (result.warnings.length > 0) {
                     xml.push(`      <system-out>`);
-                    xml.push(`        <![CDATA[Warnings:\n${result.warnings.join('\n')}]]>`);
+                    xml.push(`        <![CDATA[Warnings:\n${result.warnings.join('\n').replaceAll(']]>', ']]]]><![CDATA[>')}]]>`);
                     xml.push('      </system-out>');
                 }
                 

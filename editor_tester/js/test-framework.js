@@ -4,6 +4,7 @@
  */
 
 import { LiteGraph } from '../../build/litegraph.js';
+import { csvCell, escapeReportResult } from './report-utils.js';
 import { setNodeInput } from './test-inputs.js';
 const { LGraphNode } = LiteGraph;
 
@@ -73,6 +74,8 @@ export class TestFramework {
         }
 
         this.isRunning = true;
+        this.runController = new AbortController();
+        this.results.clear();
         this.stats = { total: 0, passed: 0, failed: 0, skipped: 0, coverage: 0 };
         
         try {
@@ -82,10 +85,10 @@ export class TestFramework {
             this.stats.total = testsToRun.length;
             
             for (const test of testsToRun) {
-                if (!this.isRunning) break; // Allow cancellation
+                if (this.runController.signal.aborted) break;
                 
                 this.currentTest = test;
-                const result = await this.runSingleTest(test);
+                const result = await this.runSingleTest(test, { signal: this.runController.signal });
                 this.results.set(test.id, result);
                 
                 if (result.status === 'passed') {
@@ -97,6 +100,7 @@ export class TestFramework {
                 }
                 
                 this.emit('testCompleted', { test, result });
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
             
             this.calculateCoverage();
@@ -115,7 +119,8 @@ export class TestFramework {
     /**
      * Run a single test case
      */
-    async runSingleTest(test) {
+    async runSingleTest(test, { signal } = {}) {
+        const phase = (fn, ...args) => this.executePhase(fn, test.timeout || this.config.timeout, signal, ...args);
         const startTime = performance.now();
         const result = {
             testId: test.id,
@@ -146,11 +151,11 @@ export class TestFramework {
             if (!node) throw new Error(`Failed to create ${test.nodeType}`);
             graph = new LiteGraph.LGraph();
             graph.add(node);
-            await this.executeWithTimeout(() => graph.whenReady(), test.timeout);
+            await phase(() => graph.whenReady());
             
             // Setup phase
             if (test.setup) {
-                await this.executeWithTimeout(test.setup, test.timeout, node, graph);
+                await phase(test.setup, node, graph, { signal });
             }
             
             // Validation phase
@@ -168,9 +173,7 @@ export class TestFramework {
             
             // Execution phase
             if (test.execute) {
-                result.details.executionResult = await this.executeWithTimeout(
-                    test.execute, test.timeout, node, graph
-                );
+                result.details.executionResult = await phase(test.execute, node, graph, { signal });
             } else if (this.config.validateExecution) {
                 // Default execution test
                 result.details.executionResult = this.testNodeExecution(node, graph);
@@ -179,9 +182,7 @@ export class TestFramework {
             
             // Custom validation
             if (test.validate) {
-                result.details.validationResult = await this.executeWithTimeout(
-                    test.validate, test.timeout, node, graph, result.details.executionResult
-                );
+                result.details.validationResult = await phase(test.validate, node, graph, result.details.executionResult, { signal });
                 const validation = result.details.validationResult;
                 if (validation === false || validation?.passed === false || validation?.issues?.length) {
                     result.errors.push({ type: 'validation_error', message: validation?.issues?.join('; ') || 'Custom validation failed' });
@@ -206,8 +207,10 @@ export class TestFramework {
             result.status = result.errors.length > 0 ? 'failed' : 'passed';
             
         } catch (error) {
-            result.status = 'failed';
-            result.errors.push({
+            result.status = signal?.aborted ? 'skipped' : 'failed';
+            result.details.cancelled = !!signal?.aborted;
+            if (signal?.aborted) result.warnings.push('Canceled by user');
+            else result.errors.push({
                 type: 'execution_error',
                 message: error.message,
                 stack: error.stack
@@ -219,7 +222,7 @@ export class TestFramework {
                 result.status = 'failed';
                 result.errors.push({ type: 'cleanup_error', message: error.message });
             } finally {
-                try { graph?.clear(); } catch (error) {
+                try { if (graph) await this.executeWithTimeout(() => graph.clearAsync(), test.timeout || this.config.timeout); } catch (error) {
                     result.status = 'failed';
                     result.errors.push({ type: 'cleanup_error', message: error.message });
                 }
@@ -425,15 +428,24 @@ export class TestFramework {
      * Execute function with timeout
      */
     async executeWithTimeout(fn, timeout, ...args) {
+        return this.executePhase(fn, timeout, undefined, ...args);
+    }
+
+    async executePhase(fn, timeout, signal, ...args) {
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                reject(new Error(`Test timed out after ${timeout}ms`));
-            }, timeout);
-            
-            Promise.resolve().then(() => fn(...args)).then(
-                (value) => { clearTimeout(timer); resolve(value); },
-                (error) => { clearTimeout(timer); reject(error); }
-            );
+            const finish = (callback, value) => {
+                clearTimeout(timer);
+                signal?.removeEventListener('abort', abort);
+                callback(value);
+            };
+            const abort = () => finish(reject, Object.assign(new Error('Test canceled'), { name: 'AbortError' }));
+            const timer = setTimeout(() => finish(reject, new Error(`Test timed out after ${timeout}ms`)), timeout);
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) { abort(); return; }
+            Promise.resolve().then(() => {
+                if (signal?.aborted) throw Object.assign(new Error('Test canceled'), { name: 'AbortError' });
+                return fn(...args);
+            }).then(value => finish(resolve, value), error => finish(reject, error));
         });
     }
 
@@ -479,14 +491,14 @@ export class TestFramework {
         const totalNodeTypes = Object.keys(LiteGraph.registered_node_types).length;
         const testedNodeTypes = new Set();
         
-        for (const [nodeType] of this.tests) {
-            if (LiteGraph.registered_node_types[nodeType]) {
-                testedNodeTypes.add(nodeType);
+        for (const result of this.results.values()) {
+            if (['passed', 'failed'].includes(result.status) && LiteGraph.registered_node_types[result.nodeType]) {
+                testedNodeTypes.add(result.nodeType);
             }
         }
         
         this.stats.coverage = totalNodeTypes > 0 ? 
-            Math.round((testedNodeTypes.size / totalNodeTypes) * 100) : 0;
+            Number(((testedNodeTypes.size / totalNodeTypes) * 100).toFixed(1)) : 0;
     }
 
     /**
@@ -503,7 +515,7 @@ export class TestFramework {
      * Stop running tests
      */
     stopTests() {
-        this.isRunning = false;
+        this.runController?.abort();
         this.emit('testRunStopped');
     }
 
@@ -581,7 +593,7 @@ export class TestFramework {
                 result.errors.length,
                 result.warnings.length
             ];
-            rows.push(row.join(','));
+            rows.push(row.map(csvCell).join(','));
         }
         
         return rows.join('\n');
@@ -591,6 +603,7 @@ export class TestFramework {
      * Export as HTML
      */
     exportHTML(report) {
+        report = { ...report, results: report.results.map(escapeReportResult) };
         return `
 <!DOCTYPE html>
 <html>

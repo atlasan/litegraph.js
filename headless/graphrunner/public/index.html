@@ -11,6 +11,8 @@
   <div class="container-fluid">
     <header class="mb-4">
       <h1 class="mt-3">LiteGraph Runner</h1>
+      <div id="connectionStatus" role="status">Connecting…</div>
+      <div id="commandStatus" role="status" aria-live="polite">Edits stay in memory. Apply sends them to the worker; Sync replaces the view with worker state.</div>
     </header>
     <div class="row">
       <!-- File Explorer Panel -->
@@ -24,6 +26,7 @@
       <div class="col-md-9">
         <ul id="tabs" class="nav nav-tabs mb-2"></ul>
         <div id="content" class="mb-3">
+          <p id="emptyState">Open a workflow to inspect and control its worker.</p>
           <canvas id="graphCanvas" width="800" height="600"></canvas>
         </div>
         <div id="controls" class="mt-3">
