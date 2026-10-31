@@ -2,6 +2,7 @@
 import { LiteGraph } from "../../build/litegraph.full.js";
 
 import { WebSocketClient } from './connection.js';
+import { selectGraphView } from './graph-view-state.js';
 
 /* =================== File Explorer =================== */
 class FileExplorer {
@@ -114,9 +115,8 @@ class TabManager {
     if (currentGraphId === tabId) {
       const nextId = Object.keys(this.tabs)[0];
       if (nextId && graphsStore[nextId]) {
-        currentGraphId = nextId;
+        currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, nextId);
         this.activateTab(nextId);
-        graphViewer.loadGraph(graphsStore[nextId].serializedGraph);
       } else {
         this.onLastTabClosed?.();
       }
@@ -277,6 +277,7 @@ function refreshControls() {
   const loaded = ['running', 'stopped'].includes(graphsStore[currentGraphId]?.status);
   for (const id of ['runBtn', 'pauseBtn', 'applyBtn', 'syncBtn']) document.getElementById(id).disabled = !ready || !loaded;
   document.getElementById('toggleBtn').disabled = !graphViewer.editor;
+  document.getElementById('editMode').textContent = graphViewer.editor ? (graphViewer.editor.read_only ? 'Read-only view' : 'Editing local graph') : '';
   document.getElementById('stopAllBtn').disabled = !ready;
   document.querySelectorAll('#graphsList button').forEach(button => { button.disabled = !ready; });
   document.getElementById('filesList').setAttribute('aria-busy', String(commandPending));
@@ -332,12 +333,12 @@ function handleWebSocketMessage(message) {
       // Normalize graphId across visualization and execution.
       graphsStore[graphId] = { serializedGraph, status };
       tabManager.addTab(graphId, graphId, status, () => {
-        currentGraphId = graphId;
-        graphViewer.loadGraph(graphsStore[graphId].serializedGraph);
+        currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, graphId);
+        refreshControls();
       });
       tabManager.activateTab(graphId);
-      currentGraphId = graphId;
-      graphViewer.loadGraph(serializedGraph);
+      if (currentGraphId === graphId) graphViewer.updateGraph(serializedGraph);
+      else currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, graphId);
       break;
     }
     case "graph_status": {
@@ -358,6 +359,10 @@ function handleWebSocketMessage(message) {
     case "graph_updated":
     case "graph_sync": {
       const { graphId, serializedGraph } = message.data;
+      if (message.type === 'graph_updated' && !message.requestId) {
+        notice(`Worker ${graphId} changed in another client. Local view retained; Sync to retrieve it.`);
+        break;
+      }
       if (graphsStore[graphId]) graphsStore[graphId].serializedGraph = serializedGraph;
       if (currentGraphId === graphId) {
         graphViewer.updateGraph(serializedGraph);
@@ -397,6 +402,7 @@ graphControls.onPause(() => {
 graphControls.onToggle(() => {
   const mode = graphViewer.toggleReadOnly();
   consoleLogger.log(`Graph canvas is now ${mode}`);
+  refreshControls();
 });
 
 /* =================== Additional Control Buttons =================== */

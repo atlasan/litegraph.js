@@ -8,6 +8,7 @@ import { testFramework } from './test-framework.js';
 import TestCaseGenerator from './test-generator.js';
 import testConfig from './test-config.js';
 import { setNodeInput } from './test-inputs.js';
+import { checkAbort, pause, shuffled } from './test-control.js';
 
 export class TestRunner {
     constructor(app) {
@@ -41,11 +42,11 @@ export class TestRunner {
      * Update execution settings based on configuration
      */
     updateExecutionSettings() {
-        const config = testConfig.get('execution');
+        const config = testConfig.get().execution;
         
         // Update framework settings
         this.framework.config.timeout = config.timeout;
-        this.framework.config.validateMemory = config.memoryTracking;
+        this.framework.config.validateMemory = config.enableMemoryTracking;
 
     }
 
@@ -159,6 +160,7 @@ export class TestRunner {
         }
 
         this.shouldStop = true;
+        this.runController?.abort();
         
         for (const controller of this.activeExecutions) controller.abort();
         
@@ -190,6 +192,7 @@ export class TestRunner {
      */
     startExecution() {
         this.isRunning = true;
+        this.runController = new AbortController();
         this.shouldStop = false;
         this.startTime = Date.now();
         this.endTime = null;
@@ -198,6 +201,7 @@ export class TestRunner {
         
         // Clear previous test results in framework
         this.framework.clearResults();
+        this.updateExecutionSettings();
         this.app.uiManager?.updateControls();
     }
 
@@ -218,6 +222,7 @@ export class TestRunner {
      */
     async executeTestsForNodes(nodeTypes, progressCallback) {
         const config = testConfig.get();
+        if (config.execution.randomizeOrder) nodeTypes = shuffled(nodeTypes);
         const allResults = [];
         let completedNodes = 0;
         
@@ -317,7 +322,7 @@ export class TestRunner {
             }
             
             if (config.testTypes.performance) {
-                const perfTests = this.generator.generatePerformanceTests(nodeType, nodeInfo);
+                const perfTests = this.generator.generatePerformanceTests(nodeType, nodeInfo, config.performance);
                 testCases.push(...perfTests);
             }
             
@@ -336,7 +341,7 @@ export class TestRunner {
                 testCases.push(...stateTests);
             }
 
-            return testCases.map((testCase, index) => ({ ...testCase, id: `${nodeType}_${index}`, nodeType }));
+            return testCases.map((testCase, index) => ({ ...testCase, id: `${nodeType}_${index}`, nodeType, timeout: config.execution.timeout }));
             
         } catch (error) {
             console.error(`Failed to generate tests for ${nodeType}:`, error);
@@ -348,6 +353,7 @@ export class TestRunner {
      * Execute tests for a specific node
      */
     async executeNodeTests(nodeType, testCases, config) {
+        if (config.execution.randomizeOrder) testCases = shuffled(testCases);
         const results = [];
         const maxConcurrent = Math.max(1, config.execution.maxConcurrent || 1);
         
@@ -422,12 +428,30 @@ export class TestRunner {
                 // Legacy scenario expectations describe values, not slot definitions.
                 definition.expectedInputs = [];
                 definition.expectedOutputs = [];
-                definition.execute = async (node, graph) => {
+                definition.execute = async (node, graph, { signal }) => {
                     const utils = this.createExecutionContext(nodeType, testCase, config, graph).utils;
-                    await this.executeTestCaseLogic(node, testCase, utils, controller.signal);
+                    await this.executeTestCaseLogic(node, testCase, utils, signal);
                 };
             }
-            const result = await this.framework.runSingleTest(definition, { signal: controller.signal });
+            const attempts = [];
+            const retryCount = Math.min(5, Math.max(0, Math.floor(config.execution.retryCount || 0)));
+            const retryDelay = Math.min(10000, Math.max(0, config.execution.retryDelay || 0));
+            const started = performance.now();
+            let result;
+            for (let attempt = 0; attempt <= retryCount; attempt++) {
+                result = await this.framework.runSingleTest(definition, { signal: controller.signal });
+                attempts.push({ status: result.status, duration: result.duration, errors: result.errors });
+                if (result.status !== 'failed' || result.details.timedOut || result.errors.some(error => error.type === 'cleanup_error') || attempt === retryCount) break;
+                try { await pause(retryDelay, controller.signal); }
+                catch {
+                    result = { ...result, status: 'skipped', errors: [], warnings: [...result.warnings, 'Canceled during retry delay'], details: { ...result.details, cancelled: true } };
+                    break;
+                }
+            }
+            result.details.attempts = attempts;
+            result.startTime = started;
+            result.endTime = performance.now();
+            result.duration = result.endTime - started;
             this.framework.results.set(result.testId, result);
             const recorded = this.framework.getResults();
             this.framework.stats.total = recorded.length;
@@ -677,6 +701,7 @@ export class TestRunner {
         const executionTimes = [];
 
         for (let i = 0; i < iterations; i++) {
+            if (i % 25 === 0) await pause(0, abortSignal);
             if (abortSignal.aborted) throw new Error('Aborted');
             
             // Set inputs
@@ -1039,9 +1064,7 @@ export class TestRunner {
             const elapsed = Date.now() - startTime;
             const waitTime = Math.max(0, interval - elapsed);
             
-            if (waitTime > 0) {
-                await this.delay(waitTime);
-            }
+            await pause(waitTime, abortSignal);
         }
     }
 
@@ -1049,6 +1072,7 @@ export class TestRunner {
      * Execute large data stress test
      */
     async executeLargeDataStress(node, parameters, utils, abortSignal) {
+        checkAbort(abortSignal);
         const { dataSize, dataType } = parameters;
         
         // Generate large data based on type
@@ -1099,7 +1123,7 @@ export class TestRunner {
                 utils.triggerNodeExecution(node);
                 
                 // Small delay to allow garbage collection
-                await this.delay(10);
+                await pause(10, abortSignal);
             }
         } finally {
             // Clean up allocated memory
@@ -1111,7 +1135,9 @@ export class TestRunner {
      * Delay utility
      */
     delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return pause(ms, this.runController?.signal).catch(error => {
+            if (!this.shouldStop) throw error;
+        });
     }
 }
 

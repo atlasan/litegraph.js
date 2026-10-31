@@ -121,10 +121,13 @@ export class UIManager {
      * Update UI based on current state
      */
     updateUI() {
+        const category = this.elements.categoryFilter?.value || '';
         this.updateNodeList();
         this.updateStats();
         this.updateControls();
         this.updateFilters();
+        if (this.elements.categoryFilter) this.elements.categoryFilter.value = category;
+        this.filterNodes(this.elements.nodeSearch?.value || '');
     }
 
     /**
@@ -1177,13 +1180,8 @@ export class UIManager {
      * Filter by category
      */
     filterByCategory(category) {
-        const categories = document.querySelectorAll('.node-category');
-        
-        categories.forEach(categoryEl => {
-            const categoryName = categoryEl.querySelector('.category-name').textContent;
-            const matches = !category || categoryName === category;
-            categoryEl.style.display = matches ? 'block' : 'none';
-        });
+        if (this.elements.categoryFilter) this.elements.categoryFilter.value = category;
+        this.updateCategoryVisibility();
     }
 
     /**
@@ -1213,7 +1211,9 @@ export class UIManager {
         
         categories.forEach(category => {
             const visibleNodes = category.querySelectorAll('.node-item[style*="flex"], .node-item:not([style*="none"])');
-            category.style.display = visibleNodes.length > 0 ? 'block' : 'none';
+            const selected = this.elements.categoryFilter?.value;
+            const matches = !selected || category.querySelector('.category-name').textContent === selected;
+            category.style.display = visibleNodes.length > 0 && matches ? 'block' : 'none';
         });
     }
 

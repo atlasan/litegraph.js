@@ -53,10 +53,8 @@ export class TestConfig {
             performance: {
                 maxExecutionTime: 1000,
                 maxMemoryUsage: 50 * 1024 * 1024, // 50MB
-                // TODO: Implement benchmarking functionality
-                // enableBenchmarking: false,
-                // benchmarkIterations: 100,
-                // warmupIterations: 10
+                benchmarkIterations: 100,
+                warmupIterations: 10
             },
 
             // Validation settings
@@ -209,25 +207,28 @@ export class TestConfig {
             errors.push('Max concurrent tests must be greater than 0');
         }
         
-        if (this.config.execution.retryCount < 0) {
-            errors.push('Retry count cannot be negative');
+        if (!Number.isInteger(this.config.execution.retryCount) || this.config.execution.retryCount < 0 || this.config.execution.retryCount > 5) {
+            errors.push('Retry count must be an integer from 0 to 5');
         }
         
-        if (this.config.execution.retryDelay < 0) {
-            errors.push('Retry delay cannot be negative');
+        if (!Number.isFinite(this.config.execution.retryDelay) || this.config.execution.retryDelay < 0 || this.config.execution.retryDelay > 10000) {
+            errors.push('Retry delay must be from 0 to 10000ms');
         }
         
         // Validate performance settings
-        if (this.config.performance.maxExecutionTime <= 0) {
-            warnings.push('Max execution time should be greater than 0');
+        if (!Number.isFinite(this.config.performance.maxExecutionTime) || this.config.performance.maxExecutionTime <= 0) {
+            errors.push('Max execution time must be finite and greater than 0');
         }
         
-        if (this.config.performance.maxMemoryUsage <= 0) {
-            warnings.push('Max memory usage should be greater than 0');
+        if (!Number.isFinite(this.config.performance.maxMemoryUsage) || this.config.performance.maxMemoryUsage <= 0) {
+            errors.push('Max memory usage must be finite and greater than 0');
         }
         
-        if (this.config.performance.benchmarkIterations <= 0) {
-            warnings.push('Benchmark iterations should be greater than 0');
+        if (!Number.isInteger(this.config.performance.benchmarkIterations) || this.config.performance.benchmarkIterations < 1 || this.config.performance.benchmarkIterations > 1000) {
+            errors.push('Benchmark iterations must be an integer from 1 to 1000');
+        }
+        if (!Number.isInteger(this.config.performance.warmupIterations) || this.config.performance.warmupIterations < 0 || this.config.performance.warmupIterations > 100) {
+            errors.push('Warmup iterations must be an integer from 0 to 100');
         }
         
         // Validate node selection
@@ -621,7 +622,7 @@ export class TestConfig {
                     retryCount: {
                         type: 'number',
                         title: 'Retry Count',
-                        description: 'Number of times to retry failed tests',
+                        description: 'Retry ordinary failures with fresh graphs; timeouts and cleanup failures are not retried',
                         min: 0,
                         max: 5
                     },
@@ -710,7 +711,7 @@ export class TestConfig {
                     maxExecutionTime: {
                         type: 'number',
                         title: 'Max Execution Time (ms)',
-                        description: 'Maximum allowed execution time per test',
+                        description: 'Maximum synchronous execution time per measured iteration',
                         min: 10,
                         max: 10000,
                         step: 10
@@ -718,14 +719,9 @@ export class TestConfig {
                     maxMemoryUsage: {
                         type: 'number',
                         title: 'Max Memory Usage (bytes)',
-                        description: 'Maximum allowed memory usage per test',
+                        description: 'Maximum observed page heap growth during a benchmark, when supported',
                         min: 1024,
                         max: 1024 * 1024 * 1024
-                    },
-                    enableBenchmarking: {
-                        type: 'boolean',
-                        title: 'Enable Benchmarking',
-                        description: 'Run performance benchmarks'
                     },
                     benchmarkIterations: {
                         type: 'number',

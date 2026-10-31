@@ -13,6 +13,8 @@
       <h1 class="mt-3">LiteGraph Runner</h1>
       <div id="connectionStatus" role="status">Connecting…</div>
       <div id="commandStatus" role="status" aria-live="polite">Edits stay in memory. Apply sends them to the worker; Sync replaces the view with worker state.</div>
+      <p class="small mb-1">Apply sends local edits to the worker. Sync replaces local edits with worker state. Neither saves the workflow file.</p>
+      <div id="editMode" role="status"></div>
     </header>
     <div class="row">
       <!-- File Explorer Panel -->

@@ -120,7 +120,15 @@ export class TestFramework {
      * Run a single test case
      */
     async runSingleTest(test, { signal } = {}) {
-        const phase = (fn, ...args) => this.executePhase(fn, test.timeout || this.config.timeout, signal, ...args);
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
+        const context = { signal: controller.signal };
+        const phase = async (fn, ...args) => {
+            try { return await this.executePhase(fn, test.timeout || this.config.timeout, controller.signal, ...args); }
+            catch (error) { controller.abort(); throw error; }
+        };
         const startTime = performance.now();
         const result = {
             testId: test.id,
@@ -155,7 +163,7 @@ export class TestFramework {
             
             // Setup phase
             if (test.setup) {
-                await phase(test.setup, node, graph, { signal });
+                await phase(test.setup, node, graph, context);
             }
             
             // Validation phase
@@ -173,7 +181,7 @@ export class TestFramework {
             
             // Execution phase
             if (test.execute) {
-                result.details.executionResult = await phase(test.execute, node, graph, { signal });
+                result.details.executionResult = await phase(test.execute, node, graph, context);
             } else if (this.config.validateExecution) {
                 // Default execution test
                 result.details.executionResult = this.testNodeExecution(node, graph);
@@ -182,7 +190,7 @@ export class TestFramework {
             
             // Custom validation
             if (test.validate) {
-                result.details.validationResult = await phase(test.validate, node, graph, result.details.executionResult, { signal });
+                result.details.validationResult = await phase(test.validate, node, graph, result.details.executionResult, context);
                 const validation = result.details.validationResult;
                 if (validation === false || validation?.passed === false || validation?.issues?.length) {
                     result.errors.push({ type: 'validation_error', message: validation?.issues?.join('; ') || 'Custom validation failed' });
@@ -209,6 +217,7 @@ export class TestFramework {
         } catch (error) {
             result.status = signal?.aborted ? 'skipped' : 'failed';
             result.details.cancelled = !!signal?.aborted;
+            result.details.timedOut = error.name === 'TimeoutError';
             if (signal?.aborted) result.warnings.push('Canceled by user');
             else result.errors.push({
                 type: 'execution_error',
@@ -216,8 +225,10 @@ export class TestFramework {
                 stack: error.stack
             });
         } finally {
+            controller.abort();
+            signal?.removeEventListener('abort', abort);
             try {
-                if (test.cleanup && node && graph) await this.executeWithTimeout(test.cleanup, test.timeout, node, graph);
+                if (test.cleanup && node && graph) await this.executeWithTimeout(test.cleanup, test.timeout || this.config.timeout, node, graph);
             } catch (error) {
                 result.status = 'failed';
                 result.errors.push({ type: 'cleanup_error', message: error.message });
@@ -439,7 +450,7 @@ export class TestFramework {
                 callback(value);
             };
             const abort = () => finish(reject, Object.assign(new Error('Test canceled'), { name: 'AbortError' }));
-            const timer = setTimeout(() => finish(reject, new Error(`Test timed out after ${timeout}ms`)), timeout);
+            const timer = setTimeout(() => finish(reject, Object.assign(new Error(`Test timed out after ${timeout}ms`), { name: 'TimeoutError' })), timeout);
             signal?.addEventListener('abort', abort, { once: true });
             if (signal?.aborted) { abort(); return; }
             Promise.resolve().then(() => {
