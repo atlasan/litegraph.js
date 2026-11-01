@@ -1,6 +1,6 @@
 # Development state and validation
 
-Start with the [2026-10-30 investigation](2026-10-30-study.md) for history, upstream/fork comparisons, branch selection, and baseline failures. The older `agents/analysis` material is historical, not a guarantee of tested behavior.
+Start with the [2026-10-30 investigation](2026-10-30-study.md) for history, upstream/fork comparisons, branch selection, and baseline failures. The older `agents/analysis` material is historical, not a guarantee of tested behavior. The [runtime and dependency catalog](node-runtime-catalog.md) separates available node families from verified execution paths and optional integrations.
 
 ## Setup and commands
 
@@ -86,7 +86,9 @@ try {
 }
 ```
 
-`start()` preserves immediate startup for ready graphs, but returns a Promise when dependencies are pending or failed. Use `startAsync()` when the caller needs a consistent awaitable result. Dependency failures reject startup and keep execution stopped. Manual `runStep()` skips loading/failed nodes; await `whenReady()` for a deterministic first step. Unsupported runtimes leave an inspectable disabled node whose `ready` rejects. Recreate a failed node after correcting its dependencies.
+`start()` preserves immediate startup for ready graphs, but returns a Promise when dependencies are pending or failed. Use `startAsync()` when the caller needs a consistent awaitable result. Dependency failures reject startup and keep execution stopped. Manual `runStep()` skips loading/failed nodes; await `whenReady()` for a deterministic first step. Nodes declaring runtime restrictions leave an inspectable disabled node whose `ready` rejects in unsupported environments. Undeclared legacy dependencies can still fail during construction; see the [runtime catalog](node-runtime-catalog.md). Recreate a failed node after correcting its dependencies.
+
+`server/process/NodeProcessInfo` loads `os` before initialization, exposes an object output, and refreshes it on execution. Service nodes select their Windows/Linux adapter before loading dependencies and bind it after readiness. Missing adapters reject readiness; these adapters do not support macOS. Controlled dependency fixtures do not establish live service-control API compatibility.
 
 LibraryManager shares concurrent loads and propagates errors. Ordered local/npm dependency groups fall back to ordered remote groups; a group succeeds only when all its entries load. `defaultExport: true` selects the default export; a string selects a named export. `waitForLib()` initiates loading and rejects on load failure or its timeout. Failed library loads can be retried. Browser module detection remains heuristic; external service/native binding compatibility is not established by core checks.
 
@@ -121,7 +123,18 @@ Enable **Performance Tests** or **Stress Tests** under Config → Test Types. Pe
 
 Retry Count allows up to five extra attempts for ordinary failures; each attempt gets a fresh graph and completed cleanup. Timeouts and cleanup failures are not retried because unfinished custom work may remain. Stop interrupts retry delays and all active cases. Results count each case once, retain every attempt's status/duration/errors under `details.attempts`, and include retry waits in total duration. Stop on First Failure applies after allowed retries. Randomize Order shuffles node groups and their cases without changing the saved selection. The configured execution timeout applies to generated scenarios and signals cooperative work before cleanup when a phase expires.
 
-The generic scenarios are exploratory checks, not assertions that all node types share identical input/error contracts. A failing scenario needs node-specific review. Cancellation and timeouts cannot stop arbitrary user JavaScript or a synchronous infinite loop; an async callback that ignores its signal can still finish after cleanup. Broad legacy scenario semantics, large-data/memory-pressure limits, and async I/O benchmarks still need review before treating the tool as a general isolation harness. Browser acceptance with 10 benchmark samples and two warmups passed all six `math/abs` scenarios; Stop interrupted stress with a skipped result and allowed the next run to complete. See [load results](evidence/tester-load.jpg) and [Stop evidence](evidence/tester-stop.jpg).
+The generic scenarios are exploratory checks, not assertions that all node types share identical input/error contracts. A failing scenario needs node-specific review. Cancellation and timeouts cannot stop arbitrary user JavaScript or a synchronous infinite loop; an async callback that ignores its signal can still finish after cleanup. Bounds limit the built-in legacy workloads per case; they do not isolate page memory or allocations made by a node. Broader node contracts and async I/O benchmarks still need review before treating the tool as a general isolation harness. Browser acceptance with 10 benchmark samples and two warmups passed all six `math/abs` scenarios; Stop interrupted stress with a skipped result and allowed the next run to complete. See [load results](evidence/tester-load.jpg) and [Stop evidence](evidence/tester-stop.jpg).
+
+Legacy load definitions reject nonfinite, out-of-range, and fractional counts before executing the node. Their limits are:
+
+| Scenario | Accepted workload |
+| --- | --- |
+| Performance | 1–1000 measured iterations; positive execution threshold up to 60,000 ms |
+| High frequency | 0.1–1000 Hz for 1–60,000 ms; waits are capped to the remaining duration |
+| Large data | Array/object: 0–100,000 elements/properties; string: 0–1,000,000 characters; other types rejected |
+| Memory pressure | 1–1000 iterations; 1–100,000 array elements per iteration; at most 1,000,000 retained elements total |
+
+`memoryPerIteration` retains its historical meaning of array elements, not bytes. Array/object generation yields every 1024 entries; memory-pressure loops observe cancellation and release their retained arrays in cleanup. These limits apply per case, so concurrent cases and custom node allocations can use additional memory.
 
 ## Worker runner
 
@@ -156,6 +169,10 @@ Protocol requests accept `{ "type": "...", "data": { ... }, "requestId": "option
 
 Server-side manager methods now return Promises; callers must await them. Successful status is `running`/`stopped`, not the command string `start`/`stop`. Failure responses remain `{ error }` internally and WebSocket `error` messages externally.
 
+Browser acceptance on 2026-11-01 terminated a real running worker: the tab reported an error, retained its local canvas, disabled worker controls, and allowed reopening and starting the workflow. In two browser clients, an unsent local value of `73` survived a peer applying `22`; the notice identified the external change, and explicit Sync retrieved `22`. See [worker exit](evidence/runner-worker-exit.jpg) and [peer update](evidence/runner-peer-update.jpg). Integration tests cover an outstanding request failing on worker exit, reopening, and request-ID-free peer broadcasts.
+
+To reproduce worker failure locally, run `node tools/fixtures/runner-browser.mjs` and open its loopback URL. This harness uses the normal runner UI; type `crash` in its terminal to terminate loaded workers, or `quit` to close it. It adds no HTTP fault-injection endpoint. Two tabs provide the multiple-client workflow. Drafts remain in memory, with no conflict merging; concurrent edits during pending commands still need further acceptance coverage.
+
 ## Evidence and follow-up
 
-The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: node runtime/dependency documentation, optional integration fixtures, legacy large-data/memory-pressure scenarios, and runner worker-crash/multiple-client browser validation. Reproduce relevant upstream/fork defects locally before considering a port.
+The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: per-node runtime capability metadata, optional integration fixtures, async I/O benchmark contracts, and runner edits during pending commands. The family-level runtime map, legacy workload bounds, worker-crash recovery, and basic multiple-client browser workflow now have evidence. Reproduce relevant upstream/fork defects locally before considering a port.

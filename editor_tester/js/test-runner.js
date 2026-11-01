@@ -8,7 +8,7 @@ import { testFramework } from './test-framework.js';
 import TestCaseGenerator from './test-generator.js';
 import testConfig from './test-config.js';
 import { setNodeInput } from './test-inputs.js';
-import { checkAbort, pause, shuffled } from './test-control.js';
+import { boundedNumber, checkAbort, pause, shuffled } from './test-control.js';
 
 export class TestRunner {
     constructor(app) {
@@ -698,6 +698,9 @@ export class TestRunner {
      */
     async executePerformanceTest(node, testCase, utils, abortSignal) {
         const { iterations, maxExecutionTime, inputs } = testCase;
+        boundedNumber('iterations', iterations, 1, 1000, true);
+        boundedNumber('maxExecutionTime', maxExecutionTime, Number.EPSILON, 60000);
+        checkAbort(abortSignal);
         const executionTimes = [];
 
         for (let i = 0; i < iterations; i++) {
@@ -1044,11 +1047,15 @@ export class TestRunner {
      */
     async executeHighFrequencyStress(node, parameters, utils, abortSignal) {
         const { frequency, duration, inputs } = parameters;
+        boundedNumber('frequency', frequency, 0.1, 1000);
+        boundedNumber('duration', duration, 1, 60000);
+        checkAbort(abortSignal);
         const interval = 1000 / frequency; // ms between executions
-        const endTime = Date.now() + duration;
+        const endTime = performance.now() + duration;
 
-        while (Date.now() < endTime && !abortSignal.aborted) {
-            const startTime = Date.now();
+        while (performance.now() < endTime) {
+            checkAbort(abortSignal);
+            const startTime = performance.now();
             
             // Set inputs if provided
             if (inputs) {
@@ -1061,8 +1068,9 @@ export class TestRunner {
             utils.triggerNodeExecution(node);
             
             // Wait for next execution
-            const elapsed = Date.now() - startTime;
-            const waitTime = Math.max(0, interval - elapsed);
+            const now = performance.now();
+            const elapsed = now - startTime;
+            const waitTime = Math.max(0, Math.min(interval - elapsed, endTime - now));
             
             await pause(waitTime, abortSignal);
         }
@@ -1074,27 +1082,33 @@ export class TestRunner {
     async executeLargeDataStress(node, parameters, utils, abortSignal) {
         checkAbort(abortSignal);
         const { dataSize, dataType } = parameters;
+        if (!['array', 'string', 'object'].includes(dataType)) throw new Error('dataType must be array, string, or object');
+        boundedNumber('dataSize', dataSize, 0, dataType === 'string' ? 1000000 : 100000, true);
         
         // Generate large data based on type
         let largeData;
         switch (dataType) {
             case 'array':
-                largeData = new Array(dataSize).fill(0).map((_, i) => i);
+                largeData = new Array(dataSize);
+                for (let i = 0; i < dataSize; i++) {
+                    if (i % 1024 === 0) await pause(0, abortSignal);
+                    largeData[i] = i;
+                }
                 break;
                 
             case 'string':
+                await pause(0, abortSignal);
                 largeData = 'x'.repeat(dataSize);
                 break;
                 
             case 'object':
                 largeData = {};
                 for (let i = 0; i < dataSize; i++) {
+                    if (i % 1024 === 0) await pause(0, abortSignal);
                     largeData[`key${i}`] = `value${i}`;
                 }
                 break;
                 
-            default:
-                largeData = new Array(dataSize).fill(Math.random());
         }
         
         if (abortSignal.aborted) throw new Error('Aborted');
@@ -1111,10 +1125,16 @@ export class TestRunner {
      */
     async executeMemoryPressureStress(node, parameters, utils, abortSignal) {
         const { iterations, memoryPerIteration } = parameters;
+        boundedNumber('iterations', iterations, 1, 1000, true);
+        // Historical memoryPerIteration means array elements, not bytes.
+        boundedNumber('memoryPerIteration', memoryPerIteration, 1, 100000, true);
+        boundedNumber('total memory elements', iterations * memoryPerIteration, 1, 1000000, true);
+        checkAbort(abortSignal);
         const allocatedMemory = [];
 
         try {
-            for (let i = 0; i < iterations && !abortSignal.aborted; i++) {
+            for (let i = 0; i < iterations; i++) {
+                checkAbort(abortSignal);
                 // Allocate memory
                 const chunk = new Array(memoryPerIteration).fill(Math.random());
                 allocatedMemory.push(chunk);

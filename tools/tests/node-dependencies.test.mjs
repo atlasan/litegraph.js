@@ -34,3 +34,65 @@ test('network library registrations expose usable constructors without connectin
     assert.equal(typeof manager.getLib('ws').WebSocketServer, 'function');
     assert.equal(typeof manager.getLib('dgram').createSocket, 'function');
 });
+
+test('process-info node initializes os before exposing its output', async () => {
+    const graph = new LGraph();
+    try {
+        const node = LiteGraph.createNode('server/process/NodeProcessInfo');
+        assert.ok(node, 'process-info must construct');
+        graph.add(node); await graph.whenReady(); graph.runStep(1, true);
+        const info = node.getOutputData(0);
+        assert.equal(info.platform, process.platform);
+        assert.equal(info.arch, process.arch);
+        assert.ok(Number.isInteger(info.cpuCores) && info.cpuCores > 0);
+        assert.ok(info.totalMemory > 0); assert.ok(info.freeMemory >= 0);
+    } finally { await graph.clearAsync(); }
+});
+
+test('service nodes wait for their platform adapter and surface missing adapters', async () => {
+    if (!['win32','linux'].includes(process.platform)) return;
+    const manager = LiteGraph.LibraryManager;
+    const originalLoad = manager.loadLibrary, originalGet = manager.getLib;
+    const key = process.platform === 'win32' ? 'node-windows' : 'node-linux-systemd';
+    const adapter = {};
+    let loaded = false, loadCount = 0;
+    manager.loadLibrary = async requested => { assert.equal(requested, key); loadCount++; await Promise.resolve(); loaded = true; };
+    manager.getLib = requested => { assert.equal(requested, key); assert.equal(loaded, true); return adapter; };
+    try {
+        for (const type of ['sys/serviceManager','sys/serviceList']) {
+            loaded = false;
+            const node = LiteGraph.createNode(type);
+            assert.deepEqual(node.libraries, [key]);
+            await node.ready;
+            assert.equal(process.platform === 'win32' ? node.windowsService : node.linuxService, adapter);
+        }
+        assert.equal(loadCount, 2);
+        manager.loadLibrary = async () => { throw new Error('fixture adapter missing'); };
+        const node = LiteGraph.createNode('sys/serviceManager');
+        await assert.rejects(node.ready, /fixture adapter missing/);
+        assert.equal(node.initialization_state, 'error');
+    } finally { manager.loadLibrary = originalLoad; manager.getLib = originalGet; }
+});
+
+test('Node-only process and service nodes reject a browser runtime before dependency loading', async () => {
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const manager = LiteGraph.LibraryManager, original = manager.loadLibrary;
+    let loads = 0;
+    globalThis.window = {}; globalThis.document = {};
+    manager.loadLibrary = async () => { loads++; };
+    try {
+        for (const type of ['server/process/NodeProcessInfo','sys/serviceManager','sys/serviceList']) {
+            const node = LiteGraph.createNode(type);
+            assert.ok(node);
+            await assert.rejects(node.ready, /cannot run in browser/);
+            assert.equal(node.wrong_environment, true);
+            assert.equal(node.mode, LiteGraph.NEVER);
+        }
+        assert.equal(loads, 0);
+    } finally {
+        manager.loadLibrary = original;
+        if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow); else delete globalThis.window;
+        if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument); else delete globalThis.document;
+    }
+});

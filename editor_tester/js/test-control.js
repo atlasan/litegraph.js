@@ -2,6 +2,13 @@ export function checkAbort(signal) {
     if (signal?.aborted) throw Object.assign(new Error('Test canceled'), { name: 'AbortError' });
 }
 
+export function boundedNumber(name, value, min, max, integer = false) {
+    if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
+        throw new RangeError(`${name} must be ${integer ? 'an integer' : 'a finite number'} from ${min} to ${max}`);
+    }
+    return value;
+}
+
 // A task boundary lets Stop and timeout timers run even during CPU-heavy scenarios.
 export function pause(ms = 0, signal) {
     return new Promise((resolve, reject) => {

@@ -6,6 +6,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
+import { Worker } from 'node:worker_threads';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'litegraph-runner-'));
 process.env.WORKFLOWS_DIR = path.join(temp, 'workflows');
@@ -96,6 +97,34 @@ test('worker stop/update acknowledgments wait for bound ports to be released', {
   }
 });
 
+test('unexpected worker exit rejects an outstanding command and permits reopening', {timeout:5000}, async () => {
+  const original = Worker.prototype.postMessage;
+  let holdSync = false, sent;
+  const held = new Promise(resolve => { sent = resolve; });
+  const statuses = [];
+  manager.setStatusCallback((graphId, status) => statuses.push({graphId, status}));
+  Worker.prototype.postMessage = function(message, ...rest) {
+    if (holdSync && message.action === 'sync') { sent(this); return; }
+    return original.call(this, message, ...rest);
+  };
+  try {
+    assert.equal((await manager.openGraph('empty.json', logger)).status, 'stopped');
+    holdSync = true;
+    const pending = manager.requestSync('empty.json', logger);
+    const worker = await held;
+    await worker.terminate();
+    assert.match((await pending).error, /Worker exited/);
+    assert.deepEqual(manager.getCurrentProcesses(), []);
+    assert.deepEqual(statuses.at(-1), {graphId:'empty.json', status:'error'});
+    holdSync = false;
+    assert.equal((await manager.openGraph('empty.json', logger)).status, 'stopped');
+  } finally {
+    Worker.prototype.postMessage = original;
+    manager.setStatusCallback(null);
+    await manager.unloadAllGraphs(logger);
+  }
+});
+
 test('HTTP and WebSocket protocol on an ephemeral port', async () => {
   const { createRunnerServer } = await import('../../headless/graphrunner/server/index.js');
   const runner = createRunnerServer();
@@ -103,6 +132,9 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
   await once(runner.server, 'listening');
   const address = `127.0.0.1:${runner.server.address().port}`;
   const ws = new WebSocket(`ws://${address}`);
+  const peer = new WebSocket(`ws://${address}`);
+  const peerMessages = [];
+  peer.on('message', raw => peerMessages.push(JSON.parse(raw)));
   const messages = [];
   ws.on('message', (raw) => messages.push(JSON.parse(raw)));
   const waitFor = async (predicate) => {
@@ -115,7 +147,7 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     throw new Error('Timed out waiting for WebSocket response');
   };
   try {
-    await once(ws, 'open');
+    await Promise.all([once(ws, 'open'), once(peer, 'open')]);
     const listed = await fetch(`http://${address}/api/list_files`).then((r) => r.json());
     assert.ok(listed.includes('empty.json'));
     assert.ok(!listed.includes('escape.json'));
@@ -130,10 +162,24 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     ws.send(JSON.stringify({type:'unsupported', requestId:'error-fixture'}));
     assert.equal((await waitFor(m => m.type === 'error')).requestId, 'error-fixture');
     await waitFor((m) => m.type === 'graph_status' && m.data.status === 'running');
+    const peerUpdate = new Promise(resolve => {
+      const receive = raw => {
+        const packet = JSON.parse(raw);
+        if (packet.type === 'graph_updated') { peer.off('message', receive); resolve(packet); }
+      };
+      peer.on('message', receive);
+    });
+    ws.send(JSON.stringify({type:'update_graph', requestId:'update-fixture', data:{graphId:'empty.json', serializedGraph:{...workflow, extra:{marker:'peer-update'}}}}));
+    const ownUpdate = await waitFor(m => m.type === 'graph_updated');
+    const broadcast = await peerUpdate;
+    assert.equal(ownUpdate.requestId, 'update-fixture');
+    assert.equal(broadcast.requestId, undefined);
+    assert.equal(broadcast.data.serializedGraph.extra.marker, 'peer-update');
     messages.length = 0;
     ws.send(JSON.stringify({ type: 'stop_all_graphs' }));
     await waitFor((m) => m.type === 'active_graphs' && m.data.graphs[0]?.status === 'stopped');
     ws.send(JSON.stringify({ type: 'unload_graph', data: { graphId: 'empty.json' } }));
     await waitFor((m) => m.type === 'graph_status' && m.data.status === 'unloaded');
-  } finally { ws.terminate(); await runner.close(); fs.rmSync(temp, { recursive: true, force: true }); }
+    assert.ok(peerMessages.some(m => m.type === 'graph_status' && m.data.status === 'running'));
+  } finally { ws.terminate(); peer.terminate(); await runner.close(); fs.rmSync(temp, { recursive: true, force: true }); }
 });
