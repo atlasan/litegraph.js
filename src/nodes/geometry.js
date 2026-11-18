@@ -3,6 +3,14 @@ import { LiteGraph } from "../litegraph.js";
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // import { GL } from "../../editor/js/libs/litegl.js";
 
+// Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
+function polarToCartesian(out, azimuth, inclination, radius) {
+    out[0] = radius * Math.sin(inclination) * Math.cos(azimuth);
+    out[1] = radius * Math.cos(inclination);
+    out[2] = radius * Math.sin(inclination) * Math.sin(azimuth);
+    return out;
+}
+
 var view_matrix = new Float32Array(16);
 var projection_matrix = new Float32Array(16);
 var viewprojection_matrix = new Float32Array(16);
@@ -146,7 +154,7 @@ class LGraphPoints3D {
                 for (let i = 0; i < side; ++i)
                     for (let j = 0; j < side; ++j) {
                         let pos = i * 3 + j * 3 * side;
-                        GL.polarToCartesian(
+                        polarToCartesian(
                             temp,
                             (i / side) * 2 * Math.PI,
                             (j / side - 0.5) * 2 * Math.PI,

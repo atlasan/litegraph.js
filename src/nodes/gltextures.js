@@ -55,6 +55,41 @@ export class LGraphTexture {
     };
 
     // returns the container where all the loaded textures are stored (overwrite if you have a Resources Manager)
+    // Texture/fx nodes need litegl (GL) and a live WebGL context (gl). Without
+    // them (no litegl, WebGL not enabled yet, headless) they must stay inert.
+    static hasWebGL() {
+        return typeof GL !== "undefined" && typeof gl !== "undefined" && !!gl;
+    }
+
+    static _webgl_guarded = new Set();
+
+    // Makes a node type a no-op while WebGL is unavailable, and lets its shared
+    // GPU resources (static initShader) be created on first use instead of in
+    // the constructor, so nodes created before WebGL was enabled still work.
+    static requireWebGL(ctor) {
+        if (!ctor || LGraphTexture._webgl_guarded.has(ctor)) return;
+        LGraphTexture._webgl_guarded.add(ctor);
+        var proto = ctor.prototype;
+        ["onExecute", "onPropertyChanged", "onAction"].forEach(function (name) {
+            var original = proto[name];
+            if (typeof original !== "function") return;
+            proto[name] = function () {
+                // undefined (not false) from onPropertyChanged keeps the new value
+                if (!LGraphTexture.hasWebGL()) return undefined;
+                if (typeof ctor.initShader === "function") ctor.initShader();
+                if (typeof this.initWebGL === "function") this.initWebGL();
+                return original.apply(this, arguments);
+            };
+        });
+    }
+
+    static guardRegisteredWebGLNodes() {
+        var types = LiteGraph.registered_node_types;
+        for (var type in types) {
+            if (/^(texture|fx)\//.test(type)) LGraphTexture.requireWebGL(types[type]);
+        }
+    }
+
     static getTexturesContainer() {
         return gl.textures;
     }
@@ -2276,12 +2311,15 @@ class LGraphTextureLUT {
             texture: null,
         };
 
-        if (!LGraphTextureLUT._shader) {
-            LGraphTextureLUT._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureLUT.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureLUT.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureLUT._shader) return;
+        LGraphTextureLUT._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureLUT.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -2404,12 +2442,7 @@ class LGraphTextureEncode {
             texture: null,
         };
 
-        if (!LGraphTextureEncode._shader) {
-            LGraphTextureEncode._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEncode.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEncode.initShader();
 
         this._uniforms = {
             u_texture: 0,
@@ -2418,6 +2451,14 @@ class LGraphTextureEncode {
             u_simbol_size: 16,
             u_res: vec2.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureEncode._shader) return;
+        LGraphTextureEncode._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEncode.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -2549,12 +2590,15 @@ class LGraphTextureChannels {
         this.addOutput("A", "Texture");
 
         // this.properties = { use_single_channel: true };
-        if (!LGraphTextureChannels._shader) {
-            LGraphTextureChannels._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureChannels.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureChannels.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureChannels._shader) return;
+        LGraphTextureChannels._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureChannels.pixel_shader,
+        );
     }
 
     static title = "Texture to Channels";
@@ -2870,18 +2914,21 @@ class LGraphTextureGradient {
             B: [1, 1, 1],
             texture_size: 32,
         };
-        if (!LGraphTextureGradient._shader) {
-            LGraphTextureGradient._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureGradient.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureGradient.initShader();
 
         this._uniforms = {
             u_angle: 0,
             u_colorA: vec3.create(),
             u_colorB: vec3.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureGradient._shader) return;
+        LGraphTextureGradient._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureGradient.pixel_shader,
+        );
     }
 
     static title = "Gradient";
@@ -3116,12 +3163,15 @@ class LGraphTextureEdges {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphTextureEdges._shader) {
-            LGraphTextureEdges._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEdges.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEdges.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureEdges._shader) return;
+        LGraphTextureEdges._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEdges.pixel_shader,
+        );
     }
 
     static title = "Edges";
@@ -5697,3 +5747,4 @@ class LGraphCubemapToTexture2D {
 }
 LiteGraph.registerNodeType("texture/cubemapToTexture2D",LGraphCubemapToTexture2D);
 
+LGraphTexture.guardRegisteredWebGLNodes();

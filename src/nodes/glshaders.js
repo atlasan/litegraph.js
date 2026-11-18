@@ -545,8 +545,9 @@ class LGraphShaderGraph {
         this._uniforms = {};
         this._shader = null;
         this._context = new LGShaderContext();
-        this._context.vs_template =
-            "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+        this._context.vs_template = LGraphTexture.hasWebGL()
+            ? "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER
+            : "";
         this._context.fs_template = LGraphShaderGraph.template;
     }
 
@@ -775,6 +776,11 @@ class LGraphShaderGraph {
         return options;
     }
 }
+// fills in the vertex template skipped when the node was created before WebGL was on
+LGraphShaderGraph.prototype.initWebGL = function () {
+    if (!this._context.vs_template)
+        this._context.vs_template = "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+};
 LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 /*
@@ -2084,3 +2090,5 @@ class LGraphShaderRemap {
     }
 }
 registerShaderNode("math/remap", LGraphShaderRemap);
+
+LGraphTexture.guardRegisteredWebGLNodes();

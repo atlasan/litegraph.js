@@ -20,19 +20,22 @@ class LGraphFXLens {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXLens._shader) {
-            LGraphFXLens._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXLens.pixel_shader,
-            );
-            LGraphFXLens._texture = new GL.Texture(3, 1, {
-                format: gl.RGB,
-                wrap: gl.CLAMP_TO_EDGE,
-                magFilter: gl.LINEAR,
-                minFilter: gl.LINEAR,
-                pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
-            });
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXLens.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXLens._shader) return;
+        LGraphFXLens._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXLens.pixel_shader,
+        );
+        LGraphFXLens._texture = new GL.Texture(3, 1, {
+            format: gl.RGB,
+            wrap: gl.CLAMP_TO_EDGE,
+            magFilter: gl.LINEAR,
+            minFilter: gl.LINEAR,
+            pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
+        });
     }
 
     static title = "Lens";
@@ -707,12 +710,15 @@ class LGraphFXVigneting {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXVigneting._shader) {
-            LGraphFXVigneting._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXVigneting.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXVigneting.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXVigneting._shader) return;
+        LGraphFXVigneting._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXVigneting.pixel_shader,
+        );
     }
 
     static title = "Vigneting";
@@ -791,3 +797,5 @@ class LGraphFXVigneting {
     `;
 }
 LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
+
+LGraphTexture.guardRegisteredWebGLNodes();
