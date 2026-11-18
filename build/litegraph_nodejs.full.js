@@ -21524,6 +21524,10 @@ class GenericCompare {
                     result = true;
                     switch (typeof A) {
                         case "object":
+                            if (A === null || B === null) {
+                                result = A === B;
+                                break;
+                            }
                             var aProps = Object.getOwnPropertyNames(A);
                             var bProps = Object.getOwnPropertyNames(B);
                             if (aProps.length != bProps.length) {
@@ -24259,7 +24263,7 @@ class MathOperation {
             B = this.properties["B"];
         }
 
-        var func = MathOperation.funcs[this.properties.OP];
+        var func = MathOperation.funcs[this.properties.OP] || this._func || ((a) => a);
 
         var result;
         if (A.constructor === Number) {
@@ -24997,6 +25001,17 @@ class Math3DXYZWToVec4 {
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
+const MATH3D_DEG2RAD = Math.PI / 180;
+const MATH3D_RAD2DEG = 180 / Math.PI;
+
+function isNumberArray(value, minLength) {
+    if (!value || typeof value.length !== "number" || value.length < minLength) return false;
+    for (var i = 0; i < minLength; ++i) {
+        if (typeof value[i] !== "number") return false;
+    }
+    return true;
+}
+
 class Math3DMat4 {
 
     static title = "mat4";
@@ -25434,10 +25449,11 @@ if (typeof(glMatrix) !== "undefined") {
 
         onExecute() {
             var euler = this.getInputData(0);
-            if (euler == null) {
+            if (!isNumberArray(euler, 3)) {
                 euler = this.properties.euler;
             }
-            vec3.scale(this._degs, euler, this.DEG2RAD);
+            if (typeof quat.fromEuler !== "function") return;
+            vec3.scale(this._degs, euler, MATH3D_DEG2RAD);
             if (this.properties.use_yaw_pitch_roll)
                 this._degs = [this._degs[2], this._degs[0], this._degs[1]];
             var R = quat.fromEuler(this._value, this._degs);
@@ -25449,8 +25465,8 @@ if (typeof(glMatrix) !== "undefined") {
 
     class MathQuatToEuler {
 
-        static title = "Euler->Quat";
-        static desc = "Converts rotX,rotY,rotZ in degrees to quat";
+        static title = "Quat->Euler";
+        static desc = "Converts a quat to euler angles (rotX,rotY,rotZ) in degrees";
 
         constructor() {
             this.addInput(["quat", "quat"]);
@@ -25460,11 +25476,10 @@ if (typeof(glMatrix) !== "undefined") {
 
         onExecute() {
             var q = this.getInputData(0);
-            if (!q) return;
-            // @BUG: R is unused, but I don't know where it *should* be used because I don't know this math off the top
-            // It *probably* goes in one of the next two lines
-            var R = quat.toEuler(this._value, q);
-            vec3.scale(this._value, this._value, this.DEG2RAD);
+            if (!isNumberArray(q, 4)) return;
+            if (typeof quat.toEuler !== "function") return; // provided by litegl
+            quat.toEuler(this._value, q); // radians
+            vec3.scale(this._value, this._value, MATH3D_RAD2DEG);
             this.setOutputData(0, this._value);
         }
     }
@@ -25688,10 +25703,10 @@ LiteGraph.wrapFunctionAsNode(
 
 
 function contains(a, b) {
-    if (a === undefined || b === undefined) {
+    if (typeof a !== "string" || b == null) {
         return false;
     }
-    return a.indexOf(b) != -1;
+    return a.indexOf(String(b)) != -1;
 }
 LiteGraph.wrapFunctionAsNode(
     "string/contains",
@@ -25766,7 +25781,7 @@ class StringToTable {
 
     onExecute() {
         var input = this.getInputData(0);
-        if (!input) return;
+        if (!input || typeof input !== "string") return;
         var separator = this.properties.separator || ",";
         if (input != this._str || separator != this._last_separator) {
             this._last_separator = separator;
@@ -25812,8 +25827,9 @@ class Selector {
 
     onExecute() {
         var sel = this.getInputData(0);
-        if (sel == null || sel.constructor !== Number) sel = 0;
-        this.selected = sel = Math.round(sel) % (this.inputs.length - 1);
+        if (typeof sel !== "number" || !Number.isFinite(sel)) sel = 0;
+        var count = this.inputs.length - 1;
+        this.selected = sel = ((Math.round(sel) % count) + count) % count;
         var v = this.getInputData(sel + 1);
         if (v !== undefined) {
             this.setOutputData(0, v);
@@ -26418,7 +26434,7 @@ class ColorPalette {
         }
 
         var f = this.getInputData(0);
-        if (f == null) {
+        if (typeof f !== "number" || Number.isNaN(f)) {
             f = 0.5;
         }
         if (f > 1.0) {
@@ -26527,6 +26543,19 @@ class ImageFrame {
 LiteGraph.registerNodeType("graphics/frame", ImageFrame);
 
 
+// Accepts what CanvasRenderingContext2D.drawImage takes; anything else would throw.
+function isDrawableImage(value) {
+    if (!value || typeof value !== "object") return false;
+    var types = ["HTMLImageElement", "HTMLCanvasElement", "HTMLVideoElement",
+        "ImageBitmap", "OffscreenCanvas", "SVGImageElement", "VideoFrame"
+    ];
+    for (var i = 0; i < types.length; ++i) {
+        var Ctor = globalThis[types[i]];
+        if (typeof Ctor === "function" && value instanceof Ctor) return true;
+    }
+    return false;
+}
+
 class ImageFade {
 
     static title = "Image fade";
@@ -26564,12 +26593,12 @@ class ImageFade {
         // this.canvas.width = this.canvas.width; //@BUG: Test with this excised, I couldn't find a setter
 
         var A = this.getInputData(0);
-        if (A != null) {
+        if (isDrawableImage(A)) {
             ctx.drawImage(A, 0, 0, this.canvas.width, this.canvas.height);
         }
 
         var fade = this.getInputData(2);
-        if (fade == null) {
+        if (typeof fade !== "number" || !Number.isFinite(fade)) {
             fade = this.properties["fade"];
         } else {
             this.properties["fade"] = fade;
@@ -26577,7 +26606,7 @@ class ImageFade {
 
         ctx.globalAlpha = fade;
         var B = this.getInputData(1);
-        if (B != null) {
+        if (isDrawableImage(B)) {
             ctx.drawImage(B, 0, 0, this.canvas.width, this.canvas.height);
         }
         ctx.globalAlpha = 1.0;
@@ -26795,7 +26824,7 @@ class DrawRectangleNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 
@@ -34007,12 +34036,14 @@ class LGraphShaderConstant {
             this.widgets.length = 1; // remove extra widgets
             this.updateWidgets();
         }
-        if (name == "value") {
-            if (!value.length) this.widgets[1].value = value;
-            else {
-                this.widgets[1].value = value[1];
-                if (value.length > 2) this.widgets[2].value = value[2];
-                if (value.length > 3) this.widgets[3].value = value[3];
+        if (name == "value" && this.widgets) {
+            // widgets[0] is the type combo; value components follow it
+            if (value == null || !value.length) {
+                if (this.widgets[1]) this.widgets[1].value = value;
+            } else {
+                for (var i = 0; i < value.length; ++i) {
+                    if (this.widgets[i + 1]) this.widgets[i + 1].value = value[i];
+                }
             }
         }
     }
@@ -36289,7 +36320,7 @@ class LGraphConnectPoints {
 
     onExecute() {
         var geometry = this.getInputData(0);
-        if (!geometry) return;
+        if (!geometry || !geometry.vertices || typeof geometry.vertices.length !== "number") return;
 
         if (
             this.geometry_id != geometry._id ||
@@ -39619,6 +39650,26 @@ class LGAudio {
 
     static audios_connected = {};
 
+    // Assigns `value` to audionode[name] without throwing: AudioParams only take
+    // finite numbers, and some fields are read-only or range-checked by the browser.
+    static setNodeValue(audionode, name, value) {
+        if (!audionode || audionode[name] === undefined) return false;
+        var target = audionode[name];
+        var isParam = typeof AudioParam !== "undefined" && target instanceof AudioParam;
+        try {
+            if (isParam) {
+                if (typeof value !== "number" || !Number.isFinite(value)) return false;
+                target.value = value;
+            } else {
+                audionode[name] = value;
+            }
+            return true;
+        } catch (e) {
+            console.warn?.("LGAudio: cannot set " + name, value, e.message);
+            return false;
+        }
+    }
+
     static getAudioContext() {
         if (!this._audio_context) {
             window.AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -39802,15 +39853,7 @@ class LGAudio {
                 return;
             }
 
-            if (this.audionode[name] === undefined) {
-                return;
-            }
-
-            if (this.audionode[name].value !== undefined) {
-                this.audionode[name].value = value;
-            } else {
-                this.audionode[name] = value;
-            }
+            LGAudio.setNodeValue(this.audionode, name, value);
         };
 
         class_object.prototype.onConnectionsChange = LGAudio.onConnectionsChange;
@@ -39973,13 +40016,13 @@ class LGAudioSource {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") this.audionode.gain.value = v;
+                if (input.name == "gain") LGAudio.setNodeValue(this.audionode, "gain", v);
                 else if (input.name == "src") {
                     this.setProperty("src", v);
                 } else if (input.name == "playbackRate") {
                     this.properties.playbackRate = v;
                     for (let j = 0; j < this._audionodes.length; ++j) {
-                        this._audionodes[j].playbackRate.value = v;
+                        LGAudio.setNodeValue(this._audionodes[j], "playbackRate", v);
                     }
                 }
             }
@@ -40009,10 +40052,10 @@ class LGAudioSource {
         if (name == "src") {
             this.loadSound(value);
         } else if (name == "gain") {
-            this.audionode.gain.value = value;
+            LGAudio.setNodeValue(this.audionode, "gain", value);
         } else if (name == "playbackRate") {
             for (var j = 0; j < this._audionodes.length; ++j) {
-                this._audionodes[j].playbackRate.value = value;
+                LGAudio.setNodeValue(this._audionodes[j], "playbackRate", value);
             }
         }
     }
@@ -40237,8 +40280,8 @@ class LGAudioMediaSource {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") {
-                    this.audionode.gain.value = this.properties.gain = v;
+                if (input.name == "gain" && LGAudio.setNodeValue(this.audionode, "gain", v)) {
+                    this.properties.gain = v;
                 }
             }
         }
@@ -40254,7 +40297,7 @@ class LGAudioMediaSource {
 
     onPropertyChanged(name, value) {
         if (name == "gain") {
-            this.audionode.gain.value = value;
+            LGAudio.setNodeValue(this.audionode, "gain", value);
         }
     }
 
@@ -40303,7 +40346,7 @@ class LGAudioAnalyser {
     }
 
     onPropertyChanged(name, value) {
-        this.audionode[name] = value;
+        LGAudio.setNodeValue(this.audionode, name, value);
     }
 
     onExecute() {
@@ -40337,7 +40380,7 @@ class LGAudioAnalyser {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
 
@@ -40389,7 +40432,7 @@ class LGAudioGain {
             var input = this.inputs[i];
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -40503,7 +40546,7 @@ class LGAudioDynamicsCompressor {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -40598,9 +40641,9 @@ class LGAudioMixer {
 
     onPropertyChanged(name, value) {
         if (name == "gain1") {
-            this.audionode1.gain.value = value;
+            LGAudio.setNodeValue(this.audionode1, "gain", value);
         } else if (name == "gain2") {
-            this.audionode2.gain.value = value;
+            LGAudio.setNodeValue(this.audionode2, "gain", value);
         }
     }
 
@@ -40622,9 +40665,9 @@ class LGAudioMixer {
             }
 
             if (i == 1) {
-                this.audionode1.gain.value = v;
+                LGAudio.setNodeValue(this.audionode1, "gain", v);
             } else if (i == 3) {
-                this.audionode2.gain.value = v;
+                LGAudio.setNodeValue(this.audionode2, "gain", v);
             }
         }
     }
@@ -40715,7 +40758,7 @@ class LGAudioDelay {
     onExecute() {
         var v = this.getInputData(1);
         if (v !== undefined) {
-            this.audionode.delayTime.value = v;
+            LGAudio.setNodeValue(this.audionode, "delayTime", v);
         }
     }
 }
@@ -40768,7 +40811,7 @@ class LGAudioBiquadFilter {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -40856,7 +40899,7 @@ class LGAudioOscillatorNode {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -43547,8 +43590,12 @@ export class DOMSelectorAll {
     onExecute() {
         var sSel = this.getInputData(0);
         var res = null;
-        if (sSel) {
-            res = document.querySelectorAll(sSel);
+        if (sSel && typeof sSel === "string") {
+            try {
+                res = document.querySelectorAll(sSel);
+            } catch (e) {
+                console.warn?.("DOMSelectorAll: invalid selector", sSel, e.message);
+            }
         }
         this.setOutputData(0, res);
     }
@@ -43580,11 +43627,11 @@ export class HtmlEventListener {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         } else this.setOutputData(3, null);
         var sSel = this.getInputData(0);
-        if (sSel) {
+        if (sSel && sSel.attributes) {
             this.setOutputData(4, sSel.attributes["data-listeners"]);
         }
     }
