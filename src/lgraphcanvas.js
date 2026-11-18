@@ -206,6 +206,7 @@ export class LGraphCanvas {
         // this.offset = [0,0];
 
         this.dragging_rectangle = null;
+        this.dragging_reroute = null;
 
         this.selected_nodes = {};
         this.selected_group = null;
@@ -1104,6 +1105,19 @@ export class LGraphCanvas {
                 }
             } else { // clicked outside of nodes
                 LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked outside nodes");
+
+                // reroutes: drag them, double click removes
+                const reroute = !skip_action && !this.read_only ? this.graph.getRerouteOnPos?.(e.canvasX, e.canvasY) : null;
+                if (reroute) {
+                    if (is_double_click) {
+                        this.graph.removeReroute(reroute.id);
+                    } else {
+                        this.graph.beforeChange();
+                        this.dragging_reroute = reroute;
+                    }
+                    skip_action = true;
+                }
+
                 if (!skip_action) {
 
                     // search for mouseDown on LINKS
@@ -1378,6 +1392,10 @@ export class LGraphCanvas {
                 }
             }
             this.dirty_bgcanvas = true;
+        } else if (this.dragging_reroute) {
+            this.dragging_reroute.move(delta[0] / this.ds.scale, delta[1] / this.ds.scale);
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
         } else if (this.dragging_canvas) {
             LiteGraph.log_verbose("lgraphcanvas", "processMouseMove", "dragging_canvas");
             this.ds.offset[0] += delta[0] / this.ds.scale;
@@ -1637,7 +1655,20 @@ export class LGraphCanvas {
             // left button
             this.node_widget = null;
 
-            if (this.selected_group) {
+            if (this.dragging_reroute) {
+                this.dragging_reroute.pos[0] = Math.round(this.dragging_reroute.pos[0]);
+                this.dragging_reroute.pos[1] = Math.round(this.dragging_reroute.pos[1]);
+                if (this.graph.config.align_to_grid || this.align_to_grid) {
+                    const grid = LiteGraph.CANVAS_GRID_SIZE;
+                    this.dragging_reroute.pos[0] = grid * Math.round(this.dragging_reroute.pos[0] / grid);
+                    this.dragging_reroute.pos[1] = grid * Math.round(this.dragging_reroute.pos[1] / grid);
+                }
+                if (gesture.dragged) this.graph.onGraphChanged({action: "rerouteMove"});
+                this.graph.afterChange();
+                this.dragging_reroute = null;
+                this.dirty_canvas = true;
+                this.dirty_bgcanvas = true;
+            } else if (this.selected_group) {
                 var diffx =
                     this.selected_group.pos[0] -
                     Math.round(this.selected_group.pos[0]);
@@ -1894,6 +1925,10 @@ export class LGraphCanvas {
         }
         this.dragging_canvas = false;
         this.dragging_rectangle = null;
+        if (this.dragging_reroute) {
+            this.graph?.afterChange();
+            this.dragging_reroute = null;
+        }
         this.selected_group = null;
         this.selected_group_resizing = false;
         this.node_widget = null;
@@ -4603,20 +4638,23 @@ export class LGraphCanvas {
                     );
                 }
                 var end_node_slotpos = node.getConnectionPos(true, i, tempB);
+                const reroutes = link.parentId !== undefined ? this.graph.getRerouteChain?.(link) ?? [] : [];
 
-                // compute link bounding
-                link_bounding[0] = start_node_slotpos[0];
-                link_bounding[1] = start_node_slotpos[1];
-                link_bounding[2] = end_node_slotpos[0] - start_node_slotpos[0];
-                link_bounding[3] = end_node_slotpos[1] - start_node_slotpos[1];
-                if (link_bounding[2] < 0) {
-                    link_bounding[0] += link_bounding[2];
-                    link_bounding[2] = Math.abs(link_bounding[2]);
+                // compute link bounding (through its reroutes)
+                let minX = Math.min(start_node_slotpos[0], end_node_slotpos[0]);
+                let minY = Math.min(start_node_slotpos[1], end_node_slotpos[1]);
+                let maxX = Math.max(start_node_slotpos[0], end_node_slotpos[0]);
+                let maxY = Math.max(start_node_slotpos[1], end_node_slotpos[1]);
+                for (const reroute of reroutes) {
+                    minX = Math.min(minX, reroute.pos[0]);
+                    minY = Math.min(minY, reroute.pos[1]);
+                    maxX = Math.max(maxX, reroute.pos[0]);
+                    maxY = Math.max(maxY, reroute.pos[1]);
                 }
-                if (link_bounding[3] < 0) {
-                    link_bounding[1] += link_bounding[3];
-                    link_bounding[3] = Math.abs(link_bounding[3]);
-                }
+                link_bounding[0] = minX;
+                link_bounding[1] = minY;
+                link_bounding[2] = maxX - minX;
+                link_bounding[3] = maxY - minY;
 
                 // skip links outside of the visible area of the canvas
                 if (!LiteGraph.overlapBounding(link_bounding, margin_area)) {
@@ -4635,39 +4673,70 @@ export class LGraphCanvas {
                     end_slot.dir ||
                     (node.horizontal ? LiteGraph.UP : LiteGraph.LEFT);
 
-                this.renderLink(
-                    ctx,
-                    start_node_slotpos,
-                    end_node_slotpos,
-                    link,
-                    false,
-                    0,
-                    null,
-                    start_dir,
-                    end_dir,
-                );
+                const points = [start_node_slotpos, ...reroutes.map((reroute) => reroute.pos), end_node_slotpos];
+                this.renderLinkPath(ctx, points, link, false, 0, null, start_dir, end_dir);
 
                 // event triggered rendered on top
                 if (link && link._last_time && now - link._last_time < 1000) {
                     var f = 2.0 - (now - link._last_time) * 0.002;
                     var tmp = ctx.globalAlpha;
                     ctx.globalAlpha = tmp * f;
-                    this.renderLink(
-                        ctx,
-                        start_node_slotpos,
-                        end_node_slotpos,
-                        link,
-                        true,
-                        f,
-                        "white",
-                        start_dir,
-                        end_dir,
-                    );
+                    this.renderLinkPath(ctx, points, link, true, f, "white", start_dir, end_dir);
                     ctx.globalAlpha = tmp;
                 }
             }
         }
+        this.drawReroutes(ctx);
         ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Draws a link through intermediate points (reroutes). The last segment carries the link
+     * (center marker, hit testing); the others are drawn in the link's colour.
+     * @method renderLinkPath
+     **/
+    renderLinkPath(ctx, points, link, skip_border, flow, color, start_dir, end_dir) {
+        if (points.length <= 2) {
+            this.renderLink(ctx, points[0], points[points.length - 1], link, skip_border, flow, color, start_dir, end_dir);
+            return;
+        }
+        let segmentColor = color;
+        if (!segmentColor && link) {
+            segmentColor = this.highlighted_links[link.id] ? "#FFF" : (link.color || LGraphCanvas.link_type_colors[link.type]);
+        }
+        segmentColor ||= this.default_link_color;
+        for (let k = 0; k < points.length - 1; k++) {
+            const last = k === points.length - 2;
+            this.renderLink(
+                ctx, points[k], points[k + 1],
+                last ? link : null, skip_border, flow,
+                last ? color : segmentColor,
+                k === 0 ? start_dir : LiteGraph.RIGHT,
+                last ? end_dir : LiteGraph.LEFT,
+            );
+        }
+    }
+
+    /**
+     * Draws the reroutes that links pass through.
+     * @method drawReroutes
+     **/
+    drawReroutes(ctx) {
+        if (!this.graph?.reroutes?.size) return;
+        const used = this.graph.getRerouteLinkIds();
+        ctx.save();
+        for (const [id, linkIds] of used) {
+            const reroute = this.graph.reroutes.get(id);
+            const link = this.graph.links[linkIds[0]];
+            ctx.fillStyle = link?.color || LGraphCanvas.link_type_colors[link?.type] || this.default_link_color;
+            ctx.beginPath();
+            ctx.arc(reroute.pos[0], reroute.pos[1], this.dragging_reroute === reroute ? 7 : 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = this.dragging_reroute === reroute ? "#FFF" : "rgba(0,0,0,0.6)";
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 
     /**
@@ -6543,7 +6612,9 @@ export class LGraphCanvas {
         var destType = false;
         if (node_right && node_right.outputs && node_right.outputs[link.target_slot]) destType = node_right.inputs[link.target_slot].type;
 
-        var options = ["Add Node",null,"Delete",null];
+        var options = ["Add Node", "Add Reroute"];
+        if (link.parentId !== undefined) options.push("Remove Reroutes");
+        options.push(null, "Delete", null);
 
 
         var menu = LiteGraph.ContextMenu(options, {
@@ -6572,6 +6643,15 @@ export class LGraphCanvas {
                 case "Delete":
                     LiteGraph.log_debug("lgraphcanvas","showLinkMenu","inner_clicked","remove link");
                     that.graph.removeLink(link.id);
+                    break;
+                case "Add Reroute":
+                    // at the link marker, nearest the target
+                    that.graph.addReroute(link._pos ? [link._pos[0], link._pos[1]] : that.graph_mouse.slice(0, 2), link);
+                    break;
+                case "Remove Reroutes":
+                    that.graph.transact("removeReroutes", () => {
+                        for (const reroute of that.graph.getRerouteChain(link)) that.graph.removeReroute(reroute.id);
+                    });
                     break;
                 default:
                     LiteGraph.log_debug("lgraphcanvas","showLinkMenu","inner_clicked","node in the middle or other operation",...arguments);

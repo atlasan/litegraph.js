@@ -408,6 +408,17 @@ export declare class LGraph {
     revision: number;
     /** id counters; last_node_id/last_link_id are accessors over these */
     state: LGraphState;
+    /** reroutes by id */
+    reroutes: Map<number, Reroute>;
+    /** add a reroute to a link (nearest the target) */
+    addReroute(pos: ArrayLike<number>, link?: LLink): Reroute;
+    /** remove a reroute; links and reroutes through it reconnect to its parent */
+    removeReroute(id: number): boolean;
+    getRerouteOnPos(x: number, y: number, radius?: number): Reroute | null;
+    /** reroutes of a link, origin to target */
+    getRerouteChain(link: LLink): Reroute[];
+    /** reroute id -> link ids, for reroutes in use */
+    getRerouteLinkIds(): Map<number, GraphId[]>;
     /** start (or nest) a transaction: saved changes until the outermost commit make one history entry */
     beginTransaction(label?: string): number;
     /** end the innermost transaction; true when the outermost one ended with changes */
@@ -642,6 +653,8 @@ export declare class LLink {
     origin_slot: number;
     target_id: GraphId;
     target_slot: number;
+    /** reroute nearest the target, when the link is rerouted */
+    parentId?: number;
     constructor(
         id: GraphId,
         type: SlotType,
@@ -1157,6 +1170,18 @@ export declare class LGraphGroup {
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
 }
 
+/** A point links are routed through; chains via parentId towards the origin. */
+export declare class Reroute {
+    static radius: number;
+    constructor(id: number, pos?: ArrayLike<number>, parentId?: number);
+    id: number;
+    pos: [number, number];
+    parentId?: number;
+    isPointInside(x: number, y: number, radius?: number): boolean;
+    move(dx: number, dy: number): void;
+    serialize(linkIds?: GraphId[]): { id: number; pos: [number, number]; linkIds: GraphId[]; parentId?: number };
+}
+
 /** State machine for dragging links; moves are one transaction and cancel restores detached links. */
 export declare class LinkConnector {
     node: LGraphNode | null;
@@ -1248,6 +1273,12 @@ export declare class LGraphCanvas {
     static clampWidgetNumber(value: number, options?: { min?: number; max?: number }): number;
     /** backing-store pixels per CSS pixel */
     pixel_ratio: number;
+    /** reroute being dragged */
+    dragging_reroute: Reroute | null;
+    /** draw a link through intermediate points (reroutes) */
+    renderLinkPath(ctx: CanvasRenderingContext2D, points: ArrayLike<number>[], link: LLink | null, skip_border?: boolean, flow?: number, color?: string | null, start_dir?: number, end_dir?: number): void;
+    /** draw the reroutes links pass through */
+    drawReroutes(ctx: CanvasRenderingContext2D): void;
     /** link-drag state; connecting_* fields are accessors over it */
     linkConnector: LinkConnector;
     /** primary pointer gesture state */

@@ -44,6 +44,7 @@ export class LLink {
             this.origin_slot = o.origin_slot;
             this.target_id = o.target_id;
             this.target_slot = o.target_slot;
+            if (o.parentId !== undefined && o.parentId !== null) this.parentId = o.parentId; // reroute nearest the target
         }
     }
 

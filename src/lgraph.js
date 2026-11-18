@@ -2,6 +2,7 @@ import { LiteGraph } from "./litegraph.js";
 import { CallbackHandler } from "./callbackhandler.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
+import { Reroute } from "./reroute.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -135,6 +136,8 @@ export class LGraph {
 
         // links
         this.links = {}; // container with all the links
+        this.reroutes = new Map(); // id -> Reroute (points links are routed through)
+        this._floating_reroutes = [];
 
         // iterations
         this.iteration = 0;
@@ -1672,6 +1675,129 @@ export class LGraph {
     }
 
     /**
+     * Adds a reroute to a link, as the point nearest the link's target.
+     * @param {number[]} pos - graph-space position
+     * @param {LLink} [link] - link to route through it
+     * @returns {Reroute}
+     */
+    addReroute(pos, link) {
+        const reroute = new Reroute(++this.state.lastRerouteId, pos, link?.parentId);
+        this.reroutes.set(reroute.id, reroute);
+        if (link) link.parentId = reroute.id;
+        this.onGraphChanged({action: "rerouteAdd"});
+        this.setDirtyCanvas(true, true);
+        return reroute;
+    }
+
+    /**
+     * Removes a reroute; links and reroutes routed through it reconnect to its parent.
+     * @param {number} id
+     * @returns {boolean} false if there was no such reroute
+     */
+    removeReroute(id) {
+        const reroute = this.reroutes.get(id);
+        if (!reroute) return false;
+        for (const link of Object.values(this.links)) {
+            if (link && link.parentId === id) {
+                if (reroute.parentId === undefined) delete link.parentId; else link.parentId = reroute.parentId;
+            }
+        }
+        for (const other of this.reroutes.values()) {
+            if (other.parentId === id) {
+                if (reroute.parentId === undefined) delete other.parentId; else other.parentId = reroute.parentId;
+            }
+        }
+        this.reroutes.delete(id);
+        this.onGraphChanged({action: "rerouteRemove"});
+        this.setDirtyCanvas(true, true);
+        return true;
+    }
+
+    /** the reroute at a graph-space position, if any */
+    getRerouteOnPos(x, y, radius) {
+        for (const reroute of this.reroutes.values()) {
+            if (reroute.isPointInside(x, y, radius)) return reroute;
+        }
+        return null;
+    }
+
+    /**
+     * Reroutes a link passes through, ordered from origin to target.
+     * @param {LLink} link
+     * @returns {Reroute[]}
+     */
+    getRerouteChain(link) {
+        const chain = [];
+        const seen = new Set();
+        let id = link?.parentId;
+        while (id !== undefined && id !== null && !seen.has(id)) {
+            const reroute = this.reroutes.get(id);
+            if (!reroute) break;
+            seen.add(id);
+            chain.push(reroute);
+            id = reroute.parentId;
+        }
+        return chain.reverse();
+    }
+
+    /** reroute id -> ids of the links routed through it (only reroutes in use) */
+    getRerouteLinkIds() {
+        const used = new Map();
+        for (const link of Object.values(this.links)) {
+            if (!link) continue;
+            for (const reroute of this.getRerouteChain(link)) {
+                if (!used.has(reroute.id)) used.set(reroute.id, []);
+                used.get(reroute.id).push(link.id);
+            }
+        }
+        return used;
+    }
+
+    /** loads reroutes from 0.4 (extra.reroutes + extra.linkExtensions) or version 1 (top-level) documents */
+    _configureReroutes(data) {
+        this.reroutes = new Map();
+        this._floating_reroutes = []; // not modelled (they belong to floatingLinks); written back verbatim
+        const extra = data.extra && typeof data.extra === "object" ? data.extra : {};
+        const list = Array.isArray(data.reroutes) ? data.reroutes : Array.isArray(extra.reroutes) ? extra.reroutes : [];
+        for (const item of list) {
+            if (!item || typeof item.id !== "number") continue;
+            if (item.floating) {
+                this._floating_reroutes.push(LiteGraph.cloneObject(item));
+                continue;
+            }
+            this.reroutes.set(item.id, new Reroute(item.id, item.pos ?? [0, 0], item.parentId));
+        }
+        for (const ext of Array.isArray(extra.linkExtensions) ? extra.linkExtensions : []) {
+            const link = ext && this.links[ext.id];
+            if (link && ext.parentId !== undefined) link.parentId = ext.parentId;
+        }
+        // documents may only list linkIds on reroutes: the link's parent is the listed reroute
+        // that no other listing reroute points to (the one nearest the target)
+        const listing = new Map();
+        for (const item of list) {
+            if (!this.reroutes.has(item?.id)) continue;
+            for (const linkId of Array.isArray(item.linkIds) ? item.linkIds : []) {
+                if (!listing.has(linkId)) listing.set(linkId, []);
+                listing.get(linkId).push(item.id);
+            }
+        }
+        for (const [linkId, ids] of listing) {
+            const link = this.links[linkId];
+            if (!link || link.parentId !== undefined) continue;
+            const nearest = ids.filter((id) => !ids.some((other) => this.reroutes.get(other).parentId === id));
+            if (nearest.length === 1) link.parentId = nearest[0];
+        }
+        if (this.reroutes.size || extra.reroutes || extra.linkExtensions) {
+            // regenerated by serialize from the model
+            this.extra = { ...extra };
+            delete this.extra.reroutes;
+            delete this.extra.linkExtensions;
+        }
+        this.state.lastRerouteId = LGraph._maxNumericId(this.state.lastRerouteId,
+            [...this.reroutes.keys(), ...this._floating_reroutes.map((item) => item.id)]);
+    }
+
+    /**
      * Creates a Object containing all the info about this graph, it can be serialized
      * @method serialize
      * @return {Object} value of the node
@@ -1721,7 +1847,7 @@ export class LGraph {
             links: links,
             groups: groupsInfo,
             config: this.config,
-            extra: this.extra,
+            extra: this._serializeExtra(),
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
             state: { ...this.state }, // all id counters (nodes, links, groups, reroutes)
@@ -1733,6 +1859,22 @@ export class LGraph {
         LiteGraph.log_verbose("lgraph","serialize",data);
 
         return data;
+    }
+
+    /** extra plus reroutes in the ComfyUI-compatible 0.4 form (only reroutes that links use) */
+    _serializeExtra() {
+        const used = this.getRerouteLinkIds();
+        const floating = this._floating_reroutes ?? [];
+        if (!used.size && !floating.length) return this.extra;
+        const extra = { ...this.extra };
+        extra.reroutes = [
+            ...[...used.keys()].map((id) => this.reroutes.get(id).serialize(used.get(id))),
+            ...LiteGraph.cloneObject(floating),
+        ].sort((a, b) => a.id - b.id);
+        extra.linkExtensions = Object.values(this.links)
+            .filter((link) => link && link.parentId !== undefined && used.has(link.parentId))
+            .map((link) => ({ id: link.id, parentId: link.parentId }));
+        return extra;
     }
 
     /**
@@ -1777,7 +1919,7 @@ export class LGraph {
         // copy all stored fields
         this._foreign_fields = {};
         for (let i in data) {
-            if (["nodes", "groups", "id", "revision", "state"].includes(i)) continue; // handled explicitly
+            if (["nodes", "groups", "id", "revision", "state", "reroutes"].includes(i)) continue; // handled explicitly
             if (!LGraph.serialized_fields.includes(i) && !i.startsWith("_") && !(i in this)) {
                 // not part of this runtime's model (e.g. another editor's document state): keep it for serialize
                 this._foreign_fields[i] = LiteGraph.cloneObject(data[i]);
@@ -1835,6 +1977,7 @@ export class LGraph {
         this.updateExecutionOrder();
 
         this.extra = data.extra ?? {};
+        this._configureReroutes(data);
         if (!keep_old || Number.isFinite(data.revision)) {
             this.revision = Number.isFinite(data.revision) ? data.revision : 0;
         }
