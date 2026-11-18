@@ -47,9 +47,9 @@ class Math3DMat4 {
         var S = this.getInputData(2);
 
         if (this._must_update || T || R || S) {
-            T = T || this.properties.T;
-            R = R || this.properties.R;
-            S = S || this.properties.S;
+            T = isNumberArray(T, 3) ? T : this.properties.T;
+            R = isNumberArray(R, 3) ? R : this.properties.R;
+            S = isNumberArray(S, 3) ? S : this.properties.S;
             mat4.identity(M);
             mat4.translate(M, M, T);
             if (this.properties.R_in_degrees) {
@@ -446,7 +446,7 @@ if (typeof(glMatrix)!=="undefined") {
         static desc = "Converts a quat to euler angles (rotX,rotY,rotZ) in degrees";
 
         constructor() {
-            this.addInput(["quat", "quat"]);
+            this.addInput("quat", "quat");
             this.addOutput("euler", "vec3");
             this._value = vec3.create();
         }
@@ -586,7 +586,7 @@ if (typeof(glMatrix)!=="undefined") {
 
         onExecute() {
             var vec = this.getInputData(0);
-            if (vec) this._value.set(vec);
+            if (isNumberArray(vec, 3)) this._value.set(vec);
             var range_min = this.properties.range_min;
             var range_max = this.properties.range_max;
             var target_min = this.properties.target_min;

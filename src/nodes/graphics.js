@@ -529,12 +529,12 @@ class DrawImageNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 
         var img = this.getInputOrProperty("img");
-        if (!img) {
+        if (!isDrawableImage(img)) {
             return;
         }
 

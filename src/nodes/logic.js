@@ -68,7 +68,7 @@ class Sequence {
     }
 
     onPropertyChanged(name, value) {
-        if (name == "sequence") {
+        if (name == "sequence" && typeof value === "string") {
             this.values = value.split(",");
         }
     }
@@ -76,14 +76,16 @@ class Sequence {
     onExecute() {
         var seq = this.getInputData(1);
         if (seq && seq != this.current_sequence) {
-            this.values = seq.split(",");
+            if (typeof seq === "string") this.values = seq.split(",");
+            else if (Array.isArray(seq)) this.values = seq;
             this.current_sequence = seq;
         }
         var index = this.getInputData(0);
-        if (index == null) {
+        if (typeof index !== "number" || !Number.isFinite(index)) {
             index = 0;
         }
-        this.index = index = Math.round(index) % this.values.length;
+        var count = this.values.length || 1;
+        this.index = index = ((Math.round(index) % count) + count) % count;
 
         this.setOutputData(0, this.values[index]);
     }

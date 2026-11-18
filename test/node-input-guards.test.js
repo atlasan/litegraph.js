@@ -51,14 +51,34 @@ describe.each([
     ['graphics/drawRectangle', [0]],
     ['geometry/connectPoints', [0]],
     ['math3d/quat_to_euler', [0]],
+    ['math3d/mat4', [0, 1, 2]],
+    ['math3d/remap_range', [0]],
+    ['logic/sequence', [0, 1]],
+    ['graphics/drawImage', [0, 1]],
 ])('%s tolerates invalid inputs', (type, slots) => {
-    test.each(BAD_VALUES.map((v) => [String(v && typeof v === 'object' ? JSON.stringify(v) : v), v]))('input %s', (_label, value) => {
+    test.each([...BAD_VALUES, 'test', 42, true].map((v) => [String(v && typeof v === 'object' ? JSON.stringify(v) : v), v]))('input %s', (_label, value) => {
         const node = LiteGraph.createNode(type);
         expect(node).toBeTruthy();
         const values = [];
         for (const slot of slots) values[slot] = value;
         expect(() => runWith(node, values)).not.toThrow();
     });
+});
+
+test('logic/sequence accepts arrays and wraps its index into range', () => {
+    const node = LiteGraph.createNode('logic/sequence');
+    const out = outputsOf(node);
+    runWith(node, [-1, 'A,B,C']);
+    expect(out[0]).toBe('C');
+    runWith(node, [1, ['x', 'y']]);
+    expect(out[0]).toBe('y');
+    runWith(node, [NaN, 42]);
+    expect(out[0]).toBe('x');
+});
+
+test('math3d/quat_to_euler has one input named quat', () => {
+    const node = LiteGraph.createNode('math3d/quat_to_euler');
+    expect(node.inputs.map((i) => [i.name, i.type])).toEqual([['quat', 'quat']]);
 });
 
 test('CompareValues compares null against objects instead of throwing', () => {
