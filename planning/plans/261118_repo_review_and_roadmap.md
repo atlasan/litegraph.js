@@ -206,6 +206,20 @@ Ordered by dependency. Each phase is one or more reviewable PRs. Sizes: S = unde
 
 ### ComfyUI track (C0–C4)
 See [the ComfyUI LiteGraph relationship report](../../docs/development/ecosystem-study/comfyui-litegraph-relationship.md#6-proposed-plan).
+
+**Status 2026-11-18, branch `LG/comfy_donor`:**
+- **C0–C3: implemented with tests.**
+  - Portable save format.
+  - Ten ported fixes, including high DPI.
+  - The `ComfyInterop` extension.
+  - `CanvasPointer`.
+  - Graph id, revision and state.
+  - Transactions.
+  - `LinkConnector`.
+  - Reroutes.
+  - Typed events.
+- **C4: proposed** as [decision 0001](../../docs/development/decisions/0001-subgraph-document-format.md), to be decided with subgraph authoring.
+- **Not yet verified:** interactive browser behaviour (dragging, reroute editing, high-DPI rendering, search-box Enter and focus).
 - **C0 (serializer hygiene):** belongs in Phase 1. It also fixes the `use_uuids` debug default that ships in the full builds.
 - **C1 (shared-ancestry fixes):** pairs with Phase 1.
 - **C3 (design ports):** feeds Phase 3/4.

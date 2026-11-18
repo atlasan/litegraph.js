@@ -196,6 +196,12 @@ Comfy commits for reference: `e25c210 a0b50dc c5db2d8 11ce8e0 49a3e31 6f121fc 0b
 5. **Reroutes and floating links**, stored compatibly in `extra.reroutes`/`linkExtensions`.
 6. **Typed cancellable events alongside CallbackHandler.**
 
+### Implementation status (2026-11-18, branch `LG/comfy_donor`)
+- **C0–C3: implemented and unit-tested.**
+- **ComfyUI schema check:** exports validated against ComfyUI's zod schema on 10 fixtures, both 0.4 and 1.
+- **Reroutes:** ComfyUI reroute fixtures round-trip losslessly through the model.
+- **C4:** recorded as [decision 0001 (proposed)](../decisions/0001-subgraph-document-format.md).
+
 ### C4: Subgraph format decision (L, bundled with roadmap Phase 4.3)
 - Evaluate adopting Comfy's `definitions.subgraphs` shape (GUID definitions, IO nodes, `-10`/`-20` endpoints) as our subgraph version 2 format, keeping inline loading for old files.
 - Reference: the standalone `src/subgraph/*` (MIT, as of `ea0e1a8`).
