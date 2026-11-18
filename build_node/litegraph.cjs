@@ -25048,9 +25048,9 @@ class Math3DMat4 {
         var S = this.getInputData(2);
 
         if (this._must_update || T || R || S) {
-            T = T || this.properties.T;
-            R = R || this.properties.R;
-            S = S || this.properties.S;
+            T = isNumberArray(T, 3) ? T : this.properties.T;
+            R = isNumberArray(R, 3) ? R : this.properties.R;
+            S = isNumberArray(S, 3) ? S : this.properties.S;
             mat4.identity(M);
             mat4.translate(M, M, T);
             if (this.properties.R_in_degrees) {
@@ -25469,7 +25469,7 @@ if (typeof(glMatrix) !== "undefined") {
         static desc = "Converts a quat to euler angles (rotX,rotY,rotZ) in degrees";
 
         constructor() {
-            this.addInput(["quat", "quat"]);
+            this.addInput("quat", "quat");
             this.addOutput("euler", "vec3");
             this._value = vec3.create();
         }
@@ -25611,7 +25611,7 @@ if (typeof(glMatrix) !== "undefined") {
 
         onExecute() {
             var vec = this.getInputData(0);
-            if (vec) this._value.set(vec);
+            if (isNumberArray(vec, 3)) this._value.set(vec);
             var range_min = this.properties.range_min;
             var range_max = this.properties.range_max;
             var target_min = this.properties.target_min;
@@ -25866,7 +25866,7 @@ class Sequence {
     }
 
     onPropertyChanged(name, value) {
-        if (name == "sequence") {
+        if (name == "sequence" && typeof value === "string") {
             this.values = value.split(",");
         }
     }
@@ -25874,14 +25874,16 @@ class Sequence {
     onExecute() {
         var seq = this.getInputData(1);
         if (seq && seq != this.current_sequence) {
-            this.values = seq.split(",");
+            if (typeof seq === "string") this.values = seq.split(",");
+            else if (Array.isArray(seq)) this.values = seq;
             this.current_sequence = seq;
         }
         var index = this.getInputData(0);
-        if (index == null) {
+        if (typeof index !== "number" || !Number.isFinite(index)) {
             index = 0;
         }
-        this.index = index = Math.round(index) % this.values.length;
+        var count = this.values.length || 1;
+        this.index = index = ((Math.round(index) % count) + count) % count;
 
         this.setOutputData(0, this.values[index]);
     }
@@ -26783,12 +26785,12 @@ class DrawImageNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 
         var img = this.getInputOrProperty("img");
-        if (!img) {
+        if (!isDrawableImage(img)) {
             return;
         }
 
