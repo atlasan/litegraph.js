@@ -2,6 +2,7 @@ import { LiteGraph } from "./litegraph.js";
 import { CallbackHandler } from "./callbackhandler.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
+import { CanvasPointer } from "./canvaspointer.js";
 
 /**
  * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
@@ -49,6 +50,7 @@ export class LGraphCanvas {
 
         this.ds = new DragAndScale();
         this.pixel_ratio = 1; // backing-store pixels per CSS pixel (see resize)
+        this.pointer = new CanvasPointer(); // click/drag/double-click state of the primary pointer
         this.zoom_modify_alpha = true; // otherwise it generates ugly patterns when scaling down too much
 
         this.title_text_font = `${LiteGraph.NODE_TEXT_SIZE}px Arial`;
@@ -450,6 +452,8 @@ export class LGraphCanvas {
         canvas.addEventListener("pointerdown", this._mousedown_callback); //, true);
         canvas.addEventListener("pointermove", this._mousemove_callback);
         canvas.addEventListener("pointerup", this._mouseup_callback); //, true);
+        this._pointercancel_callback = this.processPointerCancel.bind(this);
+        canvas.addEventListener("pointercancel", this._pointercancel_callback);
         canvas.addEventListener("contextmenu", this._doNothing);
 
         // Wheel
@@ -486,6 +490,8 @@ export class LGraphCanvas {
         canvas.removeEventListener("pointerdown", this._mousedown_callback); //, true);
         canvas.removeEventListener("pointermove", this._mousemove_callback);
         canvas.removeEventListener("pointerup", this._mouseup_callback); //, true);
+        canvas.removeEventListener("pointercancel", this._pointercancel_callback);
+        this._restoreDocumentPointerListeners();
         canvas.removeEventListener("contextmenu", this._doNothing);
 
         // Wheel
@@ -730,6 +736,8 @@ export class LGraphCanvas {
             this.canvas.removeEventListener("pointermove", this._mousemove_callback);
             ref_window.document.addEventListener("pointermove", this._mousemove_callback,true); // catch for the entire window
             ref_window.document.addEventListener("pointerup", this._mouseup_callback,true);
+            ref_window.document.addEventListener("pointercancel", this._pointercancel_callback,true);
+            this._pointer_document = ref_window.document;
         }
 
         if(!is_inside) {
@@ -740,7 +748,8 @@ export class LGraphCanvas {
         var skip_action = false;
         var now = LiteGraph.getTime();
         var is_primary = (e.isPrimary === undefined || e.isPrimary);
-        var is_double_click = (now - this.last_mouseclick < 300) && is_primary;
+        // double click: two clicks (not drags) close in time and space
+        var is_double_click = is_primary && this.pointer.down(e, now).isDoubleClick;
         this.mouse[0] = e.clientX;
         this.mouse[1] = e.clientY;
         this.graph_mouse[0] = e.canvasX;
@@ -1337,6 +1346,7 @@ export class LGraphCanvas {
 
         LGraphCanvas.active_canvas = this;
         this.adjustMouseEvent(e);
+        if (e.isPrimary !== false) this.pointer.move(e);
         var mouse = [e.clientX, e.clientY];
         this.mouse[0] = mouse[0];
         this.mouse[1] = mouse[1];
@@ -1635,14 +1645,15 @@ export class LGraphCanvas {
         // restore the mousemove event back to the canvas
         if(!this.options.skip_events) {
             LiteGraph.log_verbose("pointerevents: processMouseUp restoreEventListener");
-            document.removeEventListener("pointermove", this._mousemove_callback,true);
-            this.canvas.addEventListener("pointermove", this._mousemove_callback);
-            document.removeEventListener("pointerup", this._mouseup_callback,true);
+            this._restoreDocumentPointerListeners(document);
         }
 
         this.adjustMouseEvent(e);
         var now = LiteGraph.getTime();
         e.click_time = now - this.last_mouseclick;
+        // a click must not have moved beyond the drift tolerance (time alone misreads quick drags)
+        const gesture = is_primary ? this.pointer.up(e, now) : { isClick: false, dragged: false };
+        e.is_click = gesture.isClick;
         this.last_mouse_dragging = false;
         this.last_click_position = null;
 
@@ -1850,7 +1861,7 @@ export class LGraphCanvas {
                 node = this.node_dragged;
                 if (
                     node &&
-                    e.click_time < 300 &&
+                    e.click_time < 300 && !gesture.dragged &&
                     LiteGraph.isInsideRectangle( e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT )
                 ) {
                     node.collapse();
@@ -1885,7 +1896,7 @@ export class LGraphCanvas {
                     this.visible_nodes,
                 );
 
-                if (!node && e.click_time < 300) {
+                if (!node && e.click_time < 300 && !gesture.dragged) {
                     this.deselectAllNodes();
                 }
 
@@ -1933,6 +1944,56 @@ export class LGraphCanvas {
         e.stopPropagation();
         e.preventDefault();
         return false;
+    }
+
+    /** moves pointermove back to the canvas and drops the document-level gesture listeners */
+    _restoreDocumentPointerListeners(doc = this._pointer_document) {
+        if (!doc) return;
+        doc.removeEventListener("pointermove", this._mousemove_callback, true);
+        doc.removeEventListener("pointerup", this._mouseup_callback, true);
+        if (this._pointercancel_callback) doc.removeEventListener("pointercancel", this._pointercancel_callback, true);
+        this._pointer_document = null;
+        if (this.canvas && this._mousemove_callback) {
+            this.canvas.removeEventListener("pointermove", this._mousemove_callback); // never twice
+            this.canvas.addEventListener("pointermove", this._mousemove_callback);
+        }
+    }
+
+    /**
+     * The system cancelled the pointer (touch interrupted, palm rejection, lost capture...):
+     * abandon the gesture without completing a click, drop or connection.
+     * @method processPointerCancel
+     **/
+    processPointerCancel(e) {
+        if (e && e.isPrimary === false) return;
+        this.pointer.cancel();
+        this._restoreDocumentPointerListeners();
+        if (this.connecting_node) {
+            this.connecting_node = null;
+            this.connecting_output = null;
+            this.connecting_input = null;
+            this.connecting_pos = null;
+            this.connecting_slot = -1;
+        }
+        if (this.node_dragged) {
+            this.graph?.afterChange(this.node_dragged);
+            this.node_dragged = null;
+        }
+        if (this.resizing_node) {
+            this.graph?.afterChange(this.resizing_node);
+            this.resizing_node = null;
+        }
+        this.dragging_canvas = false;
+        this.dragging_rectangle = null;
+        this.selected_group = null;
+        this.selected_group_resizing = false;
+        this.node_widget = null;
+        this.node_capturing_input = null;
+        this.pointer_is_down = false;
+        this.pointer_is_double = false;
+        this.last_mouse_dragging = false;
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
     }
 
     /**

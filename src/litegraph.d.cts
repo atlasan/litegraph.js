@@ -1131,6 +1131,24 @@ export declare class LGraphGroup {
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
 }
 
+/** Tracks one pointer gesture: click vs drag tolerance and double-click detection. */
+export declare class CanvasPointer {
+    static double_click_time: number;
+    static double_click_distance: number;
+    static click_drift: number;
+    static click_time: number;
+    isDown: boolean;
+    dragged: boolean;
+    maxDrift: number;
+    downEvent: { x: number; y: number; time: number; button: number; pointerId?: number; isDoubleClick: boolean } | null;
+    lastClick: { x: number; y: number; time: number; button: number } | null;
+    reset(): void;
+    down(e: { clientX: number; clientY: number; button?: number; pointerId?: number }, now?: number): { isDoubleClick: boolean };
+    move(e: { clientX: number; clientY: number }): boolean;
+    up(e?: { clientX: number; clientY: number }, now?: number): { isClick: boolean; dragged: boolean; duration: number };
+    cancel(): void;
+}
+
 export declare class DragAndScale {
     constructor(element?: HTMLElement, skipEvents?: boolean);
     offset: [number, number];
