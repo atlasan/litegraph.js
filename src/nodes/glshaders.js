@@ -942,12 +942,14 @@ class LGraphShaderConstant {
             this.widgets.length = 1; // remove extra widgets
             this.updateWidgets();
         }
-        if (name == "value") {
-            if (!value.length) this.widgets[1].value = value;
-            else {
-                this.widgets[1].value = value[1];
-                if (value.length > 2) this.widgets[2].value = value[2];
-                if (value.length > 3) this.widgets[3].value = value[3];
+        if (name == "value" && this.widgets) {
+            // widgets[0] is the type combo; value components follow it
+            if (value == null || !value.length) {
+                if (this.widgets[1]) this.widgets[1].value = value;
+            } else {
+                for (var i = 0; i < value.length; ++i) {
+                    if (this.widgets[i + 1]) this.widgets[i + 1].value = value[i];
+                }
             }
         }
     }

@@ -731,7 +731,7 @@ class MathOperation {
             B = this.properties["B"];
         }
 
-        var func = MathOperation.funcs[this.properties.OP];
+        var func = MathOperation.funcs[this.properties.OP] || this._func || ((a) => a);
 
         var result;
         if (A.constructor === Number) {

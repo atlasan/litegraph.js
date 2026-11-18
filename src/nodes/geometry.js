@@ -1106,7 +1106,7 @@ class LGraphConnectPoints {
 
     onExecute() {
         var geometry = this.getInputData(0);
-        if (!geometry) return;
+        if (!geometry || !geometry.vertices || typeof geometry.vertices.length !== "number") return;
 
         if (
             this.geometry_id != geometry._id ||

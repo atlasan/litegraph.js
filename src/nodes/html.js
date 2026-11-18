@@ -328,8 +328,12 @@ export class DOMSelectorAll {
     onExecute() {
         var sSel = this.getInputData(0);
         var res = null;
-        if (sSel) {
-            res = document.querySelectorAll(sSel);
+        if (sSel && typeof sSel === "string") {
+            try {
+                res = document.querySelectorAll(sSel);
+            } catch (e) {
+                console.warn?.("DOMSelectorAll: invalid selector", sSel, e.message);
+            }
         }
         this.setOutputData(0,res);
     }
@@ -359,11 +363,11 @@ export class HtmlEventListener {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id+"_"+(action?action:"action")+"_exectoact_"+LiteGraph.uuidv4();
+            var action = this.id+"_action_exectoact_"+LiteGraph.uuidv4();
             this.onAction(action, param, options);
         } else this.setOutputData(3,null);
         var sSel = this.getInputData(0);
-        if (sSel){
+        if (sSel && sSel.attributes){
             this.setOutputData(4,sSel.attributes["data-listeners"]);
         }
     }

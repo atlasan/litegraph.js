@@ -1186,6 +1186,10 @@ class GenericCompare {
                     result = true;
                     switch (typeof A) {
                         case "object":
+                            if (A === null || B === null) {
+                                result = A === B;
+                                break;
+                            }
                             var aProps = Object.getOwnPropertyNames(A);
                             var bProps = Object.getOwnPropertyNames(B);
                             if (aProps.length != bProps.length) {

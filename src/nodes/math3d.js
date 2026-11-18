@@ -1,5 +1,16 @@
 import { LiteGraph } from "../litegraph.js";
 
+const MATH3D_DEG2RAD = Math.PI / 180;
+const MATH3D_RAD2DEG = 180 / Math.PI;
+
+function isNumberArray(value, minLength) {
+    if (!value || typeof value.length !== "number" || value.length < minLength) return false;
+    for (var i = 0; i < minLength; ++i) {
+        if (typeof value[i] !== "number") return false;
+    }
+    return true;
+}
+
 class Math3DMat4 {
 
     static title = "mat4";
@@ -415,10 +426,11 @@ if (typeof(glMatrix)!=="undefined") {
 
         onExecute() {
             var euler = this.getInputData(0);
-            if (euler == null) {
+            if (!isNumberArray(euler, 3)) {
                 euler = this.properties.euler;
             }
-            vec3.scale(this._degs, euler, this.DEG2RAD);
+            if (typeof quat.fromEuler !== "function") return;
+            vec3.scale(this._degs, euler, MATH3D_DEG2RAD);
             if (this.properties.use_yaw_pitch_roll)
                 this._degs = [this._degs[2], this._degs[0], this._degs[1]];
             var R = quat.fromEuler(this._value, this._degs);
@@ -430,8 +442,8 @@ if (typeof(glMatrix)!=="undefined") {
 
     class MathQuatToEuler {
 
-        static title = "Euler->Quat";
-        static desc = "Converts rotX,rotY,rotZ in degrees to quat";
+        static title = "Quat->Euler";
+        static desc = "Converts a quat to euler angles (rotX,rotY,rotZ) in degrees";
 
         constructor() {
             this.addInput(["quat", "quat"]);
@@ -441,11 +453,10 @@ if (typeof(glMatrix)!=="undefined") {
 
         onExecute() {
             var q = this.getInputData(0);
-            if (!q) return;
-            // @BUG: R is unused, but I don't know where it *should* be used because I don't know this math off the top
-            // It *probably* goes in one of the next two lines
-            var R = quat.toEuler(this._value, q);
-            vec3.scale(this._value, this._value, this.DEG2RAD);
+            if (!isNumberArray(q, 4)) return;
+            if (typeof quat.toEuler !== "function") return; // provided by litegl
+            quat.toEuler(this._value, q); // radians
+            vec3.scale(this._value, this._value, MATH3D_RAD2DEG);
             this.setOutputData(0, this._value);
         }
     }
