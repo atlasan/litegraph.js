@@ -1157,6 +1157,28 @@ export declare class LGraphGroup {
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
 }
 
+/** State machine for dragging links; moves are one transaction and cancel restores detached links. */
+export declare class LinkConnector {
+    node: LGraphNode | null;
+    slot: number;
+    output: INodeOutputSlot | null;
+    input: INodeInputSlot | null;
+    pos: Vector2 | Float32Array | null;
+    movingInputs: Array<{ node: LGraphNode; slot: number }> | null;
+    detached: Array<{ origin_id: GraphId; origin_slot: number; target_id: GraphId; target_slot: number }> | null;
+    readonly isConnecting: boolean;
+    readonly isMoving: boolean;
+    readonly type: string | number | undefined;
+    reset(): void;
+    startFromOutput(node: LGraphNode, slot: number): this;
+    startFromInput(node: LGraphNode, slot: number): this;
+    moveInputLink(node: LGraphNode, slot: number): boolean;
+    moveOutputLinks(node: LGraphNode, slot: number): boolean;
+    dropOnNode(target: LGraphNode, targetSlot?: number): unknown;
+    dropOnEmpty(): { node: LGraphNode; slot: number; output: INodeOutputSlot | null; input: INodeInputSlot | null; type: string | number | undefined } | null;
+    cancel(): null;
+}
+
 /** Tracks one pointer gesture: click vs drag tolerance and double-click detection. */
 export declare class CanvasPointer {
     static double_click_time: number;
@@ -1226,6 +1248,10 @@ export declare class LGraphCanvas {
     static clampWidgetNumber(value: number, options?: { min?: number; max?: number }): number;
     /** backing-store pixels per CSS pixel */
     pixel_ratio: number;
+    /** link-drag state; connecting_* fields are accessors over it */
+    linkConnector: LinkConnector;
+    /** primary pointer gesture state */
+    pointer: CanvasPointer;
     /** canvas width in CSS pixels */
     readonly cssWidth: number;
     /** canvas height in CSS pixels */

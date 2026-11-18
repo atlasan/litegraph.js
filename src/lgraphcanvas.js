@@ -3,6 +3,7 @@ import { CallbackHandler } from "./callbackhandler.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CanvasPointer } from "./canvaspointer.js";
+import { LinkConnector } from "./linkconnector.js";
 
 /**
  * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
@@ -213,8 +214,8 @@ export class LGraphCanvas {
         this.node_dragged = null;
         this.node_over = null;
         this.node_capturing_input = null;
-        this.connecting_node = null;
-        this.connecting = false; // ment to progressively replace connecting_node
+        this.linkConnector?.cancel(); // restores links being moved
+        this.linkConnector = new LinkConnector(); // link-drag state; connecting_* are accessors over it
         this.highlighted_links = {};
 
         this.dragging_canvas = false;
@@ -510,6 +511,24 @@ export class LGraphCanvas {
         this._mousedown_callback = null;
 
     }
+
+    // link-drag state, kept as fields for compatibility (see LinkConnector)
+    get connecting_node() { return this.linkConnector?.node ?? null; }
+    set connecting_node(value) { (this.linkConnector ??= new LinkConnector()).node = value; }
+    get connecting_output() { return this.linkConnector?.output ?? null; }
+    set connecting_output(value) { (this.linkConnector ??= new LinkConnector()).output = value; }
+    get connecting_input() { return this.linkConnector?.input ?? null; }
+    set connecting_input(value) { (this.linkConnector ??= new LinkConnector()).input = value; }
+    get connecting_slot() { return this.linkConnector?.slot ?? -1; }
+    set connecting_slot(value) { (this.linkConnector ??= new LinkConnector()).slot = value; }
+    get connecting_pos() { return this.linkConnector?.pos ?? null; }
+    set connecting_pos(value) { (this.linkConnector ??= new LinkConnector()).pos = value; }
+    /** legacy multi-link move descriptor: {inputs: [{node, slot}]} or false */
+    get connecting() {
+        const inputs = this.linkConnector?.movingInputs;
+        return inputs ? { inputs } : false;
+    }
+    set connecting(value) { (this.linkConnector ??= new LinkConnector()).movingInputs = value?.inputs ?? null; }
 
     /**
      * Resolves a node shape setting (shape constant or name) to a shape constant.
@@ -898,11 +917,7 @@ export class LGraphCanvas {
                                         20,
                                     )
                                 ) {
-                                    this.connecting_node = node;
-                                    this.connecting_output = output;
-                                    this.connecting_output.slot_index = i;
-                                    this.connecting_pos = node.getConnectionPos( false, i );
-                                    this.connecting_slot = i;
+                                    this.linkConnector.startFromOutput(node, i);
                                     LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on output slot", node, output);
                                     
                                     if (LiteGraph.shift_click_do_break_link_from) {
@@ -911,57 +926,11 @@ export class LGraphCanvas {
                                             node.disconnectOutput(i);
                                         }
                                     }else{
-                                        // move with shift
-                                        if (e.shiftKey) { // || this.move_source_link_without_shift
-                                            LiteGraph.log_debug("lgraphcanvas","processMouseDown","will move link source slot"
-                                                    ,this.connecting_node
-                                                    ,this.connecting_slot
-                                                    ,this.connecting_output
-                                                    ,this.connecting_pos);
-
-                                            // this.connecting_node
-                                            // this.connecting_output
-
-                                            var aOLinks = [];
-                                            var aONodes = [];
-                                            var aOSlots = [];
-                                            var aConnectingInputs = [];
-                                            if (output.links !== null && output.links.length) {
-                                                for(let il in output.links){
-                                                    let oNodeX = false;
-                                                    let oLnkX = this.graph.links[output.links[il]];
-                                                    if(oLnkX && this.graph._nodes_by_id[oLnkX.target_id]){
-                                                        oNodeX = this.graph._nodes_by_id[oLnkX.target_id];
-                                                        if(oNodeX){
-                                                            aOLinks.push(oLnkX);
-                                                            aONodes.push(oNodeX);
-                                                            aOSlots.push(oLnkX.target_slot);
-                                                            aConnectingInputs.push({node: oNodeX, slot: oLnkX.target_slot, link: oLnkX});
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // WIP implemented multi links ....
-                                            // TODO use a trick for now: visually dragging one and check ther rest later on
-
-                                            if(aOLinks.length){
-                                                // should disconnect output
-                                                node.disconnectOutput(i);
-                                                this.connecting_output = false;
-
-                                                this.connecting = {inputs: aConnectingInputs};
-                                                LiteGraph.log_debug("lgraphcanvas","processMouseDown","moving links source slot",this.connecting);
-
-                                                let link_info = aOLinks[0];
-                                                this.connecting_node = this.graph._nodes_by_id[link_info.target_id];
-                                                this.connecting_slot = link_info.target_slot;
-                                                this.connecting_input = this.connecting_node.inputs[this.connecting_slot];
-                                                // this.connecting_input.slot_index = this.connecting_slot;
-                                                this.connecting_pos = this.connecting_node.getConnectionPos( true, this.connecting_slot );
-                                                this.dirty_bgcanvas = true;
-                                                skip_action = true;
-                                            }
+                                        // move with shift: detach every link of this output and drag them together
+                                        if (e.shiftKey && this.linkConnector.moveOutputLinks(node, i)) {
+                                            LiteGraph.log_debug("lgraphcanvas","processMouseDown","moving links source slot",this.linkConnector.movingInputs);
+                                            this.dirty_bgcanvas = true;
+                                            skip_action = true;
                                         }
                                     }
 
@@ -1007,7 +976,7 @@ export class LGraphCanvas {
                                     } else {
                                         // TAG callback node event entrypoint
                                         node.processCallbackHandlers("onInputClick",{
-                                            def_cb: node.onInputDblClick
+                                            def_cb: node.onInputClick
                                         }, i, e );
                                     }
 
@@ -1029,12 +998,11 @@ export class LGraphCanvas {
                                             e.shiftKey
                                         ) {
                                             if (!LiteGraph.click_do_break_link_to) {
-                                                node.disconnectInput(i);
+                                                // detach and drag it from its origin; cancelling restores it
+                                                this.linkConnector.moveInputLink(node, i);
+                                            } else if (this.graph._nodes_by_id[link_info.origin_id]) {
+                                                this.linkConnector.startFromOutput(this.graph._nodes_by_id[link_info.origin_id], link_info.origin_slot);
                                             }
-                                            this.connecting_node = this.graph._nodes_by_id[link_info.origin_id];
-                                            this.connecting_slot = link_info.origin_slot;
-                                            this.connecting_output = this.connecting_node.outputs[this.connecting_slot];
-                                            this.connecting_pos = this.connecting_node.getConnectionPos( false, this.connecting_slot );
                                             LiteGraph.log_debug("lgraphcanvas","processMouseDown","moving link destination slot",this.connecting_node,this.connecting_slot,this.connecting_output,this.connecting_pos);
                                             this.dirty_bgcanvas = true;
                                             skip_action = true;
@@ -1047,11 +1015,7 @@ export class LGraphCanvas {
 
                                     if (!skip_action) {
                                         // connect from in to out, from to to from
-                                        this.connecting_node = node;
-                                        this.connecting_input = input;
-                                        this.connecting_input.slot_index = i;
-                                        this.connecting_pos = node.getConnectionPos( true, i );
-                                        this.connecting_slot = i;
+                                        this.linkConnector.startFromInput(node, i);
 
                                         this.dirty_bgcanvas = true;
                                         skip_action = true;
@@ -1765,12 +1729,9 @@ export class LGraphCanvas {
                 }
                 this.dragging_rectangle = null;
             } else if (this.connecting_node) {
-                // dragging a connection
+                // dropping a dragged link (see LinkConnector)
                 this.dirty_canvas = true;
                 this.dirty_bgcanvas = true;
-
-                var connInOrOut = this.connecting_output || this.connecting_input;
-                var connType = connInOrOut.type;
 
                 node = this.graph.getNodeOnPos(
                     e.canvasX,
@@ -1778,79 +1739,33 @@ export class LGraphCanvas {
                     this.visible_nodes,
                 );
 
-                // node below mouse
                 if (node) {
-
-                    // slot below mouse? connect
-                    let slot;
-                    if (this.connecting_output) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseUp", "connecting_output", this.connecting_output, "connecting_node", this.connecting_node, "connecting_slot", this.connecting_slot);
-                        slot = this.isOverNodeInput(
-                            node,
-                            e.canvasX,
-                            e.canvasY,
-                        );
-                        if (slot != -1) {
-                            this.connecting_node.connect(this.connecting_slot, node, slot);
-                        } else {
-                            // not on top of an input
-                            // look for a good slot
-                            this.connecting_node.connectByType(this.connecting_slot,node,connType);
-                        }
-
-                    }else if (this.connecting_input) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseUp", "connecting_input", this.connecting_input, "connecting_node", this.connecting_node, "connecting_slot", this.connecting_slot);
-                        slot = this.isOverNodeOutput(
-                            node,
-                            e.canvasX,
-                            e.canvasY,
-                        );
-
-                        if (slot != -1) {
-
-                            if(this.connecting && this.connecting.inputs){
-                                // multi connect
-                                for(let iC in this.connecting.inputs){
-                                    node.connect(slot, this.connecting.inputs[iC].node, this.connecting.inputs[iC].slot);
-                                }
-                            }else{
-                                // default single connect
-                                node.connect(slot, this.connecting_node, this.connecting_slot); // this is inverted has output-input nature like
-                            }
-
-                        } else {
-                            // not on top of an input
-                            // look for a good slot
-                            this.connecting_node.connectByTypeOutput(this.connecting_slot,node,connType);
-                        }
-
-                    }
-                    // }
-                }else{
+                    // slot below the pointer, or -1 to pick the first compatible one
+                    const slot = this.connecting_output
+                        ? this.isOverNodeInput(node, e.canvasX, e.canvasY)
+                        : this.isOverNodeOutput(node, e.canvasX, e.canvasY);
+                    LiteGraph.log_debug("lgraphcanvas", "processMouseUp", "drop link on node", node, slot);
+                    this.linkConnector.dropOnNode(node, slot);
+                } else {
+                    const dropped = this.linkConnector.dropOnEmpty();
                     // add menu when releasing link in empty space
-                    if (LiteGraph.release_link_on_empty_shows_menu) {
+                    if (dropped && LiteGraph.release_link_on_empty_shows_menu) {
                         if (e.shiftKey && this.allow_searchbox) {
-                            if(this.connecting_output) {
-                                this.showSearchBox(e,{node_from: this.connecting_node, slot_from: this.connecting_output, type_filter_in: this.connecting_output.type});
-                            }else if(this.connecting_input) {
-                                this.showSearchBox(e,{node_to: this.connecting_node, slot_from: this.connecting_input, type_filter_out: this.connecting_input.type});
+                            if (dropped.output) {
+                                this.showSearchBox(e,{node_from: dropped.node, slot_from: dropped.output, type_filter_in: dropped.output.type});
+                            } else if (dropped.input) {
+                                this.showSearchBox(e,{node_to: dropped.node, slot_from: dropped.input, type_filter_out: dropped.input.type});
                             }
-                        }else{
-                            if(this.connecting_output) {
-                                this.showConnectionMenu({nodeFrom: this.connecting_node, slotFrom: this.connecting_output, e: e});
-                            }else if(this.connecting_input) {
-                                this.showConnectionMenu({nodeTo: this.connecting_node, slotTo: this.connecting_input, e: e});
+                        } else {
+                            if (dropped.output) {
+                                this.showConnectionMenu({nodeFrom: dropped.node, slotFrom: dropped.output, e: e});
+                            } else if (dropped.input) {
+                                this.showConnectionMenu({nodeTo: dropped.node, slotTo: dropped.input, e: e});
                             }
                         }
                     }
                 }
-
-                this.connecting_output = null;
-                this.connecting_input = null;
-                this.connecting_pos = null;
-                this.connecting_node = null;
-                this.connecting_slot = -1;
-                this.connecting = false;
+                this.linkConnector.reset();
             } else if (this.resizing_node) { // not dragging connection
                 this.dirty_canvas = true;
                 this.dirty_bgcanvas = true;
@@ -1968,13 +1883,7 @@ export class LGraphCanvas {
         if (e && e.isPrimary === false) return;
         this.pointer.cancel();
         this._restoreDocumentPointerListeners();
-        if (this.connecting_node) {
-            this.connecting_node = null;
-            this.connecting_output = null;
-            this.connecting_input = null;
-            this.connecting_pos = null;
-            this.connecting_slot = -1;
-        }
+        this.linkConnector?.cancel(); // moved links go back where they were
         if (this.node_dragged) {
             this.graph?.afterChange(this.node_dragged);
             this.node_dragged = null;
@@ -2169,6 +2078,11 @@ export class LGraphCanvas {
             if (e.keyCode == 27) {
                 // esc
                 if(this.node_panel) this.node_panel.close();
+                if (this.linkConnector?.isConnecting) { // abandon a link drag; moved links are restored
+                    this.linkConnector.cancel();
+                    this.dirty_canvas = true;
+                    this.dirty_bgcanvas = true;
+                }
                 block_default = true;
             }
 

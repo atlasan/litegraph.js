@@ -56,6 +56,7 @@ lib_js_files = [
     "./src/curveeditor.js",
     "./src/dragandscale.js",
     "./src/canvaspointer.js",
+    "./src/linkconnector.js",
     "./src/lgraph.js",
     "./src/lgraphcanvas.js",
     "./src/lgraphgroup.js",
