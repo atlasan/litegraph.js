@@ -386,12 +386,28 @@ export type serializedLGraph<
     [foreignField: string]: unknown;
 };
 
+export interface LGraphState {
+    lastNodeId: number;
+    lastLinkId: number;
+    lastGroupId: number;
+    lastRerouteId: number;
+}
+
 export declare class LGraph {
     static supported_types: string[];
     static STATUS_STOPPED: 1;
     static STATUS_RUNNING: 2;
 
     constructor(o?: object);
+
+    /** fresh id counters */
+    static createState(): LGraphState;
+    /** document identity (uuid) */
+    id: string;
+    /** number of saved changes to the document */
+    revision: number;
+    /** id counters; last_node_id/last_link_id are accessors over these */
+    state: LGraphState;
 
     filter: string;
     catch_errors: boolean;
@@ -1118,6 +1134,8 @@ export type SerializedLGraphGroup = {
     font: LGraphGroup["font"];
 };
 export declare class LGraphGroup {
+    /** numeric id assigned by the graph */
+    id?: number;
     title: string;
     private _bounding: Vector4;
     color: string;

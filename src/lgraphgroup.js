@@ -73,6 +73,7 @@ export class LGraphGroup {
      */
     configure(o) {
         this.title = o.title;
+        if (o.id !== undefined) this.id = o.id;
         // this._bounding.set(o.bounding); // TODO original, will remove this comment: Happens that arrays are sometimes (strangely) exported as object with keyed strings: eg. [v0, v1] to {"0": v0, "1": v1}
         // this._bounding = LiteGraph.parseStringifyObject(o.bounding, this._bounding); // tried specific cleaner implementation, reverted to cloneObject
         this._bounding = LiteGraph.cloneObject(o.bounding, this._bounding);
@@ -82,7 +83,7 @@ export class LGraphGroup {
         // keep fields this runtime does not model (e.g. another editor's id/flags/locked) for serialize
         this.extra_fields = {};
         for (const key in o) {
-            if (!["title", "bounding", "color", "font_size"].includes(key)) {
+            if (!["id", "title", "bounding", "color", "font_size"].includes(key)) {
                 this.extra_fields[key] = LiteGraph.cloneObject(o[key]);
             }
         }
@@ -100,6 +101,7 @@ export class LGraphGroup {
         var b = this._bounding;
         return {
             ...LiteGraph.cloneObject(this.extra_fields ?? {}),
+            ...(this.id !== undefined ? { id: this.id } : {}),
             title: this.title,
             bounding: Array.from(b, (value) => Math.round(value)), // plain array, not a typed array (JSON tuple)
             color: this.color,

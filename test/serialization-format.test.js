@@ -72,9 +72,10 @@ test('unknown top-level fields survive configure and serialize', () => {
     // a second configure with a plain document must not leak the previous foreign fields
     graph.configure({ nodes: [], links: [], version: 0.4 });
     const plain = graph.serialize();
-    expect(plain.id).toBeUndefined();
-    expect(plain.revision).toBeUndefined();
-    expect(graph.id).toBeUndefined();
+    expect(plain.floatingLinks).toBeUndefined();
+    expect(graph.floatingLinks).toBeUndefined();
+    expect(plain.id).not.toBe('b7c1a0f2-0000-4000-8000-000000000001'); // a new document gets a new id
+    expect(plain.revision).toBe(0);
     graph.clear();
 });
 
@@ -153,4 +154,83 @@ test('documents still load when version is the legacy library string', () => {
     expect(graph.configure(doc)).toBe(true); // placeholder present -> error flag, but links loaded
     expect(Object.keys(graph.links)).toHaveLength(1);
     graph.clear();
+});
+
+describe('document identity, revision and id counters', () => {
+    test('a graph has a uuid that survives serialize/configure', () => {
+        const graph = new LGraph();
+        expect(graph.id).toMatch(/^[0-9a-f-]{36}$/);
+        const copy = new LGraph();
+        copy.configure(roundTrip(graph.serialize()));
+        expect(copy.id).toBe(graph.id);
+        expect(new LGraph().id).not.toBe(graph.id);
+    });
+
+    test('revision counts saved changes and is not bumped by loading', () => {
+        const graph = new LGraph();
+        expect(graph.revision).toBe(0);
+        const a = LiteGraph.createNode('fmt/src');
+        const b = LiteGraph.createNode('fmt/dst');
+        graph.add(a);
+        graph.add(b);
+        const afterAdds = graph.revision;
+        expect(afterAdds).toBeGreaterThan(0);
+        a.connect(0, b, 0);
+        expect(graph.revision).toBeGreaterThan(afterAdds);
+
+        const saved = roundTrip(graph.serialize());
+        expect(saved.revision).toBe(graph.revision);
+        const loaded = new LGraph();
+        loaded.configure(saved);
+        expect(loaded.revision).toBe(saved.revision);
+        graph.clear();
+        loaded.clear();
+    });
+
+    test('state holds all id counters; last_node_id and last_link_id stay compatible', () => {
+        const graph = new LGraph();
+        const a = LiteGraph.createNode('fmt/src');
+        const b = LiteGraph.createNode('fmt/dst');
+        graph.add(a);
+        graph.add(b);
+        a.connect(0, b, 0);
+        expect(graph.last_node_id).toBe(graph.state.lastNodeId);
+        expect(graph.last_link_id).toBe(1);
+        graph.last_node_id = 40;
+        expect(graph.state.lastNodeId).toBe(40);
+
+        const saved = roundTrip(graph.serialize());
+        expect(saved.last_node_id).toBe(40);
+        expect(saved.state).toEqual({ lastNodeId: 40, lastLinkId: 1, lastGroupId: 0, lastRerouteId: 0 });
+        graph.clear();
+        expect(graph.state).toEqual({ lastNodeId: 0, lastLinkId: 0, lastGroupId: 0, lastRerouteId: 0 });
+    });
+
+    test('loading prefers the highest of state, last_*_id and the ids present', () => {
+        const graph = new LGraph();
+        graph.configure({ nodes: [{ id: 3, type: 'fmt/src', pos: [0, 0], size: [10, 10] }], links: [],
+            last_node_id: 2, state: { lastNodeId: 1, lastLinkId: 5, lastGroupId: 7, lastRerouteId: 2 }, version: 0.4 });
+        expect(graph.state).toEqual({ lastNodeId: 3, lastLinkId: 5, lastGroupId: 7, lastRerouteId: 2 });
+        graph.clear();
+    });
+
+    test('groups get stable numeric ids', () => {
+        const graph = new LGraph();
+        const g1 = new LiteGraph.LGraphGroup();
+        const g2 = new LiteGraph.LGraphGroup();
+        graph.add(g1);
+        graph.add(g2);
+        expect([g1.id, g2.id]).toEqual([1, 2]);
+        const saved = roundTrip(graph.serialize());
+        expect(saved.groups.map((g) => g.id)).toEqual([1, 2]);
+        expect(saved.state.lastGroupId).toBe(2);
+        const loaded = new LGraph();
+        loaded.configure(saved);
+        expect(loaded._groups.map((g) => g.id)).toEqual([1, 2]);
+        const g3 = new LiteGraph.LGraphGroup();
+        loaded.add(g3);
+        expect(g3.id).toBe(3);
+        graph.clear();
+        loaded.clear();
+    });
 });

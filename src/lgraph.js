@@ -19,7 +19,17 @@ export class LGraph {
     static STATUS_RUNNING = 2;
 
     /** top-level document fields modelled by this runtime; any other loaded field is preserved verbatim on serialize */
-    static serialized_fields = ["last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version"];
+    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version"];
+
+    /** fresh id counters; last_node_id/last_link_id are accessors over these */
+    static createState() {
+        return { lastNodeId: 0, lastLinkId: 0, lastGroupId: 0, lastRerouteId: 0 };
+    }
+
+    get last_node_id() { return this.state.lastNodeId; }
+    set last_node_id(value) { this.state.lastNodeId = value; }
+    get last_link_id() { return this.state.lastLinkId; }
+    set last_link_id(value) { this.state.lastLinkId = value; }
 
     /** highest of `current` and every finite numeric id (uuids and other strings are ignored) */
     static _maxNumericId(current, ids) {
@@ -37,6 +47,11 @@ export class LGraph {
     constructor(o) {
         LiteGraph.log_debug("Graph created",o);
         this.list_of_graphcanvas = null;
+
+        /** document identity (uuid); kept by serialize/configure */
+        this.id = LiteGraph.uuidv4();
+        /** number of saved changes to this document */
+        this.revision = 0;
 
         this.callbackhandler_setup();
 
@@ -84,8 +99,7 @@ export class LGraph {
         try { this.stop(); } catch (error) { errors.push(error); }
         this.status = LGraph.STATUS_STOPPED;
 
-        this.last_node_id = 0;
-        this.last_link_id = 0;
+        this.state = LGraph.createState(); // also resets last_node_id / last_link_id
 
         // drop document fields kept from a previous configure
         for (const key in this._foreign_fields ?? {}) delete this[key];
@@ -873,6 +887,12 @@ export class LGraph {
 
         // groups
         if (node.constructor === LiteGraph.LGraphGroup) {
+            if (typeof node.id === "number" && Number.isFinite(node.id)) {
+                this.state.lastGroupId = Math.max(this.state.lastGroupId, node.id);
+                if (this._groups.some((group) => group.id === node.id)) node.id = ++this.state.lastGroupId;
+            } else {
+                node.id = ++this.state.lastGroupId;
+            }
             this._groups.push(node);
             this.setDirtyCanvas(true);
             this.change();
@@ -1630,6 +1650,8 @@ export class LGraph {
         // fields loaded from a document that this runtime does not model are written back untouched
         var data = LiteGraph.cloneObject(this._foreign_fields ?? {});
         Object.assign(data, {
+            id: this.id,
+            revision: this.revision,
             last_node_id: this.last_node_id,
             last_link_id: this.last_link_id,
             nodes: nodesInfo,
@@ -1639,6 +1661,7 @@ export class LGraph {
             extra: this.extra,
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
+            state: { ...this.state }, // all id counters (nodes, links, groups, reroutes)
         });
         this.processCallbackHandlers("onSerialize",{
             def_cb: this.onSerialize
@@ -1682,10 +1705,16 @@ export class LGraph {
             data.links = links;
         }
 
+        // document identity and counters
+        if (!keep_old) {
+            this.id = typeof data.id === "string" && data.id ? data.id : LiteGraph.uuidv4();
+        }
+        const loadedState = { ...LGraph.createState(), ...(data.state && typeof data.state === "object" ? data.state : {}) };
+
         // copy all stored fields
         this._foreign_fields = {};
         for (let i in data) {
-            if (["nodes", "groups"].includes(i)) continue; // exclude "nodes" and "groups" properties from direct copy
+            if (["nodes", "groups", "id", "revision", "state"].includes(i)) continue; // handled explicitly
             if (!LGraph.serialized_fields.includes(i) && !i.startsWith("_") && !(i in this)) {
                 // not part of this runtime's model (e.g. another editor's document state): keep it for serialize
                 this._foreign_fields[i] = LiteGraph.cloneObject(data[i]);
@@ -1724,8 +1753,11 @@ export class LGraph {
         }
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
-        this.last_node_id = LGraph._maxNumericId(this.last_node_id, this._nodes.map((n) => n.id));
-        this.last_link_id = LGraph._maxNumericId(this.last_link_id, Object.values(this.links ?? {}).map((l) => l?.id));
+        this.state = {
+            ...loadedState,
+            lastNodeId: LGraph._maxNumericId(Math.max(loadedState.lastNodeId, Number(this.last_node_id) || 0), this._nodes.map((n) => n.id)),
+            lastLinkId: LGraph._maxNumericId(Math.max(loadedState.lastLinkId, Number(this.last_link_id) || 0), Object.values(this.links ?? {}).map((l) => l?.id)),
+        };
 
         // groups
         this._groups.length = 0;
@@ -1740,6 +1772,9 @@ export class LGraph {
         this.updateExecutionOrder();
 
         this.extra = data.extra ?? {};
+        if (!keep_old || Number.isFinite(data.revision)) {
+            this.revision = Number.isFinite(data.revision) ? data.revision : 0;
+        }
 
         this.processCallbackHandlers("onConfigure",{
             def_cb: this.onConfigure
@@ -1836,6 +1871,7 @@ export class LGraph {
         var opts = Object.assign(optsDef,optsIn);
 
         this._version++;
+        if (opts.doSave) this.revision++; // a saved (user-level) change to the document
 
         if(opts.action) {
             LiteGraph.log_debug("Graph change",opts.action);
