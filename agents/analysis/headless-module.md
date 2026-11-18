@@ -1,3 +1,5 @@
+> Historical analysis (2025). See the [2026 investigation](../../docs/development/2026-10-30-study.md) and [verified development workflow](../../docs/development/README.md) for current evidence and limitations. Proposed architecture and timelines below are not implementation commitments.
+
 # LiteGraph Headless Module Analysis
 
 ## Overview

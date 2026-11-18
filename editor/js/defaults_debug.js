@@ -43,7 +43,7 @@ LiteGraph.actionHistoryMaxSave = 40;
 
 LiteGraph.showCanvasOptions = true; // enable canvas options panel, customize in LiteGrpah.availableCanvasOptions
 
-LiteGraph.use_uuids = true; // [testing] why not? maybe not good for comparison?
+LiteGraph.use_uuids = false; // keep numeric ids: this file is bundled in the .full builds; opt in to uuids explicitly
 
 /* -- EVENTS PROCESSING METHODS -- */
 

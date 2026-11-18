@@ -74,7 +74,7 @@ class UDPClientNode {
     // Continuously read incoming datagrams in the browser.
     async readLoop() {
       try {
-        while (true) {
+        for (;;) {
           const { value, done } = await this._reader.read();
           if (done) break;
           // value is a Uint8Array; decode it.

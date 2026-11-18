@@ -1,11 +1,6 @@
 // logger.js
 import winston from 'winston';
-import path from 'path';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-
-// Load environment variables from the .env file in headless/graphrunner
-require('dotenv').config({ path: path.join(process.cwd(), "headless", "graphrunner", ".env") });
+import './server/config.js';
 
 /**
  * Factory function to create a new logger.

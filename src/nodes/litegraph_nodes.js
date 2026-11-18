@@ -15,19 +15,19 @@ class LGLibrary{
     static desc = "LiteGraph object reference";
     onExecute(param, options) {
         this.setOutputData(0, LiteGraph);
-    };
+    }
     onAction(action, param, options){
         // should probably execute on action
-    };
+    }
     onGetInputs() {
         //return [["in", 0]];
-    };
+    }
     onGetOutputs() {
         //return [["out", 0]];
-    };
+    }
     getTitle() {
         return "LiteGraph";
-    };
+    }
 }
 LiteGraph.registerNodeType("litegraph/litegraph", LGLibrary);
 
@@ -50,7 +50,7 @@ class LGGraph{
     onExecute(param, options) {
         this.setOutputData(0, this.graph);
         this.triggerSlot(1, param, null, options);
-    };
+    }
     onAction(action, param, options){
         console.debug("GraphAction",action);
         switch(action){
@@ -71,15 +71,15 @@ class LGGraph{
                     this.graph.onAfterStep();
             break;
         }
-    };
+    }
     onGetInputs() {
         //return [["in", 0]];
-    };
+    }
     onGetOutputs() {
         //return [["out", 0]];
-    };
+    }
     getTitle() {
         return "Graph";
-    };
+    }
 }
 LiteGraph.registerNodeType("litegraph/graph", LGGraph);

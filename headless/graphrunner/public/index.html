@@ -11,6 +11,10 @@
   <div class="container-fluid">
     <header class="mb-4">
       <h1 class="mt-3">LiteGraph Runner</h1>
+      <div id="connectionStatus" role="status">Connecting…</div>
+      <div id="commandStatus" role="status" aria-live="polite">Edits stay in memory. Apply sends them to the worker; Sync replaces the view with worker state.</div>
+      <p class="small mb-1">Apply sends local edits to the worker. Sync replaces local edits with worker state. Neither saves the workflow file.</p>
+      <div id="editMode" role="status"></div>
     </header>
     <div class="row">
       <!-- File Explorer Panel -->
@@ -24,12 +28,15 @@
       <div class="col-md-9">
         <ul id="tabs" class="nav nav-tabs mb-2"></ul>
         <div id="content" class="mb-3">
+          <p id="emptyState">Open a workflow to inspect and control its worker.</p>
           <canvas id="graphCanvas" width="800" height="600"></canvas>
         </div>
         <div id="controls" class="mt-3">
           <button id="runBtn" class="btn btn-success">Start Execution</button>
           <button id="pauseBtn" class="btn btn-warning">Stop Execution</button>
           <button id="toggleBtn" class="btn btn-info ms-2">Toggle Edit Mode</button>
+          <button id="applyBtn" class="btn btn-primary ms-2">Apply Edits</button>
+          <button id="syncBtn" class="btn btn-secondary ms-2">Sync from Runner</button>
           <button id="stopAllBtn" class="btn btn-danger ms-2">Stop All</button>
           <button id="clearConsoleBtn" class="btn btn-secondary ms-2">Clear Console</button>
         </div>        

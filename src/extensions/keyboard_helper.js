@@ -7,7 +7,7 @@ export let registerExtension_keyhelper = function(graphcanvas){
 
     // oCbInfo is first passed parameter and contains infos about the event execution chain 
     let ext = "key_helper";
-    let debug = true;
+    let debug = false;
 
     // onKeyDown
     graphcanvas.registerCallbackHandler("onKeyDown",function(oCbInfo, keyEvent){
@@ -17,6 +17,7 @@ export let registerExtension_keyhelper = function(graphcanvas){
         var aNodesFrom = [];
         var nodeX = false;
         var return_value = null;
+        let moved = false;
         if(nSel){
             for(let iO in graphcanvas.selected_nodes){
                 aNodesFrom.push(graphcanvas.selected_nodes[iO]);
@@ -66,6 +67,7 @@ export let registerExtension_keyhelper = function(graphcanvas){
                         for(let iN=0;iN<aNodesFrom.length;iN++){
                             aNodesFrom[iN].alignToGrid();
                             aNodesFrom[iN].pos[0] += LiteGraph.CANVAS_GRID_SIZE;
+                            moved = true;
                             aNodesFrom[iN].processCallbackHandlers("onMoved",{
                                 def_cb: aNodesFrom[iN].onMoved
                             });
@@ -81,7 +83,8 @@ export let registerExtension_keyhelper = function(graphcanvas){
                     for(let iN=0;iN<aNodesFrom.length;iN++){
                         aNodesFrom[iN].alignToGrid();
                         aNodesFrom[iN].pos[0] -= LiteGraph.CANVAS_GRID_SIZE;
-                        aNodesFrom[iN].processCallbackHandlers("onMoved",{
+                        moved = true;
+                            aNodesFrom[iN].processCallbackHandlers("onMoved",{
                             def_cb: aNodesFrom[iN].onMoved
                         });
                     }
@@ -132,6 +135,7 @@ export let registerExtension_keyhelper = function(graphcanvas){
                         for(let iN=0;iN<aNodesFrom.length;iN++){
                             aNodesFrom[iN].alignToGrid();
                             aNodesFrom[iN].pos[1] -= LiteGraph.CANVAS_GRID_SIZE;
+                            moved = true;
                             aNodesFrom[iN].processCallbackHandlers("onMoved",{
                                 def_cb: aNodesFrom[iN].onMoved
                             });
@@ -184,6 +188,7 @@ export let registerExtension_keyhelper = function(graphcanvas){
                         for(let iN=0;iN<aNodesFrom.length;iN++){
                             aNodesFrom[iN].alignToGrid();
                             aNodesFrom[iN].pos[1] += LiteGraph.CANVAS_GRID_SIZE;
+                            moved = true;
                             aNodesFrom[iN].processCallbackHandlers("onMoved",{
                                 def_cb: aNodesFrom[iN].onMoved
                             });
@@ -222,6 +227,8 @@ export let registerExtension_keyhelper = function(graphcanvas){
                 if(debug) console.debug(ext, "dbg: ignore",keyEvent.keyCode);
             break;
         }
+
+        if (moved) graphcanvas.graph?.onGraphChanged({action: "keyboardMove"}); // undoable
 
         return {
             return_value: return_value,

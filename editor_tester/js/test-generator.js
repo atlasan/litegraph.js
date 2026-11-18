@@ -3,7 +3,10 @@
  * Automatically generates test cases for LiteGraph nodes based on their structure
  */
 
-import { LiteGraph } from "/src/litegraph.js";
+import { LiteGraph } from "../../build/litegraph.js";
+
+import { setNodeInput } from './test-inputs.js';
+import { checkAbort, pause } from './test-control.js';
 
 export class TestCaseGenerator {
     constructor() {
@@ -84,24 +87,8 @@ export class TestCaseGenerator {
      * Generate basic test cases for a node type
      */
     generateBasicTests(nodeType) {
-        const tests = [];
-        
-        // Analyze node structure
         const analysis = this.analyzeNodeType(nodeType);
-        
-        // Generate tests based on templates
-        for (const [templateId, template] of this.testTemplates) {
-            try {
-                const test = template.generate(nodeType, analysis);
-                if (test) {
-                    tests.push(test);
-                }
-            } catch (error) {
-                console.warn(`Failed to generate ${templateId} test for ${nodeType}:`, error);
-            }
-        }
-        
-        return tests;
+        return [this.generateBasicTest(nodeType, analysis)];
     }
 
     /**
@@ -125,9 +112,9 @@ export class TestCaseGenerator {
     /**
      * Generate performance test cases for a node type
      */
-    generatePerformanceTests(nodeType, nodeInfo) {
+    generatePerformanceTests(nodeType, nodeInfo, settings = {}) {
         const analysis = this.analyzeNodeType(nodeType);
-        const test = this.generatePerformanceTest(nodeType, analysis);
+        const test = this.generatePerformanceTest(nodeType, analysis, settings);
         return test ? [test] : [];
     }
 
@@ -174,10 +161,11 @@ export class TestCaseGenerator {
         // Create temporary instance for analysis
         let node;
         try {
-            node = new NodeClass();
+            node = LiteGraph.createNode(nodeType);
+            if (!node) throw new Error(`Failed to create ${nodeType}`);
         } catch (error) {
             console.warn(`Failed to create instance of ${nodeType}:`, error);
-            return null;
+            throw error;
         }
         
         const analysis = {
@@ -502,7 +490,7 @@ export class TestCaseGenerator {
                     
                     for (const testValue of testValues) {
                         try {
-                            node.setInputData(i, testValue.value);
+                            setNodeInput(node, i, testValue.value);
                             
                             if (typeof node.onExecute === 'function') {
                                 node.onExecute();
@@ -634,127 +622,82 @@ export class TestCaseGenerator {
     /**
      * Generate performance test
      */
-    generatePerformanceTest(nodeType, analysis) {
+    generatePerformanceTest(nodeType, analysis, settings = {}) {
+        const { benchmarkIterations = 100, warmupIterations = 10, maxExecutionTime = 1000, maxMemoryUsage = 50 * 1024 * 1024 } = settings;
+        if (!Number.isInteger(benchmarkIterations) || benchmarkIterations < 1 || benchmarkIterations > 1000 ||
+            !Number.isInteger(warmupIterations) || warmupIterations < 0 || warmupIterations > 100 ||
+            !Number.isFinite(maxExecutionTime) || maxExecutionTime <= 0 || !Number.isFinite(maxMemoryUsage) || maxMemoryUsage <= 0) {
+            throw new Error('Invalid benchmark settings');
+        }
         return {
             name: `Performance Test - ${analysis.title}`,
-            description: `Tests execution performance and memory usage for ${nodeType}`,
-            category: 'performance',
-            priority: 'medium',
-            timeout: 10000,
-            execute: (node, graph) => {
-                const results = {
-                    executionTimes: [],
-                    memoryUsage: [],
-                    iterations: 100
-                };
-                
-                // Warm up
-                for (let i = 0; i < 10; i++) {
-                    if (typeof node.onExecute === 'function') {
-                        node.onExecute();
+            description: `Measures synchronous node execution with representative inputs for ${nodeType}`,
+            category: 'performance', priority: 'medium', timeout: 10000,
+            execute: async (node, graph, { signal } = {}) => {
+                this.prepareLoadInputs(node, analysis);
+                const memorySupported = Number.isFinite(performance.memory?.usedJSHeapSize);
+                const baseline = memorySupported ? performance.memory.usedJSHeapSize : null;
+                const results = { executionTimes: [], memoryUsage: [], memorySupported, iterations: benchmarkIterations };
+                for (let i = 0; i < warmupIterations + benchmarkIterations; i++) {
+                    if (i % 25 === 0) await pause(0, signal);
+                    checkAbort(signal);
+                    const start = performance.now();
+                    node.doExecute();
+                    const duration = performance.now() - start;
+                    if (i >= warmupIterations) {
+                        results.executionTimes.push(duration);
+                        if (memorySupported) results.memoryUsage.push(performance.memory.usedJSHeapSize - baseline);
                     }
                 }
-                
-                // Performance test
-                for (let i = 0; i < results.iterations; i++) {
-                    const startTime = performance.now();
-                    const startMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
-                    
-                    if (typeof node.onExecute === 'function') {
-                        node.onExecute();
-                    }
-                    
-                    const endTime = performance.now();
-                    const endMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
-                    
-                    results.executionTimes.push(endTime - startTime);
-                    results.memoryUsage.push(endMemory - startMemory);
-                }
-                
                 return results;
             },
-            validate: (node, graph, executionResult) => {
-                const validation = { passed: true, issues: [], metrics: {} };
-                
-                if (executionResult.executionTimes.length === 0) {
-                    validation.issues.push('No execution times recorded');
-                    validation.passed = false;
-                    return validation;
-                }
-                
-                // Calculate metrics
-                const times = executionResult.executionTimes;
-                const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
-                const maxTime = Math.max(...times);
-                const minTime = Math.min(...times);
-                
-                validation.metrics = {
-                    averageExecutionTime: avgTime,
-                    maxExecutionTime: maxTime,
-                    minExecutionTime: minTime,
-                    totalIterations: times.length
-                };
-                
-                // Performance thresholds
-                if (avgTime > 10) { // 10ms average threshold
-                    validation.issues.push(`Average execution time too high: ${avgTime.toFixed(2)}ms`);
-                }
-                
-                if (maxTime > 100) { // 100ms max threshold
-                    validation.issues.push(`Maximum execution time too high: ${maxTime.toFixed(2)}ms`);
-                }
-                
-                return validation;
+            validate: (node, graph, result) => {
+                const times = result.executionTimes;
+                const issues = [];
+                if (!times.length) issues.push('No execution times recorded');
+                const maximum = times.length ? Math.max(...times) : null;
+                const memory = result.memorySupported && result.memoryUsage.length ? Math.max(...result.memoryUsage) : null;
+                if (maximum > maxExecutionTime) issues.push(`Maximum execution time ${maximum.toFixed(2)}ms exceeds ${maxExecutionTime}ms`);
+                if (memory > maxMemoryUsage) issues.push(`Observed heap growth ${memory} bytes exceeds ${maxMemoryUsage} bytes`);
+                return { passed: issues.length === 0, issues, metrics: {
+                    averageExecutionTime: times.length ? times.reduce((sum, time) => sum + time, 0) / times.length : null,
+                    maxExecutionTime: maximum, minExecutionTime: times.length ? Math.min(...times) : null,
+                    totalIterations: times.length, observedHeapGrowth: memory,
+                } };
             }
         };
     }
 
-    /**
-     * Generate stress test
-     */
+    prepareLoadInputs(node, analysis) {
+        if (typeof node.onExecute !== 'function') throw new Error('Load scenarios require a synchronous onExecute node');
+        for (const input of analysis.inputs) {
+            if (input.type === LiteGraph.EVENT || input.type === LiteGraph.ACTION) continue;
+            const sample = this.generateTestValues(input.type).find(item => item.value != null);
+            setNodeInput(node, input.index, input.defaultValue ?? sample?.value);
+        }
+    }
+
+    /** Generated load scenarios yield in bounded batches so Stop and timeouts run. */
     generateStressTest(nodeType, analysis) {
         return {
             name: `Stress Test - ${analysis.title}`,
-            description: `Tests node behavior under high load for ${nodeType}`,
-            category: 'stress',
-            priority: 'low',
-            timeout: 30000,
-            execute: (node, graph) => {
-                const results = {
-                    iterations: 1000,
-                    errors: [],
-                    completed: 0
-                };
-                
+            description: `Tests repeated synchronous execution for ${nodeType}`,
+            category: 'stress', priority: 'low', timeout: 30000,
+            execute: async (node, graph, { signal } = {}) => {
+                this.prepareLoadInputs(node, analysis);
+                const results = { iterations: 1000, errors: [], completed: 0 };
                 for (let i = 0; i < results.iterations; i++) {
-                    try {
-                        if (typeof node.onExecute === 'function') {
-                            node.onExecute();
-                        }
-                        results.completed++;
-                    } catch (error) {
-                        results.errors.push({
-                            iteration: i,
-                            error: error.message
-                        });
-                    }
+                    if (i % 25 === 0) await pause(0, signal);
+                    checkAbort(signal);
+                    try { node.doExecute(); results.completed++; }
+                    catch (error) { results.errors.push({ iteration: i, error: error.message }); }
                 }
-                
                 return results;
             },
-            validate: (node, graph, executionResult) => {
-                const validation = { passed: true, issues: [] };
-                
-                const errorRate = executionResult.errors.length / executionResult.iterations;
-                
-                if (errorRate > 0.01) { // 1% error threshold
-                    validation.issues.push(
-                        `High error rate under stress: ${(errorRate * 100).toFixed(2)}%`
-                    );
-                    validation.passed = false;
-                }
-                
-                return validation;
+            validate: (node, graph, result) => {
+                const errorRate = result.errors.length / result.iterations;
+                const issues = errorRate > 0.01 ? [`High error rate under stress: ${(errorRate * 100).toFixed(2)}%`] : [];
+                return { passed: issues.length === 0, issues };
             }
         };
     }
@@ -788,7 +731,7 @@ export class TestCaseGenerator {
                     for (const invalidValue of invalidValues) {
                         try {
                             // Set invalid input
-                            node.setInputData(0, invalidValue.value);
+                            setNodeInput(node, 0, invalidValue.value);
                             
                             if (typeof node.onExecute === 'function') {
                                 node.onExecute();

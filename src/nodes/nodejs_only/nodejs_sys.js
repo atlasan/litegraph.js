@@ -25,6 +25,7 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "diskusage",
+    defaultExport: true,
     version: "1.1.3",
     globalObject: "diskusage",
     server: { npm: "diskusage" }
@@ -32,6 +33,7 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "node-os-utils",
+    defaultExport: true,
     version: "0.3.4",
     globalObject: "nodeOsUtils",
     server: { npm: "node-os-utils" }
@@ -39,6 +41,7 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "ps-list",
+    defaultExport: true,
     version: "latest",
     globalObject: "psList",
     server: { npm: "ps-list" }
@@ -52,12 +55,14 @@ LiteGraph.LibraryManager.registerLibrary({
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "chalk",
+    defaultExport: true,
     globalObject: "chalk",
     server: { npm: "chalk" }
 });
 
 LiteGraph.LibraryManager.registerLibrary({
     key: "node-windows",
+    defaultExport: true,
     globalObject: "nodeWindows",
     server: { npm: "node-windows" }
 });
@@ -976,13 +981,14 @@ LiteGraph.registerNodeType("sys/log", SysUtil_LogNode);
 
 class SysUtil_ServiceManagerNode {
     static title = "Service Manager";
-    static desc = "Manages system services (start, stop, restart) across Windows, Linux, and MacOS";
+    static desc = "Manages system services (start, stop, restart) across Windows and Linux";
 
     constructor() {
         this.runtime = "node";
+        this.platform = typeof process !== "undefined" && !process.browser ? process.platform : null;
         if (this.platform === "win32") {
             this.libraries = ["node-windows"];
-        } else if (this.platform === "linux" || this.platform === "darwin") {
+        } else if (this.platform === "linux") {
             this.libraries = ["node-linux-systemd"];
         }
         this.addInput("start", LiteGraph.ACTION);
@@ -1006,17 +1012,22 @@ class SysUtil_ServiceManagerNode {
             return;
         }
 
-        this.platform = process.platform;
         this.windowsService = null;
         this.linuxService = null;
+    }
+
+    onPostConstruct() {
+        if (!["win32", "linux"].includes(this.platform)) {
+            throw new Error(`Service adapters do not support platform ${this.platform}`);
+        }
         this.initializeLibrary();
     }
 
-    async initializeLibrary() {
+    initializeLibrary() {
         if (typeof process === "undefined") return;
         if (this.platform === "win32") {
             this.windowsService = NodeJsSysHelper.getLib("node-windows");
-        } else if (this.platform === "linux" || this.platform === "darwin") {
+        } else if (this.platform === "linux") {
             this.linuxService = NodeJsSysHelper.getLib("node-linux-systemd");
         }
     }
@@ -1109,13 +1120,14 @@ LiteGraph.registerNodeType("sys/serviceManager", SysUtil_ServiceManagerNode);
 
 class SysUtil_ServiceListNode {
     static title = "Service List";
-    static desc = "Lists system services on Windows, Linux, and MacOS";
+    static desc = "Lists system services on Windows and Linux";
 
     constructor() {
         this.runtime = "node";
+        this.platform = typeof process !== "undefined" && !process.browser ? process.platform : null;
         if (this.platform === "win32") {
             this.libraries = ["node-windows"];
-        } else if (this.platform === "linux" || this.platform === "darwin") {
+        } else if (this.platform === "linux") {
             this.libraries = ["node-linux-systemd"];
         }
         this.addInput("refresh", LiteGraph.ACTION);
@@ -1132,17 +1144,22 @@ class SysUtil_ServiceListNode {
             return;
         }
 
-        this.platform = process.platform;
         this.windowsService = null;
         this.linuxService = null;
+    }
+
+    onPostConstruct() {
+        if (!["win32", "linux"].includes(this.platform)) {
+            throw new Error(`Service adapters do not support platform ${this.platform}`);
+        }
         this.initializeLibrary();
     }
 
-    async initializeLibrary() {
+    initializeLibrary() {
         if (typeof process === "undefined") return;
         if (this.platform === "win32") {
             this.windowsService = NodeJsSysHelper.getLib("node-windows");
-        } else if (this.platform === "linux" || this.platform === "darwin") {
+        } else if (this.platform === "linux") {
             this.linuxService = NodeJsSysHelper.getLib("node-linux-systemd");
         }
     }

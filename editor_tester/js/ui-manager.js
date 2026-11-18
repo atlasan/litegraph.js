@@ -1,3 +1,4 @@
+import { escapeMarkup, escapeReportResult } from './report-utils.js';
 /**
  * UI Manager
  * Handles all UI interactions and test case management interface
@@ -120,10 +121,13 @@ export class UIManager {
      * Update UI based on current state
      */
     updateUI() {
+        const category = this.elements.categoryFilter?.value || '';
         this.updateNodeList();
         this.updateStats();
         this.updateControls();
         this.updateFilters();
+        if (this.elements.categoryFilter) this.elements.categoryFilter.value = category;
+        this.filterNodes(this.elements.nodeSearch?.value || '');
     }
 
     /**
@@ -229,8 +233,8 @@ export class UIManager {
                 <div class="node-status"></div>
             </div>
             <div class="node-controls">
-                <button class="btn-small test-single" data-node="${nodeType}" title="Test this node">Test</button>
-                <button class="btn-small node-info-btn" data-node="${nodeType}" title="Node information">Info</button>
+                <button class="btn-small test-single" data-node="${escapeMarkup(nodeType)}" title="Test this node">Test</button>
+                <button class="btn-small node-info-btn" data-node="${escapeMarkup(nodeType)}" title="Node information">Info</button>
             </div>
         `;
         
@@ -335,14 +339,7 @@ export class UIManager {
             console.warn('[UIManager] statCoverage element not found');
         }
         
-        // Update progress bar
-        if (this.elements.progressBar) {
-            const progress = stats.total > 0 ? (stats.passed / stats.total) * 100 : 0;
-            console.log('[UIManager] Updating progress bar:', progress + '%');
-            this.elements.progressBar.style.width = `${progress}%`;
-        } else {
-            console.warn('[UIManager] progressBar element not found');
-        }
+
     }
 
     /**
@@ -368,11 +365,11 @@ export class UIManager {
         }
         
         if (this.elements.exportBtn) {
-            this.elements.exportBtn.disabled = !hasResults;
+            this.elements.exportBtn.disabled = isRunning || !hasResults;
         }
         
         if (this.elements.clearBtn) {
-            this.elements.clearBtn.disabled = !hasResults;
+            this.elements.clearBtn.disabled = isRunning || !hasResults;
         }
     }
 
@@ -461,8 +458,8 @@ export class UIManager {
      */
     stopTests() {
         this.app.stopTests();
-        this.logMessage('Test execution stopped by user.');
-        this.updateProgress(0, 'Stopped');
+        this.logMessage('Stop requested; waiting for cleanup.');
+        this.updateProgress(0, 'Stopping — waiting for cleanup');
     }
 
     /**
@@ -485,7 +482,7 @@ export class UIManager {
             }
             
             // Run test for single node type using the new method
-            const results = await this.app.runTestsForNodeTypes([nodeType]);
+            const results = await this.app.runTestsForNodeTypes([nodeType], (progress, message) => this.updateProgress(progress, message));
             this.handleTestResults(results);
             
             this.logMessage(`Node test completed: ${nodeType}`);
@@ -551,14 +548,14 @@ export class UIManager {
         const hasFailures = stats.failed > 0;
         
         const groupDiv = document.createElement('div');
-        groupDiv.className = `result-group ${hasFailures ? 'has-failures' : 'all-passed'}`;
+        groupDiv.className = `result-group ${hasFailures ? 'has-failures' : stats.skipped ? 'has-skipped' : 'all-passed'}`;
         
         // Group header
         const header = document.createElement('div');
         header.className = 'result-group-header';
         header.innerHTML = `
             <div class="group-info">
-                <span class="node-type">${nodeType}</span>
+                <span class="node-type">${escapeMarkup(nodeType)}</span>
                 <span class="group-stats">
                     <span class="passed">${stats.passed}</span> / 
                     <span class="total">${stats.total}</span> passed
@@ -566,7 +563,7 @@ export class UIManager {
             </div>
             <div class="group-controls">
                 <span class="execution-time">${stats.totalDuration.toFixed(1)}ms</span>
-                <button class="btn-small toggle-group" data-node="${nodeType}">▼</button>
+                <button class="btn-small toggle-group" data-node="${escapeMarkup(nodeType)}">▼</button>
             </div>
         `;
         
@@ -594,11 +591,12 @@ export class UIManager {
      * Create result element
      */
     createResultElement(result) {
+        result = escapeReportResult(result);
         const resultDiv = document.createElement('div');
         resultDiv.className = `test-result ${result.status}`;
         
-        const statusIcon = result.status === 'passed' ? '✓' : '✗';
-        const statusClass = result.status === 'passed' ? 'success' : 'error';
+        const statusIcon = result.status === 'passed' ? '✓' : result.status === 'skipped' ? '–' : '✗';
+        const statusClass = result.status === 'passed' ? 'success' : result.status === 'skipped' ? 'skipped' : 'error';
         
         resultDiv.innerHTML = `
             <div class="result-header">
@@ -660,7 +658,7 @@ export class UIManager {
             
             if (result.status === 'passed') {
                 status.passed++;
-            } else {
+            } else if (result.status === 'failed') {
                 status.failed++;
             }
         }
@@ -673,7 +671,7 @@ export class UIManager {
                 if (statusElement) {
                     const successRate = status.total > 0 ? (status.passed / status.total * 100).toFixed(0) : 0;
                     statusElement.textContent = `${status.passed}/${status.total} (${successRate}%)`;
-                    statusElement.className = `node-status ${status.failed > 0 ? 'has-failures' : 'all-passed'}`;
+                    statusElement.className = `node-status ${status.failed > 0 ? 'has-failures' : status.passed === status.total ? 'all-passed' : 'has-skipped'}`;
                 }
             }
         }
@@ -1182,13 +1180,8 @@ export class UIManager {
      * Filter by category
      */
     filterByCategory(category) {
-        const categories = document.querySelectorAll('.node-category');
-        
-        categories.forEach(categoryEl => {
-            const categoryName = categoryEl.querySelector('.category-name').textContent;
-            const matches = !category || categoryName === category;
-            categoryEl.style.display = matches ? 'block' : 'none';
-        });
+        if (this.elements.categoryFilter) this.elements.categoryFilter.value = category;
+        this.updateCategoryVisibility();
     }
 
     /**
@@ -1218,7 +1211,9 @@ export class UIManager {
         
         categories.forEach(category => {
             const visibleNodes = category.querySelectorAll('.node-item[style*="flex"], .node-item:not([style*="none"])');
-            category.style.display = visibleNodes.length > 0 ? 'block' : 'none';
+            const selected = this.elements.categoryFilter?.value;
+            const matches = !selected || category.querySelector('.category-name').textContent === selected;
+            category.style.display = visibleNodes.length > 0 && matches ? 'block' : 'none';
         });
     }
 
@@ -1508,10 +1503,10 @@ export class UIManager {
         stats.successRate = stats.total > 0 ? (stats.passed / stats.total) * 100 : 0;
         
         // Calculate coverage based on tested node types vs available
-        const testedNodeTypes = new Set(results.map(r => r.nodeType).filter(Boolean));
+        const testedNodeTypes = new Set(results.filter(r => ['passed', 'failed'].includes(r.status)).map(r => r.nodeType).filter(Boolean));
         const availableNodeTypes = this.app.getAvailableNodeTypes() || [];
         stats.coverage = availableNodeTypes.length > 0 ? 
-            Math.round((testedNodeTypes.size / availableNodeTypes.length) * 100) : 0;
+            Number(((testedNodeTypes.size / availableNodeTypes.length) * 100).toFixed(1)) : 0;
         
         console.log('[UIManager] Calculated stats:', stats);
         return stats;

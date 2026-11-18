@@ -24,9 +24,7 @@ export class LibraryManager {
         this.path = null;
 
         // Dynamically import Node.js modules (avoid errors in browsers)
-        if (!isBrowser()) {
-            this.importNodeModules();
-        }
+        this.ready = isBrowser() ? Promise.resolve() : this.importNodeModules();
 
         setGlobalVariable("LibraryManager", this);
     }
@@ -49,7 +47,6 @@ export class LibraryManager {
         } catch (e) {
             console.warn("Error importing Node.js modules:", e);
         }
-        console.log("imported modules");
     }
 
     /**
@@ -112,7 +109,7 @@ export class LibraryManager {
                 existing.serverTarget = "both";
             }
             // Update default export if provided.
-            if (newLib.defaultExport) {
+            if (newLib.defaultExport !== undefined) {
                 existing.defaultExport = newLib.defaultExport;
             }
             // Do not change the load state if already loaded.
@@ -136,188 +133,101 @@ export class LibraryManager {
     }
 
     async loadLibrary(key, callback) {
-        if (!this.libraries_known[key]) {
-            console.error(`Library ${key} not registered.`);
-            return;
+        if (!Object.hasOwn(this.libraries_known, key)) {
+            throw new Error(`Library ${key} not registered`);
         }
-
-        // If the library is already loaded, return it immediately
         if (this.libraries_state[key] === "loaded") {
-            console.warn(`Library ${key} is already loaded.`);
-            callback && callback(this.libraries_loaded[key]);
+            callback?.(this.libraries_loaded[key]);
             return this.libraries_loaded[key];
         }
-
-        // If the library is currently loading, wait for its completion
-        if (this.libraries_state[key] === "loading") {
-            console.warn(`Library ${key} is already loading. Waiting for completion...`);
-            return this.loading_promises[key]; // Return the existing promise
-        }
-
-        // Start loading process
-        this.libraries_to_load.push(key);
-        this.libraries_state[key] = "loading";
-
-        // Store the promise in case others try to load it simultaneously
-        this.loading_promises[key] = new Promise(async (resolve, reject) => {
-            try {
-                let loadedModules = [];
-
-                if (isBrowser()) {
-                    loadedModules = await this.loadBrowserLibrary(this.libraries_known[key]);
-                } else if (isNode() || isBun()) {
-                    loadedModules = await this.loadServerLibrary(this.libraries_known[key]);
-                }
-
+        if (!this.loading_promises[key]) {
+            this.libraries_to_load.push(key);
+            this.libraries_state[key] = "loading";
+            this.loading_promises[key] = Promise.resolve().then(async () => {
+                await this.ready;
+                const library = this.libraries_known[key];
+                const modules = isBrowser()
+                    ? await this.loadBrowserLibrary(library)
+                    : await this.loadServerLibrary(library);
+                this.libraries_loaded[key] = modules;
                 this.libraries_state[key] = "loaded";
-                this.libraries_loaded[key] = loadedModules;
-
-                console.log(`Library processed: ${key}`);
-                callback && callback(loadedModules);
-                resolve(loadedModules);
-            } catch (error) {
+                return modules;
+            }).catch((error) => {
                 this.libraries_state[key] = "error";
-                console.error(`Failed to load library ${key}:`, error);
-                reject(error);
-            } finally {
-                delete this.loading_promises[key]; // Clean up after loading is complete
-            }
-        });
-
-        return this.loading_promises[key];
+                throw error;
+            }).finally(() => {
+                delete this.loading_promises[key];
+                this.libraries_to_load = this.libraries_to_load.filter((item) => item !== key);
+            });
+        }
+        const modules = await this.loading_promises[key];
+        callback?.(modules);
+        return modules;
     }
 
-    // **Load all specified browser files**
+    // Each list is an ordered dependency group; remote sources are a fallback group.
     async loadBrowserLibrary(library) {
-        const loadedScripts = [];
-
-        for (const localPath of library.localPaths) {
-            console.log(`Loading local browser script: ${localPath}`);
+        const groups = [library.localPaths, library.remoteUrls].filter((urls) => urls.length);
+        if (!groups.length) {
+            if (library.npmPackages.length || library.serverRemoteUrls.length) {
+                throw new Error(`Library ${library.key} is not available in the browser`);
+            }
+            return [];
+        }
+        let failure;
+        for (const urls of groups) {
             try {
-                loadedScripts.push(await this.loadScript(localPath, library.globalObject));
+                const loaded = [];
+                for (const url of urls) loaded.push(await this.loadScript(url, library.globalObject, library.defaultExport));
+                return loaded;
             } catch (error) {
-                console.warn(`Failed to load local file: ${localPath}`);
-            }
-            return loadedScripts;
-        }
-
-        for (const remoteUrl of library.remoteUrls) {
-            console.log(`Loading remote browser script: ${remoteUrl}`);
-            try {
-                loadedScripts.push(await this.loadScript(remoteUrl, library.globalObject));
-            } catch (error) {
-                console.warn(`Failed to load remote script: ${remoteUrl}`);
-            }
-            return loadedScripts;
-        }
-
-        if (loadedScripts.length === 0) {
-            if(library.localPaths.length == 0 && library.remoteUrls.length == 0){
-                return []; // no files required
-            }else{
-                throw new Error(`Could not load any files for ${library.key}`);
+                failure = error;
             }
         }
-
-        return loadedScripts;
+        throw new Error(`Could not load browser library ${library.key}`, { cause: failure });
     }
 
-    // **Load all specified server files (Node.js/Bun)**
+    selectExport(namespace, defaultExport) {
+        if (!defaultExport) return namespace;
+        const name = defaultExport === true ? "default" : defaultExport;
+        if (!(name in namespace)) throw new Error(`Library export ${name} was not found`);
+        return namespace[name];
+    }
+
     async loadServerLibrary(library) {
-        if (!this.fs || !this.path) {
-            await this.importNodeModules();
-            if (!this.fs || !this.path) {
-                console.warn("Node.js 'fs' and 'path' modules are not available.");
-                return;
+        await this.ready;
+        const groups = [];
+        if (library.npmPackages.length) groups.push(() => this.loadPackages(library));
+        if (library.serverRemoteUrls.length) groups.push(async () => {
+            const modules = [];
+            for (const url of library.serverRemoteUrls) modules.push(await this.loadServerRemoteScript(url));
+            return modules;
+        });
+        if (!groups.length) {
+            if (library.localPaths.length || library.remoteUrls.length) {
+                throw new Error(`Library ${library.key} is not available on the server`);
             }
+            return [];
         }
-
-        const loadedModules = [];
-        const packageFile = "required-packages.txt";
-
-        // Read existing package list (if available)
-        let existingPackages = new Set();
-        try {
-            if (this.fs.existsSync(packageFile)) {
-                const data = this.fs.readFileSync(packageFile, "utf8");
-                existingPackages = new Set(data.split("\n").map(pkg => pkg.trim()).filter(Boolean));
-            }
-        } catch (error) {
-            console.warn("Failed to read required-packages.txt:", error);
-        }
-
-        for (const npmPackage of library.npmPackages) {
-            console.log(`Loading NPM package: ${npmPackage}`);
+        let failure;
+        for (const load of groups) {
             try {
-                let modX = null;
-                modX = await import(npmPackage);
-
-                if (library.globalObject && library.globalObject !== "") {
-                    if(library.defaultExport && typeof(modX)=="object"){
-                        if(typeof(modX[library.defaultExport])!=="undefined"){
-                            modX = modX[library.defaultExport];
-                            console.debug(`Library ${npmPackage} got from default export`, modX);
-                        }else{
-                            console.warn(`Library ${npmPackage} NOT FOUND default export`, modX);
-                        }
-                    }else{
-                        // RECHECK WHEN AND IF NEEDED (could use defaultExport? mod to get deep property)
-                        if(typeof(modX.default)!=="undefined" && (library.defaultExport === true)){
-                            console.debug(`Module has default for package: ${npmPackage}`, modX);
-                            modX = modX.default;
-                            console.debug(`Exporting default for package: ${npmPackage}`, modX);
-                        }else{
-                            console.debug(`Using module standard import package: ${npmPackage}`, modX);
-                        }
-                    }
-                    setGlobalVariable(library.globalObject, modX);
-                    // TODO save in local libs modX;
-                    console.log(`Included package: ${npmPackage} as global ${library.globalObject}`, modX);
-                    // console.log(`${modX}}`);
-                }else{
-                    console.log(`NOT Included package: ${npmPackage} as global ${library.globalObject} result ${modX} of ${loadedModules}`);
-                }
-                
-                loadedModules.push(modX);
-
+                const modules = await load();
+                if (library.globalObject) setGlobalVariable(library.globalObject, modules[modules.length - 1]);
+                return modules;
             } catch (error) {
-                console.warn(`Failed to import NPM package: ${npmPackage}`, error);
-
-                // Add missing package to the list
-                if (!existingPackages.has(npmPackage)) {
-                    existingPackages.add(npmPackage);
-                    console.warn(`Adding missing package to required-packages.txt: ${npmPackage}`);
-                }
+                failure = error;
             }
         }
+        throw new Error(`Could not load server library ${library.key}`, { cause: failure });
+    }
 
-        // Write updated package list
-        if(existingPackages.length){
-            try {
-                this.fs.writeFileSync(packageFile, [...existingPackages].join("\n") + "\n", "utf8");
-            } catch (error) {
-                console.warn("Failed to update required-packages.txt:", error);
-            }
+    async loadPackages(library) {
+        const modules = [];
+        for (const name of library.npmPackages) {
+            modules.push(this.selectExport(await import(name), library.defaultExport));
         }
-
-        for (const remoteUrl of library.serverRemoteUrls) {
-            console.log(`Loading remote module: ${remoteUrl}`);
-            try {
-                loadedModules.push(await this.loadServerRemoteScript(remoteUrl));
-            } catch (error) {
-                console.warn(`Failed to import remote module: ${remoteUrl}`, error);
-            }
-        }
-
-        if (loadedModules.length === 0) {
-            if(library.localPaths.npmPackages == 0 && npmPackages && library.serverRemoteUrls.length == 0){
-                return []; // no files required
-            }else{
-                throw new Error(`Could not import anything for ${library.key}`);
-            }
-        }
-
-        return loadedModules;
+        return modules;
     }
 
     isLibraryLoaded(libKey){
@@ -327,7 +237,7 @@ export class LibraryManager {
     getLib(libKey) {
         if (!this.isLibraryLoaded(libKey)) {
             console.warn(`[NodeJsSys] Library '${libKey}' is not loaded. Attempting to load...`);
-            this.loadLibrary(libKey);
+            this.loadLibrary(libKey).catch((error) => console.error(error));
             return null;
         }
         const library = this.libraries_known[libKey];
@@ -342,20 +252,14 @@ export class LibraryManager {
      */
     waitForLib(libKey, timeout = 9000) {
         return new Promise((resolve, reject) => {
-            const checkInterval = 50;
-            let elapsed = 0;
-            const intervalId = setInterval(() => {
-                if (this.getLibraryState(libKey) === "loaded") {
-                    clearInterval(intervalId);
-                    resolve(getGlobalVariable(this.libraries_known[libKey].globalObject));
-                } else {
-                    elapsed += checkInterval;
-                    if (timeout && elapsed >= timeout) {
-                        clearInterval(intervalId);
-                        reject(new Error(`Library ${libKey} did not load within ${timeout}ms`));
-                    }
-                }
-            }, checkInterval);
+            const timer = timeout ? setTimeout(() => reject(new Error(`Library ${libKey} did not load within ${timeout}ms`)), timeout) : null;
+            this.loadLibrary(libKey).then(() => {
+                clearTimeout(timer);
+                resolve(getGlobalVariable(this.libraries_known[libKey].globalObject));
+            }, (error) => {
+                clearTimeout(timer);
+                reject(error);
+            });
         });
     }
 
@@ -368,69 +272,31 @@ export class LibraryManager {
 
         const scriptText = await response.text();
         const script = new this.vm.Script(scriptText);
-        const sandbox = { window: {}, module: {}, exports: {} };
+        const exports = {};
+        const sandbox = { window: {}, module: { exports }, exports };
         script.runInNewContext(sandbox);
 
         console.log("✅ Loaded from remote:", url);
         return sandbox.module.exports || sandbox.exports;
     }
 
-    // // **Load a script dynamically in a browser**
-    // loadScript(url, globalObject) {
-    //     return new Promise((resolve, reject) => {
-    //         console.log(`Loading script: ${url}`);
-    //         const script = document.createElement("script");
-    //         script.src = url;
-    //         script.type = "text/javascript";
-    //         script.onload = () => resolve(window[globalObject]);
-    //         script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
-    //         document.head.appendChild(script);
-    //     });
-    // }
-
-    // **Detect and Load JavaScript as Module or CommonJS**
-    async loadScript(url, globalObject="library_last") {
-        /* TODO get slugged file name as default */
-        console.debug("Load script", url, globalObject);
-        return new Promise(async (resolve, reject) => {
-            let isModule = await this.isESModule(url);
-            console.debug("loadScript", isModule?"MODULE":"COMMONJS", url);
-            if (isModule) {
-                let script = document.createElement("script");
-                script.type = "module";
-                // WIP CLEAN importing module
-
-                const jsName = this.camelize(globalObject);
-
-                script.textContent = `
-                    import * as ${jsName} from '${url}';
-                    var root = {};
-                    if (typeof globalThis !== 'undefined') root = globalThis;
-                    else if (typeof self !== 'undefined') root = self;
-                    else if (typeof window !== 'undefined') root = window;
-                    else if (typeof global !== 'undefined') root = global;
-                    if (LibraryManager){
-                        LibraryManager.${jsName} = ${jsName};
-                        console.log('LibraryManager attached ${jsName}',LibraryManager.${jsName});
-                    }
-                    if (root.LibraryManager){
-                        root.LibraryManager.${jsName} = ${jsName};
-                        console.log('rootLibraryManager attached ${jsName}',root.LibraryManager.${jsName});
-                    }
-                    // LiteGraph.LibraryManager.${jsName} = ${jsName};
-                    // alert('loaded ${jsName}');
-                `;
-                //alert(script.textContent);
-                document.head.appendChild(script);
-                resolve();
-            } else {
-                let script = document.createElement("script");
-                script.type = "text/javascript";
-                script.src = url;
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            }
+    async loadScript(url, globalObject = "library_last", defaultExport) {
+        if (await this.isESModule(url)) {
+            const namespace = await import(new URL(url, document.baseURI).href);
+            const value = this.selectExport(namespace, defaultExport);
+            if (globalObject) setGlobalVariable(globalObject, value);
+            return value;
+        }
+        return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.type = "text/javascript";
+            script.src = url;
+            script.onload = () => resolve(globalObject ? getGlobalVariable(globalObject) : script);
+            script.onerror = () => {
+                script.remove();
+                reject(new Error(`Failed to load script: ${url}`));
+            };
+            document.head.appendChild(script);
         });
     }
 
@@ -470,14 +336,7 @@ export class LibraryManager {
         }
 
         const library = this.libraries_known[key];
-        library.localPaths.forEach(file => {
-            if (file.endsWith(".js")) {
-                document.querySelectorAll(`script[src="${file}"]`).forEach(el => el.remove());
-            } else if (file.endsWith(".css")) {
-                document.querySelectorAll(`link[href="${file}"]`).forEach(el => el.remove());
-            }
-        });
-        library.remoteUrls.forEach(file => {
+        if (isBrowser()) [...library.localPaths, ...library.remoteUrls].forEach(file => {
             if (file.endsWith(".js")) {
                 document.querySelectorAll(`script[src="${file}"]`).forEach(el => el.remove());
             } else if (file.endsWith(".css")) {
@@ -500,13 +359,7 @@ export class LibraryManager {
      * @returns {boolean} True if every library's state is "loaded", false otherwise.
      */
     areAllLibrariesLoaded() {
-        for (const iL in this.libraries_to_load) {
-            let key = this.libraries_to_load[iL];
-            if (this.libraries_state[key] !== "loaded" && this.libraries_state[key] !== "error") {
-                return false;
-            }
-        }
-        return true;
+        return !Object.values(this.libraries_state).some((state) => state === "loading" || state === "error");
     }
 
     /**

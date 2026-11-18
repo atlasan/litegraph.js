@@ -1,14 +1,20 @@
-
 class NodeProcessInfo {
     constructor() {
+        this.runtime = "node";
+        this.libraries = ["os"];
+        this.addOutput("info", "object");
+        this.output = null;
+    }
+
+    onPostConstruct() {
+        this.os = LiteGraph.LibraryManager.getLib("os");
         this.output = this.getSystemInfo();
-        this.os = require("os");
     }
 
     getSystemInfo() {
         return {
-            platform: process.platform,
-            arch: process.arch,
+            platform: this.os.platform(),
+            arch: this.os.arch(),
             cpuCores: this.os.cpus().length,
             freeMemory: this.os.freemem(),
             totalMemory: this.os.totalmem(),
@@ -17,6 +23,7 @@ class NodeProcessInfo {
     }
 
     onExecute() {
+        this.output = this.getSystemInfo();
         this.setOutputData(0, this.output);
     }
 }

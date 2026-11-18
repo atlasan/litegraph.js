@@ -2,7 +2,7 @@
     "name": "@litegraph/litegraph",
     "version": "0.10.10",
     "description": "A flow graph node editor on the web.",
-    "main": "build/litegraph.js",
+    "main": "build_node/litegraph.cjs",
     "type": "module",
     "types": "src/litegraph.d.ts",
     "private": false,
@@ -13,9 +13,13 @@
         "graphrunner": "nodemon --exec node headless/graphrunner/server/index.js",
         "start": "concurrently \"npm run editor\" \"npm run graphrunner\"",
         "test": "node --experimental-vm-modules node_modules/jest-cli/bin/jest.js",
-        "lint": "npx eslint src",
-        "lint:fix": "npx eslint --fix src",
-        "nodemon": "nodemon"
+        "lint": "eslint src",
+        "lint:fix": "eslint --fix src",
+        "nodemon": "nodemon",
+        "test:integration": "node --test tools/tests/*.test.mjs",
+        "check:build": "node tools/check-build.mjs",
+        "check": "npm run lint -- --quiet && npm run build && npm run check:types && npm test -- --runInBand && npm run test:integration && npm run check:build",
+        "check:types": "node tools/check-types.mjs"
     },
     "repository": {
         "type": "git",
@@ -25,8 +29,13 @@
     "license": "MIT",
     "files": [
         "build",
+        "build_node",
         "css/litegraph.css",
-        "src/litegraph.d.ts"
+        "src/litegraph.d.ts",
+        "src/litegraph.d.cts",
+        "src/litegraph.core.d.ts",
+        "src/litegraph.full.d.cts",
+        "src/litegraph.node.d.cts"
     ],
     "bugs": {
         "url": "https://github.com/atlasan/litegraph.js/issues"
@@ -43,6 +52,7 @@
         "jsdoc": "^4.0.3",
         "jsdom": "^17.0.0",
         "nodemon": "^3.1.0",
+        "typescript": "5.4.5",
         "uglify-js": "^3.0.0"
     },
     "keywords": [
@@ -75,6 +85,38 @@
         "socket.io-client": "^4.8.1",
         "uglifyjs": "^2.4.11",
         "vm": "^0.1.0",
-        "winston": "^3.17.0"
+        "winston": "^3.17.0",
+        "ws": "^8.18.0"
+    },
+    "module": "build/litegraph.js",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./src/litegraph.d.ts",
+                "default": "./build/litegraph.js"
+            },
+            "require": {
+                "types": "./src/litegraph.full.d.cts",
+                "default": "./build_node/litegraph.cjs"
+            }
+        },
+        "./node": {
+            "types": "./src/litegraph.node.d.cts",
+            "default": "./build_node/litegraph_nodejs.full.cjs"
+        },
+        "./build/*": "./build/*",
+        "./build_node/*": "./build_node/*",
+        "./css/*": "./css/*",
+        "./package.json": "./package.json",
+        "./core": {
+            "import": {
+                "types": "./src/litegraph.core.d.ts",
+                "default": "./build/litegraph.core.js"
+            },
+            "require": {
+                "types": "./src/litegraph.d.cts",
+                "default": "./build_node/litegraph.core.cjs"
+            }
+        }
     }
 }

@@ -202,7 +202,7 @@ export class ContextMenu {
                         }
                         updateSelected();
                         break;
-                    case "ArrowLeft":
+                    case "ArrowLeft": {
                         const parentMenu = this.parentMenu;
                         this.close(event, true);
                         if(parentMenu){
@@ -216,6 +216,7 @@ export class ContextMenu {
                         selectedIndex = 0;
                         updateSelected(); */
                         break;
+                    }
                     case "Enter":
                         selectedItem?.do_click(event); //click();
                         break;
@@ -352,7 +353,8 @@ export class ContextMenu {
         root.style.top = `${top}px`;
 
         if (options.scale) {
-            root.style.transform = `scale(${options.scale})`;
+            // quarter steps keep text on the pixel grid (blurry fonts otherwise, Comfy 0b161c1)
+            root.style.transform = `scale(${Math.round(options.scale * 4) * 0.25})`;
         }
     }
 

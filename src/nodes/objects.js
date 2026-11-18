@@ -445,11 +445,12 @@ class objMethodWidget {
                 // call execute
                 console.debug?.("NodeObjMethod Execute", this._function, this._obin, parValues);
                 try{
+                    let r;
                     if(this._isClass){
-                        var r = new this._function(...parValues); // this._function.apply(this, parValues);
+                        r = new this._function(...parValues); // this._function.apply(this, parValues);
                     }else{
                         // TODO: spread arguments
-                        var r = this._function.call(this._obin, ...parValues); // this._function.apply(this, parValues);
+                        r = this._function.call(this._obin, ...parValues); // this._function.apply(this, parValues);
                         console.debug?.("NodeObjMethod Execute", "result", r);
                     }
                     this.setOutputData(2, r); // update method result

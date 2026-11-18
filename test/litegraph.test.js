@@ -22,14 +22,16 @@ describe("register node types", () => {
     });
 
     beforeEach(() => {
-        jest.clearAllMocks();
+        jest.restoreAllMocks();
         jest.resetModules();
 
         // attempt at resetting LiteGraph each time, because Jest can't just do that
         // and neither can I.
         LiteGraph.registered_node_types = {};
         LiteGraph.registered_slot_in_types = {};
-        LiteGraph.registered_slot_in_types = {};
+        LiteGraph.registered_slot_out_types = {};
+        LiteGraph.node_types_by_file_extension = {};
+        LiteGraph.auto_load_slot_types = false;
 
         Sum = function Sum() {
             this.addInput("a", "number");
@@ -56,7 +58,7 @@ describe("register node types", () => {
 
     test("callback triggers", () => {
         const consoleSpy = jest
-            .spyOn(console, "log")
+            .spyOn(LiteGraph, "log_debug")
             .mockImplementation(() => {});
 
         LiteGraph.onNodeTypeRegistered = jest.fn();
@@ -67,10 +69,7 @@ describe("register node types", () => {
         LiteGraph.registerNodeType("math/sum", Sum);
         expect(LiteGraph.onNodeTypeReplaced).toHaveBeenCalled();
         expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringMatching("replacing node type")
-        );
-        expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringMatching("math/sum")
+            "registerNodeType", "replacing node type", "math/sum", Sum
         );
     });
 
@@ -127,9 +126,9 @@ describe("register node types", () => {
         LiteGraph.registerNodeType("math/sum", Sum);
         expect(consoleSpy).toBeCalledTimes(1);
         expect(consoleSpy).toBeCalledWith(
-            expect.stringContaining("has onPropertyChange method")
+            "[LG]", expect.stringContaining("has onPropertyChange method")
         );
-        expect(consoleSpy).toBeCalledWith(expect.stringContaining("math/sum"));
+        expect(consoleSpy).toBeCalledWith("[LG]", expect.stringContaining("math/sum"));
     });
 
     test("registering supported file extensions", () => {
@@ -231,7 +230,7 @@ describe("unregister node types", () => {
 
     test("try removing with wrong name", () => {
         expect(() => LiteGraph.unregisterNodeType("missing/type")).toThrow(
-            "node type not found: missing/type"
+            "node type not found to unregister: missing/type"
         );
     });
 

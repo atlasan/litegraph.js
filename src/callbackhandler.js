@@ -166,9 +166,10 @@ export class CallbackHandler {
          */
         var checkStepRet = function(){
             aResChain.push(stepRet); // cache result
+            opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
             // check result for structured object
             if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","stepRet check",stepRet);
-            if(typeof(stepRet)=="object"){
+            if(stepRet !== null && typeof(stepRet)=="object"){
                 if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","result is object",stepRet);
                 if(typeof(stepRet.prevent_default)!=="undefined" && stepRet.prevent_default){
                     preventDefCb = true;

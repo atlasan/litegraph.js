@@ -1,6 +1,7 @@
 // Load OSC-JS library for both browser and server
 LiteGraph.LibraryManager.registerLibrary({
     key: "osc-js",
+    defaultExport: true,
     version: "2.4.1",
     globalObject: "OSC",
     browser: { remote: "https://cdn.jsdelivr.net/npm/osc-js@2.4.1/lib/osc.min.js" },
@@ -13,7 +14,7 @@ class OSCClientNode {
     static desc = "Send and receive OSC messages via and WebSocket Bridge.";
 
     constructor() {
-        this.libraries = ["osc-js-browser"];
+        this.libraries = ["osc-js"];
         this.size = [80, 40];
         this.properties = {
             host: "127.0.0.1", // Default WebSocket server for OSC

@@ -3,7 +3,9 @@
  * Comprehensive testing system for validating node functionality
  */
 
-import { LiteGraph } from '/src/litegraph.js';
+import { LiteGraph } from '../../build/litegraph.js';
+import { csvCell, escapeReportResult } from './report-utils.js';
+import { setNodeInput } from './test-inputs.js';
 const { LGraphNode } = LiteGraph;
 
 export class TestFramework {
@@ -72,6 +74,8 @@ export class TestFramework {
         }
 
         this.isRunning = true;
+        this.runController = new AbortController();
+        this.results.clear();
         this.stats = { total: 0, passed: 0, failed: 0, skipped: 0, coverage: 0 };
         
         try {
@@ -81,10 +85,10 @@ export class TestFramework {
             this.stats.total = testsToRun.length;
             
             for (const test of testsToRun) {
-                if (!this.isRunning) break; // Allow cancellation
+                if (this.runController.signal.aborted) break;
                 
                 this.currentTest = test;
-                const result = await this.runSingleTest(test);
+                const result = await this.runSingleTest(test, { signal: this.runController.signal });
                 this.results.set(test.id, result);
                 
                 if (result.status === 'passed') {
@@ -96,6 +100,7 @@ export class TestFramework {
                 }
                 
                 this.emit('testCompleted', { test, result });
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
             
             this.calculateCoverage();
@@ -114,7 +119,16 @@ export class TestFramework {
     /**
      * Run a single test case
      */
-    async runSingleTest(test) {
+    async runSingleTest(test, { signal } = {}) {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
+        const context = { signal: controller.signal };
+        const phase = async (fn, ...args) => {
+            try { return await this.executePhase(fn, test.timeout || this.config.timeout, controller.signal, ...args); }
+            catch (error) { controller.abort(); throw error; }
+        };
         const startTime = performance.now();
         const result = {
             testId: test.id,
@@ -129,6 +143,8 @@ export class TestFramework {
             memoryUsage: null
         };
 
+        let node;
+        let graph;
         try {
             // Memory baseline
             const memoryBefore = this.getMemoryUsage();
@@ -139,13 +155,15 @@ export class TestFramework {
                 throw new Error(`Node type '${test.nodeType}' not registered`);
             }
             
-            const node = new NodeClass();
-            const graph = new LiteGraph.LGraph();
+            node = LiteGraph.createNode(test.nodeType);
+            if (!node) throw new Error(`Failed to create ${test.nodeType}`);
+            graph = new LiteGraph.LGraph();
             graph.add(node);
+            await phase(() => graph.whenReady());
             
             // Setup phase
             if (test.setup) {
-                await this.executeWithTimeout(test.setup, test.timeout, node, graph);
+                await phase(test.setup, node, graph, context);
             }
             
             // Validation phase
@@ -163,26 +181,22 @@ export class TestFramework {
             
             // Execution phase
             if (test.execute) {
-                result.details.executionResult = await this.executeWithTimeout(
-                    test.execute, test.timeout, node, graph
-                );
+                result.details.executionResult = await phase(test.execute, node, graph, context);
             } else if (this.config.validateExecution) {
                 // Default execution test
                 result.details.executionResult = this.testNodeExecution(node, graph);
+                result.errors.push(...result.details.executionResult.errors);
             }
             
             // Custom validation
             if (test.validate) {
-                result.details.validationResult = await this.executeWithTimeout(
-                    test.validate, test.timeout, node, graph, result.details.executionResult
-                );
+                result.details.validationResult = await phase(test.validate, node, graph, result.details.executionResult, context);
+                const validation = result.details.validationResult;
+                if (validation === false || validation?.passed === false || validation?.issues?.length) {
+                    result.errors.push({ type: 'validation_error', message: validation?.issues?.join('; ') || 'Custom validation failed' });
+                }
             }
-            
-            // Cleanup phase
-            if (test.cleanup) {
-                await this.executeWithTimeout(test.cleanup, test.timeout, node, graph);
-            }
-            
+
             // Memory check
             if (this.config.validateMemory) {
                 const memoryAfter = this.getMemoryUsage();
@@ -197,20 +211,35 @@ export class TestFramework {
                 }
             }
             
-            // Clean up graph
-            graph.clear();
             
             result.status = result.errors.length > 0 ? 'failed' : 'passed';
             
         } catch (error) {
-            result.status = 'failed';
-            result.errors.push({
+            result.status = signal?.aborted ? 'skipped' : 'failed';
+            result.details.cancelled = !!signal?.aborted;
+            result.details.timedOut = error.name === 'TimeoutError';
+            if (signal?.aborted) result.warnings.push('Canceled by user');
+            else result.errors.push({
                 type: 'execution_error',
                 message: error.message,
                 stack: error.stack
             });
+        } finally {
+            controller.abort();
+            signal?.removeEventListener('abort', abort);
+            try {
+                if (test.cleanup && node && graph) await this.executeWithTimeout(test.cleanup, test.timeout || this.config.timeout, node, graph);
+            } catch (error) {
+                result.status = 'failed';
+                result.errors.push({ type: 'cleanup_error', message: error.message });
+            } finally {
+                try { if (graph) await this.executeWithTimeout(() => graph.clearAsync(), test.timeout || this.config.timeout); } catch (error) {
+                    result.status = 'failed';
+                    result.errors.push({ type: 'cleanup_error', message: error.message });
+                }
+            }
         }
-        
+
         result.endTime = performance.now();
         result.duration = result.endTime - result.startTime;
         
@@ -360,7 +389,7 @@ export class TestFramework {
                 for (let i = 0; i < node.inputs.length; i++) {
                     const input = node.inputs[i];
                     const sampleValue = this.generateSampleValue(input.type);
-                    node.setInputData(i, sampleValue);
+                    if (input.type !== LiteGraph.ACTION) setNodeInput(node, i, sampleValue);
                 }
                 
                 if (typeof node.onExecute === 'function') {
@@ -410,24 +439,24 @@ export class TestFramework {
      * Execute function with timeout
      */
     async executeWithTimeout(fn, timeout, ...args) {
+        return this.executePhase(fn, timeout, undefined, ...args);
+    }
+
+    async executePhase(fn, timeout, signal, ...args) {
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                reject(new Error(`Test timed out after ${timeout}ms`));
-            }, timeout);
-            
-            try {
-                const result = fn(...args);
+            const finish = (callback, value) => {
                 clearTimeout(timer);
-                
-                if (result instanceof Promise) {
-                    result.then(resolve).catch(reject);
-                } else {
-                    resolve(result);
-                }
-            } catch (error) {
-                clearTimeout(timer);
-                reject(error);
-            }
+                signal?.removeEventListener('abort', abort);
+                callback(value);
+            };
+            const abort = () => finish(reject, Object.assign(new Error('Test canceled'), { name: 'AbortError' }));
+            const timer = setTimeout(() => finish(reject, Object.assign(new Error(`Test timed out after ${timeout}ms`), { name: 'TimeoutError' })), timeout);
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) { abort(); return; }
+            Promise.resolve().then(() => {
+                if (signal?.aborted) throw Object.assign(new Error('Test canceled'), { name: 'AbortError' });
+                return fn(...args);
+            }).then(value => finish(resolve, value), error => finish(reject, error));
         });
     }
 
@@ -473,14 +502,14 @@ export class TestFramework {
         const totalNodeTypes = Object.keys(LiteGraph.registered_node_types).length;
         const testedNodeTypes = new Set();
         
-        for (const [nodeType] of this.tests) {
-            if (LiteGraph.registered_node_types[nodeType]) {
-                testedNodeTypes.add(nodeType);
+        for (const result of this.results.values()) {
+            if (['passed', 'failed'].includes(result.status) && LiteGraph.registered_node_types[result.nodeType]) {
+                testedNodeTypes.add(result.nodeType);
             }
         }
         
         this.stats.coverage = totalNodeTypes > 0 ? 
-            Math.round((testedNodeTypes.size / totalNodeTypes) * 100) : 0;
+            Number(((testedNodeTypes.size / totalNodeTypes) * 100).toFixed(1)) : 0;
     }
 
     /**
@@ -497,7 +526,7 @@ export class TestFramework {
      * Stop running tests
      */
     stopTests() {
-        this.isRunning = false;
+        this.runController?.abort();
         this.emit('testRunStopped');
     }
 
@@ -575,7 +604,7 @@ export class TestFramework {
                 result.errors.length,
                 result.warnings.length
             ];
-            rows.push(row.join(','));
+            rows.push(row.map(csvCell).join(','));
         }
         
         return rows.join('\n');
@@ -585,6 +614,7 @@ export class TestFramework {
      * Export as HTML
      */
     exportHTML(report) {
+        report = { ...report, results: report.results.map(escapeReportResult) };
         return `
 <!DOCTYPE html>
 <html>

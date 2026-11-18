@@ -110,7 +110,12 @@ export class DragAndScale {
             : event.deltaY
                 ? -event.deltaY / 3
                 : 0;
-        this.changeDeltaScale(1.0 + event.delta * 0.05);
+        // zoom towards the pointer (relative to the element), not the element centre
+        const rect = this.element?.getBoundingClientRect?.();
+        const center = rect && event.clientX !== undefined
+            ? [event.clientX - rect.left, event.clientY - rect.top]
+            : undefined;
+        this.changeDeltaScale(1.0 + event.delta * 0.05, center);
     }
 
     /**
@@ -125,8 +130,9 @@ export class DragAndScale {
             this.visible_area.set([0, 0, 0, 0]);
             return;
         }
-        let width = this.element.width;
-        let height = this.element.height;
+        const ratio = this.pixel_ratio || 1; // element size is in device pixels on high-DPI canvases
+        let width = this.element.width / ratio;
+        let height = this.element.height / ratio;
         let startx = -this.offset[0];
         let starty = -this.offset[1];
         if (viewport) {

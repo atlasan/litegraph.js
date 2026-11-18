@@ -82,9 +82,9 @@ export class Subgraph {
     };
     */
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         LiteGraph.log_debug("subgraph","onAction",...arguments);
-        this.subgraph.onAction(action, param);
+        this.subgraph.onAction(action, param, options);
     }
 
     onExecute() {
@@ -118,10 +118,17 @@ export class Subgraph {
     }
 
     sendEventToAllNodes(eventname, param, mode) {
-        if (this.enabled) {
+        if (this.enabled || eventname === "onStop") {
             LiteGraph.log_debug("subgraph","sendEventToAllNodes",...arguments);
             this.subgraph.sendEventToAllNodes(eventname, param, mode);
         }
+    }
+
+    onRemoved() {
+        // Removing a subgraph must release nested resources while retaining its
+        // configuration for undo or reinsertion.
+        if (this.subgraph.status === LiteGraph.LGraph.STATUS_RUNNING) this.subgraph.stop();
+        else this.subgraph.sendEventToAllNodes("onStop", undefined, null);
     }
 
     onDrawBackground(ctx, graphcanvas, canvas, pos) {
@@ -222,12 +229,12 @@ export class Subgraph {
     }
 
     //* *** INPUTS ***********************************
-    onSubgraphTrigger(event) {
+    onSubgraphTrigger(event, param, options) {
         LiteGraph.log_debug("subgraph","onSubgraphTrigger",...arguments);
         var slot = this.findOutputSlot(event);
         if (slot != -1) {
             LiteGraph.log_debug("subgraph","onSubgraphTrigger","triggerSlot",slot);
-            this.triggerSlot(slot);
+            this.triggerSlot(slot, param, null, options);
         }
     }
 
@@ -609,10 +616,10 @@ export class GraphInput {
         return this.title;
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (this.properties.type == LiteGraph.EVENT) {
             LiteGraph.log_debug("GraphInput","onAction","triggering slot", action, param);
-            this.triggerSlot(0, param);
+            this.triggerSlot(0, param, null, options);
         }else{
             LiteGraph.log_debug("GraphInput","onAction","NOT eventAction TYPE", "this", this, "arugments", ...arguments);
         }
@@ -775,15 +782,11 @@ export class GraphOutput {
         this.graph.setOutputData(this.properties.name, this._value);
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (this.properties.type == LiteGraph.ACTION) {
             LiteGraph.log_debug("GraphOutput","onAction", ...arguments);
             LiteGraph.log_debug("GraphOutput","onAction", "graphTrigger", this.properties.name, param);
-            // ---> subgraph_node.trigger(this.properties.name, param);
-            this.triggerSlot(this.properties.name, param);
-            // this.onTrigger(this.properties.name, param);
-            this.graph.trigger(this.properties.name, param);
-            // node.doExecute?.() !!
+            this.graph.trigger(this.properties.name, param, options);
         }else{
             LiteGraph.log_debug("GraphOutput","onAction","skipping not ACTION type", this.properties.type, this.properties);
         }

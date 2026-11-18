@@ -20,6 +20,10 @@ import { LibraryManager } from "./librarymanager.js";
 export class LiteGraphClass {
 
     VERSION = "a0.11.1";
+    /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
+    SERIALIZATION_VERSION = 0.4;
+    /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
+    canvas_high_dpi = true;
 
     LLink = null; //LLink;
     LGraph = null; //LGraph;
@@ -56,7 +60,7 @@ export class LiteGraphClass {
     NODE_BGCOLOR_LOADINGLIB = "#353565";
     NODE_BGCOLOR_WRONGENV = "#653535";
     NODE_BGCOLOR_ERROR = "#F33";
-    NODE_DEFAULT_SHAPE = "box";
+    NODE_DEFAULT_SHAPE = 2; // ROUND_SHAPE; honoured by the canvas (shape constant or "box"/"round"/"card"/"circle")
     NODE_BOX_OUTLINE_COLOR = "#FFF";
     DEFAULT_SHADOW_COLOR = "rgba(0,0,0,0.5)";
     DEFAULT_GROUP_FONT = 24;
@@ -243,7 +247,7 @@ export class LiteGraphClass {
         this.ContextMenuClass = ContextMenu;
         this.ContextMenu = function(){ return new ContextMenu(...arguments); };
         this.CallbackHandler = CallbackHandler;
-        this.LibraryManager = new LibraryManager();
+        this.LibraryManager ??= new LibraryManager();
 
         // base inclusion
         this.includeBasicNodes();
@@ -378,7 +382,7 @@ export class LiteGraphClass {
         // Iterate over each property descriptor
         Object.keys(propertyDescriptors).forEach((propertyName) => {
             // Check if the property already exists on the target prototype
-            if (!base_class.prototype.hasOwnProperty(propertyName)) {
+            if (!(propertyName in base_class.prototype)) {
                 // If the property doesn't exist, copy it from the source to the target
                 Object.defineProperty(base_class.prototype, propertyName, propertyDescriptors[propertyName]);
                 // TOO MUCH VERBOSE :: this.log_verbose("registerNodeType","defineProperty",type,base_class.prototype, propertyName, propertyDescriptors[propertyName]);
@@ -646,7 +650,7 @@ export class LiteGraphClass {
                 try{
                     console.info("**",obj[propertyName]["arguments"]);
                 }catch(e){
-                    
+                    // Strict-mode functions do not expose their arguments property.
                 }
                 this.wrapFunctionAsNode(objectNameId+"/"+propertyName, obj[propertyName]);
             }else{
@@ -716,9 +720,6 @@ export class LiteGraphClass {
             node = new base_class(title);
         }
 
-        // extend constructor with the extended always executed (custom class or lgraphnode)
-        node.post_constructor();
-        
         // basic size, before computing
         node.size_basic = node.size;
 
@@ -734,6 +735,7 @@ export class LiteGraphClass {
 
         // extra options
         Object.assign(node, options);
+        node.post_constructor();
 
         LiteGraph.log_verbose("createNode","created",node,node.processCallbackHandlers);
 
@@ -1153,7 +1155,7 @@ export class LiteGraphClass {
     extendClass = (target, origin) => {
         for (let i in origin) {
             // copy class properties
-            if (target.hasOwnProperty(i)) {
+            if (Object.hasOwn(target, i)) {
                 continue;
             }
             target[i] = origin[i];
@@ -1163,11 +1165,11 @@ export class LiteGraphClass {
             // copy prototype properties
             for (let i in origin.prototype) {
                 // only enumerable
-                if (!origin.prototype.hasOwnProperty(i)) {
+                if (!Object.hasOwn(origin.prototype, i)) {
                     continue;
                 }
 
-                if (target.prototype.hasOwnProperty(i)) {
+                if (Object.hasOwn(target.prototype, i)) {
                     // avoid overwriting existing ones
                     continue;
                 }
@@ -1250,7 +1252,7 @@ export class LiteGraphClass {
      */ 
     formatNumber(n, precision = 3){
         n = Number(n);
-        if(n === NaN){
+        if(Number.isNaN(n)){
             return "";
         }else{
             return n.toFixed(precision).replace(/(\.\d*[1-9])0+$|\.0*$/, '$1');

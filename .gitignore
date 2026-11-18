@@ -17,3 +17,6 @@ coverage/*
 
 # Conf
 .env
+
+# Claude Code local settings
+.claude/
