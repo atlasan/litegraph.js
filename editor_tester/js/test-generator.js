@@ -5,7 +5,7 @@
 
 import { LiteGraph } from "../../build/litegraph.js";
 
-import { setNodeInput } from './test-inputs.js';
+import { setNodeInput, slotName, slotType } from './test-inputs.js';
 import { checkAbort, pause } from './test-control.js';
 
 export class TestCaseGenerator {
@@ -209,8 +209,8 @@ export class TestCaseGenerator {
         
         return node.inputs.map((input, index) => ({
             index,
-            name: input.name || `input_${index}`,
-            type: input.type || 'any',
+            name: slotName(input, index, 'input'),
+            type: slotType(input.type),
             link: input.link || null,
             optional: input.optional || false,
             defaultValue: input.default_value,
@@ -226,8 +226,8 @@ export class TestCaseGenerator {
         
         return node.outputs.map((output, index) => ({
             index,
-            name: output.name || `output_${index}`,
-            type: output.type || 'any',
+            name: slotName(output, index, 'output'),
+            type: slotType(output.type),
             links: output.links ? [...output.links] : [],
             description: output.description || ''
         }));

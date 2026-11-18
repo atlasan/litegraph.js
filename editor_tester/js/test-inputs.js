@@ -16,3 +16,15 @@ export function setNodeInput(node, index, value) {
     }
     source.setOutputData(0, value);
 }
+
+// LiteGraph treats an empty, 0, "*" or missing slot type as "accept anything",
+// and unnamed slots are common. Expectations and actual slots are both passed
+// through these so the comparison checks the slot, not how it was spelled.
+export function slotType(type) {
+    if (type === undefined || type === null || type === '' || type === 0 || type === '*') return 'any';
+    return String(type);
+}
+export function slotName(slot, index, kind) {
+    const name = slot?.name;
+    return name === undefined || name === null || name === '' ? `${kind}_${index}` : String(name);
+}
