@@ -79,6 +79,13 @@ export class LGraphGroup {
         this.color = o.color;
         if(o.font_size)
             this.font_size = o.font_size;
+        // keep fields this runtime does not model (e.g. another editor's id/flags/locked) for serialize
+        this.extra_fields = {};
+        for (const key in o) {
+            if (!["title", "bounding", "color", "font_size"].includes(key)) {
+                this.extra_fields[key] = LiteGraph.cloneObject(o[key]);
+            }
+        }
     }
 
     /**
@@ -92,6 +99,7 @@ export class LGraphGroup {
     serialize() {
         var b = this._bounding;
         return {
+            ...LiteGraph.cloneObject(this.extra_fields ?? {}),
             title: this.title,
             bounding: Array.from(b, (value) => Math.round(value)), // plain array, not a typed array (JSON tuple)
             color: this.color,

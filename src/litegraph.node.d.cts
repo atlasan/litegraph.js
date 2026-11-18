@@ -19,3 +19,18 @@ export declare class Editor {
 export declare function registerExtension_autoconnect(canvas: LGraphCanvas): void;
 export declare function registerExtension_keyhelper(canvas: LGraphCanvas): void;
 export declare function registerExtension_renamer(canvas: LGraphCanvas): void;
+
+/** Optional ComfyUI workflow interoperability (schema 0.4 and 1). */
+export declare const ComfyInterop: {
+    COMFY_MODE: { ALWAYS: 0; ON_EVENT: 1; NEVER: 2; ON_TRIGGER: 3; BYPASS: 4 };
+    CORE_NODE_FIELDS: string[];
+    isComfyWorkflow(json: unknown): boolean;
+    ensurePlaceholderType(type: string): boolean;
+    importWorkflow(graph: LGraph, json: object, options?: { placeholders?: boolean }): {
+        error: boolean;
+        placeholderTypes: string[];
+        bypassed: Array<number | string>;
+    };
+    toComfyMode(mode: number): number;
+    exportWorkflow(graph: LGraph, options?: { version?: 0.4 | 1 }): Record<string, unknown>;
+};
