@@ -27277,6 +27277,41 @@ class LGraphTexture {
     };
 
     // returns the container where all the loaded textures are stored (overwrite if you have a Resources Manager)
+    // Texture/fx nodes need litegl (GL) and a live WebGL context (gl). Without
+    // them (no litegl, WebGL not enabled yet, headless) they must stay inert.
+    static hasWebGL() {
+        return typeof GL !== "undefined" && typeof gl !== "undefined" && !!gl;
+    }
+
+    static _webgl_guarded = new Set();
+
+    // Makes a node type a no-op while WebGL is unavailable, and lets its shared
+    // GPU resources (static initShader) be created on first use instead of in
+    // the constructor, so nodes created before WebGL was enabled still work.
+    static requireWebGL(ctor) {
+        if (!ctor || LGraphTexture._webgl_guarded.has(ctor)) return;
+        LGraphTexture._webgl_guarded.add(ctor);
+        var proto = ctor.prototype;
+        ["onExecute", "onPropertyChanged", "onAction"].forEach(function(name) {
+            var original = proto[name];
+            if (typeof original !== "function") return;
+            proto[name] = function() {
+                // undefined (not false) from onPropertyChanged keeps the new value
+                if (!LGraphTexture.hasWebGL()) return undefined;
+                if (typeof ctor.initShader === "function") ctor.initShader();
+                if (typeof this.initWebGL === "function") this.initWebGL();
+                return original.apply(this, arguments);
+            };
+        });
+    }
+
+    static guardRegisteredWebGLNodes() {
+        var types = LiteGraph.registered_node_types;
+        for (var type in types) {
+            if (/^(texture|fx)\//.test(type)) LGraphTexture.requireWebGL(types[type]);
+        }
+    }
+
     static getTexturesContainer() {
         return gl.textures;
     }
@@ -29552,12 +29587,15 @@ class LGraphTextureLUT {
             texture: null,
         };
 
-        if (!LGraphTextureLUT._shader) {
-            LGraphTextureLUT._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureLUT.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureLUT.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureLUT._shader) return;
+        LGraphTextureLUT._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureLUT.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -29685,12 +29723,7 @@ class LGraphTextureEncode {
             texture: null,
         };
 
-        if (!LGraphTextureEncode._shader) {
-            LGraphTextureEncode._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEncode.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEncode.initShader();
 
         this._uniforms = {
             u_texture: 0,
@@ -29699,6 +29732,14 @@ class LGraphTextureEncode {
             u_simbol_size: 16,
             u_res: vec2.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureEncode._shader) return;
+        LGraphTextureEncode._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEncode.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -29835,12 +29876,15 @@ class LGraphTextureChannels {
         this.addOutput("A", "Texture");
 
         // this.properties = { use_single_channel: true };
-        if (!LGraphTextureChannels._shader) {
-            LGraphTextureChannels._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureChannels.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureChannels.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureChannels._shader) return;
+        LGraphTextureChannels._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureChannels.pixel_shader,
+        );
     }
 
     static title = "Texture to Channels";
@@ -30158,18 +30202,21 @@ class LGraphTextureGradient {
             B: [1, 1, 1],
             texture_size: 32,
         };
-        if (!LGraphTextureGradient._shader) {
-            LGraphTextureGradient._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureGradient.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureGradient.initShader();
 
         this._uniforms = {
             u_angle: 0,
             u_colorA: vec3.create(),
             u_colorB: vec3.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureGradient._shader) return;
+        LGraphTextureGradient._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureGradient.pixel_shader,
+        );
     }
 
     static title = "Gradient";
@@ -30411,12 +30458,15 @@ class LGraphTextureEdges {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphTextureEdges._shader) {
-            LGraphTextureEdges._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEdges.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEdges.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureEdges._shader) return;
+        LGraphTextureEdges._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEdges.pixel_shader,
+        );
     }
 
     static title = "Edges";
@@ -33088,6 +33138,7 @@ class LGraphCubemapToTexture2D {
 }
 LiteGraph.registerNodeType("texture/cubemapToTexture2D", LGraphCubemapToTexture2D);
 
+LGraphTexture.guardRegisteredWebGLNodes();
 
 var SHADERNODES_COLOR = "#345";
 
@@ -33637,8 +33688,9 @@ class LGraphShaderGraph {
         this._uniforms = {};
         this._shader = null;
         this._context = new LGShaderContext();
-        this._context.vs_template =
-            "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+        this._context.vs_template = LGraphTexture.hasWebGL() ?
+            "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER :
+            "";
         this._context.fs_template = LGraphShaderGraph.template;
     }
 
@@ -33865,6 +33917,11 @@ class LGraphShaderGraph {
         return options;
     }
 }
+// fills in the vertex template skipped when the node was created before WebGL was on
+LGraphShaderGraph.prototype.initWebGL = function() {
+    if (!this._context.vs_template)
+        this._context.vs_template = "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+};
 LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 /*
@@ -35203,8 +35260,18 @@ class LGraphShaderRemap {
 }
 registerShaderNode("math/remap", LGraphShaderRemap);
 
+LGraphTexture.guardRegisteredWebGLNodes();
+
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // var { GL } = require('../../editor/js/libs/litegl.js');
+
+// Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
+function polarToCartesian(out, azimuth, inclination, radius) {
+    out[0] = radius * Math.sin(inclination) * Math.cos(azimuth);
+    out[1] = radius * Math.cos(inclination);
+    out[2] = radius * Math.sin(inclination) * Math.sin(azimuth);
+    return out;
+}
 
 var view_matrix = new Float32Array(16);
 var projection_matrix = new Float32Array(16);
@@ -35351,7 +35418,7 @@ class LGraphPoints3D {
                 for (let i = 0; i < side; ++i)
                     for (let j = 0; j < side; ++j) {
                         let pos = i * 3 + j * 3 * side;
-                        GL.polarToCartesian(
+                        polarToCartesian(
                             temp,
                             (i / side) * 2 * Math.PI,
                             (j / side - 0.5) * 2 * Math.PI,
@@ -37195,19 +37262,22 @@ class LGraphFXLens {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXLens._shader) {
-            LGraphFXLens._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXLens.pixel_shader,
-            );
-            LGraphFXLens._texture = new GL.Texture(3, 1, {
-                format: gl.RGB,
-                wrap: gl.CLAMP_TO_EDGE,
-                magFilter: gl.LINEAR,
-                minFilter: gl.LINEAR,
-                pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
-            });
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXLens.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXLens._shader) return;
+        LGraphFXLens._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXLens.pixel_shader,
+        );
+        LGraphFXLens._texture = new GL.Texture(3, 1, {
+            format: gl.RGB,
+            wrap: gl.CLAMP_TO_EDGE,
+            magFilter: gl.LINEAR,
+            minFilter: gl.LINEAR,
+            pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
+        });
     }
 
     static title = "Lens";
@@ -37888,12 +37958,15 @@ class LGraphFXVigneting {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXVigneting._shader) {
-            LGraphFXVigneting._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXVigneting.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXVigneting.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXVigneting._shader) return;
+        LGraphFXVigneting._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXVigneting.pixel_shader,
+        );
     }
 
     static title = "Vigneting";
@@ -37972,6 +38045,8 @@ class LGraphFXVigneting {
     `;
 }
 LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
+
+LGraphTexture.guardRegisteredWebGLNodes();
 
 // TODO :: MIDI WORKS WITH ACTIONS SLOTS REVISE: (CANT ASSIGN MULTIPLE, WHEN IT SHOULD WITH THIS DATA TYPE, AND DATA SEEMS NOT PASSED BY (eg. MIDI Show using his input does not seems to work))
 
