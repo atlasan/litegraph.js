@@ -132,3 +132,21 @@ test('canvas connecting_* fields read and write the connector', () => {
     expect(canvas.linkConnector.isConnecting).toBe(false);
     graph.clear();
 });
+
+test('moved and restored links keep their reroutes', () => {
+    const { graph, s1, d1, d2 } = setup();
+    s1.connect(0, d1, 0);
+    const reroute = graph.addReroute([50, 50], linkOf(d1, 0));
+
+    const move = new LinkConnector();
+    move.moveInputLink(d1, 0);
+    move.dropOnNode(d2, 0);
+    expect(linkOf(d2, 0).parentId).toBe(reroute.id);
+
+    const cancel = new LinkConnector();
+    cancel.moveInputLink(d2, 0);
+    cancel.cancel();
+    expect(linkOf(d2, 0).parentId).toBe(reroute.id);
+    expect(graph.getRerouteLinkIds().get(reroute.id)).toEqual([linkOf(d2, 0).id]);
+    graph.clear();
+});

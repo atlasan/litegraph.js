@@ -1236,7 +1236,7 @@ export declare class LinkConnector {
     input: INodeInputSlot | null;
     pos: Vector2 | Float32Array | null;
     movingInputs: Array<{ node: LGraphNode; slot: number }> | null;
-    detached: Array<{ origin_id: GraphId; origin_slot: number; target_id: GraphId; target_slot: number }> | null;
+    detached: Array<{ origin_id: GraphId; origin_slot: number; target_id: GraphId; target_slot: number; parentId?: number }> | null;
     readonly isConnecting: boolean;
     readonly isMoving: boolean;
     readonly type: string | number | undefined;

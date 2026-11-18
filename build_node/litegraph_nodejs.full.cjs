@@ -2999,9 +2999,11 @@ class LinkConnector {
         const graph = this._graph ?? target.graph ?? this.node.graph;
         const connect = () => {
             if (this.output) {
-                return targetSlot !== -1 ?
+                const link = targetSlot !== -1 ?
                     this.node.connect(this.slot, target, targetSlot) :
                     this.node.connectByType(this.slot, target, this.type);
+                this._keepRoute(link, (d) => d.origin_id === this.node.id && d.origin_slot === this.slot);
+                return link;
             }
             const inputs = this.movingInputs ?? [{
                 node: this.node,
@@ -3016,6 +3018,7 @@ class LinkConnector {
                 result = targetSlot !== -1 ?
                     target.connect(targetSlot, node, slot) :
                     node.connectByTypeOutput(slot, target, this.type);
+                this._keepRoute(result, (d) => d.target_id === node.id && d.target_slot === slot);
             }
             return result;
         };
@@ -3055,7 +3058,10 @@ class LinkConnector {
                 const graph = this._graph;
                 const origin = graph?.getNodeById(link.origin_id);
                 const target = graph?.getNodeById(link.target_id);
-                if (origin && target) origin.connect(link.origin_slot, target, link.target_slot);
+                if (origin && target) {
+                    const restored = origin.connect(link.origin_slot, target, link.target_slot);
+                    if (restored && link.parentId !== undefined) restored.parentId = link.parentId;
+                }
             }
         }
         this._finishTransaction();
@@ -3082,21 +3088,34 @@ class LinkConnector {
     }
 
     _beginMove(graph, links) {
+        // parentId: the reroute chain the link was routed through, kept when it is reconnected
         this.detached = links.map(({
-            origin_id,
-            origin_slot,
-            target_id,
-            target_slot
-        }) => ({
-            origin_id,
-            origin_slot,
-            target_id,
-            target_slot
-        }));
+                origin_id,
+                origin_slot,
+                target_id,
+                target_slot,
+                parentId
+            }) =>
+            ({
+                origin_id,
+                origin_slot,
+                target_id,
+                target_slot,
+                ...(parentId !== undefined ? {
+                    parentId
+                } : {})
+            }));
         if (graph?.beginTransaction) {
             graph.beginTransaction("moveLink");
             this._graph = graph;
         }
+    }
+
+    /** a moved link keeps the reroutes of the link it replaces */
+    _keepRoute(link, matches) {
+        if (!link || typeof link !== "object" || !this.detached) return;
+        const original = this.detached.find(matches);
+        if (original?.parentId !== undefined && link.parentId === undefined) link.parentId = original.parentId;
     }
 
     _finishTransaction() {
