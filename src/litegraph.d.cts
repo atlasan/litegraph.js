@@ -408,6 +408,14 @@ export declare class LGraph {
     revision: number;
     /** id counters; last_node_id/last_link_id are accessors over these */
     state: LGraphState;
+    /** start (or nest) a transaction: saved changes until the outermost commit make one history entry */
+    beginTransaction(label?: string): number;
+    /** end the innermost transaction; true when the outermost one ended with changes */
+    commitTransaction(): boolean;
+    /** true while a transaction is open */
+    readonly isInTransaction: boolean;
+    /** run fn as one transaction; with rollback, restore the previous graph if fn throws */
+    transact<T>(label: string, fn: () => T, options?: { rollback?: boolean }): T;
 
     filter: string;
     catch_errors: boolean;

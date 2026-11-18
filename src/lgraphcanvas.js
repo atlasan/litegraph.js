@@ -2323,7 +2323,13 @@ export class LGraphCanvas {
         localStorage.setItem( "litegrapheditor_clipboard", JSON.stringify(clipboard_info), );
     }
 
+    /** pastes the clipboard as one undoable change */
     pasteFromClipboard(isConnectUnselected = false) {
+        if (!this.graph?.transact) return this._pasteFromClipboard(isConnectUnselected);
+        return this.graph.transact("paste", () => this._pasteFromClipboard(isConnectUnselected));
+    }
+
+    _pasteFromClipboard(isConnectUnselected = false) {
         // if ctrl + shift + v is off, return when isConnectUnselected is true (shift is pressed) to maintain old behavior
         if (!LiteGraph.ctrl_shift_v_paste_connect_unselected_outputs && isConnectUnselected) {
             return;
@@ -2671,7 +2677,13 @@ export class LGraphCanvas {
      * deletes all nodes in the current selection from the graph
      * @method deleteSelectedNodes
      **/
+    /** deletes the selected nodes as one undoable change */
     deleteSelectedNodes() {
+        if (!this.graph?.transact) return this._deleteSelectedNodes();
+        return this.graph.transact("deleteSelectedNodes", () => this._deleteSelectedNodes());
+    }
+
+    _deleteSelectedNodes() {
 
         this.graph.beforeChange();
 
@@ -5920,6 +5932,10 @@ export class LGraphCanvas {
         if (!nodes) {
             return;
         }
+        const graph = Object.values(nodes).find((node) => node?.graph)?.graph;
+        if (graph?.transact && !graph.isInTransaction) {
+            return graph.transact("alignNodes", () => LGraphCanvas.alignNodes(nodes, direction, align_to));
+        }
 
         const canvas = LGraphCanvas.active_canvas;
         let boundaryNodes = []
@@ -5934,7 +5950,7 @@ export class LGraphCanvas {
             }
         }
 
-        for (const [_, node] of Object.entries(canvas.selected_nodes)) {
+        for (const node of Object.values(nodes)) { // the nodes passed in, not whatever the active canvas has selected
             switch (direction) {
                 case "right":
                     node.pos[0] = boundaryNodes["right"].pos[0] + boundaryNodes["right"].size[0] - node.size[0];
@@ -5951,8 +5967,12 @@ export class LGraphCanvas {
             }
         }
 
-        canvas.dirty_canvas = true;
-        canvas.dirty_bgcanvas = true;
+        graph?.onGraphChanged({action: "alignNodes"});
+        graph?.setDirtyCanvas(true, true);
+        if (canvas) {
+            canvas.dirty_canvas = true;
+            canvas.dirty_bgcanvas = true;
+        }
     }
 
     static onNodeAlign(value, options, event, prev_menu, node) {

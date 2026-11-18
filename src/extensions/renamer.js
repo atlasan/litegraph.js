@@ -43,6 +43,7 @@ export let registerExtension_renamer = function(graphcanvas){
                         for(let iN in graphcanvas.selected_nodes){
                             graphcanvas.selected_nodes[iN].title = tIn;
                         }
+                        graphcanvas.graph?.onGraphChanged({action: "rename"}); // undoable
                     }
                     
                     // open prompt
@@ -59,6 +60,7 @@ export let registerExtension_renamer = function(graphcanvas){
                         // set update function
                         const fCB = function(tIn){
                             groupOver.title = tIn;
+                            graphcanvas.graph?.onGraphChanged({action: "renameGroup"}); // undoable
                         }
                         // open prompt
                         graphcanvas.prompt(

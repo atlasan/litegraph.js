@@ -934,7 +934,6 @@ export class LGraph {
 
         node.graph = this;
         node.exec_version = undefined;
-        this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
 
         this._nodes.push(node);
         this._nodes_by_id[node.id] = node;
@@ -959,6 +958,8 @@ export class LGraph {
         if (opts.doCalcSize) {
             node.setSize( node.computeSize() );
         }
+        // record after the node is in the graph, so the history snapshot contains it
+        this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
         this.setDirtyCanvas(true);
         this.change();
 
@@ -1515,6 +1516,68 @@ export class LGraph {
     }
 
     /**
+     * Starts (or nests) a transaction: every saved change until the matching commit is
+     * recorded as one history entry and one revision.
+     * @param {string} [label] - history action name of the outermost transaction
+     * @returns {number} nesting depth
+     */
+    beginTransaction(label = "transaction") {
+        if (!this._transaction) {
+            this._transaction = { depth: 0, label, changed: false };
+        }
+        return ++this._transaction.depth;
+    }
+
+    /**
+     * Ends the innermost transaction; the outermost one records its changes once.
+     * @returns {boolean} true when the outermost transaction ended with changes
+     */
+    commitTransaction() {
+        const transaction = this._transaction;
+        if (!transaction) {
+            LiteGraph.log_warn("lgraph", "commitTransaction", "no transaction in progress");
+            return false;
+        }
+        if (--transaction.depth > 0) return false;
+        this._transaction = null;
+        if (transaction.changed) {
+            this.onGraphChanged({ action: transaction.label, doSave: true });
+        }
+        return transaction.changed;
+    }
+
+    /** true while a transaction is open */
+    get isInTransaction() {
+        return !!this._transaction;
+    }
+
+    /**
+     * Runs fn as one transaction (one undo entry). The transaction always ends, even if fn throws.
+     * @param {string} label - history action name
+     * @param {Function} fn - the changes
+     * @param {{rollback?: boolean}} [options] - rollback: on error restore the graph as it was before
+     *   (reconfigures the whole graph, so node resources are recreated)
+     * @returns {*} fn's result
+     */
+    transact(label, fn, options = {}) {
+        const snapshot = options.rollback && !this._transaction ? this.serialize() : null;
+        this.beginTransaction(label);
+        try {
+            return fn();
+        } catch (error) {
+            if (snapshot) {
+                this._transaction = null;
+                const history = this.history;
+                this.configure(snapshot);
+                this.history = history;
+            }
+            throw error;
+        } finally {
+            if (this._transaction) this.commitTransaction();
+        }
+    }
+
+    /**
      * Executes actions after a change with the provided information detail.
      * Calls the 'onAfterChange' function on the class instance and sends the action to connected GraphCanvas instances.
      * @param {object} info - The information detail about the change.
@@ -1871,6 +1934,11 @@ export class LGraph {
         var opts = Object.assign(optsDef,optsIn);
 
         this._version++;
+        if (opts.doSave && this._transaction) {
+            // recorded once when the outermost transaction commits
+            this._transaction.changed = true;
+            return;
+        }
         if (opts.doSave) this.revision++; // a saved (user-level) change to the document
 
         if(opts.action) {
