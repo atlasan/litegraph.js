@@ -13,6 +13,7 @@ Research date: 2026-11-01. Status: first source-based research pass complete; im
 | 3 | [ComfyUI core and frontend](comfyui-core-frontend.md) | How do empowered subgraphs, search, rendering, and extension services work? |
 | 4 | [Custom-node UI patterns](comfyui-custom-node-ui.md) | What can rgthree, Custom-Scripts, KJNodes, VideoHelperSuite, and Easy-Use teach us? |
 | 5 | [Local fit and experiments](local-fit-and-experiments.md) | How can this fork adopt the useful behavior while preserving its contracts? |
+| 6 | [ComfyUI LiteGraph relationship](comfyui-litegraph-relationship.md) (2026-11-18) | Should we import, sync, derive, fork, or join? How interoperable is the graph JSON? |
 
 ## What changed in our understanding
 
