@@ -166,7 +166,10 @@ export interface LiteGraphAPI extends CallbackHost {
     NODE_DEFAULT_COLOR: string;
     NODE_DEFAULT_BGCOLOR: string;
     NODE_DEFAULT_BOXCOLOR: string;
-    NODE_DEFAULT_SHAPE: string;
+    /** default node shape: a shape constant or "box" | "round" | "card" | "circle" */
+    NODE_DEFAULT_SHAPE: number | string;
+    /** size canvases for window.devicePixelRatio in LGraphCanvas.resize (default true) */
+    canvas_high_dpi: boolean;
     DEFAULT_SHADOW_COLOR: string;
     DEFAULT_GROUP_FONT: number;
 
@@ -1134,6 +1137,8 @@ export declare class DragAndScale {
     scale: number;
     max_scale: number;
     min_scale: number;
+    /** backing-store pixels per CSS pixel of the element */
+    pixel_ratio?: number;
     onredraw: Function | null;
     enabled: boolean;
     last_mouse: Vector2;
@@ -1171,6 +1176,16 @@ export declare class LGraphCanvas {
     static link_type_colors: Record<string, string>;
     static gradients: object;
     static search_limit: number;
+    /** resolve a shape constant or shape name to a shape constant */
+    static resolveShape(shape: number | string | undefined, fallback: number): number;
+    /** clamp a number to a widget's optional min/max */
+    static clampWidgetNumber(value: number, options?: { min?: number; max?: number }): number;
+    /** backing-store pixels per CSS pixel */
+    pixel_ratio: number;
+    /** canvas width in CSS pixels */
+    readonly cssWidth: number;
+    /** canvas height in CSS pixels */
+    readonly cssHeight: number;
 
     static getFileExtension(url: string): string;
     static decodeHTML(str: string): string;

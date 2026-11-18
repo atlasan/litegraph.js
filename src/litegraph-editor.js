@@ -258,8 +258,8 @@ export class Editor {
             ctx.strokeStyle = "#567";
             var tl = that.graphcanvas.convertOffsetToCanvas([0, 0]);
             var br = that.graphcanvas.convertOffsetToCanvas([
-                that.graphcanvas.canvas.width,
-                that.graphcanvas.canvas.height,
+                that.graphcanvas.cssWidth,
+                that.graphcanvas.cssHeight,
             ]);
             tl = this.convertCanvasToOffset(tl);
             br = this.convertCanvasToOffset(br);
@@ -294,7 +294,7 @@ export class Editor {
     //         this.graphcanvas2.viewport = null;
     //         this.graphcanvas2 = null;
 
-    //         this.graphcanvas.viewport = [0,0,canvas.width,canvas.height];
+    //         this.graphcanvas.viewport = [0,0,this.graphcanvas.cssWidth,this.graphcanvas.cssHeight];
     //         this.graphcanvas.resize();
     //     }
     // }
@@ -319,22 +319,23 @@ export class Editor {
             // this.graphcanvas = graphcanvas;
             // window.graphcanvas = this.graphcanvas;
 
-            this.graphcanvas.viewport = [0,0,canvas.width,canvas.height];
+            this.graphcanvas.viewport = [0,0,this.graphcanvas.cssWidth,this.graphcanvas.cssHeight];
             this.graphcanvas.setDirty(true,true);
 
             return;
         }
 
         this.graphcanvas.ctx.fillStyle = "black";
-        this.graphcanvas.ctx.fillRect(0,0,canvas.width,canvas.height);
-        this.graphcanvas.viewport = [0,0,canvas.width*0.5-2,canvas.height];
+        const cssW = this.graphcanvas.cssWidth, cssH = this.graphcanvas.cssHeight;
+        this.graphcanvas.ctx.fillRect(0,0,canvas.width,canvas.height); // backing-store pixels, identity transform
+        this.graphcanvas.viewport = [0,0,cssW*0.5-2,cssH];
         // this.graphcanvas.resize();
         this.graphcanvas.setDirty(true,true);
 
         graphcanvas = new LGraphCanvas( canvas, this.graph );
         graphcanvas.background_image = "imgs/grid.png";
         this.graphcanvas2 = graphcanvas;
-        this.graphcanvas2.viewport = [canvas.width*0.5,0,canvas.width*0.5,canvas.height];
+        this.graphcanvas2.viewport = [cssW*0.5,0,cssW*0.5,cssH];
         // this.graphcanvas2.resize();
         this.graphcanvas2.setDirty(true,true);
     }

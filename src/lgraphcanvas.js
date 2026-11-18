@@ -48,6 +48,7 @@ export class LGraphCanvas {
         }
 
         this.ds = new DragAndScale();
+        this.pixel_ratio = 1; // backing-store pixels per CSS pixel (see resize)
         this.zoom_modify_alpha = true; // otherwise it generates ugly patterns when scaling down too much
 
         this.title_text_font = `${LiteGraph.NODE_TEXT_SIZE}px Arial`;
@@ -502,6 +503,33 @@ export class LGraphCanvas {
 
         this._mousedown_callback = null;
 
+    }
+
+    /**
+     * Resolves a node shape setting (shape constant or name) to a shape constant.
+     * @param {number|string} shape - e.g. LiteGraph.BOX_SHAPE or "box"
+     * @param {number} fallback - returned for unknown values
+     */
+    static resolveShape(shape, fallback) {
+        if (typeof shape === "number" && shape > 0) return shape;
+        const named = {
+            box: LiteGraph.BOX_SHAPE,
+            round: LiteGraph.ROUND_SHAPE,
+            circle: LiteGraph.CIRCLE_SHAPE,
+            card: LiteGraph.CARD_SHAPE,
+        }[shape];
+        return named ?? fallback;
+    }
+
+    /**
+     * Clamps a number to a widget's optional min/max range.
+     * @param {number} value
+     * @param {{min?: number, max?: number}} [options]
+     */
+    static clampWidgetNumber(value, options) {
+        if (options?.min != null && value < options.min) value = options.min;
+        if (options?.max != null && value > options.max) value = options.max;
+        return value;
     }
 
     static getFileExtension(url) {
@@ -2625,11 +2653,11 @@ export class LGraphCanvas {
         this.ds.offset[0] =
             -node.pos[0] -
             node.size[0] * 0.5 +
-            (this.canvas.width * 0.5) / this.ds.scale;
+            (this.cssWidth * 0.5) / this.ds.scale;
         this.ds.offset[1] =
             -node.pos[1] -
             node.size[1] * 0.5 +
-            (this.canvas.height * 0.5) / this.ds.scale;
+            (this.cssHeight * 0.5) / this.ds.scale;
         this.setDirty(true, true);
     }
 
@@ -2649,7 +2677,7 @@ export class LGraphCanvas {
             var canvasPos = this.convertCanvasToOffset(boundPos);
             this.ds.offset[0] = canvasPos[0]; // - (this.canvas.width * 0.5) / this.ds.scale;
             this.ds.offset[1] = canvasPos[1]; // - (this.canvas.height * 0.5) / this.ds.scale;
-            this.ds.changeScale(this.canvas.width/bounds[2]*2, [canvasPos[0]+bounds[2]/2,canvasPos[1]+bounds[3]/2]);
+            this.ds.changeScale(this.cssWidth/bounds[2]*2, [canvasPos[0]+bounds[2]/2,canvasPos[1]+bounds[3]/2]);
             this.setDirty(true, true);
             return true;
         }else{
@@ -2946,8 +2974,9 @@ export class LGraphCanvas {
         if ( ctx.start2D && !this.viewport ) {
             ctx.start2D();
             ctx.restore();
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
+        // base transform: draw in CSS pixels on a (possibly) high-DPI backing store
+        ctx.setTransform(this.pixel_ratio, 0, 0, this.pixel_ratio, 0, 0);
 
         // clip dirty area if there is one, otherwise work in full canvas
         var area = this.viewport || this.dirty_area;
@@ -2964,14 +2993,14 @@ export class LGraphCanvas {
             if(area)
                 ctx.clearRect( area[0],area[1],area[2],area[3] );
             else
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
         }
 
         // draw bg canvas
         if (this.bgcanvas == this.canvas) {
             this.drawBackCanvas();
         } else {
-            ctx.drawImage( this.bgcanvas, 0, 0 );
+            ctx.drawImage( this.bgcanvas, 0, 0, this.cssWidth, this.cssHeight );
         }
 
         // rendering
@@ -3275,7 +3304,7 @@ export class LGraphCanvas {
 
     drawSubgraphPanelRight(subgraph, subnode, ctx) {
         var num = subnode.outputs ? subnode.outputs.length : 0;
-        var canvas_w = this.bgcanvas.width;
+        var canvas_w = this.cssWidth;
         var w = 200;
         var h = Math.floor(LiteGraph.NODE_SLOT_HEIGHT * 1.6);
 
@@ -3398,7 +3427,7 @@ export class LGraphCanvas {
      **/
     renderInfo(ctx, x, y) {
         x = x || 10;
-        y = y || this.canvas.height - 80;
+        y = y || this.cssHeight - 80;
 
         ctx.save();
         ctx.translate(x, y);
@@ -3438,7 +3467,8 @@ export class LGraphCanvas {
             ctx.start();
         }
 
-        var viewport = this.viewport || [0,0,ctx.canvas.width,ctx.canvas.height];
+        ctx.setTransform(this.pixel_ratio, 0, 0, this.pixel_ratio, 0, 0); // CSS-pixel drawing space
+        var viewport = this.viewport || [0,0,this.cssWidth,this.cssHeight];
 
         // clear
         if (this.clear_background) {
@@ -3451,7 +3481,7 @@ export class LGraphCanvas {
             var subgraph_node = this.graph._subgraph_node;
             ctx.strokeStyle = subgraph_node.bgcolor;
             ctx.lineWidth = 10;
-            ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+            ctx.strokeRect(1, 1, this.cssWidth - 2, this.cssHeight - 2);
             ctx.lineWidth = 1;
             ctx.font = "40px Arial";
             ctx.textAlign = "center";
@@ -3462,7 +3492,7 @@ export class LGraphCanvas {
             });
             ctx.fillText(
                 title + subgraph_node.getTitle(),
-                canvas.width * 0.5,
+                this.cssWidth * 0.5,
                 40,
             );
             ctx.restore();
@@ -3479,7 +3509,7 @@ export class LGraphCanvas {
         // reset in case of error
         if ( !this.viewport ) {
             ctx.restore();
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.setTransform(this.pixel_ratio, 0, 0, this.pixel_ratio, 0, 0);
         }
         this.visible_links.length = 0;
 
@@ -3643,7 +3673,7 @@ export class LGraphCanvas {
         }
 
         // clip if required (mask)
-        var shape = node._shape || LiteGraph.BOX_SHAPE;
+        var shape = node._shape || node.constructor.shape || LGraphCanvas.resolveShape(LiteGraph.NODE_DEFAULT_SHAPE, LiteGraph.BOX_SHAPE);
         var size = temp_vec2;
         temp_vec2.set(node.size);
         var horizontal = node.horizontal; // || node.flags.horizontal;
@@ -4174,7 +4204,7 @@ export class LGraphCanvas {
         var low_quality = this.lowQualityRenderingRequired(0.5);
 
         // render node area depending on shape
-        var shape = node._shape || node.constructor.shape || LiteGraph.ROUND_SHAPE;
+        var shape = node._shape || node.constructor.shape || LGraphCanvas.resolveShape(LiteGraph.NODE_DEFAULT_SHAPE, LiteGraph.ROUND_SHAPE); // Comfy 11ce8e0
 
         var title_mode = node.constructor.title_mode;
 
@@ -5445,7 +5475,8 @@ export class LGraphCanvas {
                                                 LiteGraph.log_warn(error);
                                             }
                                         }
-                                        this.value = Number(v);
+                                        // typed values respect the widget range like drag and arrows do (Comfy c5db2d8)
+                                        this.value = LGraphCanvas.clampWidgetNumber(Number(v), this.options);
                                         inner_value_change(this, this.value, old_value);
                                     }.bind(w),
                                     event,
@@ -5596,14 +5627,35 @@ export class LGraphCanvas {
         }else{
             LiteGraph.log_debug("lgraphcanvas","resize","passed",width,height,parent);
         }
-        if (this.canvas.width == width && this.canvas.height == height) {
+        // high-DPI: backing store in device pixels, layout and drawing in CSS pixels (ported idea, Comfy 49944a0)
+        const ratio = LiteGraph.canvas_high_dpi !== false && typeof window !== "undefined" && window.devicePixelRatio > 0
+            ? window.devicePixelRatio : 1;
+        const backingWidth = Math.round(width * ratio);
+        const backingHeight = Math.round(height * ratio);
+        if (this.canvas.width == backingWidth && this.canvas.height == backingHeight && this.pixel_ratio == ratio) {
             return;
         }
-        this.canvas.width = width;
-        this.canvas.height = height;
+        this.canvas.width = backingWidth;
+        this.canvas.height = backingHeight;
+        if (ratio !== 1 || this.pixel_ratio !== 1) {
+            this.canvas.style.width = width + "px";
+            this.canvas.style.height = height + "px";
+        }
+        this.pixel_ratio = ratio;
+        this.ds.pixel_ratio = ratio;
         this.bgcanvas.width = this.canvas.width;
         this.bgcanvas.height = this.canvas.height;
         this.setDirty(true, true);
+    }
+
+    /** canvas width in CSS pixels (the drawing and pointer coordinate space) */
+    get cssWidth() {
+        return this.canvas ? this.canvas.width / (this.pixel_ratio || 1) : 0;
+    }
+
+    /** canvas height in CSS pixels (the drawing and pointer coordinate space) */
+    get cssHeight() {
+        return this.canvas ? this.canvas.height / (this.pixel_ratio || 1) : 0;
     }
 
     /**
@@ -6855,8 +6907,8 @@ export class LGraphCanvas {
             dialog.style.left = event.clientX + offsetx + "px";
             dialog.style.top = event.clientY + offsety + "px";
         } else {
-            dialog.style.left = canvas.width * 0.5 + offsetx + "px";
-            dialog.style.top = canvas.height * 0.5 + offsety + "px";
+            dialog.style.left = (canvas.clientWidth || canvas.width) * 0.5 + offsetx + "px";
+            dialog.style.top = (canvas.clientHeight || canvas.height) * 0.5 + offsety + "px";
         }
 
         var button = dialog.querySelector("button");
@@ -7005,8 +7057,8 @@ export class LGraphCanvas {
             dialog.style.left = event.clientX + offsetx + "px";
             dialog.style.top = event.clientY + offsety + "px";
         } else {
-            dialog.style.left = canvas.width * 0.5 + offsetx + "px";
-            dialog.style.top = canvas.height * 0.5 + offsety + "px";
+            dialog.style.left = (canvas.clientWidth || canvas.width) * 0.5 + offsetx + "px";
+            dialog.style.top = (canvas.clientHeight || canvas.height) * 0.5 + offsety + "px";
         }
 
         setTimeout(function() {
@@ -7173,7 +7225,7 @@ export class LGraphCanvas {
                 } else if (e.keyCode == 13) {
                     refreshHelper();
                     if (selected) {
-                        select(selected.innerHTML);
+                        select(unescape(selected.dataset["type"])); // the label may differ from the type (Comfy 49a3e31)
                     } else if (first) {
                         select(first);
                     } else {
@@ -7282,13 +7334,15 @@ export class LGraphCanvas {
             dialog.style.left = event.clientX + offsetx + "px";
             dialog.style.top = event.clientY + offsety + "px";
         } else {
-            dialog.style.left = canvas.width * 0.5 + offsetx + "px";
-            dialog.style.top = canvas.height * 0.5 + offsety + "px";
+            dialog.style.left = (canvas.clientWidth || canvas.width) * 0.5 + offsetx + "px";
+            dialog.style.top = (canvas.clientHeight || canvas.height) * 0.5 + offsety + "px";
         }
         canvas.parentNode.appendChild(dialog);
         */
 
         input.focus();
+        // Firefox can drop focus requested in the same frame the dialog is attached (Comfy 6f121fc)
+        (typeof requestAnimationFrame === "function" ? requestAnimationFrame : setTimeout)(() => input.focus());
         if (options.show_all_on_open) refreshHelper();
 
         function select(name) {
@@ -7842,8 +7896,8 @@ export class LGraphCanvas {
             offsetx += options.event.clientX;
             offsety += options.event.clientY;
         } else { // centered
-            offsetx += this.canvas.width * 0.5;
-            offsety += this.canvas.height * 0.5;
+            offsetx += this.cssWidth * 0.5;
+            offsety += this.cssHeight * 0.5;
         }
 
         dialog.style.left = offsetx + "px";

@@ -2735,7 +2735,7 @@ export class LGraphNode {
      **/
 
     pin(v) {
-        this.graph.onGraphChanged({action: "pin"});
+        this.graph?.onGraphChanged({action: "pin"}); // a node may be pinned before it is added (Comfy a0b50dc)
         if (v === undefined) {
             this.flags.pinned = !this.flags.pinned;
         } else {

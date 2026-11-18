@@ -1126,7 +1126,8 @@ export class LGraph {
         });
         if(!aMatchingGroups.length) return null;
         LiteGraph.log_verbose("lgraph","getGroupOnPos","matching groups by x,y",x,y,aMatchingGroups);
-        let aSortedByYDistance = aMatchingGroups.sort((a,b) => Math.abs(a._pos[1]-y) > Math.abs(b._pos[1]-y));
+        // numeric comparator: a boolean result leaves the order engine-dependent
+        let aSortedByYDistance = aMatchingGroups.sort((a,b) => Math.abs(a._pos[1]-y) - Math.abs(b._pos[1]-y));
         LiteGraph.log_verbose("lgraph","getGroupOnPos","sorted groups y distance",aSortedByYDistance);
         return aSortedByYDistance[0];
     }

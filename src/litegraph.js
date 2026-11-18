@@ -22,6 +22,8 @@ export class LiteGraphClass {
     VERSION = "a0.11.1";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
+    /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
+    canvas_high_dpi = true;
 
     LLink = null; //LLink;
     LGraph = null; //LGraph;
@@ -58,7 +60,7 @@ export class LiteGraphClass {
     NODE_BGCOLOR_LOADINGLIB = "#353565";
     NODE_BGCOLOR_WRONGENV = "#653535";
     NODE_BGCOLOR_ERROR = "#F33";
-    NODE_DEFAULT_SHAPE = "box";
+    NODE_DEFAULT_SHAPE = 2; // ROUND_SHAPE; honoured by the canvas (shape constant or "box"/"round"/"card"/"circle")
     NODE_BOX_OUTLINE_COLOR = "#FFF";
     DEFAULT_SHADOW_COLOR = "rgba(0,0,0,0.5)";
     DEFAULT_GROUP_FONT = 24;
