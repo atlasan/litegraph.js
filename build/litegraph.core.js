@@ -15037,6 +15037,7 @@ export class LGraphCanvas {
                         slot: slot
                     });
                 }
+                var _slot = slot.input || slot.output;
                 if (_slot.nameLocked === false || LiteGraph.canRenameSlots) {
                     menu_info.push({
                         content: "Rename Slot",
@@ -15049,7 +15050,6 @@ export class LGraphCanvas {
                         slot: slot
                     });
                 }
-                var _slot = slot.input || slot.output;
                 if (_slot.removable || LiteGraph.canRemoveSlots) {
                     menu_info.push(_slot.locked ?
                         "Cannot remove" :
