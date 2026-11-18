@@ -54,3 +54,15 @@ void coreGraph.clearAsync();
 import nodeDefault from '@litegraph/litegraph/node';
 const nodeSingleton: LiteGraphClass = nodeDefault.LiteGraph;
 void nodeSingleton;
+
+// typed events
+{
+    const graph = new LGraph();
+    const off = graph.events.on("node-added", (event) => { const id: string | number = event.detail.node.id; void id; });
+    graph.events.on("changed", (event) => { const revision: number = event.detail.revision; void revision; });
+    graph.events.on("configuring", (event) => event.preventDefault());
+    off();
+    const committed: boolean = graph.commitTransaction();
+    const result: number = graph.transact("label", () => 1);
+    void committed; void result;
+}

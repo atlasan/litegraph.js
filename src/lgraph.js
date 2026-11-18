@@ -3,6 +3,7 @@ import { CallbackHandler } from "./callbackhandler.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
+import { LGraphEventTarget } from "./eventtarget.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -25,6 +26,20 @@ export class LGraph {
     /** fresh id counters; last_node_id/last_link_id are accessors over these */
     static createState() {
         return { lastNodeId: 0, lastLinkId: 0, lastGroupId: 0, lastRerouteId: 0 };
+    }
+
+    /**
+     * Typed graph events: configuring (cancelable), configured, node-added, node-removed,
+     * changed, reroute-added, reroute-removed. See LGraphEventTarget.
+     */
+    get events() {
+        return this._events ??= new LGraphEventTarget(this, (error, event) =>
+            LiteGraph.log_error("lgraph", "event listener failed", event.type, error));
+    }
+
+    /** dispatch only when someone listens (no allocation otherwise) */
+    _emit(type, detail, options) {
+        return this._events?.has(type) ? this._events.dispatch(type, detail, options) : null;
     }
 
     get last_node_id() { return this.state.lastNodeId; }
@@ -963,6 +978,7 @@ export class LGraph {
         }
         // record after the node is in the graph, so the history snapshot contains it
         this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
+        this._emit("node-added", { node });
         this.setDirtyCanvas(true);
         this.change();
 
@@ -1055,6 +1071,7 @@ export class LGraph {
             cleanup(() => this.processCallbackHandlers("onNodeRemoved", { def_cb: this.onNodeRemoved }, node));
 
             cleanup(() => this.onGraphChanged({action: "nodeRemove"}));
+            cleanup(() => this._emit("node-removed", { node }));
 
             // close panels
             cleanup(() => this.sendActionToCanvas("checkPanels"));
@@ -1685,6 +1702,7 @@ export class LGraph {
         this.reroutes.set(reroute.id, reroute);
         if (link) link.parentId = reroute.id;
         this.onGraphChanged({action: "rerouteAdd"});
+        this._emit("reroute-added", { reroute, link: link ?? null });
         this.setDirtyCanvas(true, true);
         return reroute;
     }
@@ -1709,6 +1727,7 @@ export class LGraph {
         }
         this.reroutes.delete(id);
         this.onGraphChanged({action: "rerouteRemove"});
+        this._emit("reroute-removed", { reroute });
         this.setDirtyCanvas(true, true);
         return true;
     }
@@ -1887,6 +1906,10 @@ export class LGraph {
         if (!data) {
             return;
         }
+        // listeners may inspect or migrate data, or cancel loading (returns null, graph unchanged)
+        if (this._emit("configuring", { data, keep_old: !!keep_old }, { cancelable: true })?.defaultPrevented) {
+            return null;
+        }
 
         if (!keep_old) {
             this.clear();
@@ -1993,6 +2016,7 @@ export class LGraph {
             LiteGraph.log_debug("lgraph", "configure", "skip onGraphChanged when configure passing version too!"); // atlasan DEBUG REMOVE
         }
         this.setDirtyCanvas(true, true);
+        this._emit("configured", { data, error });
         return error;
     }
 
@@ -2082,7 +2106,10 @@ export class LGraph {
             this._transaction.changed = true;
             return;
         }
-        if (opts.doSave) this.revision++; // a saved (user-level) change to the document
+        if (opts.doSave) {
+            this.revision++; // a saved (user-level) change to the document
+            this._emit("changed", { action: opts.action, revision: this.revision });
+        }
 
         if(opts.action) {
             LiteGraph.log_debug("Graph change",opts.action);

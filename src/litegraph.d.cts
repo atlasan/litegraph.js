@@ -408,6 +408,8 @@ export declare class LGraph {
     revision: number;
     /** id counters; last_node_id/last_link_id are accessors over these */
     state: LGraphState;
+    /** typed graph events */
+    readonly events: LGraphEventTarget<LGraphEventMap, LGraph>;
     /** reroutes by id */
     reroutes: Map<number, Reroute>;
     /** add a reroute to a link (nearest the target) */
@@ -641,7 +643,8 @@ export declare class LGraph {
      * @param data configure a graph from a JSON string
      * @returns if there was any error parsing
      */
-    configure(data: object, keep_old?: boolean): boolean | undefined;
+    /** returns null when a configuring listener cancelled loading */
+    configure(data: object, keep_old?: boolean): boolean | null | undefined;
     load(url: string): void;
 }
 
@@ -1170,6 +1173,49 @@ export declare class LGraphGroup {
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
 }
 
+/** An event delivered by LGraphEventTarget. */
+export declare class LGraphEvent<TDetail = unknown, TTarget = unknown> {
+    constructor(type: string, detail: TDetail, target: TTarget, cancelable?: boolean);
+    readonly type: string;
+    readonly detail: TDetail;
+    readonly target: TTarget;
+    readonly cancelable: boolean;
+    defaultPrevented: boolean;
+    preventDefault(): void;
+}
+
+/** Typed event hub; listener errors are reported, never thrown to the dispatcher. */
+export declare class LGraphEventTarget<TMap = Record<string, unknown>, TOwner = unknown> {
+    constructor(owner?: TOwner, onError?: (error: unknown, event: LGraphEvent) => void);
+    on<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
+    once<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: { signal?: AbortSignal }): () => void;
+    off<K extends keyof TMap & string>(type: K, listener: (event: LGraphEvent<TMap[K], TOwner>) => void): void;
+    has(type: keyof TMap & string): boolean;
+    dispatch<K extends keyof TMap & string>(type: K, detail: TMap[K], options?: { cancelable?: boolean }): LGraphEvent<TMap[K], TOwner>;
+}
+
+export interface LGraphEventMap {
+    /** before a document loads; mutate detail.data to migrate it, preventDefault() to cancel */
+    configuring: { data: Record<string, unknown>; keep_old: boolean };
+    configured: { data: Record<string, unknown>; error: boolean };
+    "node-added": { node: LGraphNode };
+    "node-removed": { node: LGraphNode };
+    /** a saved change (one per transaction) */
+    changed: { action: string; revision: number };
+    "reroute-added": { reroute: Reroute; link: LLink | null };
+    "reroute-removed": { reroute: Reroute };
+}
+
+export interface LGraphCanvasEventMap {
+    /** a dragged link was released on empty canvas; preventDefault() skips the default menu */
+    "link-dropped-on-empty": {
+        node: LGraphNode; slot: number; output: INodeOutputSlot | null; input: INodeInputSlot | null;
+        type: string | number | undefined; canvasX: number; canvasY: number; event: PointerEvent;
+    };
+    "subgraph-opened": { graph: LGraph; parent: LGraph | null };
+    "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
+}
+
 /** A point links are routed through; chains via parentId towards the origin. */
 export declare class Reroute {
     static radius: number;
@@ -1273,6 +1319,8 @@ export declare class LGraphCanvas {
     static clampWidgetNumber(value: number, options?: { min?: number; max?: number }): number;
     /** backing-store pixels per CSS pixel */
     pixel_ratio: number;
+    /** typed canvas events */
+    readonly events: LGraphEventTarget<LGraphCanvasEventMap, LGraphCanvas>;
     /** reroute being dragged */
     dragging_reroute: Reroute | null;
     /** draw a link through intermediate points (reroutes) */

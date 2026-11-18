@@ -52,6 +52,7 @@ lib_js_files = [
     "./src/global.js",
     "./src/litegraph.js",
     "./src/callbackhandler.js",
+    "./src/eventtarget.js",
     "./src/contextmenu.js",
     "./src/curveeditor.js",
     "./src/dragandscale.js",

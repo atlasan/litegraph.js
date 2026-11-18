@@ -4,6 +4,7 @@ import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CanvasPointer } from "./canvaspointer.js";
 import { LinkConnector } from "./linkconnector.js";
+import { LGraphEventTarget } from "./eventtarget.js";
 
 /**
  * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
@@ -311,6 +312,7 @@ export class LGraphCanvas {
         this.checkPanels();
         
         this.setDirty(true, true);
+        this._emit("subgraph-opened", { graph, parent: prev_graph });
     }
 
     /**
@@ -342,6 +344,7 @@ export class LGraphCanvas {
         // when close sub graph back to offset [0, 0] scale 1
         this.ds.offset = [0, 0]
         this.ds.scale = 1
+        this._emit("subgraph-closed", { graph, subgraph: prev_graph, node: subgraph_node ?? null });
     }
 
     /**
@@ -511,6 +514,19 @@ export class LGraphCanvas {
 
         this._mousedown_callback = null;
 
+    }
+
+    /**
+     * Typed canvas events: link-dropped-on-empty (cancelable: skip the default menu),
+     * subgraph-opened, subgraph-closed. See LGraphEventTarget.
+     */
+    get events() {
+        return this._events ??= new LGraphEventTarget(this, (error, event) =>
+            LiteGraph.log_error("lgraphcanvas", "event listener failed", event.type, error));
+    }
+
+    _emit(type, detail, options) {
+        return this._events?.has(type) ? this._events.dispatch(type, detail, options) : null;
     }
 
     // link-drag state, kept as fields for compatibility (see LinkConnector)
@@ -1779,8 +1795,10 @@ export class LGraphCanvas {
                     this.linkConnector.dropOnNode(node, slot);
                 } else {
                     const dropped = this.linkConnector.dropOnEmpty();
-                    // add menu when releasing link in empty space
-                    if (dropped && LiteGraph.release_link_on_empty_shows_menu) {
+                    const dropEvent = dropped && this._emit("link-dropped-on-empty",
+                        { ...dropped, canvasX: e.canvasX, canvasY: e.canvasY, event: e }, { cancelable: true });
+                    // add menu when releasing link in empty space (unless a listener handled it)
+                    if (dropped && !dropEvent?.defaultPrevented && LiteGraph.release_link_on_empty_shows_menu) {
                         if (e.shiftKey && this.allow_searchbox) {
                             if (dropped.output) {
                                 this.showSearchBox(e,{node_from: dropped.node, slot_from: dropped.output, type_filter_in: dropped.output.type});
