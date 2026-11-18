@@ -93,7 +93,7 @@ export class LGraphGroup {
         var b = this._bounding;
         return {
             title: this.title,
-            bounding: b.map((value) => Math.round(value)),
+            bounding: Array.from(b, (value) => Math.round(value)), // plain array, not a typed array (JSON tuple)
             color: this.color,
             font_size: this.font_size,
         };

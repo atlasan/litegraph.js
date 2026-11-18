@@ -20,6 +20,8 @@ import { LibraryManager } from "./librarymanager.js";
 export class LiteGraphClass {
 
     VERSION = "a0.11.1";
+    /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
+    SERIALIZATION_VERSION = 0.4;
 
     LLink = null; //LLink;
     LGraph = null; //LGraph;

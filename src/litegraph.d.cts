@@ -146,6 +146,8 @@ export type ContextMenuEventListener = (
 
 export interface LiteGraphAPI extends CallbackHost {
     VERSION: string;
+    /** numeric graph-document schema version written by LGraph.serialize */
+    SERIALIZATION_VERSION: number;
 
     CANVAS_GRID_SIZE: number;
 
@@ -372,7 +374,13 @@ export type serializedLGraph<
     links: TLink[];
     groups: TGroup[];
     config: LGraph["config"];
-    version: typeof LiteGraph.VERSION;
+    extra?: object;
+    /** numeric document schema version (0.4) */
+    version: number;
+    /** library version that wrote the document */
+    litegraph_version?: string;
+    /** fields from other editors are preserved verbatim */
+    [foreignField: string]: unknown;
 };
 
 export declare class LGraph {

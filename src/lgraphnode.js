@@ -188,7 +188,7 @@ export class LGraphNode {
         if (!v || v.length < 2) {
             return;
         }
-        this._pos ??= new Float32Array(10, 10);
+        this._pos ??= new Float32Array(2); // was Float32Array(10, 10): a 10-element array (Comfy e25c210)
         this._pos[0] = v[0];
         this._pos[1] = v[1];
     }
@@ -318,18 +318,17 @@ export class LGraphNode {
         var o = {
             id: this.id,
             type: this.type,
-            pos: this.pos,
-            size: this.size,
+            // plain arrays: typed arrays stringify as {"0":x,"1":y}
+            pos: this.pos ? Array.from(this.pos) : this.pos,
+            size: this.size ? Array.from(this.size) : this.size,
             flags: LiteGraph.cloneObject(this.flags),
             order: this.order,
             mode: this.mode,
         };
 
-        // special case for when there were errors
-        if (this.constructor === LGraphNode && this.last_serialization) {
-            LiteGraph.log_debug("lgraphnode", "serialize using last_serialization on LGraphNode");
-            return this.last_serialization;
-        }
+        // placeholder for a missing node type: serialize current state (position, title, links, ...)
+        // and keep every stored field this runtime does not model, so edits persist and nothing is lost
+        const placeholderSource = this.constructor === LGraphNode ? this.last_serialization : null;
 
         if (this.inputs) {
             o.inputs = LiteGraph.cloneObject(this.inputs);
@@ -368,6 +367,22 @@ export class LGraphNode {
         }
         if (this.shape) {
             o.shape = this.shape;
+        }
+
+        if (placeholderSource) {
+            LiteGraph.log_debug("lgraphnode", "serialize placeholder merging last_serialization");
+            o.type = placeholderSource.type;
+            for (const key in placeholderSource) {
+                if (!(key in o)) {
+                    o[key] = LiteGraph.cloneObject(placeholderSource[key]);
+                }
+            }
+            if (o.title === undefined) delete o.title;
+            for (const key of ["inputs", "outputs", "properties"]) {
+                const v = o[key];
+                const empty = Array.isArray(v) ? !v.length : (v && typeof v === "object" && !Object.keys(v).length);
+                if (!(key in placeholderSource) && empty) delete o[key];
+            }
         }
 
         let r = this.processCallbackHandlers("onSerialize",{
