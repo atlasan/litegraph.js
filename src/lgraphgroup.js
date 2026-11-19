@@ -162,13 +162,26 @@ export class LGraphGroup {
         var group_bounding = new Float32Array(4);
 
         this._groups = groups.filter((group) => {
+            if (group === this) return false; // a group is not its own child (move() would shift it twice)
             group.getBounding(group_bounding);
             return LiteGraph.isBoundingInsideRectangle(group_bounding, ...this._bounding)
             // return LiteGraph.overlapBounding(this._bounding, group_bounding, -LGraphGroup.opts.inclusion_distance);
         });
     }
 
-    getBounding = function(){ LiteGraph.LGraphNode.prototype.getBounding.call(this,...arguments); };
+    /**
+     * The group's rectangle [x, y, width, height]. A group's title is drawn inside its bounding
+     * (unlike a node's, which sits above `pos`), so the node implementation does not apply.
+     * @param {Float32Array|number[]} [out]
+     * @returns {Float32Array|number[]} out
+     */
+    getBounding(out = new Float32Array(4)) {
+        out[0] = this._bounding[0];
+        out[1] = this._bounding[1];
+        out[2] = this._bounding[2];
+        out[3] = this._bounding[3];
+        return out;
+    }
     isPointInside = LiteGraph.LGraphNode.prototype.isPointInside;
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }

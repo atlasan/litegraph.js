@@ -234,3 +234,9 @@ describe('document identity, revision and id counters', () => {
         loaded.clear();
     });
 });
+
+test('LiteGraph.VERSION matches package.json (single version source)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    expect(LiteGraph.VERSION).toBe(pkg.version);
+});

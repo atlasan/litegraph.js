@@ -22,6 +22,12 @@ export class LibraryManager {
         this.loading_promises = {};
         this.fs = null;
         this.path = null;
+        /**
+         * Allow `server.remote` URLs to be fetched and evaluated in Node.js.
+         * Off by default: `vm` is not a security boundary, so remote code runs with full process rights.
+         * @type {boolean}
+         */
+        this.allowServerRemoteCode = false;
 
         // Dynamically import Node.js modules (avoid errors in browsers)
         this.ready = isBrowser() ? Promise.resolve() : this.importNodeModules();
@@ -263,7 +269,15 @@ export class LibraryManager {
         });
     }
 
+    /**
+     * Fetch and evaluate a remote CommonJS script in Node.js.
+     * The `vm` context is NOT a sandbox (code can escape it), so this is refused unless
+     * `allowServerRemoteCode` was enabled explicitly for trusted sources.
+     */
     async loadServerRemoteScript(url) {
+        if (!this.allowServerRemoteCode) {
+            throw new Error(`Refusing to evaluate remote server code from ${url}; set LibraryManager.allowServerRemoteCode = true for trusted sources`);
+        }
         if (!this.fetch || !this.vm) throw new Error("Node.js modules 'fetch' and 'vm' are required.");
 
         console.log(`Fetching remote script: ${url}`);
@@ -363,9 +377,24 @@ export class LibraryManager {
     }
 
     /**
+     * True for an npm package spec this manager will pass to npm: a (scoped) package name,
+     * optionally followed by `@version-or-range`. Paths, URLs, git specs and flags are refused.
+     * @param {string} spec
+     * @returns {boolean}
+     */
+    static isSafePackageSpec(spec) {
+        return typeof spec === "string"
+            && /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[a-zA-Z0-9.^~*_-]+)?$/.test(spec)
+            && spec.length <= 214;
+    }
+
+    /**
      * Attempt to install NPM packages required for a library.
      * This method is only supported in Node.js or Bun environments.
+     * Runs without a shell: the command and every package spec are separate arguments, and
+     * package specs must pass {@link LibraryManager.isSafePackageSpec}.
      * @param {string} libKey The key of the library.
+     * @param {string|string[]} [command] Program and leading arguments, e.g. "npm install" or ["pnpm", "add"].
      * @returns {Promise<string>} The stdout from the npm install command.
      */
     async npmInstall(libKey, command="npm install") {
@@ -389,10 +418,19 @@ export class LibraryManager {
             console.error("Failed to import child_process:", e);
             return;
         }
-        const packages = library.npmPackages.join(" ");
-        const cmd = command + ` ${packages}`;
+        const packages = library.npmPackages.filter((name) => !name.startsWith("node:"));
+        const unsafe = packages.filter((name) => !LibraryManager.isSafePackageSpec(name));
+        if (unsafe.length) {
+            throw new Error(`Refusing to install unsafe package spec(s) for ${libKey}: ${unsafe.join(", ")}`);
+        }
+        const argv = (Array.isArray(command) ? command : String(command).trim().split(/\s+/)).filter(Boolean);
+        if (!argv.length) throw new Error("npmInstall needs a command, e.g. \"npm install\"");
+        const [program, ...programArgs] = argv;
+        // npm is a .cmd script on Windows, which execFile can only start through a shell; the
+        // arguments were validated above, so no shell metacharacters can reach it.
+        const useShell = typeof process !== "undefined" && process.platform === "win32";
         return new Promise((resolve, reject) => {
-            child_process.exec(cmd, (error, stdout, stderr) => {
+            child_process.execFile(program, [...programArgs, ...packages], { shell: useShell }, (error, stdout) => {
                 if (error) {
                     console.error(`Error installing npm packages for ${libKey}:`, error);
                     reject(error);
@@ -405,18 +443,29 @@ export class LibraryManager {
     }
 
     /**
-     * Wait until all registered libraries have been loaded.
-     * @returns {Promise<void>} Resolves when all libraries are in the "loaded" state.
+     * Wait until no library is loading any more.
+     * Rejects when a library ended in the "error" state, or when the timeout elapses first.
+     * @param {{timeout?: number}} [options] timeout in milliseconds; 0 waits without a limit.
+     * @returns {Promise<void>}
      */
-    async waitAllLibrariesLoaded() {
-        return new Promise((resolve) => {
-            const checkInterval = setInterval(() => {
-                if (this.areAllLibrariesLoaded()) {
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
+    async waitAllLibrariesLoaded({ timeout = 30000 } = {}) {
+        const settle = (async () => {
+            while (Object.keys(this.loading_promises).length) {
+                await Promise.allSettled(Object.values(this.loading_promises));
+            }
+            const failed = Object.keys(this.libraries_state).filter((key) => this.libraries_state[key] === "error");
+            if (failed.length) throw new Error(`Libraries failed to load: ${failed.join(", ")}`);
+        })();
+        if (!timeout) return settle;
+        let timer;
+        const expired = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Libraries still loading after ${timeout}ms: ${this.libraries_to_load.join(", ")}`)), timeout);
         });
+        try {
+            await Promise.race([settle, expired]);
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     /**

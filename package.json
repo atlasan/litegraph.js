@@ -86,7 +86,7 @@
         "uglifyjs": "^2.4.11",
         "vm": "^0.1.0",
         "winston": "^3.17.0",
-        "ws": "^8.18.0"
+        "ws": "^8.22.1"
     },
     "module": "build/litegraph.js",
     "exports": {

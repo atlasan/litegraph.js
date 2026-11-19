@@ -19,7 +19,7 @@ import { LibraryManager } from "./librarymanager.js";
  */
 export class LiteGraphClass {
 
-    VERSION = "a0.11.1";
+    VERSION = "0.10.10";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
     /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
