@@ -296,6 +296,8 @@ export class LiteGraphClass {
         this.CallbackHandler = CallbackHandler;
         this.LibraryManager ??= new LibraryManager();
 
+        this.setupPlatform();
+
         // base inclusion
         this.includeBasicNodes();
     }
@@ -324,15 +326,38 @@ export class LiteGraphClass {
 
     registerCallbackHandler() {
         this.callbackhandler_setup();
-        this.cb_handler.registerCallbackHandler(...arguments);
+        return this.cb_handler.registerCallbackHandler(...arguments);
     }
     unregisterCallbackHandler() {
         this.callbackhandler_setup();
-        this.cb_handler.unregisterCallbackHandler(...arguments);
+        return this.cb_handler.unregisterCallbackHandler(...arguments);
     }
     processCallbackHandlers() {
         this.callbackhandler_setup();
-        this.cb_handler.processCallbackHandlers(...arguments);
+        return this.cb_handler.processCallbackHandlers(...arguments);
+    }
+
+    /**
+     * Registers an extension (see ExtensionRegistry): commands, key bindings, settings and hooks
+     * that are all removed again by the returned disposer.
+     * @param {object} def
+     * @returns {() => void} disposer
+     */
+    registerExtension(def) {
+        this.setupPlatform();
+        return this.extensions.register(def);
+    }
+
+    /**
+     * Creates the platform registries once: shared operations (commands), key bindings,
+     * settings and extensions. Called by initialize(); safe to call earlier.
+     */
+    setupPlatform() {
+        this.callbackhandler_setup();
+        this.commands ??= new CommandRegistry();
+        this.keybindings ??= new KeybindingRegistry(this.commands);
+        this.settings ??= new SettingsRegistry();
+        this.extensions ??= new ExtensionRegistry(this);
     }
 
     // set logging debug_level
@@ -1751,6 +1776,640 @@ export class LGraphEventTarget {
         const entries = this._listeners.get(type);
         const index = entries?.indexOf(entry) ?? -1;
         if (index !== -1) entries.splice(index, 1);
+    }
+}
+
+/**
+ * Named, reusable operations shared by keybindings, menus, search and extensions.
+ *
+ * A command is `{id, run(ctx), label?, category?, when?(ctx), mutatesGraph?}`.
+ * - `ctx` is a plain object, usually `{canvas, graph, event}` (see {@link CommandRegistry#contextFor}).
+ * - `when(ctx)` decides if the command applies right now; a disabled command is not run.
+ * - `mutatesGraph: true` runs the command inside `graph.transact(label, ...)`, so whatever it changes
+ *   becomes one undo entry and one revision.
+ */
+export class CommandRegistry {
+
+    constructor() {
+        /** @type {Map<string, object>} */
+        this._commands = new Map();
+    }
+
+    /**
+     * Registers a command. Registering an id again replaces the previous command
+     * (the previous one is restored if the replacement is disposed).
+     * @param {object} command
+     * @returns {() => void} disposer that unregisters this command
+     */
+    register(command) {
+        if (!command || typeof command.id !== "string" || !command.id) {
+            throw new TypeError("command.id must be a non-empty string");
+        }
+        if (typeof command.run !== "function") {
+            throw new TypeError(`command ${command.id}: run must be a function`);
+        }
+        const entry = Object.freeze({
+            label: command.id,
+            category: "",
+            mutatesGraph: false,
+            ...command
+        });
+        const stack = this._commands.get(command.id) ?? [];
+        stack.push(entry);
+        this._commands.set(command.id, stack);
+        return () => {
+            const current = this._commands.get(command.id);
+            if (!current) return;
+            const index = current.indexOf(entry);
+            if (index !== -1) current.splice(index, 1);
+            if (!current.length) this._commands.delete(command.id);
+        };
+    }
+
+    /** @returns {object|null} the active command for an id */
+    get(id) {
+        const stack = this._commands.get(id);
+        return stack ? stack[stack.length - 1] : null;
+    }
+
+    has(id) {
+        return this._commands.has(id);
+    }
+
+    /** @returns {object[]} active commands, optionally filtered by category */
+    list({
+        category
+    } = {}) {
+        const all = [...this._commands.keys()].map((id) => this.get(id));
+        return category === undefined ? all : all.filter((command) => command.category === category);
+    }
+
+    /** Builds the usual context for a canvas: the graph shown on it and the selection. */
+    contextFor(canvas, extra = {}) {
+        const selected = canvas?.selected_nodes ? Object.values(canvas.selected_nodes) : [];
+        return {
+            canvas: canvas ?? null,
+            graph: canvas?.graph ?? null,
+            selectedNodes: selected,
+            ...extra
+        };
+    }
+
+    /** @returns {boolean} true when the command exists and its `when` accepts the context */
+    isEnabled(id, ctx = {}) {
+        const command = this.get(id);
+        if (!command) return false;
+        if (typeof command.when !== "function") return true;
+        try {
+            return !!command.when(ctx);
+        } catch (error) {
+            console.error?.(`command ${id}: when() failed`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Runs a command.
+     * @param {string} id
+     * @param {object} [ctx]
+     * @returns {{executed: boolean, result?: *}} executed is false when the command is unknown or disabled
+     * @throws whatever the command throws (a graph-mutating command's transaction is still closed)
+     */
+    execute(id, ctx = {}) {
+        const command = this.get(id);
+        if (!command || !this.isEnabled(id, ctx)) return {
+            executed: false
+        };
+        const graph = ctx.graph;
+        // the history entry is named after the command id (stable, unlike a translated label)
+        const result = command.mutatesGraph && typeof graph?.transact === "function" ?
+            graph.transact(command.id, () => command.run(ctx)) :
+            command.run(ctx);
+        return {
+            executed: true,
+            result
+        };
+    }
+}
+
+/**
+ * Key combinations mapped to command ids, in three layers:
+ * - defaults: added by core and extensions (`add`), later additions win, removable by disposer;
+ * - user bindings (`setUserBinding`), which override defaults;
+ * - user unbindings (`unsetDefault`), which hide one default without replacing it.
+ *
+ * Combos are written like "ctrl+shift+k", "f2", "arrowright", "shift+tab"; "mod" means ctrl
+ * (meta on macOS). Keys come from `KeyboardEvent.key`, compared case-insensitively.
+ * Key events coming from text inputs, text areas, selects and editable content are ignored.
+ */
+export class KeybindingRegistry {
+
+    static MODIFIERS = ["ctrl", "alt", "shift", "meta"];
+
+    /**
+     * @param {import("./commands.js").CommandRegistry} commands
+     */
+    constructor(commands) {
+        this.commands = commands;
+        /** @type {Array<{combo: string, commandId: string, allowRepeat: boolean}>} */
+        this._defaults = [];
+        /** @type {Map<string, string|null>} combo -> command id (null = explicitly unbound) */
+        this._user = new Map();
+        /** @type {Set<string>} "combo|commandId" defaults hidden by the user */
+        this._unset = new Set();
+    }
+
+    static isMac() {
+        return typeof navigator !== "undefined" && /Mac|iP(hone|ad|od)/.test(navigator.platform ?? "");
+    }
+
+    /**
+     * Normalizes a combo string: lower case, modifiers in a fixed order, "mod" resolved.
+     * @param {string} combo
+     * @returns {string}
+     */
+    static normalize(combo) {
+        if (typeof combo !== "string" || !combo.trim()) throw new TypeError("combo must be a non-empty string");
+        const parts = combo.toLowerCase().split("+").map((part) => part.trim());
+        // "ctrl++" means ctrl and the plus key
+        if (combo.endsWith("++")) parts.splice(parts.length - 2, 2, "+");
+        const modifiers = new Set();
+        let key = null;
+        for (const part of parts) {
+            if (!part) continue;
+            const name = part === "mod" ? (KeybindingRegistry.isMac() ? "meta" : "ctrl") :
+                part === "control" ? "ctrl" :
+                part === "cmd" || part === "command" ? "meta" :
+                part === "option" ? "alt" :
+                part;
+            if (KeybindingRegistry.MODIFIERS.includes(name)) modifiers.add(name);
+            else if (key === null) key = name === "space" ? " " : name === "esc" ? "escape" : name;
+            else throw new Error(`combo "${combo}" has more than one key`);
+        }
+        if (key === null) throw new Error(`combo "${combo}" has no key`);
+        return [...KeybindingRegistry.MODIFIERS.filter((m) => modifiers.has(m)), key].join("+");
+    }
+
+    /** @param {KeyboardEvent} event @returns {string|null} normalized combo, null for a bare modifier */
+    static fromEvent(event) {
+        const key = String(event.key ?? "").toLowerCase();
+        if (!key || ["control", "alt", "shift", "meta"].includes(key)) return null;
+        const mods = [];
+        if (event.ctrlKey) mods.push("ctrl");
+        if (event.altKey) mods.push("alt");
+        if (event.shiftKey) mods.push("shift");
+        if (event.metaKey) mods.push("meta");
+        return [...mods, key].join("+");
+    }
+
+    /** True for key events typed into a text field, select or editable element. */
+    static isTextEntry(event) {
+        const target = event?.target;
+        if (!target || typeof target !== "object") return false;
+        const tag = String(target.localName ?? target.tagName ?? "").toLowerCase();
+        return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable === true;
+    }
+
+    /**
+     * Adds a default binding.
+     * @param {{combo: string, commandId: string, allowRepeat?: boolean}} binding
+     * @returns {() => void} disposer
+     */
+    add({
+        combo,
+        commandId,
+        allowRepeat = false
+    }) {
+        if (typeof commandId !== "string" || !commandId) throw new TypeError("commandId must be a non-empty string");
+        const entry = {
+            combo: KeybindingRegistry.normalize(combo),
+            commandId,
+            allowRepeat: !!allowRepeat
+        };
+        this._defaults.push(entry);
+        return () => {
+            const index = this._defaults.indexOf(entry);
+            if (index !== -1) this._defaults.splice(index, 1);
+        };
+    }
+
+    /** Binds a combo for the user, overriding defaults; `commandId: null` disables the combo. */
+    setUserBinding(combo, commandId) {
+        this._user.set(KeybindingRegistry.normalize(combo), commandId ?? null);
+    }
+
+    clearUserBinding(combo) {
+        this._user.delete(KeybindingRegistry.normalize(combo));
+    }
+
+    /** Hides one default binding (without binding the combo to something else). */
+    unsetDefault(combo, commandId) {
+        this._unset.add(`${KeybindingRegistry.normalize(combo)}|${commandId}`);
+    }
+
+    /** User layer as plain data, for persistence. */
+    exportUserLayer() {
+        return {
+            bindings: Object.fromEntries(this._user),
+            unset: [...this._unset]
+        };
+    }
+
+    importUserLayer(data) {
+        this._user = new Map(Object.entries(data?.bindings ?? {}));
+        this._unset = new Set(Array.isArray(data?.unset) ? data.unset : []);
+    }
+
+    /**
+     * Candidate bindings for a combo, most specific first: the user binding, then defaults
+     * from the latest added to the earliest.
+     * @returns {Array<{combo: string, commandId: string, allowRepeat: boolean}>}
+     */
+    resolve(combo) {
+        const normalized = KeybindingRegistry.normalize(combo);
+        if (this._user.has(normalized)) {
+            const commandId = this._user.get(normalized);
+            return commandId ? [{
+                combo: normalized,
+                commandId,
+                allowRepeat: true
+            }] : [];
+        }
+        return this._defaults
+            .filter((entry) => entry.combo === normalized && !this._unset.has(`${normalized}|${entry.commandId}`))
+            .reverse();
+    }
+
+    /** @returns {string[]} combos currently bound to a command (for menus and help) */
+    combosFor(commandId) {
+        const combos = new Set();
+        for (const entry of this._defaults) {
+            if (entry.commandId === commandId && !this._user.has(entry.combo) && !this._unset.has(`${entry.combo}|${commandId}`)) combos.add(entry.combo);
+        }
+        for (const [combo, id] of this._user)
+            if (id === commandId) combos.add(combo);
+        return [...combos];
+    }
+
+    /**
+     * Runs the command bound to a keydown event, if any applies.
+     * The first candidate whose command is enabled for the context runs; others are skipped.
+     * @param {KeyboardEvent} event
+     * @param {object} ctx command context (see CommandRegistry.contextFor)
+     * @returns {boolean} true when a command ran (the caller should stop default handling)
+     */
+    handleKeyDown(event, ctx = {}) {
+        if (!this.commands || KeybindingRegistry.isTextEntry(event)) return false;
+        const combo = KeybindingRegistry.fromEvent(event);
+        if (!combo) return false;
+        for (const binding of this.resolve(combo)) {
+            if (event.repeat && !binding.allowRepeat) continue;
+            const commandCtx = {
+                ...ctx,
+                event
+            };
+            if (!this.commands.isEnabled(binding.commandId, commandCtx)) continue;
+            this.commands.execute(binding.commandId, commandCtx);
+            return true;
+        }
+        return false;
+    }
+}
+
+/**
+ * Declared, persistent settings.
+ *
+ * `define({id, default, type?, name?, tooltip?, category?, options?, migrate?, onChange?, bind?})`
+ * - `id` is dotted ("LiteGraph.Canvas.SnapToGrid"); its first segments give a default category.
+ * - `migrate(storedValue)` upgrades a value saved by an older version; the result is saved back.
+ * - `onChange(value, previous)` runs on every change (and once at define time with the loaded value).
+ * - `bind: {target, key}` mirrors the value onto an existing property (e.g. a `LiteGraph.*` flag):
+ *   the property's current value is the default unless `default` is given, and set() writes it.
+ *
+ * Values are kept even for settings not defined yet, so a stored value can be loaded before the
+ * extension that defines it. Persistence goes through a storage adapter `{load(): object, save(values)}`.
+ */
+export class SettingsRegistry {
+
+    constructor(storage = null) {
+        /** @type {Map<string, object>} */
+        this._defs = new Map();
+        /** @type {Record<string, *>} */
+        this._values = {};
+        this._storage = null;
+        if (storage) this.setStorage(storage);
+    }
+
+    /** An adapter over `localStorage` (no-op when storage is unavailable). */
+    static localStorageAdapter(key = "litegraph.settings") {
+        return {
+            load() {
+                try {
+                    return JSON.parse(globalThis.localStorage?.getItem(key) ?? "null") ?? {};
+                } catch {
+                    return {};
+                }
+            },
+            save(values) {
+                try {
+                    globalThis.localStorage?.setItem(key, JSON.stringify(values));
+                } catch {
+                    /* unavailable: keep in memory */ }
+            },
+        };
+    }
+
+    /** Uses a storage adapter and loads its values (defined settings are re-applied). */
+    setStorage(storage) {
+        this._storage = storage;
+        const loaded = storage?.load?.() ?? {};
+        this._values = (loaded && typeof loaded === "object") ? {
+            ...loaded
+        } : {};
+        for (const def of this._defs.values()) this._applyLoaded(def);
+    }
+
+    _save() {
+        this._storage?.save?.({
+            ...this._values
+        });
+    }
+
+    _applyLoaded(def) {
+        // the first application reports no previous value
+        const previous = def._initialized === true ? this.get(def.id) : undefined;
+        if (Object.hasOwn(this._values, def.id) && typeof def.migrate === "function") {
+            const migrated = def.migrate(this._values[def.id]);
+            if (migrated !== this._values[def.id]) {
+                this._values[def.id] = migrated;
+                this._save();
+            }
+        }
+        const value = this.get(def.id);
+        if (def.bind) def.bind.target[def.bind.key] = value;
+        if (value !== previous || def._initialized !== true) {
+            def._initialized = true;
+            this._notify(def, value, previous);
+        }
+    }
+
+    _notify(def, value, previous) {
+        if (typeof def.onChange !== "function") return;
+        try {
+            def.onChange(value, previous);
+        } catch (error) {
+            console.error?.(`setting ${def.id}: onChange failed`, error);
+        }
+    }
+
+    /**
+     * @param {object} def
+     * @returns {() => void} disposer removing the definition (a stored value is kept)
+     */
+    define(def) {
+        if (!def || typeof def.id !== "string" || !def.id) throw new TypeError("setting id must be a non-empty string");
+        if (this._defs.has(def.id)) throw new Error(`setting ${def.id} is already defined`);
+        if (def.bind && (typeof def.bind.target !== "object" && typeof def.bind.target !== "function" || !def.bind.key)) {
+            throw new TypeError(`setting ${def.id}: bind needs {target, key}`);
+        }
+        const defaultValue = def.default !== undefined ? def.default : def.bind ? def.bind.target[def.bind.key] : undefined;
+        const entry = {
+            type: typeof defaultValue === "boolean" ? "boolean" : typeof defaultValue === "number" ? "number" : "text",
+            name: def.id,
+            category: def.id.split(".").slice(0, -1),
+            ...def,
+            default: defaultValue,
+        };
+        this._defs.set(def.id, entry);
+        this._applyLoaded(entry);
+        return () => {
+            if (this._defs.get(def.id) === entry) this._defs.delete(def.id);
+        };
+    }
+
+    has(id) {
+        return this._defs.has(id);
+    }
+
+    /** @returns {object|null} definition */
+    getDefinition(id) {
+        return this._defs.get(id) ?? null;
+    }
+
+    /** @returns {object[]} definitions, optionally only those whose id starts with a prefix */
+    list(prefix = "") {
+        return [...this._defs.values()].filter((def) => def.id.startsWith(prefix));
+    }
+
+    /** Current value: stored value if any, else the default. */
+    get(id) {
+        if (Object.hasOwn(this._values, id)) return this._values[id];
+        const def = this._defs.get(id);
+        if (!def) return undefined;
+        return typeof def.default === "function" ? def.default() : def.default;
+    }
+
+    /**
+     * Sets and persists a value. Combo settings refuse values outside their options.
+     * @returns {boolean} true when the value changed
+     */
+    set(id, value) {
+        const def = this._defs.get(id);
+        if (def?.type === "combo" && Array.isArray(def.options)) {
+            const allowed = def.options.map((option) => (option && typeof option === "object" ? option.value : option));
+            if (!allowed.includes(value)) throw new RangeError(`setting ${id}: ${JSON.stringify(value)} is not an option`);
+        }
+        const previous = this.get(id);
+        this._values[id] = value;
+        this._save();
+        if (def?.bind) def.bind.target[def.bind.key] = value;
+        if (def && previous !== value) this._notify(def, value, previous);
+        return previous !== value;
+    }
+
+    /** Forgets the stored value, going back to the default. */
+    reset(id) {
+        if (!Object.hasOwn(this._values, id)) return false;
+        const previous = this.get(id);
+        delete this._values[id];
+        this._save();
+        const def = this._defs.get(id);
+        const value = this.get(id);
+        if (def?.bind) def.bind.target[def.bind.key] = value;
+        if (def && value !== previous) this._notify(def, value, previous);
+        return true;
+    }
+}
+
+/**
+ * Extensions with identity and clean removal.
+ *
+ * ```js
+ * const dispose = LiteGraph.registerExtension({
+ *     name: "my.extension",
+ *     commands: [{ id: "my.hello", run: (ctx) => ..., mutatesGraph: true }],
+ *     keybindings: [{ combo: "ctrl+h", commandId: "my.hello" }],
+ *     settings: [{ id: "My.Flag", default: true }],
+ *     setup(ctx) {
+ *         ctx.on("onNodeTypeRegistered", (info, type) => ...);           // LiteGraph-level hook
+ *         ctx.onCanvas((canvas, c) => c.on("onKeyDown", (info, e) => ...)); // every canvas, now and later
+ *         return () => { ... };                                            // optional extra cleanup
+ *     },
+ * });
+ * dispose(); // removes every command, binding, setting and hook registered above
+ * ```
+ *
+ * Everything an extension registers goes through its context, so disposing it undoes all of it,
+ * in reverse order. Hooks are CallbackHandler registrations (`opts.priority`, `prevent_default`,
+ * `stop_replication` keep working). Names listed in `disabled` are skipped at registration time.
+ */
+export class ExtensionRegistry {
+
+    /**
+     * @param {object} host - normally the LiteGraph instance: provides registerCallbackHandler,
+     *   unregisterCallbackHandler, commands, keybindings, settings
+     */
+    constructor(host) {
+        this.host = host;
+        /** @type {Map<string, {def: object, dispose: () => void}>} */
+        this._extensions = new Map();
+        /** names that must not be registered */
+        this.disabled = new Set();
+        /** @type {Set<object>} live canvases */
+        this._canvases = new Set();
+        /** @type {Set<(canvas: object) => void>} */
+        this._canvasListeners = new Set();
+    }
+
+    /** Called by LGraphCanvas on construction; also usable for canvases made before the registry. */
+    attachCanvas(canvas) {
+        if (!canvas || this._canvases.has(canvas)) return;
+        this._canvases.add(canvas);
+        canvas.events?.on?.("disposed", () => this._canvases.delete(canvas));
+        for (const listener of [...this._canvasListeners]) listener(canvas);
+    }
+
+    /** @returns {object[]} live canvases known to the registry */
+    get canvases() {
+        return [...this._canvases];
+    }
+
+    has(name) {
+        return this._extensions.has(name);
+    }
+
+    /** @returns {string[]} registered extension names, in registration order */
+    list() {
+        return [...this._extensions.keys()];
+    }
+
+    get(name) {
+        return this._extensions.get(name)?.def ?? null;
+    }
+
+    /**
+     * Registers an extension.
+     * @param {object} def - {name, version?, requires?: string[], commands?, keybindings?, settings?, setup?(ctx)}
+     * @returns {() => void} disposer (a no-op when the extension is disabled)
+     * @throws when the name is missing or taken, a required extension is missing, or setup throws
+     *   (whatever was registered before the failure is undone first)
+     */
+    register(def) {
+        if (!def || typeof def.name !== "string" || !def.name) throw new TypeError("extension name must be a non-empty string");
+        if (this._extensions.has(def.name)) throw new Error(`extension ${def.name} is already registered`);
+        if (this.disabled.has(def.name)) {
+            console.info?.(`extension ${def.name} is disabled, not registered`);
+            return () => {};
+        }
+        for (const required of def.requires ?? []) {
+            if (!this._extensions.has(required)) throw new Error(`extension ${def.name} requires ${required}`);
+        }
+
+        const disposers = [];
+        const track = (dispose) => {
+            if (typeof dispose === "function") disposers.push(dispose);
+            return dispose;
+        };
+        const disposeAll = () => {
+            while (disposers.length) {
+                const dispose = disposers.pop();
+                try {
+                    dispose();
+                } catch (error) {
+                    console.error?.(`extension ${def.name}: cleanup failed`, error);
+                }
+            }
+        };
+        const host = this.host;
+        const hookOn = (target, name, fn, opts) => {
+            const id = target.registerCallbackHandler(name, fn, opts);
+            if (id === false || id === undefined) throw new Error(`extension ${def.name}: could not register ${name}`);
+            return track(() => target.unregisterCallbackHandler(name, id));
+        };
+        const ctx = {
+            name: def.name,
+            host,
+            commands: {
+                register: (command) => track(host.commands.register(command))
+            },
+            keybindings: {
+                add: (binding) => track(host.keybindings.add(binding))
+            },
+            settings: {
+                define: (setting) => track(host.settings.define(setting)),
+                get: (id) => host.settings.get(id),
+                set: (id, value) => host.settings.set(id, value),
+            },
+            /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
+            on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Hook on any object with a CallbackHandler (graph, node, canvas). */
+            onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
+            /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
+            onCanvas: (fn) => {
+                const apply = (canvas) => {
+                    const canvasCtx = {
+                        on: (name, handler, opts) => hookOn(canvas, name, handler, opts)
+                    };
+                    track(fn(canvas, canvasCtx));
+                };
+                this._canvasListeners.add(apply);
+                track(() => this._canvasListeners.delete(apply));
+                for (const canvas of this._canvases) apply(canvas);
+            },
+            /** Adds a cleanup function run on dispose. */
+            addDisposer: (dispose) => track(dispose),
+        };
+
+        try {
+            for (const setting of def.settings ?? []) ctx.settings.define(setting);
+            for (const command of def.commands ?? []) ctx.commands.register(command);
+            for (const binding of def.keybindings ?? []) ctx.keybindings.add(binding);
+            if (typeof def.setup === "function") track(def.setup(ctx));
+        } catch (error) {
+            disposeAll();
+            throw error;
+        }
+
+        let disposed = false;
+        const dispose = () => {
+            if (disposed) return;
+            disposed = true;
+            disposeAll();
+            if (this._extensions.get(def.name)?.dispose === dispose) this._extensions.delete(def.name);
+        };
+        this._extensions.set(def.name, {
+            def,
+            dispose
+        });
+        return dispose;
+    }
+
+    /** Disposes an extension by name. @returns {boolean} true if it was registered */
+    unregister(name) {
+        const entry = this._extensions.get(name);
+        if (!entry) return false;
+        entry.dispose();
+        return true;
     }
 }
 
@@ -5964,6 +6623,8 @@ export class LGraphCanvas {
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct", {
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
+        // extensions registered through LiteGraph.registerExtension see every canvas
+        LiteGraph.extensions?.attachCanvas(this);
     }
 
     callbackhandler_setup() {
@@ -8054,6 +8715,13 @@ export class LGraphCanvas {
         LiteGraph.log_verbose("lgraphcanvas", "processKey", e);
 
         if (e.target.localName == "input") {
+            return;
+        }
+
+        // bound key combos run their command instead of the built-in handling below
+        if (e.type == "keydown" && LiteGraph.keybindings?.handleKeyDown(e, LiteGraph.commands.contextFor(this))) {
+            e.preventDefault();
+            e.stopImmediatePropagation?.();
             return;
         }
 

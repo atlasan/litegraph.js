@@ -296,6 +296,8 @@ class LiteGraphClass {
         this.CallbackHandler = CallbackHandler;
         this.LibraryManager ??= new LibraryManager();
 
+        this.setupPlatform();
+
         // base inclusion
         this.includeBasicNodes();
     }
@@ -324,15 +326,38 @@ class LiteGraphClass {
 
     registerCallbackHandler() {
         this.callbackhandler_setup();
-        this.cb_handler.registerCallbackHandler(...arguments);
+        return this.cb_handler.registerCallbackHandler(...arguments);
     }
     unregisterCallbackHandler() {
         this.callbackhandler_setup();
-        this.cb_handler.unregisterCallbackHandler(...arguments);
+        return this.cb_handler.unregisterCallbackHandler(...arguments);
     }
     processCallbackHandlers() {
         this.callbackhandler_setup();
-        this.cb_handler.processCallbackHandlers(...arguments);
+        return this.cb_handler.processCallbackHandlers(...arguments);
+    }
+
+    /**
+     * Registers an extension (see ExtensionRegistry): commands, key bindings, settings and hooks
+     * that are all removed again by the returned disposer.
+     * @param {object} def
+     * @returns {() => void} disposer
+     */
+    registerExtension(def) {
+        this.setupPlatform();
+        return this.extensions.register(def);
+    }
+
+    /**
+     * Creates the platform registries once: shared operations (commands), key bindings,
+     * settings and extensions. Called by initialize(); safe to call earlier.
+     */
+    setupPlatform() {
+        this.callbackhandler_setup();
+        this.commands ??= new CommandRegistry();
+        this.keybindings ??= new KeybindingRegistry(this.commands);
+        this.settings ??= new SettingsRegistry();
+        this.extensions ??= new ExtensionRegistry(this);
     }
 
     // set logging debug_level
@@ -1751,6 +1776,640 @@ class LGraphEventTarget {
         const entries = this._listeners.get(type);
         const index = entries?.indexOf(entry) ?? -1;
         if (index !== -1) entries.splice(index, 1);
+    }
+}
+
+/**
+ * Named, reusable operations shared by keybindings, menus, search and extensions.
+ *
+ * A command is `{id, run(ctx), label?, category?, when?(ctx), mutatesGraph?}`.
+ * - `ctx` is a plain object, usually `{canvas, graph, event}` (see {@link CommandRegistry#contextFor}).
+ * - `when(ctx)` decides if the command applies right now; a disabled command is not run.
+ * - `mutatesGraph: true` runs the command inside `graph.transact(label, ...)`, so whatever it changes
+ *   becomes one undo entry and one revision.
+ */
+class CommandRegistry {
+
+    constructor() {
+        /** @type {Map<string, object>} */
+        this._commands = new Map();
+    }
+
+    /**
+     * Registers a command. Registering an id again replaces the previous command
+     * (the previous one is restored if the replacement is disposed).
+     * @param {object} command
+     * @returns {() => void} disposer that unregisters this command
+     */
+    register(command) {
+        if (!command || typeof command.id !== "string" || !command.id) {
+            throw new TypeError("command.id must be a non-empty string");
+        }
+        if (typeof command.run !== "function") {
+            throw new TypeError(`command ${command.id}: run must be a function`);
+        }
+        const entry = Object.freeze({
+            label: command.id,
+            category: "",
+            mutatesGraph: false,
+            ...command
+        });
+        const stack = this._commands.get(command.id) ?? [];
+        stack.push(entry);
+        this._commands.set(command.id, stack);
+        return () => {
+            const current = this._commands.get(command.id);
+            if (!current) return;
+            const index = current.indexOf(entry);
+            if (index !== -1) current.splice(index, 1);
+            if (!current.length) this._commands.delete(command.id);
+        };
+    }
+
+    /** @returns {object|null} the active command for an id */
+    get(id) {
+        const stack = this._commands.get(id);
+        return stack ? stack[stack.length - 1] : null;
+    }
+
+    has(id) {
+        return this._commands.has(id);
+    }
+
+    /** @returns {object[]} active commands, optionally filtered by category */
+    list({
+        category
+    } = {}) {
+        const all = [...this._commands.keys()].map((id) => this.get(id));
+        return category === undefined ? all : all.filter((command) => command.category === category);
+    }
+
+    /** Builds the usual context for a canvas: the graph shown on it and the selection. */
+    contextFor(canvas, extra = {}) {
+        const selected = canvas?.selected_nodes ? Object.values(canvas.selected_nodes) : [];
+        return {
+            canvas: canvas ?? null,
+            graph: canvas?.graph ?? null,
+            selectedNodes: selected,
+            ...extra
+        };
+    }
+
+    /** @returns {boolean} true when the command exists and its `when` accepts the context */
+    isEnabled(id, ctx = {}) {
+        const command = this.get(id);
+        if (!command) return false;
+        if (typeof command.when !== "function") return true;
+        try {
+            return !!command.when(ctx);
+        } catch (error) {
+            console.error?.(`command ${id}: when() failed`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Runs a command.
+     * @param {string} id
+     * @param {object} [ctx]
+     * @returns {{executed: boolean, result?: *}} executed is false when the command is unknown or disabled
+     * @throws whatever the command throws (a graph-mutating command's transaction is still closed)
+     */
+    execute(id, ctx = {}) {
+        const command = this.get(id);
+        if (!command || !this.isEnabled(id, ctx)) return {
+            executed: false
+        };
+        const graph = ctx.graph;
+        // the history entry is named after the command id (stable, unlike a translated label)
+        const result = command.mutatesGraph && typeof graph?.transact === "function" ?
+            graph.transact(command.id, () => command.run(ctx)) :
+            command.run(ctx);
+        return {
+            executed: true,
+            result
+        };
+    }
+}
+
+/**
+ * Key combinations mapped to command ids, in three layers:
+ * - defaults: added by core and extensions (`add`), later additions win, removable by disposer;
+ * - user bindings (`setUserBinding`), which override defaults;
+ * - user unbindings (`unsetDefault`), which hide one default without replacing it.
+ *
+ * Combos are written like "ctrl+shift+k", "f2", "arrowright", "shift+tab"; "mod" means ctrl
+ * (meta on macOS). Keys come from `KeyboardEvent.key`, compared case-insensitively.
+ * Key events coming from text inputs, text areas, selects and editable content are ignored.
+ */
+class KeybindingRegistry {
+
+    static MODIFIERS = ["ctrl", "alt", "shift", "meta"];
+
+    /**
+     * @param {import("./commands.js").CommandRegistry} commands
+     */
+    constructor(commands) {
+        this.commands = commands;
+        /** @type {Array<{combo: string, commandId: string, allowRepeat: boolean}>} */
+        this._defaults = [];
+        /** @type {Map<string, string|null>} combo -> command id (null = explicitly unbound) */
+        this._user = new Map();
+        /** @type {Set<string>} "combo|commandId" defaults hidden by the user */
+        this._unset = new Set();
+    }
+
+    static isMac() {
+        return typeof navigator !== "undefined" && /Mac|iP(hone|ad|od)/.test(navigator.platform ?? "");
+    }
+
+    /**
+     * Normalizes a combo string: lower case, modifiers in a fixed order, "mod" resolved.
+     * @param {string} combo
+     * @returns {string}
+     */
+    static normalize(combo) {
+        if (typeof combo !== "string" || !combo.trim()) throw new TypeError("combo must be a non-empty string");
+        const parts = combo.toLowerCase().split("+").map((part) => part.trim());
+        // "ctrl++" means ctrl and the plus key
+        if (combo.endsWith("++")) parts.splice(parts.length - 2, 2, "+");
+        const modifiers = new Set();
+        let key = null;
+        for (const part of parts) {
+            if (!part) continue;
+            const name = part === "mod" ? (KeybindingRegistry.isMac() ? "meta" : "ctrl") :
+                part === "control" ? "ctrl" :
+                part === "cmd" || part === "command" ? "meta" :
+                part === "option" ? "alt" :
+                part;
+            if (KeybindingRegistry.MODIFIERS.includes(name)) modifiers.add(name);
+            else if (key === null) key = name === "space" ? " " : name === "esc" ? "escape" : name;
+            else throw new Error(`combo "${combo}" has more than one key`);
+        }
+        if (key === null) throw new Error(`combo "${combo}" has no key`);
+        return [...KeybindingRegistry.MODIFIERS.filter((m) => modifiers.has(m)), key].join("+");
+    }
+
+    /** @param {KeyboardEvent} event @returns {string|null} normalized combo, null for a bare modifier */
+    static fromEvent(event) {
+        const key = String(event.key ?? "").toLowerCase();
+        if (!key || ["control", "alt", "shift", "meta"].includes(key)) return null;
+        const mods = [];
+        if (event.ctrlKey) mods.push("ctrl");
+        if (event.altKey) mods.push("alt");
+        if (event.shiftKey) mods.push("shift");
+        if (event.metaKey) mods.push("meta");
+        return [...mods, key].join("+");
+    }
+
+    /** True for key events typed into a text field, select or editable element. */
+    static isTextEntry(event) {
+        const target = event?.target;
+        if (!target || typeof target !== "object") return false;
+        const tag = String(target.localName ?? target.tagName ?? "").toLowerCase();
+        return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable === true;
+    }
+
+    /**
+     * Adds a default binding.
+     * @param {{combo: string, commandId: string, allowRepeat?: boolean}} binding
+     * @returns {() => void} disposer
+     */
+    add({
+        combo,
+        commandId,
+        allowRepeat = false
+    }) {
+        if (typeof commandId !== "string" || !commandId) throw new TypeError("commandId must be a non-empty string");
+        const entry = {
+            combo: KeybindingRegistry.normalize(combo),
+            commandId,
+            allowRepeat: !!allowRepeat
+        };
+        this._defaults.push(entry);
+        return () => {
+            const index = this._defaults.indexOf(entry);
+            if (index !== -1) this._defaults.splice(index, 1);
+        };
+    }
+
+    /** Binds a combo for the user, overriding defaults; `commandId: null` disables the combo. */
+    setUserBinding(combo, commandId) {
+        this._user.set(KeybindingRegistry.normalize(combo), commandId ?? null);
+    }
+
+    clearUserBinding(combo) {
+        this._user.delete(KeybindingRegistry.normalize(combo));
+    }
+
+    /** Hides one default binding (without binding the combo to something else). */
+    unsetDefault(combo, commandId) {
+        this._unset.add(`${KeybindingRegistry.normalize(combo)}|${commandId}`);
+    }
+
+    /** User layer as plain data, for persistence. */
+    exportUserLayer() {
+        return {
+            bindings: Object.fromEntries(this._user),
+            unset: [...this._unset]
+        };
+    }
+
+    importUserLayer(data) {
+        this._user = new Map(Object.entries(data?.bindings ?? {}));
+        this._unset = new Set(Array.isArray(data?.unset) ? data.unset : []);
+    }
+
+    /**
+     * Candidate bindings for a combo, most specific first: the user binding, then defaults
+     * from the latest added to the earliest.
+     * @returns {Array<{combo: string, commandId: string, allowRepeat: boolean}>}
+     */
+    resolve(combo) {
+        const normalized = KeybindingRegistry.normalize(combo);
+        if (this._user.has(normalized)) {
+            const commandId = this._user.get(normalized);
+            return commandId ? [{
+                combo: normalized,
+                commandId,
+                allowRepeat: true
+            }] : [];
+        }
+        return this._defaults
+            .filter((entry) => entry.combo === normalized && !this._unset.has(`${normalized}|${entry.commandId}`))
+            .reverse();
+    }
+
+    /** @returns {string[]} combos currently bound to a command (for menus and help) */
+    combosFor(commandId) {
+        const combos = new Set();
+        for (const entry of this._defaults) {
+            if (entry.commandId === commandId && !this._user.has(entry.combo) && !this._unset.has(`${entry.combo}|${commandId}`)) combos.add(entry.combo);
+        }
+        for (const [combo, id] of this._user)
+            if (id === commandId) combos.add(combo);
+        return [...combos];
+    }
+
+    /**
+     * Runs the command bound to a keydown event, if any applies.
+     * The first candidate whose command is enabled for the context runs; others are skipped.
+     * @param {KeyboardEvent} event
+     * @param {object} ctx command context (see CommandRegistry.contextFor)
+     * @returns {boolean} true when a command ran (the caller should stop default handling)
+     */
+    handleKeyDown(event, ctx = {}) {
+        if (!this.commands || KeybindingRegistry.isTextEntry(event)) return false;
+        const combo = KeybindingRegistry.fromEvent(event);
+        if (!combo) return false;
+        for (const binding of this.resolve(combo)) {
+            if (event.repeat && !binding.allowRepeat) continue;
+            const commandCtx = {
+                ...ctx,
+                event
+            };
+            if (!this.commands.isEnabled(binding.commandId, commandCtx)) continue;
+            this.commands.execute(binding.commandId, commandCtx);
+            return true;
+        }
+        return false;
+    }
+}
+
+/**
+ * Declared, persistent settings.
+ *
+ * `define({id, default, type?, name?, tooltip?, category?, options?, migrate?, onChange?, bind?})`
+ * - `id` is dotted ("LiteGraph.Canvas.SnapToGrid"); its first segments give a default category.
+ * - `migrate(storedValue)` upgrades a value saved by an older version; the result is saved back.
+ * - `onChange(value, previous)` runs on every change (and once at define time with the loaded value).
+ * - `bind: {target, key}` mirrors the value onto an existing property (e.g. a `LiteGraph.*` flag):
+ *   the property's current value is the default unless `default` is given, and set() writes it.
+ *
+ * Values are kept even for settings not defined yet, so a stored value can be loaded before the
+ * extension that defines it. Persistence goes through a storage adapter `{load(): object, save(values)}`.
+ */
+class SettingsRegistry {
+
+    constructor(storage = null) {
+        /** @type {Map<string, object>} */
+        this._defs = new Map();
+        /** @type {Record<string, *>} */
+        this._values = {};
+        this._storage = null;
+        if (storage) this.setStorage(storage);
+    }
+
+    /** An adapter over `localStorage` (no-op when storage is unavailable). */
+    static localStorageAdapter(key = "litegraph.settings") {
+        return {
+            load() {
+                try {
+                    return JSON.parse(globalThis.localStorage?.getItem(key) ?? "null") ?? {};
+                } catch {
+                    return {};
+                }
+            },
+            save(values) {
+                try {
+                    globalThis.localStorage?.setItem(key, JSON.stringify(values));
+                } catch {
+                    /* unavailable: keep in memory */ }
+            },
+        };
+    }
+
+    /** Uses a storage adapter and loads its values (defined settings are re-applied). */
+    setStorage(storage) {
+        this._storage = storage;
+        const loaded = storage?.load?.() ?? {};
+        this._values = (loaded && typeof loaded === "object") ? {
+            ...loaded
+        } : {};
+        for (const def of this._defs.values()) this._applyLoaded(def);
+    }
+
+    _save() {
+        this._storage?.save?.({
+            ...this._values
+        });
+    }
+
+    _applyLoaded(def) {
+        // the first application reports no previous value
+        const previous = def._initialized === true ? this.get(def.id) : undefined;
+        if (Object.hasOwn(this._values, def.id) && typeof def.migrate === "function") {
+            const migrated = def.migrate(this._values[def.id]);
+            if (migrated !== this._values[def.id]) {
+                this._values[def.id] = migrated;
+                this._save();
+            }
+        }
+        const value = this.get(def.id);
+        if (def.bind) def.bind.target[def.bind.key] = value;
+        if (value !== previous || def._initialized !== true) {
+            def._initialized = true;
+            this._notify(def, value, previous);
+        }
+    }
+
+    _notify(def, value, previous) {
+        if (typeof def.onChange !== "function") return;
+        try {
+            def.onChange(value, previous);
+        } catch (error) {
+            console.error?.(`setting ${def.id}: onChange failed`, error);
+        }
+    }
+
+    /**
+     * @param {object} def
+     * @returns {() => void} disposer removing the definition (a stored value is kept)
+     */
+    define(def) {
+        if (!def || typeof def.id !== "string" || !def.id) throw new TypeError("setting id must be a non-empty string");
+        if (this._defs.has(def.id)) throw new Error(`setting ${def.id} is already defined`);
+        if (def.bind && (typeof def.bind.target !== "object" && typeof def.bind.target !== "function" || !def.bind.key)) {
+            throw new TypeError(`setting ${def.id}: bind needs {target, key}`);
+        }
+        const defaultValue = def.default !== undefined ? def.default : def.bind ? def.bind.target[def.bind.key] : undefined;
+        const entry = {
+            type: typeof defaultValue === "boolean" ? "boolean" : typeof defaultValue === "number" ? "number" : "text",
+            name: def.id,
+            category: def.id.split(".").slice(0, -1),
+            ...def,
+            default: defaultValue,
+        };
+        this._defs.set(def.id, entry);
+        this._applyLoaded(entry);
+        return () => {
+            if (this._defs.get(def.id) === entry) this._defs.delete(def.id);
+        };
+    }
+
+    has(id) {
+        return this._defs.has(id);
+    }
+
+    /** @returns {object|null} definition */
+    getDefinition(id) {
+        return this._defs.get(id) ?? null;
+    }
+
+    /** @returns {object[]} definitions, optionally only those whose id starts with a prefix */
+    list(prefix = "") {
+        return [...this._defs.values()].filter((def) => def.id.startsWith(prefix));
+    }
+
+    /** Current value: stored value if any, else the default. */
+    get(id) {
+        if (Object.hasOwn(this._values, id)) return this._values[id];
+        const def = this._defs.get(id);
+        if (!def) return undefined;
+        return typeof def.default === "function" ? def.default() : def.default;
+    }
+
+    /**
+     * Sets and persists a value. Combo settings refuse values outside their options.
+     * @returns {boolean} true when the value changed
+     */
+    set(id, value) {
+        const def = this._defs.get(id);
+        if (def?.type === "combo" && Array.isArray(def.options)) {
+            const allowed = def.options.map((option) => (option && typeof option === "object" ? option.value : option));
+            if (!allowed.includes(value)) throw new RangeError(`setting ${id}: ${JSON.stringify(value)} is not an option`);
+        }
+        const previous = this.get(id);
+        this._values[id] = value;
+        this._save();
+        if (def?.bind) def.bind.target[def.bind.key] = value;
+        if (def && previous !== value) this._notify(def, value, previous);
+        return previous !== value;
+    }
+
+    /** Forgets the stored value, going back to the default. */
+    reset(id) {
+        if (!Object.hasOwn(this._values, id)) return false;
+        const previous = this.get(id);
+        delete this._values[id];
+        this._save();
+        const def = this._defs.get(id);
+        const value = this.get(id);
+        if (def?.bind) def.bind.target[def.bind.key] = value;
+        if (def && value !== previous) this._notify(def, value, previous);
+        return true;
+    }
+}
+
+/**
+ * Extensions with identity and clean removal.
+ *
+ * ```js
+ * const dispose = LiteGraph.registerExtension({
+ *     name: "my.extension",
+ *     commands: [{ id: "my.hello", run: (ctx) => ..., mutatesGraph: true }],
+ *     keybindings: [{ combo: "ctrl+h", commandId: "my.hello" }],
+ *     settings: [{ id: "My.Flag", default: true }],
+ *     setup(ctx) {
+ *         ctx.on("onNodeTypeRegistered", (info, type) => ...);           // LiteGraph-level hook
+ *         ctx.onCanvas((canvas, c) => c.on("onKeyDown", (info, e) => ...)); // every canvas, now and later
+ *         return () => { ... };                                            // optional extra cleanup
+ *     },
+ * });
+ * dispose(); // removes every command, binding, setting and hook registered above
+ * ```
+ *
+ * Everything an extension registers goes through its context, so disposing it undoes all of it,
+ * in reverse order. Hooks are CallbackHandler registrations (`opts.priority`, `prevent_default`,
+ * `stop_replication` keep working). Names listed in `disabled` are skipped at registration time.
+ */
+class ExtensionRegistry {
+
+    /**
+     * @param {object} host - normally the LiteGraph instance: provides registerCallbackHandler,
+     *   unregisterCallbackHandler, commands, keybindings, settings
+     */
+    constructor(host) {
+        this.host = host;
+        /** @type {Map<string, {def: object, dispose: () => void}>} */
+        this._extensions = new Map();
+        /** names that must not be registered */
+        this.disabled = new Set();
+        /** @type {Set<object>} live canvases */
+        this._canvases = new Set();
+        /** @type {Set<(canvas: object) => void>} */
+        this._canvasListeners = new Set();
+    }
+
+    /** Called by LGraphCanvas on construction; also usable for canvases made before the registry. */
+    attachCanvas(canvas) {
+        if (!canvas || this._canvases.has(canvas)) return;
+        this._canvases.add(canvas);
+        canvas.events?.on?.("disposed", () => this._canvases.delete(canvas));
+        for (const listener of [...this._canvasListeners]) listener(canvas);
+    }
+
+    /** @returns {object[]} live canvases known to the registry */
+    get canvases() {
+        return [...this._canvases];
+    }
+
+    has(name) {
+        return this._extensions.has(name);
+    }
+
+    /** @returns {string[]} registered extension names, in registration order */
+    list() {
+        return [...this._extensions.keys()];
+    }
+
+    get(name) {
+        return this._extensions.get(name)?.def ?? null;
+    }
+
+    /**
+     * Registers an extension.
+     * @param {object} def - {name, version?, requires?: string[], commands?, keybindings?, settings?, setup?(ctx)}
+     * @returns {() => void} disposer (a no-op when the extension is disabled)
+     * @throws when the name is missing or taken, a required extension is missing, or setup throws
+     *   (whatever was registered before the failure is undone first)
+     */
+    register(def) {
+        if (!def || typeof def.name !== "string" || !def.name) throw new TypeError("extension name must be a non-empty string");
+        if (this._extensions.has(def.name)) throw new Error(`extension ${def.name} is already registered`);
+        if (this.disabled.has(def.name)) {
+            console.info?.(`extension ${def.name} is disabled, not registered`);
+            return () => {};
+        }
+        for (const required of def.requires ?? []) {
+            if (!this._extensions.has(required)) throw new Error(`extension ${def.name} requires ${required}`);
+        }
+
+        const disposers = [];
+        const track = (dispose) => {
+            if (typeof dispose === "function") disposers.push(dispose);
+            return dispose;
+        };
+        const disposeAll = () => {
+            while (disposers.length) {
+                const dispose = disposers.pop();
+                try {
+                    dispose();
+                } catch (error) {
+                    console.error?.(`extension ${def.name}: cleanup failed`, error);
+                }
+            }
+        };
+        const host = this.host;
+        const hookOn = (target, name, fn, opts) => {
+            const id = target.registerCallbackHandler(name, fn, opts);
+            if (id === false || id === undefined) throw new Error(`extension ${def.name}: could not register ${name}`);
+            return track(() => target.unregisterCallbackHandler(name, id));
+        };
+        const ctx = {
+            name: def.name,
+            host,
+            commands: {
+                register: (command) => track(host.commands.register(command))
+            },
+            keybindings: {
+                add: (binding) => track(host.keybindings.add(binding))
+            },
+            settings: {
+                define: (setting) => track(host.settings.define(setting)),
+                get: (id) => host.settings.get(id),
+                set: (id, value) => host.settings.set(id, value),
+            },
+            /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
+            on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Hook on any object with a CallbackHandler (graph, node, canvas). */
+            onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
+            /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
+            onCanvas: (fn) => {
+                const apply = (canvas) => {
+                    const canvasCtx = {
+                        on: (name, handler, opts) => hookOn(canvas, name, handler, opts)
+                    };
+                    track(fn(canvas, canvasCtx));
+                };
+                this._canvasListeners.add(apply);
+                track(() => this._canvasListeners.delete(apply));
+                for (const canvas of this._canvases) apply(canvas);
+            },
+            /** Adds a cleanup function run on dispose. */
+            addDisposer: (dispose) => track(dispose),
+        };
+
+        try {
+            for (const setting of def.settings ?? []) ctx.settings.define(setting);
+            for (const command of def.commands ?? []) ctx.commands.register(command);
+            for (const binding of def.keybindings ?? []) ctx.keybindings.add(binding);
+            if (typeof def.setup === "function") track(def.setup(ctx));
+        } catch (error) {
+            disposeAll();
+            throw error;
+        }
+
+        let disposed = false;
+        const dispose = () => {
+            if (disposed) return;
+            disposed = true;
+            disposeAll();
+            if (this._extensions.get(def.name)?.dispose === dispose) this._extensions.delete(def.name);
+        };
+        this._extensions.set(def.name, {
+            def,
+            dispose
+        });
+        return dispose;
+    }
+
+    /** Disposes an extension by name. @returns {boolean} true if it was registered */
+    unregister(name) {
+        const entry = this._extensions.get(name);
+        if (!entry) return false;
+        entry.dispose();
+        return true;
     }
 }
 
@@ -5964,6 +6623,8 @@ class LGraphCanvas {
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct", {
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
+        // extensions registered through LiteGraph.registerExtension see every canvas
+        LiteGraph.extensions?.attachCanvas(this);
     }
 
     callbackhandler_setup() {
@@ -8054,6 +8715,13 @@ class LGraphCanvas {
         LiteGraph.log_verbose("lgraphcanvas", "processKey", e);
 
         if (e.target.localName == "input") {
+            return;
+        }
+
+        // bound key combos run their command instead of the built-in handling below
+        if (e.type == "keydown" && LiteGraph.keybindings?.handleKeyDown(e, LiteGraph.commands.contextFor(this))) {
+            e.preventDefault();
+            e.stopImmediatePropagation?.();
             return;
         }
 
@@ -49458,429 +50126,350 @@ LiteGraph.properties_allow_output_binding = true; // [true!] allow create and bi
 LiteGraph.properties_input_binding_check_ancestors = true; // [true!] when executing a node it will update binding, there when getting data will ensure data is updated
 /**
  * EXAMPLE EXTENSION TO AUTOCONNECT SELECTED NODES TO ANOTHER (SINGLE) NODE
- * press a than click on a node
+ * press "a", then click on the target node: every selected node is auto-connected to it
+ * (one undo step). Command `litegraph.autoconnect`, key "a".
  */
-let registerExtension_autoconnect = function(graphcanvas) {
-    // enable only if debugging CallbackHandler itself
-    // graphcanvas.cb_handler.debug = true;
+// canvas -> pending call_once handler id, so a second "a" or disposing the extension disarms it
+const pending = new Map();
 
-    let ext = "autoconnect";
-    let debug = false;
+function disarm(graphcanvas) {
+    const id = pending.get(graphcanvas);
+    if (id === undefined) return;
+    pending.delete(graphcanvas);
+    graphcanvas.unregisterCallbackHandler("onMouseDown", id);
+}
 
-    graphcanvas.registerCallbackHandler("onKeyDown", function(oCbInfo, keyEvent) {
-        // oCbInfo is first passed parameter and contains infos about the event execution chain 
+const autoconnectExtension = {
+    name: "litegraph.autoconnect",
+    commands: [{
+        id: "litegraph.autoconnect",
+        label: "Auto-connect selection to the next clicked node",
+        category: "edit",
+        when: (ctx) => !!ctx.canvas?.graph && ctx.selectedNodes?.length > 0,
+        run(ctx) {
+            const graphcanvas = ctx.canvas;
+            const sources = [...ctx.selectedNodes];
+            disarm(graphcanvas);
+            const id = graphcanvas.registerCallbackHandler("onMouseDown", (info, e) => {
+                pending.delete(graphcanvas);
+                const graph = graphcanvas.graph;
+                const target = graph?.getNodeOnPos(e.canvasX, e.canvasY, graphcanvas.visible_nodes, 5);
+                if (!target) return;
+                graph.transact("autoconnect", () => {
+                    for (const source of sources) graph.autoConnectNodes(source, target);
+                });
+            }, {
+                call_once: true
+            });
+            pending.set(graphcanvas, id);
+        },
+    }],
+    keybindings: [{
+        combo: "a",
+        commandId: "litegraph.autoconnect"
+    }],
+    setup(ctx) {
+        ctx.addDisposer(() => {
+            for (const canvas of [...pending.keys()]) disarm(canvas);
+        });
+    },
+};
 
-        // skip from second event on
-        if (keyEvent.repeat) {
-            return;
-        }
+/** Registers the extension once (kept for code that called it per canvas). */
+function registerExtension_autoconnect(graphcanvas) {
+    if (!LiteGraph.extensions?.has(autoconnectExtension.name)) LiteGraph.registerExtension(autoconnectExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
 
-        if (debug) console.info(ext, "*** onKeyDown handler ***", ...arguments);
-        switch (keyEvent.keyCode) {
-            case 65: { // a
+registerExtension_autoconnect();
 
-                // skip if shift o ctrl
-                if (keyEvent.shiftKey || keyEvent.ctrlKey) {
-                    if (debug) console.debug(ext, "skip shift or ctlr", ...arguments);
-                    break;
-                }
+/**
+ * Keyboard navigation and editing for the selection, as commands with default key bindings:
+ *
+ * | keys                  | command                                   |
+ * |-----------------------|-------------------------------------------|
+ * | arrows                | move the selected nodes one grid step     |
+ * | shift+arrowright      | search a node to connect after the first selected one |
+ * | ctrl+arrowright       | connection menu from its first output     |
+ * | ctrl(+shift)+arrowup/down | select (add) the previous/next sibling sharing its first input |
+ * | tab / shift+tab       | select the next/previous connected node   |
+ * | f                     | center on the selection (or recenter)     |
+ *
+ * Moves are undoable: holding an arrow key is one undo step per key press.
+ */
 
-                // check selected nodes
-                let nSel = Object.keys(graphcanvas.selected_nodes).length;
-                var aNodesFrom = [];
-                if (nSel) {
-                    for (let iO in graphcanvas.selected_nodes) {
-                        // graphcanvas.graph.autoConnectNodes(node_from, node_to);
-                        aNodesFrom.push(graphcanvas.selected_nodes[iO]);
-                    }
-                }
+const hasSelection = (ctx) => !!ctx.canvas?.graph && ctx.selectedNodes?.length > 0;
+const first = (ctx) => ctx.selectedNodes[0];
 
-                graphcanvas.registerCallbackHandler("onMouseDown", function(md_oCbInfo, e) {
-                    if (debug) console.info(ext, "*** onMouseDown handler ***", ...arguments);
-
-                    let node_to = graphcanvas.graph.getNodeOnPos(e.canvasX, e.canvasY, graphcanvas.visible_nodes, 5);
-
-                    if (node_to) {
-                        if (debug) console.info(ext, "### dbg: clicked on DEST node, autoconnect", node_to, aNodesFrom);
-                        for (let node_from of aNodesFrom) {
-                            if (debug) console.info(ext, "### dbg: AUTOCONNECT", node_from, node_to);
-                            graphcanvas.graph.autoConnectNodes(node_from, node_to);
-                        }
-                    } else {
-                        if (debug) console.info(ext, "### dbg: not clicked on a node", node_to);
-                    }
-
-                }, {
-                    call_once: true
-                }); // register to call only once
-
-                break;
-            }
-            default:
-                if (debug) console.debug(ext, "### dbg: ignore key", keyEvent.keyCode);
-                break;
-        }
+function moveSelection(ctx, dx, dy) {
+    for (const node of ctx.selectedNodes) {
+        node.alignToGrid();
+        node.pos[0] += dx * LiteGraph.CANVAS_GRID_SIZE;
+        node.pos[1] += dy * LiteGraph.CANVAS_GRID_SIZE;
+        node.processCallbackHandlers("onMoved", {
+            def_cb: node.onMoved
+        });
+    }
+    ctx.graph.onGraphChanged({
+        action: "keyboardMove"
     });
-
+    ctx.canvas.setDirty(true, true);
 }
 
-if (typeof(graphcanvas) !== "undefined") {
-    registerExtension_autoconnect(graphcanvas);
-}
-
-LiteGraph.registerCallbackHandler("on_lgraphcanvas_construct", function(oCbInfo, graphcanvas) {
-    registerExtension_autoconnect(graphcanvas);
-});
-let registerExtension_keyhelper = function(graphcanvas) {
-
-    // enable only if debugging CallbackHandler itself
-    // graphcanvas.cb_handler.debug = true;
-
-    // oCbInfo is first passed parameter and contains infos about the event execution chain 
-    let ext = "key_helper";
-    let debug = false;
-
-    // onKeyDown
-    graphcanvas.registerCallbackHandler("onKeyDown", function(oCbInfo, keyEvent) {
-        if (debug) console.info(ext, "*** onKeyDown handler ***", ...arguments);
-
-        let nSel = Object.keys(graphcanvas.selected_nodes).length;
-        var aNodesFrom = [];
-        var nodeX = false;
-        var return_value = null;
-        let moved = false;
-        if (nSel) {
-            for (let iO in graphcanvas.selected_nodes) {
-                aNodesFrom.push(graphcanvas.selected_nodes[iO]);
-            }
-            nodeX = aNodesFrom[0];
-        }
-
-        switch (keyEvent.keyCode) {
-            case 39: //ArrowRight
-                if (nSel) {
-
-                    // ---- ADD NEW NODE CONNECTED TO SELECTED ONE  ----
-                    if (keyEvent.shiftKey || keyEvent.ctrlKey) {
-
-                        // skip from second event on
-                        if (keyEvent.repeat) {
-                            return;
-                        }
-
-                        // simulate position via event (little hack, should implement that on prompt itself)
-                        /* const mouseCoord = graphcanvas.getMouseCoordinates();
-                        const gloCoord = graphcanvas.convertOffsetToEditorArea(mouseCoord);
-                        // need prompt to be absolute positioned relative to editor-area that needs relative positioning
-                        keyEvent.clientX = gloCoord[0];
-                        keyEvent.clientY = gloCoord[1]; */
-                        const gloCoord = graphcanvas.convertOffsetToEditorArea(nodeX.pos);
-                        keyEvent.clientX = gloCoord[0] + nodeX.size[0] + 33;
-                        keyEvent.clientY = gloCoord[1];
-                        keyEvent.canvasX = nodeX.pos[0] + nodeX.size[0] + 33;
-                        keyEvent.canvasY = nodeX.pos[1];
-
-                        if (nodeX.outputs && nodeX.outputs[0]) {
-                            if (keyEvent.shiftKey) {
-                                if (debug) console.debug(ext, "dbg: show search (using first slot)", nodeX, keyEvent);
-                                graphcanvas.showSearchBox(keyEvent, {
-                                    node_from: nodeX,
-                                    slot_from: nodeX.outputs[0],
-                                    type_filter_in: nodeX.outputs[0].type
-                                });
-                            } else if (keyEvent.ctrlKey) {
-                                if (debug) console.debug(ext, "dbg: show connection menu (using first slot)", nodeX, keyEvent);
-                                graphcanvas.showConnectionMenu({
-                                    nodeFrom: nodeX,
-                                    slotFrom: nodeX.outputs[0],
-                                    e: keyEvent,
-                                    isCustomEvent: true
-                                });
-                            }
-                        } else {
-                            if (debug) console.debug(ext, "dbg: no output for node");
-                        }
-
-                    } else {
-
-                        // move nodes right
-                        for (let iN = 0; iN < aNodesFrom.length; iN++) {
-                            aNodesFrom[iN].alignToGrid();
-                            aNodesFrom[iN].pos[0] += LiteGraph.CANVAS_GRID_SIZE;
-                            moved = true;
-                            aNodesFrom[iN].processCallbackHandlers("onMoved", {
-                                def_cb: aNodesFrom[iN].onMoved
-                            });
-                        }
-
-                    }
-
-                }
-                break;
-            case 37: // ArrowLeft
-                // move nodes left
-                if (nSel) {
-                    for (let iN = 0; iN < aNodesFrom.length; iN++) {
-                        aNodesFrom[iN].alignToGrid();
-                        aNodesFrom[iN].pos[0] -= LiteGraph.CANVAS_GRID_SIZE;
-                        moved = true;
-                        aNodesFrom[iN].processCallbackHandlers("onMoved", {
-                            def_cb: aNodesFrom[iN].onMoved
-                        });
-                    }
-                }
-                break;
-            case 38: // ArrowUp
-                if (nSel) {
-                    // move nodes up
-                    // check if ctrlKey
-                    if (keyEvent.ctrlKey) {
-                        // ---- select sibiling node, adding if shift ----
-                        // skip from second event on
-                        if (keyEvent.repeat) {
-                            return;
-                        }
-                        if (nodeX.inputs && nodeX.inputs.length) {
-                            const parentNode = nodeX.getInputNode(0);
-                            if (!parentNode) return;
-                            let found = false;
-                            let foundNode = false;
-                            for (let iO = parentNode.outputs.length - 1; iO >= 0; iO--) {
-                                let outNodes = parentNode.getOutputNodes(iO);
-                                if (!outNodes) continue;
-                                for (let ioN = outNodes.length - 1; ioN >= 0; ioN--) {
-                                    if (found) {
-                                        // found prev cycle
-                                        foundNode = outNodes[ioN];
-                                        break;
-                                    }
-                                    if (nodeX.id === outNodes[ioN].id) {
-                                        found = true;
-                                        // will get next in cycle
-                                    }
-                                }
-                                if (found) {
-                                    break;
-                                }
-                            }
-                            if (foundNode) {
-                                if (keyEvent.shiftKey) {
-                                    graphcanvas.selectNode(foundNode, true);
-                                } else {
-                                    graphcanvas.selectNodes([foundNode]);
-                                }
-                            }
-                        }
-                    } else {
-                        for (let iN = 0; iN < aNodesFrom.length; iN++) {
-                            aNodesFrom[iN].alignToGrid();
-                            aNodesFrom[iN].pos[1] -= LiteGraph.CANVAS_GRID_SIZE;
-                            moved = true;
-                            aNodesFrom[iN].processCallbackHandlers("onMoved", {
-                                def_cb: aNodesFrom[iN].onMoved
-                            });
-                        }
-                    }
-                }
-                break;
-            case 40: // ArrowDown
-                if (nSel) {
-                    // check if ctrlKey
-                    if (keyEvent.ctrlKey) {
-                        // ---- select sibiling node, adding if shift ----
-                        // skip from second event on
-                        if (keyEvent.repeat) {
-                            return;
-                        }
-                        if (nodeX.inputs && nodeX.inputs.length) {
-                            const parentNode = nodeX.getInputNode(0);
-                            if (!parentNode) return;
-                            let found = false;
-                            let foundNode = false;
-                            for (let iO in parentNode.outputs) {
-                                let outNodes = parentNode.getOutputNodes(iO);
-                                if (!outNodes) continue;
-                                for (let ioN in outNodes) {
-                                    if (found) {
-                                        // found prev cycle
-                                        foundNode = outNodes[ioN];
-                                        break;
-                                    }
-                                    if (nodeX.id === outNodes[ioN].id) {
-                                        found = true;
-                                        // will get next in cycle
-                                    }
-                                }
-                                if (found) {
-                                    break;
-                                }
-                            }
-                            if (foundNode) {
-                                if (keyEvent.shiftKey) {
-                                    graphcanvas.selectNode(foundNode, true);
-                                } else {
-                                    graphcanvas.selectNodes([foundNode]);
-                                }
-                            }
-                        }
-                    } else {
-                        // move nodes down
-                        for (let iN = 0; iN < aNodesFrom.length; iN++) {
-                            aNodesFrom[iN].alignToGrid();
-                            aNodesFrom[iN].pos[1] += LiteGraph.CANVAS_GRID_SIZE;
-                            moved = true;
-                            aNodesFrom[iN].processCallbackHandlers("onMoved", {
-                                def_cb: aNodesFrom[iN].onMoved
-                            });
-                        }
-                    }
-                }
-                break;
-            case 9: // TAB
-                // next node (connected to selected, or previous w shift)
-                if (nSel) {
-                    let nextNode = false;
-                    if (keyEvent.shiftKey) {
-                        if (nodeX.inputs && nodeX.inputs.length && nodeX.inputs[0].link && nodeX.inputs[0].link !== null) {
-                            nextNode = nodeX.getInputNode(0);
-                            graphcanvas.selectNodes([nextNode]);
-                        }
-                    } else {
-                        if (nodeX.outputs && nodeX.outputs.length && nodeX.outputs[0].links && nodeX.outputs[0].links.length) {
-                            nextNode = nodeX.getOutputNodes(0)[0];
-                            graphcanvas.selectNodes([nextNode]);
-                        }
-                    }
-                    return_value = true;
-                }
-                break;
-            case 70: // F
-                // focus on node
-                if (nSel) {
-                    graphcanvas.centerOnNode(nodeX);
-                    // TODO graphcanvas.centerOnSelection();
-                } else {
-                    graphcanvas.recenter();
-                }
-                break;
-            default:
-                if (debug) console.debug(ext, "dbg: ignore", keyEvent.keyCode);
-                break;
-        }
-
-        if (moved) graphcanvas.graph?.onGraphChanged({
-            action: "keyboardMove"
-        }); // undoable
-
-        return {
-            return_value: return_value,
-            //prevent_default: true,
-            //stop_replication: true
-        };
+/** place the key event next to a node, for the search box / connection menu (they read its coordinates) */
+function eventBeside(ctx, node) {
+    const editorPos = ctx.canvas.convertOffsetToEditorArea(node.pos);
+    // a native KeyboardEvent has no coordinates of its own: set them on the event itself
+    return Object.assign(ctx.event ?? {}, {
+        clientX: editorPos[0] + node.size[0] + 33,
+        clientY: editorPos[1],
+        canvasX: node.pos[0] + node.size[0] + 33,
+        canvasY: node.pos[1],
     });
-
 }
 
-if (typeof(graphcanvas) !== "undefined") {
-    registerExtension_keyhelper(graphcanvas);
+/** sibling sharing the first input's source node, in output order; step -1 = previous */
+function siblingOf(node, step) {
+    const parent = node.inputs?.length ? node.getInputNode(0) : null;
+    if (!parent) return null;
+    const siblings = [];
+    for (let slot = 0; slot < (parent.outputs?.length ?? 0); slot++) {
+        for (const other of parent.getOutputNodes(slot) ?? []) siblings.push(other);
+    }
+    const index = siblings.findIndex((other) => other.id === node.id);
+    return index === -1 ? null : siblings[index + step] ?? null;
 }
 
-LiteGraph.registerCallbackHandler("on_lgraphcanvas_construct", function(oCbInfo, graphcanvas) {
-    registerExtension_keyhelper(graphcanvas);
+function selectSibling(ctx, step) {
+    const sibling = siblingOf(first(ctx), step);
+    if (!sibling) return;
+    if (ctx.event?.shiftKey) ctx.canvas.selectNode(sibling, true);
+    else ctx.canvas.selectNodes([sibling]);
+}
+
+const move = (id, label, dx, dy, combo) => ({
+    command: {
+        id,
+        label,
+        category: "selection",
+        when: hasSelection,
+        mutatesGraph: true,
+        run: (ctx) => moveSelection(ctx, dx, dy)
+    },
+    binding: {
+        combo,
+        commandId: id,
+        allowRepeat: true
+    },
 });
-let registerExtension_renamer = function(graphcanvas) {
 
-    // enable only if debugging CallbackHandler itself
-    // graphcanvas.cb_handler.debug = true;
+const moves = [
+    move("litegraph.selection.moveLeft", "Move selection left", -1, 0, "arrowleft"),
+    move("litegraph.selection.moveRight", "Move selection right", 1, 0, "arrowright"),
+    move("litegraph.selection.moveUp", "Move selection up", 0, -1, "arrowup"),
+    move("litegraph.selection.moveDown", "Move selection down", 0, 1, "arrowdown"),
+];
 
-    // oCbInfo is first passed parameter and contains infos about the event execution chain 
+const keyboardHelperExtension = {
+    name: "litegraph.keyboard_helper",
+    commands: [
+        ...moves.map((entry) => entry.command),
+        {
+            id: "litegraph.selection.searchAfter",
+            label: "Add a node after the selection (search)",
+            category: "selection",
+            when: (ctx) => hasSelection(ctx) && !!first(ctx).outputs?.[0],
+            run(ctx) {
+                const node = first(ctx);
+                ctx.canvas.showSearchBox(eventBeside(ctx, node), {
+                    node_from: node,
+                    slot_from: node.outputs[0],
+                    type_filter_in: node.outputs[0].type
+                });
+            },
+        },
+        {
+            id: "litegraph.selection.connectionMenuAfter",
+            label: "Connection menu from the selection",
+            category: "selection",
+            when: (ctx) => hasSelection(ctx) && !!first(ctx).outputs?.[0],
+            run(ctx) {
+                const node = first(ctx);
+                ctx.canvas.showConnectionMenu({
+                    nodeFrom: node,
+                    slotFrom: node.outputs[0],
+                    e: eventBeside(ctx, node),
+                    isCustomEvent: true
+                });
+            },
+        },
+        {
+            id: "litegraph.selection.previousSibling",
+            label: "Select previous sibling",
+            category: "selection",
+            when: hasSelection,
+            run: (ctx) => selectSibling(ctx, -1)
+        },
+        {
+            id: "litegraph.selection.nextSibling",
+            label: "Select next sibling",
+            category: "selection",
+            when: hasSelection,
+            run: (ctx) => selectSibling(ctx, 1)
+        },
+        {
+            id: "litegraph.selection.nextConnected",
+            label: "Select the next connected node",
+            category: "selection",
+            when: hasSelection,
+            run(ctx) {
+                const next = first(ctx).outputs?.[0]?.links?.length ? first(ctx).getOutputNodes(0)?.[0] : null;
+                if (next) ctx.canvas.selectNodes([next]);
+            },
+        },
+        {
+            id: "litegraph.selection.previousConnected",
+            label: "Select the previous connected node",
+            category: "selection",
+            when: hasSelection,
+            run(ctx) {
+                const previous = first(ctx).inputs?.[0]?.link != null ? first(ctx).getInputNode(0) : null;
+                if (previous) ctx.canvas.selectNodes([previous]);
+            },
+        },
+        {
+            id: "litegraph.view.focus",
+            label: "Center on selection",
+            category: "view",
+            when: (ctx) => !!ctx.canvas?.graph,
+            run(ctx) {
+                if (ctx.selectedNodes?.length) ctx.canvas.centerOnNode(first(ctx));
+                else ctx.canvas.recenter();
+            },
+        },
+    ],
+    keybindings: [
+        ...moves.map((entry) => entry.binding),
+        {
+            combo: "shift+arrowright",
+            commandId: "litegraph.selection.searchAfter"
+        },
+        {
+            combo: "ctrl+arrowright",
+            commandId: "litegraph.selection.connectionMenuAfter"
+        },
+        {
+            combo: "ctrl+arrowup",
+            commandId: "litegraph.selection.previousSibling"
+        },
+        {
+            combo: "ctrl+shift+arrowup",
+            commandId: "litegraph.selection.previousSibling"
+        },
+        {
+            combo: "ctrl+arrowdown",
+            commandId: "litegraph.selection.nextSibling"
+        },
+        {
+            combo: "ctrl+shift+arrowdown",
+            commandId: "litegraph.selection.nextSibling"
+        },
+        {
+            combo: "tab",
+            commandId: "litegraph.selection.nextConnected",
+            allowRepeat: true
+        },
+        {
+            combo: "shift+tab",
+            commandId: "litegraph.selection.previousConnected",
+            allowRepeat: true
+        },
+        {
+            combo: "f",
+            commandId: "litegraph.view.focus"
+        },
+    ],
+};
 
-    let ext = "renamer";
-    let debug = false;
+/** Registers the extension once (kept for code that called it per canvas). */
+function registerExtension_keyhelper(graphcanvas) {
+    if (!LiteGraph.extensions?.has(keyboardHelperExtension.name)) LiteGraph.registerExtension(keyboardHelperExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
 
-    // onKeyDown
-    graphcanvas.registerCallbackHandler("onKeyDown", function(oCbInfo, keyEvent) {
-        if (debug) console.info(ext, "*** renamer onKeyDown handler ***", ...arguments);
-        switch (keyEvent.keyCode) {
-            case 113: { // F2
+registerExtension_keyhelper();
 
-                // skip from second event on
-                if (keyEvent.repeat) {
-                    return;
-                }
+/**
+ * F2 renames the selected nodes, or the group under the pointer when nothing is selected.
+ * Registered as the "litegraph.renamer" extension: command `litegraph.rename`, key F2.
+ * Each rename is one undo step.
+ */
+const renamerExtension = {
+    name: "litegraph.renamer",
+    commands: [{
+        id: "litegraph.rename",
+        label: "Rename",
+        category: "edit",
+        when: (ctx) => !!ctx.canvas?.graph,
+        run(ctx) {
+            const graphcanvas = ctx.canvas;
+            const graph = graphcanvas.graph;
+            const selected = Object.values(graphcanvas.selected_nodes ?? {});
 
-                // check selected nodes
-                let nSel = Object.keys(graphcanvas.selected_nodes).length;
+            // the prompt is placed from the event: use the pointer position inside the editor area
+            const mouseCoord = graphcanvas.getMouseCoordinates();
+            const gloCoord = graphcanvas.convertOffsetToEditorArea(mouseCoord);
+            // a native KeyboardEvent has no coordinates of its own: set them on the event itself
+            const promptEvent = Object.assign(ctx.event ?? {}, {
+                clientX: gloCoord[0],
+                clientY: gloCoord[1]
+            });
 
-                // simulate position via event (little hack, should implement that on prompt itself)
-                const mouseCoord = graphcanvas.getMouseCoordinates();
-                const gloCoord = graphcanvas.convertOffsetToEditorArea(mouseCoord);
-                // need prompt to be absolute positioned relative to editor-area that needs relative positioning
-                keyEvent.clientX = gloCoord[0];
-                keyEvent.clientY = gloCoord[1];
-
-                if (nSel) {
-
-                    // get actual title
-                    let actT = nSel == 1 ?
-                        graphcanvas.selected_nodes[Object.keys(graphcanvas.selected_nodes)[0]].title :
-                        "titleForMany";
-
-                    // set update function
-                    const fCB = function(tIn) {
-                        for (let iN in graphcanvas.selected_nodes) {
-                            graphcanvas.selected_nodes[iN].title = tIn;
-                        }
-                        graphcanvas.graph?.onGraphChanged({
+            if (selected.length) {
+                const current = selected.length == 1 ? selected[0].title : "titleForMany";
+                graphcanvas.prompt("Title", current, (title) => {
+                    graph.transact("rename", () => {
+                        for (const node of selected) node.title = title;
+                        graph.onGraphChanged({
                             action: "rename"
-                        }); // undoable
-                    }
-
-                    // open prompt
-                    graphcanvas.prompt(
-                        "Title", actT, fCB, keyEvent //,w.options ? w.options.multiline : false,
-                    );
-
-                } else {
-
-                    // check is over Group (Note)
-                    const groupOver = graphcanvas.graph.getGroupOnPos(mouseCoord[0], mouseCoord[1]);
-                    if (groupOver) {
-                        if (debug) console.warn(ext, "dbg: group to rename", groupOver);
-                        // set update function
-                        const fCB = function(tIn) {
-                            groupOver.title = tIn;
-                            graphcanvas.graph?.onGraphChanged({
-                                action: "renameGroup"
-                            }); // undoable
-                        }
-                        // open prompt
-                        graphcanvas.prompt(
-                            "Title", groupOver.title, fCB, keyEvent //,w.options ? w.options.multiline : false,
-                        );
-                    } else {
-
-                        if (debug) console.warn(ext, "dbg: nothing to rename");
-
-                    }
-                }
-                break;
+                        });
+                    });
+                }, promptEvent);
+                return true;
             }
-            default:
-                if (debug) console.debug("dbg: ignore key", keyEvent.keyCode);
-                break;
-        }
-    });
+            const group = graph.getGroupOnPos(mouseCoord[0], mouseCoord[1]);
+            if (group) {
+                graphcanvas.prompt("Title", group.title, (title) => {
+                    graph.transact("renameGroup", () => {
+                        group.title = title;
+                        graph.onGraphChanged({
+                            action: "renameGroup"
+                        });
+                    });
+                }, promptEvent);
+                return true;
+            }
+            return false;
+        },
+    }],
+    keybindings: [{
+        combo: "f2",
+        commandId: "litegraph.rename"
+    }],
+};
 
+/**
+ * Registers the renamer extension once. Kept for code that called it per canvas: every canvas
+ * is covered by the extension registry, so the canvas argument is only attached if unknown.
+ * @param {object} [graphcanvas]
+ */
+function registerExtension_renamer(graphcanvas) {
+    if (!LiteGraph.extensions?.has(renamerExtension.name)) LiteGraph.registerExtension(renamerExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
 }
 
-if (typeof(graphcanvas) !== "undefined") {
-    registerExtension_renamer(graphcanvas);
-}
+registerExtension_renamer();
 
-LiteGraph.registerCallbackHandler("on_lgraphcanvas_construct", function(oCbInfo, graphcanvas) {
-    registerExtension_renamer(graphcanvas);
-});
 /**
  * Optional ComfyUI workflow interoperability.
  *
@@ -50109,6 +50698,10 @@ exports.LiteGraphClass = LiteGraphClass;
 exports.CallbackHandler = CallbackHandler;
 exports.LGraphEvent = LGraphEvent;
 exports.LGraphEventTarget = LGraphEventTarget;
+exports.CommandRegistry = CommandRegistry;
+exports.KeybindingRegistry = KeybindingRegistry;
+exports.SettingsRegistry = SettingsRegistry;
+exports.ExtensionRegistry = ExtensionRegistry;
 exports.ContextMenu = ContextMenu;
 exports.CurveEditor = CurveEditor;
 exports.DragAndScale = DragAndScale;
@@ -50148,8 +50741,11 @@ exports.isNode = isNode;
 exports.isBun = isBun;
 exports.getRuntime = getRuntime;
 exports.valueToGLSL = valueToGLSL;
-exports.LiteGraph = LiteGraph;
-exports.ComfyInterop = ComfyInterop;
 exports.registerExtension_autoconnect = registerExtension_autoconnect;
 exports.registerExtension_keyhelper = registerExtension_keyhelper;
 exports.registerExtension_renamer = registerExtension_renamer;
+exports.LiteGraph = LiteGraph;
+exports.autoconnectExtension = autoconnectExtension;
+exports.keyboardHelperExtension = keyboardHelperExtension;
+exports.renamerExtension = renamerExtension;
+exports.ComfyInterop = ComfyInterop;
