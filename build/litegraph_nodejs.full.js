@@ -176,6 +176,8 @@ export class LiteGraphClass {
     Globals = {}; // used to store vars between graphs
 
     searchbox_extras = {}; // used to add extra features to the search box
+    node_definitions = {}; // metadata per registered type, readable without creating a node (see getNodeDefinition)
+    capability_rules = []; // [{match, capabilities}] from declareCapabilities, also applied to later registrations
     auto_sort_node_types = false; // [true!] If set to true, will automatically sort node types / categories in the context menus
 
     node_box_coloured_when_on = false; // [true!] this make the nodes box (top left circle) coloured when triggered (execute/action), visual feedback
@@ -335,6 +337,128 @@ export class LiteGraphClass {
     processCallbackHandlers() {
         this.callbackhandler_setup();
         return this.cb_handler.processCallbackHandlers(...arguments);
+    }
+
+    /**
+     * Builds the metadata of a node type without creating a node.
+     * Sources, in order: an optional `static def = {...}` on the class, then the classic static
+     * fields (`title`, `desc`/`description`, `search_aliases`, `capabilities`, `deprecated`,
+     * `experimental`, `skip_list`), then capability rules from {@link declareCapabilities}.
+     * `def.inputs` / `def.outputs` describe the slots when the class declares them (otherwise null:
+     * slots are only known after construction).
+     * @param {string} type
+     * @param {Function} base_class
+     * @returns {Readonly<object>} definition
+     */
+    describeNodeType(type, base_class) {
+        const own = (base_class.def && typeof base_class.def === "object") ? base_class.def : {};
+        const list = (value) => Array.isArray(value) ? [...value] : (value ? [value] : []);
+        const capabilities = new Set([...list(own.capabilities), ...list(base_class.capabilities)]);
+        for (const rule of this.capability_rules) {
+            if (rule.match(type)) rule.capabilities.forEach((capability) => capabilities.add(capability));
+        }
+        const slots = (value) => Array.isArray(value) ? value.map((slot) => Object.freeze({
+            ...slot
+        })) : null;
+        return Object.freeze({
+            type,
+            title: own.display_name ?? own.title ?? base_class.title ?? type,
+            description: own.description ?? base_class.desc ?? base_class.description ?? "",
+            category: own.category ?? base_class.category ?? "",
+            search_aliases: Object.freeze([...list(own.search_aliases), ...list(base_class.search_aliases)]),
+            capabilities: Object.freeze([...capabilities]),
+            deprecated: !!(own.deprecated ?? base_class.deprecated),
+            experimental: !!(own.experimental ?? base_class.experimental),
+            hidden: !!(own.hidden ?? base_class.skip_list),
+            source: own.source ?? base_class.source ?? null,
+            inputs: slots(own.inputs),
+            outputs: slots(own.outputs),
+        });
+    }
+
+    /** @returns {Readonly<object>|null} the metadata of a registered node type */
+    getNodeDefinition(type) {
+        return this.node_definitions[type] ?? null;
+    }
+
+    /**
+     * Lists node definitions.
+     * @param {{category?: string, capability?: string, includeDeprecated?: boolean, includeHidden?: boolean, supportedOnly?: boolean}} [filter]
+     *   category matches the category and its subcategories; supportedOnly drops types this runtime cannot run
+     * @returns {Readonly<object>[]}
+     */
+    listNodeDefinitions({
+        category,
+        capability,
+        includeDeprecated = true,
+        includeHidden = true,
+        supportedOnly = false
+    } = {}) {
+        return Object.values(this.node_definitions).filter((def) =>
+            (category === undefined || def.category === category || def.category.startsWith(category + "/")) &&
+            (capability === undefined || def.capabilities.includes(capability)) &&
+            (includeDeprecated || !def.deprecated) &&
+            (includeHidden || !def.hidden) &&
+            (!supportedOnly || this.isNodeTypeSupported(def.type)));
+    }
+
+    /**
+     * Declares what node types need from their runtime ("browser", "node", "webgl", "audio", "midi",
+     * "dom", "network", "sys", or any custom name). Applies to registered types and to types
+     * registered later with a matching name.
+     * @param {string|string[]|((type: string) => boolean)} selector - exact type, a prefix ending in
+     *   "/" or "::", a list of those, or a predicate
+     * @param {string[]} capabilities
+     */
+    declareCapabilities(selector, capabilities) {
+        const toMatcher = (entry) => typeof entry === "function" ? entry :
+            (entry.endsWith("/") || entry.endsWith("::")) ? (type) => type.startsWith(entry) :
+            (type) => type === entry;
+        const matchers = (Array.isArray(selector) ? selector : [selector]).map(toMatcher);
+        const rule = {
+            match: (type) => matchers.some((match) => match(type)),
+            capabilities: [...capabilities]
+        };
+        this.capability_rules.push(rule);
+        for (const type of Object.keys(this.registered_node_types)) {
+            if (rule.match(type)) this.node_definitions[type] = this.describeNodeType(type, this.registered_node_types[type]);
+        }
+    }
+
+    /** The capabilities this runtime provides (computed on each call: environments can change). */
+    getRuntimeCapabilities() {
+        const has = new Set(["network"]);
+        if (isNode() || isBun()) {
+            has.add("node");
+            has.add("sys");
+        }
+        if (isBrowser()) has.add("browser");
+        if (typeof document !== "undefined" && document?.createElement) has.add("dom");
+        if (typeof WebGLRenderingContext !== "undefined" || typeof WebGL2RenderingContext !== "undefined") has.add("webgl");
+        if (typeof AudioContext !== "undefined" || typeof globalThis.webkitAudioContext !== "undefined") has.add("audio");
+        if (typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function") has.add("midi");
+        return has;
+    }
+
+    /** Known capabilities a type needs that this runtime lacks (custom names are not checked). */
+    getMissingCapabilities(type, runtime = this.getRuntimeCapabilities()) {
+        const known = ["browser", "node", "sys", "dom", "webgl", "audio", "midi", "network"];
+        return (this.getNodeDefinition(type)?.capabilities ?? []).filter((capability) => known.includes(capability) && !runtime.has(capability));
+    }
+
+    /** @returns {boolean} true when the type is registered and this runtime has what it needs */
+    isNodeTypeSupported(type, runtime) {
+        return !!this.registered_node_types[type] && this.getMissingCapabilities(type, runtime).length === 0;
+    }
+
+    /**
+     * Lower-case text the search box matches against: type, title, aliases and description.
+     * @returns {string}
+     */
+    getNodeSearchText(type) {
+        const def = this.node_definitions[type];
+        if (!def) return String(type).toLowerCase();
+        return [type, def.title, ...def.search_aliases, def.description].filter(Boolean).join(" \n").toLowerCase();
     }
 
     /**
@@ -517,6 +641,7 @@ export class LiteGraphClass {
         if (classname) {
             this.Nodes[classname] = base_class;
         }
+        this.node_definitions[type] = this.describeNodeType(type, base_class);
 
         this.processCallbackHandlers("onNodeTypeRegistered", {
             def_cb: this.onNodeTypeRegistered
@@ -569,6 +694,7 @@ export class LiteGraphClass {
             throw new Error("node type not found to unregister: " + type);
         }
         delete this.registered_node_types[base_class.type];
+        delete this.node_definitions[base_class.type];
         // Nodes is keyed by class name (base_class.constructor is always Function)
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
@@ -745,6 +871,7 @@ export class LiteGraphClass {
      */
     clearRegisteredTypes() {
         this.registered_node_types = {};
+        this.node_definitions = {};
         this.node_types_by_file_extension = {};
         this.Nodes = {};
         this.searchbox_extras = {};
@@ -6687,6 +6814,7 @@ export class LGraphCanvas {
         // panels show nodes that are gone now
         if (this.canvas && typeof document !== "undefined") this.closePanels();
         this.node_in_panel = null;
+        this._endWidgetTransaction();
         this.node_widget = null;
 
         this.last_mouse = [0, 0];
@@ -7238,6 +7366,15 @@ export class LGraphCanvas {
         }
     }
 
+    /** Commits the transaction opened for a widget gesture (see processMouseDown), if any. */
+    _endWidgetTransaction() {
+        const graph = this._widget_transaction;
+        this._widget_transaction = null;
+        if (graph?.isInTransaction) {
+            graph.commitTransaction();
+        }
+    }
+
     /* LiteGraphCanvas input */
 
     // used to block future mouse events (because of im gui)
@@ -7607,11 +7744,22 @@ export class LGraphCanvas {
                     var block_drag_node = false;
                     var pos = [e.canvasX - node.pos[0], e.canvasY - node.pos[1]];
 
-                    // widgets
-                    var widget = this.processNodeWidgets(node, this.graph_mouse, e);
+                    // widgets: a whole widget gesture (click, or drag until pointer up) is one undo step
+                    const widgetGraph = this.graph;
+                    widgetGraph.beginTransaction("widgetChanged");
+                    var widget;
+                    try {
+                        widget = this.processNodeWidgets(node, this.graph_mouse, e);
+                    } catch (error) {
+                        widgetGraph.commitTransaction();
+                        throw error;
+                    }
                     if (widget) {
                         block_drag_node = true;
                         this.node_widget = [node, widget];
+                        this._widget_transaction = widgetGraph;
+                    } else {
+                        widgetGraph.commitTransaction();
                     }
 
                     let cbRet = null;
@@ -8229,7 +8377,11 @@ export class LGraphCanvas {
         if (e.which == 1) {
 
             if (this.node_widget) {
-                this.processNodeWidgets(this.node_widget[0], this.graph_mouse, e);
+                try {
+                    this.processNodeWidgets(this.node_widget[0], this.graph_mouse, e);
+                } finally {
+                    this._endWidgetTransaction();
+                }
             }
 
             // left button
@@ -8276,7 +8428,8 @@ export class LGraphCanvas {
                     });
                     this.graph.afterChange(); // this.selected_group
                 } else {
-                    if (diffx || diffy) {
+                    // diffx/diffy is only the rounding of the final position: a drag is a move too
+                    if (gesture.dragged || diffx || diffy) {
                         this.processCallbackHandlers("onGroupMoved", {
                             def_cb: this.onGroupMoved
                         }, this.selected_group);
@@ -8547,6 +8700,7 @@ export class LGraphCanvas {
         }
         this.selected_group = null;
         this.selected_group_resizing = false;
+        this._endWidgetTransaction();
         this.node_widget = null;
         this.node_capturing_input = null;
         this.pointer_is_down = false;
@@ -8716,6 +8870,11 @@ export class LGraphCanvas {
 
         if (e.target.localName == "input") {
             return;
+        }
+
+        // the canvas receiving key events is the active one (dialogs and the search box use it)
+        if (e.type == "keydown") {
+            LGraphCanvas.active_canvas = this;
         }
 
         // bound key combos run their command instead of the built-in handling below
@@ -13811,7 +13970,8 @@ export class LGraphCanvas {
             dialog.parentNode?.removeChild(dialog);
         };
 
-        var graphcanvas = LGraphCanvas.active_canvas;
+        // this canvas (active_canvas is only set by pointer input, so keyboard-opened prompts had none)
+        var graphcanvas = this.canvas ? this : LGraphCanvas.active_canvas;
         var canvas = graphcanvas.canvas;
         canvas.parentNode.appendChild(dialog);
 
@@ -14215,7 +14375,9 @@ export class LGraphCanvas {
                         name = extra.type;
                     }
 
-                    graphcanvas.graph.beforeChange();
+                    const insertGraph = graphcanvas.graph;
+                    insertGraph.beforeChange();
+                    insertGraph.beginTransaction("insertNode");
                     // every exit below (failure, early return, exception) must close the change
                     try {
                         var node = LiteGraph.createNode(name);
@@ -14326,8 +14488,12 @@ export class LGraphCanvas {
                             }
                         }
 
+                        insertGraph.onGraphChanged({
+                            action: "insertNode"
+                        }); // the add itself skips history
                     } finally {
-                        graphcanvas.graph.afterChange();
+                        insertGraph.commitTransaction();
+                        insertGraph.afterChange();
                     }
                 }
             }
@@ -14405,7 +14571,8 @@ export class LGraphCanvas {
                     if (filter && ctor.filter != filter)
                         return false;
 
-                    let str_node = type.toLowerCase();
+                    // type, title, aliases and description (see LiteGraph.getNodeSearchText)
+                    let str_node = LiteGraph.getNodeSearchText(type);
                     let a_srch_parts = str.toLowerCase().split(" ");
                     let passTextSearch = true;
                     for (let i_srch of a_srch_parts) {
@@ -28306,6 +28473,9 @@ class ImageWebcam {
 }
 LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("graphics/", ["browser", "dom"]);
+
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";
 
@@ -34225,6 +34395,9 @@ LiteGraph.registerNodeType("texture/cubemapToTexture2D", LGraphCubemapToTexture2
 
 LGraphTexture.guardRegisteredWebGLNodes();
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
+
 var SHADERNODES_COLOR = "#345";
 
 var LGShaders = (LiteGraph.Shaders = {});
@@ -36349,6 +36522,9 @@ LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 LGraphTexture.guardRegisteredWebGLNodes();
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities(["shader::", "texture/"], ["browser", "webgl"]);
+
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // import { GL } from "../../editor/js/libs/litegl.js";
 
@@ -38340,6 +38516,9 @@ globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, {
     once: true
 });
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("geometry/", ["browser", "webgl"]);
+
 // Works with Litegl.js to create WebGL nodes
 
 // Texture Lens
@@ -39143,6 +39322,9 @@ class LGraphFXVigneting {
 LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
 
 LGraphTexture.guardRegisteredWebGLNodes();
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("fx/", ["browser", "webgl"]);
 
 // TODO :: MIDI WORKS WITH ACTIONS SLOTS REVISE: (CANT ASSIGN MULTIPLE, WHEN IT SHOULD WITH THIS DATA TYPE, AND DATA SEEMS NOT PASSED BY (eg. MIDI Show using his input does not seems to work))
 
@@ -40819,6 +41001,9 @@ class LGMIDIKeys {
 }
 LiteGraph.registerNodeType("midi/keys", LGMIDIKeys);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("midi/", ["browser", "midi"]);
+
 class LGAudio {
 
     static audios_connected = {};
@@ -42358,6 +42543,9 @@ class LGAudioDestination {
 }
 LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);
+
 class LGWebSocket {
     static title = "WS Client";
     static desc = "Connect to a WebSocket to send and receive data";
@@ -42929,6 +43117,8 @@ class WebRTCNode {
 }
 LiteGraph.registerNodeType("network/webrtc", WebRTCNode);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("network/", ["network"]);
 
 // EG METHOD
 
@@ -44415,6 +44605,9 @@ class CDNLibrarySelector {
 
 // Register the node
 LiteGraph.registerNodeType("libraries/selector", CDNLibrarySelector);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("libraries/", ["network"]);
 
 /**
  * will extend a node class creating an html element for it available in this._el_cont, use this._html to set his content
@@ -46539,6 +46732,9 @@ export class HtmlElementStyle {
 }
 LiteGraph.registerNodeType("html/apply_element_css", HtmlElementStyle);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("html/", ["browser", "dom"]);
+
 class WatchValue {
 
     static fontSize = 16;
@@ -47188,6 +47384,9 @@ class LGSocketIO {
 }
 
 LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("network/", ["network"]);
 
 /* in types :: run in console :: var s=""; LiteGraph.slot_types_in.forEach(function(el){s+=el+"\n";}); console.log?.(s); */
 
@@ -48262,6 +48461,9 @@ if (typeof LiteGraph !== "undefined") {
     LiteGraph.registerNodeType("nodejs/network/UDP_server", UDPServerNode);
 }
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities(["nodejs/", "server/network/"], ["node", "network"]);
+
 class NodeProcessInfo {
     constructor() {
         this.runtime = "node";
@@ -48293,6 +48495,9 @@ class NodeProcessInfo {
 }
 
 LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("server/process/", ["node", "sys"]);
 
 /**
  * NodeJsSysHelper - Centralized Library Manager for Node.js System Utilities
@@ -49695,6 +49900,9 @@ class SysUtil_ServiceListNode {
 }
 LiteGraph.registerNodeType("sys/serviceList", SysUtil_ServiceListNode);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("sys/", ["node", "sys"]);
+
 // Creates an interface to access extra features from a graph (like play, stop, live, etc)
 export class Editor {
 
@@ -50427,13 +50635,19 @@ export const renamerExtension = {
 
             if (selected.length) {
                 const current = selected.length == 1 ? selected[0].title : "titleForMany";
+                const ids = selected.map((node) => node.id);
                 graphcanvas.prompt("Title", current, (title) => {
+                    // resolve by id when the title is applied: an undo while the prompt was open
+                    // reloads the graph and replaces the node objects
+                    const nodes = ids.map((id) => graph.getNodeById(id)).filter(Boolean);
+                    if (!nodes.length) return;
                     graph.transact("rename", () => {
-                        for (const node of selected) node.title = title;
+                        for (const node of nodes) node.title = title;
                         graph.onGraphChanged({
                             action: "rename"
                         });
                     });
+                    graphcanvas.setDirty(true, true);
                 }, promptEvent);
                 return true;
             }
