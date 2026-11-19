@@ -9,6 +9,10 @@ import { ContextMenu } from "./contextmenu.js";
 import { CallbackHandler } from "./callbackhandler.js";
 import { getGlobalObject, setGlobalVariable, getGlobalVariable, isBrowser, isNode, isBun, getRuntime } from './global.js';
 import { LibraryManager } from "./librarymanager.js";
+import { CommandRegistry } from "./commands.js";
+import { KeybindingRegistry } from "./keybindings.js";
+import { SettingsRegistry } from "./settings.js";
+import { ExtensionRegistry } from "./extensionregistry.js";
 
 /**
  * @class LiteGraph
@@ -260,6 +264,8 @@ export class LiteGraphClass {
         this.CallbackHandler = CallbackHandler;
         this.LibraryManager ??= new LibraryManager();
 
+        this.setupPlatform();
+
         // base inclusion
         this.includeBasicNodes();
     }
@@ -282,15 +288,38 @@ export class LiteGraphClass {
 
     registerCallbackHandler(){
         this.callbackhandler_setup();
-        this.cb_handler.registerCallbackHandler(...arguments);
+        return this.cb_handler.registerCallbackHandler(...arguments);
     }
     unregisterCallbackHandler(){
         this.callbackhandler_setup();
-        this.cb_handler.unregisterCallbackHandler(...arguments);
+        return this.cb_handler.unregisterCallbackHandler(...arguments);
     }
     processCallbackHandlers(){
         this.callbackhandler_setup();
-        this.cb_handler.processCallbackHandlers(...arguments);
+        return this.cb_handler.processCallbackHandlers(...arguments);
+    }
+
+    /**
+     * Registers an extension (see ExtensionRegistry): commands, key bindings, settings and hooks
+     * that are all removed again by the returned disposer.
+     * @param {object} def
+     * @returns {() => void} disposer
+     */
+    registerExtension(def) {
+        this.setupPlatform();
+        return this.extensions.register(def);
+    }
+
+    /**
+     * Creates the platform registries once: shared operations (commands), key bindings,
+     * settings and extensions. Called by initialize(); safe to call earlier.
+     */
+    setupPlatform() {
+        this.callbackhandler_setup();
+        this.commands ??= new CommandRegistry();
+        this.keybindings ??= new KeybindingRegistry(this.commands);
+        this.settings ??= new SettingsRegistry();
+        this.extensions ??= new ExtensionRegistry(this);
     }
 
     // set logging debug_level

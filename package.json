@@ -118,5 +118,14 @@
                 "default": "./build_node/litegraph.core.cjs"
             }
         }
+    },
+    "jest": {
+        "testPathIgnorePatterns": [
+            "/node_modules/",
+            "<rootDir>/.claude/"
+        ],
+        "modulePathIgnorePatterns": [
+            "<rootDir>/.claude/"
+        ]
     }
 }

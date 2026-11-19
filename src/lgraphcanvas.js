@@ -167,6 +167,8 @@ export class LGraphCanvas {
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct",{
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
+        // extensions registered through LiteGraph.registerExtension see every canvas
+        LiteGraph.extensions?.attachCanvas(this);
     }
 
     callbackhandler_setup(){
@@ -2183,6 +2185,13 @@ export class LGraphCanvas {
         LiteGraph.log_verbose("lgraphcanvas","processKey",e);
 
         if (e.target.localName == "input") {
+            return;
+        }
+
+        // bound key combos run their command instead of the built-in handling below
+        if (e.type == "keydown" && LiteGraph.keybindings?.handleKeyDown(e, LiteGraph.commands.contextFor(this))) {
+            e.preventDefault();
+            e.stopImmediatePropagation?.();
             return;
         }
 

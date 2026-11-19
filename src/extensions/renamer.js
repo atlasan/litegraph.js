@@ -1,91 +1,62 @@
 import { LiteGraph } from "../litegraph.js";
 
-export let registerExtension_renamer = function(graphcanvas){
+/**
+ * F2 renames the selected nodes, or the group under the pointer when nothing is selected.
+ * Registered as the "litegraph.renamer" extension: command `litegraph.rename`, key F2.
+ * Each rename is one undo step.
+ */
+export const renamerExtension = {
+    name: "litegraph.renamer",
+    commands: [{
+        id: "litegraph.rename",
+        label: "Rename",
+        category: "edit",
+        when: (ctx) => !!ctx.canvas?.graph,
+        run(ctx) {
+            const graphcanvas = ctx.canvas;
+            const graph = graphcanvas.graph;
+            const selected = Object.values(graphcanvas.selected_nodes ?? {});
 
-    // enable only if debugging CallbackHandler itself
-    // graphcanvas.cb_handler.debug = true;
+            // the prompt is placed from the event: use the pointer position inside the editor area
+            const mouseCoord = graphcanvas.getMouseCoordinates();
+            const gloCoord = graphcanvas.convertOffsetToEditorArea(mouseCoord);
+            // a native KeyboardEvent has no coordinates of its own: set them on the event itself
+            const promptEvent = Object.assign(ctx.event ?? {}, { clientX: gloCoord[0], clientY: gloCoord[1] });
 
-    // oCbInfo is first passed parameter and contains infos about the event execution chain 
-
-    let ext = "renamer";
-    let debug = false;
-
-    // onKeyDown
-    graphcanvas.registerCallbackHandler("onKeyDown",function(oCbInfo, keyEvent){
-        if(debug) console.info(ext, "*** renamer onKeyDown handler ***",...arguments);
-        switch(keyEvent.keyCode){
-            case 113: { // F2
-                
-                // skip from second event on
-                if(keyEvent.repeat){
-                    return;
-                }
-
-                // check selected nodes
-                let nSel = Object.keys(graphcanvas.selected_nodes).length;
-                
-                // simulate position via event (little hack, should implement that on prompt itself)
-                const mouseCoord = graphcanvas.getMouseCoordinates();
-                const gloCoord = graphcanvas.convertOffsetToEditorArea(mouseCoord);
-                // need prompt to be absolute positioned relative to editor-area that needs relative positioning
-                keyEvent.clientX = gloCoord[0];
-                keyEvent.clientY = gloCoord[1];
-
-                if(nSel){
-
-                    // get actual title
-                    let actT = nSel == 1
-                                ? graphcanvas.selected_nodes[Object.keys(graphcanvas.selected_nodes)[0]].title
-                                : "titleForMany";
-                    
-                    // set update function
-                    const fCB = function(tIn){
-                        for(let iN in graphcanvas.selected_nodes){
-                            graphcanvas.selected_nodes[iN].title = tIn;
-                        }
-                        graphcanvas.graph?.onGraphChanged({action: "rename"}); // undoable
-                    }
-                    
-                    // open prompt
-                    graphcanvas.prompt(
-                        "Title",actT,fCB,keyEvent //,w.options ? w.options.multiline : false,
-                    );
-
-                }else{
-                    
-                    // check is over Group (Note)
-                    const groupOver = graphcanvas.graph.getGroupOnPos( mouseCoord[0], mouseCoord[1] );
-                    if(groupOver){
-                        if(debug) console.warn(ext, "dbg: group to rename",groupOver);
-                        // set update function
-                        const fCB = function(tIn){
-                            groupOver.title = tIn;
-                            graphcanvas.graph?.onGraphChanged({action: "renameGroup"}); // undoable
-                        }
-                        // open prompt
-                        graphcanvas.prompt(
-                            "Title",groupOver.title,fCB,keyEvent //,w.options ? w.options.multiline : false,
-                        );
-                    }else{
-
-                        if(debug) console.warn(ext, "dbg: nothing to rename");
-
-                    }
-                }
-            break;
+            if (selected.length) {
+                const current = selected.length == 1 ? selected[0].title : "titleForMany";
+                graphcanvas.prompt("Title", current, (title) => {
+                    graph.transact("rename", () => {
+                        for (const node of selected) node.title = title;
+                        graph.onGraphChanged({ action: "rename" });
+                    });
+                }, promptEvent);
+                return true;
             }
-            default:
-                if(debug) console.debug("dbg: ignore key",keyEvent.keyCode);
-            break;
-        }
-    });
+            const group = graph.getGroupOnPos(mouseCoord[0], mouseCoord[1]);
+            if (group) {
+                graphcanvas.prompt("Title", group.title, (title) => {
+                    graph.transact("renameGroup", () => {
+                        group.title = title;
+                        graph.onGraphChanged({ action: "renameGroup" });
+                    });
+                }, promptEvent);
+                return true;
+            }
+            return false;
+        },
+    }],
+    keybindings: [{ combo: "f2", commandId: "litegraph.rename" }],
+};
 
+/**
+ * Registers the renamer extension once. Kept for code that called it per canvas: every canvas
+ * is covered by the extension registry, so the canvas argument is only attached if unknown.
+ * @param {object} [graphcanvas]
+ */
+export function registerExtension_renamer(graphcanvas) {
+    if (!LiteGraph.extensions?.has(renamerExtension.name)) LiteGraph.registerExtension(renamerExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
 }
 
-if(typeof(graphcanvas)!=="undefined"){
-    registerExtension_renamer(graphcanvas);
-}
-
-LiteGraph.registerCallbackHandler("on_lgraphcanvas_construct",function(oCbInfo, graphcanvas){
-    registerExtension_renamer(graphcanvas);
-});
+registerExtension_renamer();

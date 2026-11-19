@@ -337,6 +337,12 @@ export interface LiteGraphAPI extends CallbackHost {
     getParameterNames(func: Function): string[];
     initialize(): void;
     LibraryManager: LibraryManager;
+    commands: CommandRegistry;
+    keybindings: KeybindingRegistry;
+    settings: SettingsRegistry;
+    extensions: ExtensionRegistry;
+    registerExtension(def: ExtensionDefinition): () => void;
+    setupPlatform(): void;
     LGraphNode: typeof LGraphNode;
     LGraphCanvas: typeof LGraphCanvas;
     LGraphGroup: typeof LGraphGroup;
@@ -636,6 +642,11 @@ export declare class LGraph {
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     /** Destroys a link */
     removeLink(link_id: GraphId): void;
+    validateLinks(options?: { repair?: boolean }): {
+        ok: boolean;
+        repaired: boolean;
+        issues: Array<{ kind: string; link_id?: GraphId; node_id?: GraphId; slot?: number }>;
+    };
     /** Creates a Object containing all the info about this graph, it can be serialized */
     serialize<T extends serializedLGraph>(): T;
     /**
@@ -1538,6 +1549,8 @@ export declare class LGraphCanvas {
     startRendering(): void;
     /** stops rendering the content of the canvas (to save resources) */
     stopRendering(): void;
+    /** Stops rendering, detaches the graph and unbinds listeners; the canvas is unusable afterwards. */
+    dispose(): void;
 
     processMouseDown(e: MouseEvent): boolean | undefined;
     processMouseMove(e: MouseEvent): boolean | undefined;
@@ -1781,14 +1794,17 @@ export declare class LibraryManager {
     waitForLib<T = any>(key: string, timeout?: number): Promise<T>;
     getLibraryState(key: string): LibraryState | false;
     areAllLibrariesLoaded(): boolean;
-    waitAllLibrariesLoaded(): Promise<void>;
+    waitAllLibrariesLoaded(options?: { timeout?: number }): Promise<void>;
+    /** Allow `server.remote` scripts to be evaluated in Node.js (vm is not a sandbox). Default false. */
+    allowServerRemoteCode: boolean;
+    static isSafePackageSpec(spec: string): boolean;
     loadAllLibraries(): Promise<void>;
     unloadLibrary(key: string): void;
     unloadAllLibraries(): void;
     getRegisteredLibraries(): string[];
     loadScript(url: string, globalObject?: string, defaultExport?: boolean | string): Promise<any>;
     loadCSS(url: string): Promise<Event>;
-    npmInstall(key: string, command?: string): Promise<string>;
+    npmInstall(key: string, command?: string | string[]): Promise<string>;
 }
 export declare class Subgraph extends LGraphNode {
     subgraph: LGraph;
@@ -1814,3 +1830,121 @@ export declare function isBrowser(): boolean;
 export declare function isNode(): string | false | undefined;
 export declare function isBun(): boolean;
 export declare function getRuntime(): 'browser' | 'node' | 'bun' | 'unknown';
+
+export interface CommandContext {
+    canvas?: LGraphCanvas | null;
+    graph?: LGraph | null;
+    selectedNodes?: LGraphNode[];
+    event?: Event;
+    [key: string]: any;
+}
+export interface CommandDefinition {
+    id: string;
+    run(ctx: CommandContext): any;
+    label?: string | ((ctx: CommandContext) => string);
+    category?: string;
+    /** whether the command applies to the context; a disabled command does not run */
+    when?(ctx: CommandContext): boolean;
+    /** run inside graph.transact(): one undo entry */
+    mutatesGraph?: boolean;
+    [key: string]: any;
+}
+export declare class CommandRegistry {
+    constructor();
+    register(command: CommandDefinition): () => void;
+    get(id: string): Readonly<CommandDefinition> | null;
+    has(id: string): boolean;
+    list(filter?: { category?: string }): Readonly<CommandDefinition>[];
+    contextFor(canvas: LGraphCanvas | null | undefined, extra?: object): CommandContext;
+    isEnabled(id: string, ctx?: CommandContext): boolean;
+    execute(id: string, ctx?: CommandContext): { executed: boolean; result?: any };
+}
+export interface KeybindingDefinition {
+    /** e.g. "ctrl+shift+k", "f2", "arrowright"; "mod" is ctrl (meta on macOS) */
+    combo: string;
+    commandId: string;
+    allowRepeat?: boolean;
+}
+export declare class KeybindingRegistry {
+    static MODIFIERS: string[];
+    static normalize(combo: string): string;
+    static fromEvent(event: KeyboardEvent): string | null;
+    static isTextEntry(event: Event): boolean;
+    constructor(commands: CommandRegistry);
+    commands: CommandRegistry;
+    add(binding: KeybindingDefinition): () => void;
+    setUserBinding(combo: string, commandId: string | null): void;
+    clearUserBinding(combo: string): void;
+    unsetDefault(combo: string, commandId: string): void;
+    exportUserLayer(): { bindings: Record<string, string | null>; unset: string[] };
+    importUserLayer(data: { bindings?: Record<string, string | null>; unset?: string[] }): void;
+    resolve(combo: string): Array<{ combo: string; commandId: string; allowRepeat: boolean }>;
+    combosFor(commandId: string): string[];
+    handleKeyDown(event: KeyboardEvent, ctx?: CommandContext): boolean;
+}
+export interface SettingsStorage {
+    load(): Record<string, any> | null | undefined;
+    save(values: Record<string, any>): void;
+}
+export interface SettingDefinition<T = any> {
+    id: string;
+    default?: T | (() => T);
+    type?: 'boolean' | 'number' | 'text' | 'combo' | 'color' | string;
+    name?: string;
+    tooltip?: string;
+    category?: string[];
+    options?: Array<T | { value: T; text?: string }>;
+    migrate?(stored: any): T;
+    onChange?(value: T, previous: T | undefined): void;
+    /** mirror the value onto an existing property, e.g. a LiteGraph flag */
+    bind?: { target: object; key: string };
+    [key: string]: any;
+}
+export declare class SettingsRegistry {
+    static localStorageAdapter(key?: string): SettingsStorage;
+    constructor(storage?: SettingsStorage | null);
+    setStorage(storage: SettingsStorage | null): void;
+    define<T = any>(def: SettingDefinition<T>): () => void;
+    has(id: string): boolean;
+    getDefinition(id: string): SettingDefinition | null;
+    list(prefix?: string): SettingDefinition[];
+    get<T = any>(id: string): T | undefined;
+    set<T = any>(id: string, value: T): boolean;
+    reset(id: string): boolean;
+}
+export interface ExtensionCanvasContext {
+    on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+}
+export interface ExtensionContext {
+    name: string;
+    host: object;
+    commands: { register(command: CommandDefinition): () => void };
+    keybindings: { add(binding: KeybindingDefinition): () => void };
+    settings: { define(def: SettingDefinition): () => void; get(id: string): any; set(id: string, value: any): boolean };
+    on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+    onTarget(target: CallbackHost, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+    onCanvas(fn: (canvas: LGraphCanvas, ctx: ExtensionCanvasContext) => void | (() => void)): void;
+    addDisposer(dispose: () => void): () => void;
+}
+export interface ExtensionDefinition {
+    name: string;
+    version?: string;
+    requires?: string[];
+    commands?: CommandDefinition[];
+    keybindings?: KeybindingDefinition[];
+    settings?: SettingDefinition[];
+    setup?(ctx: ExtensionContext): void | (() => void);
+    [key: string]: any;
+}
+export declare class ExtensionRegistry {
+    constructor(host: object);
+    host: object;
+    disabled: Set<string>;
+    readonly canvases: LGraphCanvas[];
+    attachCanvas(canvas: LGraphCanvas): void;
+    has(name: string): boolean;
+    list(): string[];
+    get(name: string): ExtensionDefinition | null;
+    register(def: ExtensionDefinition): () => void;
+    unregister(name: string): boolean;
+}
