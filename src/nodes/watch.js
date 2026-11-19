@@ -345,7 +345,7 @@ class WatchValue {
             Object.keys(data).forEach((key, index) => {
                 const childNodeId = `${nodeId}-${key}`;
                 console.debug(currentDepth+"::"+childNodeId);
-                expandUpToDepth(data[key], maxDepth, currentDepth + 1, childNodeId);
+                this.expandUpToDepth(data[key], maxDepth, currentDepth + 1, childNodeId);
             });
         }
     }

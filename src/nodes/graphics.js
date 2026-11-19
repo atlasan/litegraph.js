@@ -302,7 +302,8 @@ class ImageFrame {
 
     show() {
         // var str = this.canvas.toDataURL("image/png");
-        if (showElement && this.frame) {
+        // showElement is an optional host-page helper
+        if (typeof showElement === "function" && this.frame) {
             showElement(this.frame);
         }
     }

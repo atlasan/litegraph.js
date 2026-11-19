@@ -427,7 +427,7 @@ export class HtmlEventListenerRemove {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id+"_"+(action?action:"action")+"_exectoact_"+LiteGraph.uuidv4();
+            var action = this.id+"_action_exectoact_"+LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -557,7 +557,7 @@ export class HtmlCreateElement {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id+"_"+(action?action:"action")+"_exectoact_"+LiteGraph.uuidv4();
+            var action = this.id+"_action_exectoact_"+LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -601,7 +601,7 @@ export class HtmlAppendChild {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id+"_"+(action?action:"action")+"_exectoact_"+LiteGraph.uuidv4();
+            var action = this.id+"_action_exectoact_"+LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -636,7 +636,7 @@ export class HtmlRemoveElement {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id+"_"+(action?action:"action")+"_exectoact_"+LiteGraph.uuidv4();
+            var action = this.id+"_action_exectoact_"+LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -687,7 +687,7 @@ export class HtmlElementStyle {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id+"_"+(action?action:"action")+"_exectoact_"+LiteGraph.uuidv4();
+            var action = this.id+"_action_exectoact_"+LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }

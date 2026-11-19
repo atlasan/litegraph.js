@@ -140,7 +140,7 @@ class WaitAll {
         if (slot_index == null) return;
 
         // check all
-        this.ready.length = this.outputs.length;
+        this.ready.length = this.inputs.length; // one flag per input to wait for
         this.ready[slot_index] = true;
         for (var i = 0; i < this.ready.length; ++i)
             if (!this.ready[i])

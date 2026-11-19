@@ -387,7 +387,7 @@ class logicWhile {
                     this.triggerSlot(0, param);
                     // done
                     if (this.stopped) {
-                        console.debug?.("while cycle stopped on index "+k);
+                        console.debug?.("while cycle stopped on index "+this.k);
                         break;
                     }
                     this.k++;

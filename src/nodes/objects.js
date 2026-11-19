@@ -496,7 +496,7 @@ class objMethodWidget {
         return [{
             content: "NodeObjMethod DBG", // has_submenu: false,
             callback: function(menuitO,obX,ev,htmO,nodeX) {
-                console.debug?.(NodeObjMethod, nodeX.widg_prop, nodeX);
+                console.debug?.("NodeObjMethod", nodeX.widg_prop, nodeX);
             },
         }];
     }

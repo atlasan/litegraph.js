@@ -150,9 +150,7 @@ export class CurveEditor {
             var p = points[i];
             p2[0] = p[0] * w;
             p2[1] = (1.0 - p[1]) * h;
-            if(p2[0] < pos[0])
-                last_valid = i;
-            var dist = vec2.distance(pos,p2);
+            var dist = Math.hypot(pos[0] - p2[0], pos[1] - p2[1]);
             if(dist > min_dist || dist > max_dist)
                 continue;
             closest = i;
