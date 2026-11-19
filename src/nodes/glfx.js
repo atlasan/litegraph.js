@@ -84,7 +84,7 @@ class LGraphFXLens {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXLens._shader;
         // var camera = LS.Renderer._current_camera;
 
@@ -172,7 +172,7 @@ if(!this._temp_texture || this._temp_texture.type != precision ||
 
 var shader = LGraphDepthOfField._shader = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphDepthOfField._pixel_shader );
 
-var screen_mesh = Mesh.getScreenQuad();
+var screen_mesh = GL.Mesh.getScreenQuad();
 
 gl.disable( gl.DEPTH_TEST );
 gl.disable( gl.BLEND );
@@ -339,7 +339,7 @@ class LGraphFXBokeh {
             points_mesh = this.createPointsMesh(tex.width, tex.height, 2);
         }
 
-        var screen_mesh = Mesh.getScreenQuad();
+        var screen_mesh = GL.Mesh.getScreenQuad();
 
         var point_size = this.properties.size;
         var alpha = this.properties.alpha;
@@ -569,7 +569,7 @@ class LGraphFXGeneric {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var camera = LS ? LS.Renderer._current_camera : null;
         var camera_planes;
         if (camera) {
@@ -757,7 +757,7 @@ class LGraphFXVigneting {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXVigneting._shader;
         var invert = this.properties.invert;
 

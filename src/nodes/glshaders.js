@@ -781,7 +781,6 @@ LGraphShaderGraph.prototype.initWebGL = function () {
     if (!this._context.vs_template)
         this._context.vs_template = "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
 };
-LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 /*
     * @TODO: Either write it or excise it.
@@ -1424,7 +1423,7 @@ class LGraphShaderOperation {
             var param_code = inlinks[i].name;
             if (param_code == null) {
                 // not plugged
-                param_code = p.value != null ? p.value : "(1.0)";
+                param_code = "(1.0)";
                 inlinks[i].type = "float";
             }
 
@@ -1930,7 +1929,7 @@ class LGraphShaderTime {
         var outlink = getOutputLinkID(this, 0);
 
         context.addUniform("u_time" + this.id, "float", function () {
-            return getTime() * 0.001;
+            return performance.now() * 0.001;
         });
         context.addCode(
             "code",
@@ -2090,5 +2089,8 @@ class LGraphShaderRemap {
     }
 }
 registerShaderNode("math/remap", LGraphShaderRemap);
+
+// registered last: its constructor builds a subgraph out of the shader:: nodes above
+LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 LGraphTexture.guardRegisteredWebGLNodes();

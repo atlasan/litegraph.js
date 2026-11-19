@@ -7,6 +7,10 @@ import { gl } from "../../editor/js/code.js";
 
 let DEG2RAD = 0.0174532925;
 
+function clamp(v, a, b) {
+    return a > v ? a : b < v ? b : v;
+}
+
 
 export class LGraphTexture {
 
@@ -695,7 +699,7 @@ class LGraphTextureOperation {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -1138,7 +1142,7 @@ class LGraphTextureScaleOffset {
             gl.disable(gl.CULL_FACE);
             gl.disable(gl.BLEND);
             tex.bind(0);
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -1276,7 +1280,7 @@ class LGraphTextureWarp {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader.uniforms(uniforms).draw(mesh);
         });
 
@@ -1385,7 +1389,7 @@ class LGraphTextureToViewport {
                 );
             }
 
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             tex.bind(0);
             LGraphTextureToViewport._shader
                 .uniforms({
@@ -1975,7 +1979,8 @@ class LGraphTextureMinMax {
             !this._textures_chain.length ||
             this._textures_chain[0].type != type
         ) {
-            while (i) {
+            let i = 0;
+            while (size >= 1) {
                 this._textures_chain[i] = new GL.Texture(size, size, {
                     type: type,
                     format: gl.RGBA,
@@ -1989,7 +1994,7 @@ class LGraphTextureMinMax {
 
         // @BUG: the behavior of tex here is probably a bug.
         tex.copyTo(this._textures_chain[0]);
-        for (let i = 1; i <= this._textures_chain.length; ++i) {
+        for (let i = 1; i < this._textures_chain.length; ++i) {
             tex = this._textures_chain[i];
         }
 
@@ -2377,7 +2382,7 @@ class LGraphTextureLUT {
             this.properties.precision,
         );
 
-        // var mesh = Mesh.getScreenQuad();
+        // var mesh = GL.Mesh.getScreenQuad();
 
         this._tex.drawTo(function () {
             lut_tex.bind(1);
@@ -2649,7 +2654,7 @@ class LGraphTextureChannels {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureChannels._shader;
         var masks = [
             [1, 0, 0, 0],
@@ -2731,7 +2736,7 @@ class LGraphChannelsTexture {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphChannelsTexture._shader) {
             LGraphChannelsTexture._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -3084,7 +3089,7 @@ class LGraphTextureMix {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = null;
         var uniforms = this._uniforms;
         if (texMix) {
@@ -3209,7 +3214,7 @@ class LGraphTextureEdges {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureEdges._shader;
         var invert = this.properties.invert;
         var factor = this.properties.factor;
@@ -3332,7 +3337,7 @@ class LGraphTextureDepthRange {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureDepthRange._shader) {
             LGraphTextureDepthRange._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -3464,7 +3469,7 @@ class LGraphTextureLinearDepth {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureLinearDepth._shader)
             LGraphTextureLinearDepth._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
@@ -4902,7 +4907,7 @@ class LGraphTextureCurve {
 
     onConfigure(o) {
         this._points = o.curves;
-        if (this.curve_editor) curve_editor.points = this._points;
+        if (this.curve_editor) this.curve_editor.points = this._points;
         this._must_update = true;
     }
 
@@ -5533,7 +5538,7 @@ class LGraphTextureCanvas2D {
         var time = this.graph.getTime();
         var ctx = gl;
         var canvas = gl.canvas;
-        if (this.properties.use_html_canvas || !enableWebGLCanvas) {
+        if (this.properties.use_html_canvas || typeof enableWebGLCanvas === "undefined") {
             if (!this._canvas) {
                 canvas = this._canvas = GL.createCanvas(width.height);
                 ctx = this._ctx = canvas.getContext("2d");
@@ -5672,7 +5677,7 @@ class LGraphTextureMatte {
         }
         var uniforms = this._uniforms;
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureMatte._shader;
         if (!shader) {
             shader = LGraphTextureMatte._shader = new GL.Shader(
