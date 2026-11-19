@@ -95,3 +95,54 @@ test('litegl and the WebGL node files only use declared names', () => {
         assert.deepEqual([...new Set(free)], [], file);
     }
 });
+
+test('Texture.uploadData accepts null options', () => {
+    const fake = { bound: 0 };
+    const texture = Object.create(GL.Texture.prototype);
+    Object.assign(texture, { gl: { ...fakeContext().gl, texImage2D() {}, pixelStorei() {}, bindTexture() {}, generateMipmap() {} }, width: 1, height: 1,
+        texture_type: GL.TEXTURE_2D, format: 1, type: 1, bind() { fake.bound++; } });
+    assert.doesNotThrow(() => texture.uploadData(new Uint8Array(4), null, true));
+    assert.equal(fake.bound, 1);
+});
+
+// Class.member reads where the member is only an instance field: static pixel_shader
+// written as a field, a cache checked under a name it is never stored under, and so on.
+test('node classes only read static members through the class', () => {
+    const require = createRequire(new URL('package.json', root));
+    const espree = require('espree');
+    // optional hooks an embedding app may assign
+    const hooks = ['LGAudio.onProcessAudioURL', 'LGraphTexture.storeTexture', 'MIDIInterface.on_message'];
+    const builtin = ['prototype', 'name', 'call', 'apply', 'bind', 'length'];
+    const walk = (n, f) => {
+        if (!n || typeof n.type !== 'string') return;
+        f(n);
+        for (const v of Object.values(n)) {
+            if (Array.isArray(v)) v.forEach((c) => walk(c, f));
+            else if (v && typeof v.type === 'string') walk(v, f);
+        }
+    };
+    const files = ['src/lgraphnode.js', ...fs.readdirSync(new URL('src/nodes/', root)).filter((f) => f.endsWith('.js')).map((f) => `src/nodes/${f}`)];
+    const problems = [];
+    for (const file of files) {
+        const ast = espree.parse(read(file), { ecmaVersion: 'latest', sourceType: 'module', loc: true });
+        const statics = {};
+        walk(ast, (n) => {
+            if (n.type === 'ClassDeclaration' && n.id) {
+                statics[n.id.name] = new Set(n.body.body.filter((m) => m.static && m.key?.name).map((m) => m.key.name));
+            }
+        });
+        walk(ast, (n) => {
+            if (n.type === 'AssignmentExpression' && n.left.type === 'MemberExpression' && statics[n.left.object.name]) {
+                statics[n.left.object.name].add(n.left.property.name);
+            }
+        });
+        walk(ast, (n) => {
+            if (n.type !== 'MemberExpression' || n.computed || !statics[n.object.name]) return;
+            const ref = `${n.object.name}.${n.property.name}`;
+            if (!statics[n.object.name].has(n.property.name) && !builtin.includes(n.property.name) && !hooks.includes(ref)) {
+                problems.push(`${file}:${n.loc.start.line} ${ref}`);
+            }
+        });
+    }
+    assert.deepEqual(problems, []);
+});

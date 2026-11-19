@@ -6449,7 +6449,8 @@ class Texture {
 	* @param {ArrayBuffer} data
 	* @param {Object} options [optional] upload options (premultiply_alpha, no_flip, cubemap_face, mipmap_level)
 	*/
-	uploadData( data, options = {}, skip_mipmaps ) {
+	uploadData( data, options, skip_mipmaps ) {
+		options = options || {}; // callers pass null to mean "no options"
 		if(!data)
 			throw("no data passed");
 		var gl = this.gl;

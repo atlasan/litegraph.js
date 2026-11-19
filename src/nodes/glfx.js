@@ -570,7 +570,8 @@ class LGraphFXGeneric {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
         var mesh = GL.Mesh.getScreenQuad();
-        var camera = LS ? LS.Renderer._current_camera : null;
+        var LS = globalThis.LS; // litescene, when the graph runs inside it
+        var camera = LS && LS.Renderer ? LS.Renderer._current_camera : null;
         var camera_planes;
         if (camera) {
             camera_planes = [

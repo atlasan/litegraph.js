@@ -1,6 +1,7 @@
 import { LiteGraph } from "../litegraph.js";
 import { GL, Shader } from "../../editor/js/libs/litegl.js";
 import { gl } from "../../editor/js/code.js";
+import { CurveEditor } from "../curveeditor.js";
 
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";
@@ -1250,10 +1251,9 @@ class LGraphTextureWarp {
             );
         }
 
-        var shader = this._shader;
-
+        var shader = LGraphTextureWarp._shader;
         if (!shader) {
-            shader = new GL.Shader(
+            shader = LGraphTextureWarp._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
                 LGraphTextureWarp.pixel_shader,
             );
@@ -1287,7 +1287,7 @@ class LGraphTextureWarp {
         this.setOutputData(0, this._tex);
     }
 
-    pixel_shader = `
+    static pixel_shader = `
         precision highp float;
     
         uniform sampler2D u_texture;
@@ -1909,130 +1909,99 @@ LiteGraph.registerNodeType("texture/average", LGraphTextureAverage);
 class LGraphTextureMinMax {
     constructor() {
         this.addInput("Texture", "Texture");
-        this.addOutput("min_t", "Texture");
-        this.addOutput("max_t", "Texture");
         this.addOutput("min", "vec4");
         this.addOutput("max", "vec4");
-        this.properties = {
-            mode: "max",
-            use_previous_frame: true, // to avoid stalls
-        };
-
-        this._uniforms = {u_texture: 0};
-
-        this._max = new Float32Array(4);
-        this._min = new Float32Array(4);
-
-        this._textures_chain = [];
+        this.addOutput("avg", "vec4");
+        this.properties = {};
+        this._chains = {};
+        this._values = [new Float32Array(4), new Float32Array(4), new Float32Array(4)];
     }
-
-    static widgets_info = {
-        mode: {
-            widget: "combo",
-            values: ["min", "max", "avg"],
-        },
-    };
 
     static title = "MinMax";
-    static desc = "Compute the scene min max";
+    static desc = "Per channel min, max and average of a texture (inputs over 1024px are sampled)";
+
+    static MODES = ["min", "max", "avg"];
+    // the reduction shrinks 4x per axis: 256 -> 64 -> 16 -> 4 -> 1
+    static LEVELS = [256, 64, 16, 4, 1];
+
+    static initShader() {
+        if (LGraphTextureMinMax._shader) return;
+        LGraphTextureMinMax._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureMinMax.pixel_shader,
+        );
+    }
 
     onExecute() {
-        if (!this.properties.use_previous_frame) {
-            this.update();
-        }
-
-        this.setOutputData(0, this._temp_texture);
-        this.setOutputData(1, this._luminance);
-    }
-
-    // executed before rendering the frame
-    onPreRenderExecute() {
-        this.update();
-    }
-
-    update() {
         var tex = this.getInputData(0);
-        if (!tex) {
-            return;
+        if (!tex || !tex.width || !tex.height) return;
+
+        // min/max of a byte texture are exact in bytes; the average and float inputs need
+        // float targets, which not every context can render to
+        var float_ok = !!(gl.getExtension("EXT_color_buffer_float") || gl.getExtension("WEBGL_color_buffer_float"));
+        for (let i = 0; i < LGraphTextureMinMax.MODES.length; ++i) {
+            if (!this.isOutputConnected(i)) continue;
+            var exact_in_bytes = tex.type == gl.UNSIGNED_BYTE && i != 2;
+            var type = exact_in_bytes || !float_ok ? gl.UNSIGNED_BYTE : gl.FLOAT;
+            this.reduce(tex, i, type, this._values[i]);
+            this.setOutputData(i, this._values[i]);
         }
+    }
 
-        if (!this.isOutputConnected(0) && !this.isOutputConnected(1)) {
-            return;
-        } // saves work
-
-        if (!LGraphTextureMinMax._shader) {
-            LGraphTextureMinMax._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureMinMax.pixel_shader,
+    // runs the reduction chain for one mode and reads back the final pixel into out
+    reduce(tex, mode, type, out) {
+        var chain = this._chains[mode];
+        if (!chain || chain[0].type != type) {
+            chain = this._chains[mode] = LGraphTextureMinMax.LEVELS.map(
+                (size) => new GL.Texture(size, size, {type: type, format: gl.RGBA, filter: gl.NEAREST}),
             );
         }
-
-        var type = gl.UNSIGNED_BYTE;
-        if (tex.type != type) {
-            // force floats, half floats cannot be read with gl.readPixels
-            type = gl.FLOAT;
-        }
-
-        var size = 512;
-
-        if (
-            !this._textures_chain.length ||
-            this._textures_chain[0].type != type
-        ) {
-            let i = 0;
-            while (size >= 1) {
-                this._textures_chain[i] = new GL.Texture(size, size, {
-                    type: type,
-                    format: gl.RGBA,
-                    filter: gl.NEAREST,
-                });
-                size = size >> 2;
-                i++;
-                if (size == 1) break;
-            }
-        }
-
-        // @BUG: the behavior of tex here is probably a bug.
-        tex.copyTo(this._textures_chain[0]);
-        for (let i = 1; i < this._textures_chain.length; ++i) {
-            tex = this._textures_chain[i];
-        }
-
         var shader = LGraphTextureMinMax._shader;
-        var uniforms = this._uniforms;
-        uniforms.u_mipmap_offset = this.properties.mipmap_offset;
+        var uniforms = {u_texture: 0, u_mode: mode, u_texel: vec2.create()};
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.BLEND);
-        this._temp_texture.drawTo(function () {
-            tex.toViewport(shader, uniforms);
-        });
+        var origin = tex;
+        for (let i = 0; i < chain.length; ++i) {
+            var target = chain[i];
+            uniforms.u_texel[0] = 1 / target.width;
+            uniforms.u_texel[1] = 1 / target.height;
+            origin.copyTo(target, shader, uniforms);
+            origin = target;
+        }
+        var pixel = origin.getPixels();
+        var scale = type == gl.UNSIGNED_BYTE ? 1 / 255 : 1;
+        for (let c = 0; c < 4; ++c) out[c] = pixel[c] * scale;
+        return out;
     }
 
+    // every output pixel covers a 4x4 block of the source (exact when the source is 4x
+    // larger, a 4x4 sampling of the footprint for the first pass)
     static pixel_shader = `
         precision highp float;
-        uniform mat4 u_samples_a;
-        uniform mat4 u_samples_b;
         uniform sampler2D u_texture;
-        uniform float u_mipmap_offset;
+        uniform vec2 u_texel;
+        uniform float u_mode;
         varying vec2 v_coord;
-    
+
         void main() {
-            vec4 color = vec4(0.0);
-    
-            // Random average
-            for (int i = 0; i < 4; ++i) {
-                for (int j = 0; j < 4; ++j) {
-                    vec2 sampleCoordA = vec2(u_samples_a[i][j], u_samples_b[i][j]);
-                    vec2 sampleCoordB = vec2(1.0 - u_samples_a[i][j], 1.0 - u_samples_b[i][j]);
-                    color += texture2D(u_texture, sampleCoordA, u_mipmap_offset);
-                    color += texture2D(u_texture, sampleCoordB, u_mipmap_offset);
+            vec4 lo = vec4(1.0e20);
+            vec4 hi = vec4(-1.0e20);
+            vec4 sum = vec4(0.0);
+            for (int y = 0; y < 4; ++y) {
+                for (int x = 0; x < 4; ++x) {
+                    vec2 offset = (vec2(float(x), float(y)) - 1.5) * 0.25 * u_texel;
+                    vec4 color = texture2D(u_texture, v_coord + offset);
+                    lo = min(lo, color);
+                    hi = max(hi, color);
+                    sum += color;
                 }
             }
-    
-            gl_FragColor = color * 0.03125;
+            gl_FragColor = u_mode < 0.5 ? lo : (u_mode < 1.5 ? hi : sum / 16.0);
         }
     `;
 }
+LiteGraph.registerNodeType("texture/minmax", LGraphTextureMinMax);
+
 // LiteGraph.registerNodeType("texture/clustered_operation", LGraphTextureClusteredOperation);
 
 
@@ -2159,7 +2128,7 @@ class LGraphTextureLinearAvgSmooth {
             return;
         }
 
-        if (!LGraphTextureLinearAvgSmooth._shader) {
+        if (!LGraphTextureLinearAvgSmooth._shader_avg) {
             LGraphTextureLinearAvgSmooth._shader_copy = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
                 LGraphTextureLinearAvgSmooth.pixel_shader_copy,
@@ -2749,7 +2718,7 @@ class LGraphChannelsTexture {
         var h = Math.max(texR.height, texG.height, texB.height, texA.height);
         var type =
             this.properties.precision == LGraphTexture.HIGH
-                ? LGraphTexture.HIGH_PRECISION_FORMAT
+                ? gl.HIGH_PRECISION_FORMAT
                 : gl.UNSIGNED_BYTE;
 
         if (
@@ -2845,7 +2814,7 @@ class LGraphTextureColor {
     onExecute() {
         var type =
             this.properties.precision == LGraphTexture.HIGH
-                ? LGraphTexture.HIGH_PRECISION_FORMAT
+                ? gl.HIGH_PRECISION_FORMAT
                 : gl.UNSIGNED_BYTE;
 
         if (!this._tex || this._tex.type != type) {
@@ -4950,7 +4919,7 @@ class LGraphTextureCurve {
         if (this.flags.collapsed) return;
 
         if (!this.curve_editor)
-            this.curve_editor = new LiteGraph.CurveEditor(this._points.R);
+            this.curve_editor = new CurveEditor(this._points.R);
         ctx.save();
         ctx.translate(0, this.curve_offset);
         var channel = this.widgets[1].value;
@@ -5005,7 +4974,7 @@ class LGraphTextureCurve {
         ctx.restore();
     }
 
-    pixel_shader =
+    static pixel_shader =
         "precision highp float;\n\
         varying vec2 v_coord;\n\
         uniform sampler2D u_texture;\n\
