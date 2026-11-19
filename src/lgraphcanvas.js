@@ -538,7 +538,7 @@ export class LGraphCanvas {
 
     /**
      * Typed canvas events: link-dropped-on-empty (cancelable: skip the default menu),
-     * subgraph-opened, subgraph-closed. See LGraphEventTarget.
+     * subgraph-opened, subgraph-closed, selection-changed, disposed. See LGraphEventTarget.
      */
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
@@ -2688,6 +2688,7 @@ export class LGraphCanvas {
         this.processCallbackHandlers("onSelectionChange",{
             def_cb: this.onSelectionChange
         }, this.selected_nodes);
+        this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes) });
         this.setDirty(true);
     }
 
@@ -2710,6 +2711,7 @@ export class LGraphCanvas {
         this.processCallbackHandlers("onSelectionChange",{
             def_cb: this.onSelectionChange
         }, this.selected_nodes);
+        this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes) });
 
         // Remove highlighted
         node.inputs?.forEach((input) => {
@@ -2749,6 +2751,7 @@ export class LGraphCanvas {
         this.processCallbackHandlers("onSelectionChange",{
             def_cb: this.onSelectionChange
         }, this.selected_nodes);
+        this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes) });
         this.setDirty(true);
     }
 
@@ -5801,6 +5804,7 @@ export class LGraphCanvas {
                 }, w.name, w.value, old_value, w);
                 // node.graph._version++;
                 node.graph.onGraphChanged({action: "widgetChanged", doSave: true}); // tag: graph event entrypoint
+                node.graph._emit?.("widget-changed", { node, widget: w, value: w.value, previous: old_value });
             }
             if(widget.type == "number") {
                 value = Number(value);
@@ -9199,6 +9203,8 @@ export class LGraphCanvas {
             }
         }
 
+        // extension contributions (LiteGraph.menus.register("canvas", ...))
+        if (options) LiteGraph.menus?.contribute("canvas", LiteGraph.commands.contextFor(this), options);
         return options;
     }
 
@@ -9353,6 +9359,8 @@ export class LGraphCanvas {
             }, options, node);
         }
 
+        // extension contributions (LiteGraph.menus.register("node", ...))
+        LiteGraph.menus?.contribute("node", LiteGraph.commands.contextFor(this, { node }), options);
         return options;
     }
 

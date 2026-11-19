@@ -11,7 +11,7 @@ class ThreeJsHelper {
             // manage loaded etc
             // nodepack with inclusion aside
             // manage local script repository too
-            LiteGraph.LibraryManager.registerLibrary("threejs", "0.172.0", "threejs", [], ["https://cdnjs.cloudflare.com/ajax/libs/three.js/0.172.0/three.module.js"]);
+            LiteGraph.LibraryManager.registerLibrary({ key: "threejs", version: "0.172.0", globalObject: "threejs", description: "three.js for the threejs/* nodes", browser: { remote: "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.172.0/three.module.js" } });
             LiteGraph.LibraryManager.loadLibrary("threejs");
             return false;
         }else{

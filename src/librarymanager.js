@@ -66,11 +66,13 @@ export class LibraryManager {
     registerLibrary(...args) {
         let newLib = {};
         if (typeof args[0] === "object" && !Array.isArray(args[0])) {
-            const { key, version, globalObject, browser = {}, server = {}, defaultExport } = args[0];
+            const { key, version, globalObject, browser = {}, server = {}, defaultExport, description, optional } = args[0];
             newLib = {
                 key,
                 version,
                 globalObject,
+                description: description ?? "",
+                optional: optional ?? true,
                 localPaths: this.ensureArray(browser.local),
                 remoteUrls: this.ensureArray(browser.remote),
                 browserTarget: browser.target || "both",
@@ -118,6 +120,8 @@ export class LibraryManager {
             if (newLib.defaultExport !== undefined) {
                 existing.defaultExport = newLib.defaultExport;
             }
+            if (newLib.description) existing.description = newLib.description;
+            if (newLib.optional === false) existing.optional = false;
             // Do not change the load state if already loaded.
             this.libraries_known[newLib.key] = existing;
         } else {
@@ -486,6 +490,64 @@ export class LibraryManager {
                 this.unloadLibrary(key);
             }
         });
+    }
+
+    /**
+     * The library manifest: every registered library with its sources and current state,
+     * as plain data (for editors, runners and diagnostics).
+     * @returns {Array<{key: string, version: string, globalObject: string, description: string, optional: boolean,
+     *   browser: {local: string[], remote: string[]}, server: {npm: string[], remote: string[]}, state: string}>}
+     */
+    describeLibraries() {
+        return Object.values(this.libraries_known).map((library) => ({
+            key: library.key,
+            version: library.version ?? "",
+            globalObject: library.globalObject ?? "",
+            description: library.description ?? "",
+            optional: library.optional !== false,
+            browser: { local: [...library.localPaths], remote: [...library.remoteUrls] },
+            server: { npm: [...library.npmPackages], remote: [...library.serverRemoteUrls] },
+            state: this.getLibraryState(library.key) || "not_loaded",
+        }));
+    }
+
+    /**
+     * Checks, in Node.js, whether the npm packages of registered libraries can be imported, without
+     * changing their load state or globals. In a browser nothing is fetched: every entry reports
+     * "unknown" unless it is already loaded.
+     * @param {string[]} [keys] - libraries to check (default: all)
+     * @returns {Promise<Array<{key: string, available: boolean|null, missing: string[], error?: string}>>}
+     */
+    async probeLibraries(keys = Object.keys(this.libraries_known)) {
+        await this.ready;
+        const results = [];
+        for (const key of keys) {
+            const library = this.libraries_known[key];
+            if (!library) {
+                results.push({ key, available: false, missing: [], error: "not registered" });
+                continue;
+            }
+            if (this.getLibraryState(key) === "loaded") {
+                results.push({ key, available: true, missing: [] });
+                continue;
+            }
+            if (isBrowser() || !library.npmPackages.length) {
+                results.push({ key, available: null, missing: [] });
+                continue;
+            }
+            const missing = [];
+            let error;
+            for (const name of library.npmPackages) {
+                try {
+                    await import(name);
+                } catch (e) {
+                    missing.push(name);
+                    error ??= e?.message ?? String(e);
+                }
+            }
+            results.push({ key, available: missing.length === 0, missing, ...(error ? { error } : {}) });
+        }
+        return results;
     }
 
     /**

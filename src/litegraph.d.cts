@@ -341,8 +341,10 @@ export interface LiteGraphAPI extends CallbackHost {
     keybindings: KeybindingRegistry;
     settings: SettingsRegistry;
     extensions: ExtensionRegistry;
+    menus: MenuRegistry;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
+    persistPlatformState(storage?: SettingsStorage): void;
     node_definitions: Record<string, Readonly<NodeDefinition>>;
     describeNodeType(type: string, base: Function): Readonly<NodeDefinition>;
     getNodeDefinition(type: string): Readonly<NodeDefinition> | null;
@@ -1224,6 +1226,14 @@ export interface LGraphEventMap {
     changed: { action: string; revision: number };
     "reroute-added": { reroute: Reroute; link: LLink | null };
     "reroute-removed": { reroute: Reroute };
+    "link-connected": { link: LLink; origin: LGraphNode; originSlot: number; target: LGraphNode; targetSlot: number };
+    "link-removed": { link: LLink; origin: LGraphNode | null; target: LGraphNode | null };
+    "node-property-changed": { node: LGraphNode; name: string; value: unknown; previous: unknown };
+    "widget-changed": { node: LGraphNode; widget: IWidget; value: unknown; previous: unknown };
+    /** after each runStep iteration (only dispatched when someone listens) */
+    "execution-step": { iteration: number };
+    /** execution stopped on an error */
+    "node-error": { error: unknown; node: LGraphNode | null };
 }
 
 export interface LGraphCanvasEventMap {
@@ -1234,6 +1244,8 @@ export interface LGraphCanvasEventMap {
     };
     "subgraph-opened": { graph: LGraph; parent: LGraph | null };
     "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
+    "selection-changed": { nodes: LGraphNode[] };
+    disposed: { canvas: LGraphCanvas };
 }
 
 /** A point links are routed through; chains via parentId towards the origin. */
@@ -1790,6 +1802,19 @@ export interface LibraryRegistration {
     defaultExport?: boolean | string;
     browser?: { local?: string | string[]; remote?: string | string[]; target?: string };
     server?: { npm?: string | string[]; remote?: string | string[]; target?: string };
+    description?: string;
+    /** false when nodes cannot work at all without it (default true) */
+    optional?: boolean;
+}
+export interface LibraryManifestEntry {
+    key: string;
+    version: string;
+    globalObject: string;
+    description: string;
+    optional: boolean;
+    browser: { local: string[]; remote: string[] };
+    server: { npm: string[]; remote: string[] };
+    state: LibraryState;
 }
 export type LibraryState = 'not_loaded' | 'loading' | 'loaded' | 'error';
 export declare class LibraryManager {
@@ -1811,6 +1836,8 @@ export declare class LibraryManager {
     unloadLibrary(key: string): void;
     unloadAllLibraries(): void;
     getRegisteredLibraries(): string[];
+    describeLibraries(): LibraryManifestEntry[];
+    probeLibraries(keys?: string[]): Promise<Array<{ key: string; available: boolean | null; missing: string[]; error?: string }>>;
     loadScript(url: string, globalObject?: string, defaultExport?: boolean | string): Promise<any>;
     loadCSS(url: string): Promise<Event>;
     npmInstall(key: string, command?: string | string[]): Promise<string>;
@@ -1889,6 +1916,8 @@ export declare class KeybindingRegistry {
     importUserLayer(data: { bindings?: Record<string, string | null>; unset?: string[] }): void;
     resolve(combo: string): Array<{ combo: string; commandId: string; allowRepeat: boolean }>;
     combosFor(commandId: string): string[];
+    /** called after the user layer changes, with exportUserLayer() */
+    onUserLayerChange: ((layer: { bindings: Record<string, string | null>; unset: string[] }) => void) | null;
     handleKeyDown(event: KeyboardEvent, ctx?: CommandContext): boolean;
 }
 export interface SettingsStorage {
@@ -1933,6 +1962,8 @@ export interface ExtensionContext {
     on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
     onTarget(target: CallbackHost, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
     onCanvas(fn: (canvas: LGraphCanvas, ctx: ExtensionCanvasContext) => void | (() => void)): void;
+    menus: { register(location: MenuLocation, provider: MenuProvider): () => void };
+    onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
     addDisposer(dispose: () => void): () => void;
 }
 export interface ExtensionDefinition {
@@ -1942,6 +1973,7 @@ export interface ExtensionDefinition {
     commands?: CommandDefinition[];
     keybindings?: KeybindingDefinition[];
     settings?: SettingDefinition[];
+    menus?: Partial<Record<MenuLocation, MenuProvider>>;
     setup?(ctx: ExtensionContext): void | (() => void);
     [key: string]: any;
 }
@@ -1980,4 +2012,17 @@ export interface NodeDefinition {
     source: string | null;
     inputs: readonly Readonly<NodeSlotDefinition>[] | null;
     outputs: readonly Readonly<NodeSlotDefinition>[] | null;
+}
+
+export type MenuLocation = 'canvas' | 'node';
+/** A ContextMenu item, `{command: id}` (runs a registered command), or null for a separator. */
+export type MenuItem = { command: string; content?: string; [key: string]: any } | { content: string; callback?: (...args: any[]) => any; [key: string]: any } | null;
+export type MenuProvider = (ctx: CommandContext & { node?: LGraphNode }) => MenuItem[] | null | undefined;
+export declare class MenuRegistry {
+    static LOCATIONS: MenuLocation[];
+    constructor(commands: CommandRegistry);
+    commands: CommandRegistry;
+    register(location: MenuLocation, provider: MenuProvider): () => void;
+    collect(location: MenuLocation, ctx?: object): MenuItem[];
+    contribute<T extends any[]>(location: MenuLocation, ctx: object, options: T): T;
 }

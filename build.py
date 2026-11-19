@@ -56,6 +56,7 @@ lib_js_files = [
     "./src/commands.js",
     "./src/keybindings.js",
     "./src/settings.js",
+    "./src/menus.js",
     "./src/extensionregistry.js",
     "./src/contextmenu.js",
     "./src/curveeditor.js",

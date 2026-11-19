@@ -488,6 +488,10 @@ export class LGraphNode {
             LiteGraph.log_debug("lgraphnode","setProperty","prevent property set by cbHandler",name,value,prevValue,r);
         }
 
+        if (this.properties[name] !== prevValue) {
+            this.graph?._emit?.("node-property-changed", { node: this, name, value: this.properties[name], previous: prevValue });
+        }
+
         // Update the widget value associated with the property name
         const widgetToUpdate = this.widgets?.find((widget) => widget && widget.options?.property === name);
 
@@ -2455,6 +2459,7 @@ export class LGraphNode {
         this.setDirtyCanvas(false, true);
         this.graph.afterChange();
         this.graph.connectionChange(this, link_info);
+        this.graph._emit?.("link-connected", { link: link_info, origin: this, originSlot: slot, target: target_node, targetSlot: target_slot });
 
         return link_info;
     }
@@ -2519,6 +2524,7 @@ export class LGraphNode {
         const notify = (fn) => { try { fn(); } catch (error) { errors.push(error); } };
         for (const { link, origin, target, output, input } of notifications) {
             notify(() => graph.onGraphChanged({ action, doSave: opts.doProcessChange ?? true }));
+            notify(() => graph._emit?.("link-removed", { link, origin: origin ?? null, target: target ?? null }));
             if (target) notify(() => target.processCallbackHandlers("onConnectionsChange", {
                 def_cb: target.onConnectionsChange,
             }, LiteGraph.INPUT, link.target_slot, false, link, input));

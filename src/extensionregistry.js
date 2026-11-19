@@ -66,7 +66,7 @@ export class ExtensionRegistry {
 
     /**
      * Registers an extension.
-     * @param {object} def - {name, version?, requires?: string[], commands?, keybindings?, settings?, setup?(ctx)}
+     * @param {object} def - {name, version?, requires?: string[], commands?, keybindings?, settings?, menus?: {canvas?, node?}, setup?(ctx)}
      * @returns {() => void} disposer (a no-op when the extension is disabled)
      * @throws when the name is missing or taken, a required extension is missing, or setup throws
      *   (whatever was registered before the failure is undone first)
@@ -111,6 +111,14 @@ export class ExtensionRegistry {
             },
             /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
             on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Adds context-menu items ("canvas" or "node"; see MenuRegistry). */
+            menus: { register: (location, provider) => track(host.menus.register(location, provider)) },
+            /** Typed event listener (graph.events / canvas.events), removed on dispose. */
+            onEvent: (target, type, listener, options) => {
+                const events = target?.events;
+                if (!events?.on) throw new Error(`extension ${def.name}: target has no typed events`);
+                return track(events.on(type, listener, options));
+            },
             /** Hook on any object with a CallbackHandler (graph, node, canvas). */
             onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
             /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
@@ -131,6 +139,7 @@ export class ExtensionRegistry {
             for (const setting of def.settings ?? []) ctx.settings.define(setting);
             for (const command of def.commands ?? []) ctx.commands.register(command);
             for (const binding of def.keybindings ?? []) ctx.keybindings.add(binding);
+            for (const [location, provider] of Object.entries(def.menus ?? {})) ctx.menus.register(location, provider);
             if (typeof def.setup === "function") track(def.setup(ctx));
         } catch (error) {
             disposeAll();

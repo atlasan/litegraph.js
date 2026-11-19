@@ -13,6 +13,7 @@ import { CommandRegistry } from "./commands.js";
 import { KeybindingRegistry } from "./keybindings.js";
 import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
+import { MenuRegistry } from "./menus.js";
 
 /**
  * @class LiteGraph
@@ -421,6 +422,29 @@ export class LiteGraphClass {
     }
 
     /**
+     * Persists settings and the user key-binding layer through a storage adapter
+     * (default: localStorage under "litegraph.settings"). The Editor calls this unless created
+     * with `{ skip_persistence: true }`; embedders can call it with their own adapter.
+     * Calling it again only switches the storage.
+     * @param {{load(): object, save(values: object): void}} [storage]
+     */
+    persistPlatformState(storage = SettingsRegistry.localStorageAdapter()) {
+        this.setupPlatform();
+        this.settings.setStorage(storage);
+        const id = "LiteGraph.Keybindings.UserLayer";
+        if (!this.settings.has(id)) {
+            this.settings.define({
+                id,
+                type: "json",
+                name: "Key bindings changed by the user",
+                default: () => ({ bindings: {}, unset: [] }),
+                onChange: (value) => this.keybindings.importUserLayer(value),
+            });
+            this.keybindings.onUserLayerChange = (layer) => this.settings.set(id, layer);
+        }
+    }
+
+    /**
      * Creates the platform registries once: shared operations (commands), key bindings,
      * settings and extensions. Called by initialize(); safe to call earlier.
      */
@@ -429,6 +453,7 @@ export class LiteGraphClass {
         this.commands ??= new CommandRegistry();
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
+        this.menus ??= new MenuRegistry(this.commands);
         this.extensions ??= new ExtensionRegistry(this);
     }
 
