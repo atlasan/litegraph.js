@@ -195,7 +195,13 @@ async function setupWebGL() {
 		}
 	});
 
-	const context = GL.create({ canvas: canvas });
+	let context = null;
+	try {
+		context = GL.create({ canvas: canvas }); // throws when WebGL is unavailable
+	} catch (error) {
+		LiteGraph.log_warn("Editor:","WebGL is not available in this browser",error);
+		return null;
+	}
 	if( !context ) {
 		LiteGraph.log_warn("Editor:","WebGL is not available in this browser");
 		return null;

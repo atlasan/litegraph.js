@@ -209,3 +209,19 @@ test('#377 fitText trims long text to the width with an ellipsis', () => {
     assert.equal(LGraphCanvas.fitText(ctx, 'abcdefghijklmnop', 60), 'abcde…');
     assert.equal(LGraphCanvas.fitText(ctx, 'abc', 0), '');
 });
+
+test('removing a node only closes panels of nodes that left the graph', () => {
+    const graph = new LGraph();
+    const a = LiteGraph.createNode('basic/const');
+    const b = LiteGraph.createNode('basic/const');
+    graph.add(a);
+    graph.add(b);
+    const closed = [];
+    const panel = (node) => ({ node, close: () => closed.push(node) });
+    const panels = [panel(a), panel(b)];
+    const canvas = { graph, selected_nodes: {}, canvas: { parentNode: { querySelectorAll: () => panels } } };
+    canvas.checkPanels = LGraphCanvas.prototype.checkPanels;
+    graph.list_of_graphcanvas = [canvas];
+    graph.remove(b);
+    assert.deepEqual(closed, [b], "a's panel stays open");
+});

@@ -74,6 +74,8 @@ test('logic/sequence accepts arrays and wraps its index into range', () => {
     expect(out[0]).toBe('y');
     runWith(node, [NaN, 42]);
     expect(out[0]).toBe('x');
+    runWith(node, ['1', ['x', 'y']]);
+    expect(out[0]).toBe('y');
 });
 
 test('math3d/quat_to_euler has one input named quat', () => {
@@ -104,6 +106,8 @@ test('string/contains only matches strings', () => {
     runWith(node, [null, 'graph']);
     expect(out[0]).toBe(false);
     runWith(node, ['abc123', 123]);
+    expect(out[0]).toBe(true);
+    runWith(node, [['a', 'b'], 'b']);
     expect(out[0]).toBe(true);
 });
 
@@ -213,10 +217,12 @@ describe('audio nodes guard AudioParam and AudioNode writes', () => {
 
     test('audio/gain ignores non-finite gain from inputs and properties', () => {
         const self = { audionode: { gain: new FakeAudioParam() } };
-        for (const bad of [NaN, Infinity, -Infinity, {}, null, '1']) {
+        for (const bad of [NaN, Infinity, -Infinity, {}, null, 'x', '']) {
             expect(() => proto('audio/gain').onPropertyChanged.call(self, 'gain', bad)).not.toThrow();
         }
         expect(self.audionode.gain.value).toBe(0.5);
+        proto('audio/gain').onPropertyChanged.call(self, 'gain', '0.3');
+        expect(self.audionode.gain.value).toBe(0.3); // numeric strings convert, as in the browser
         proto('audio/gain').onPropertyChanged.call(self, 'gain', 0.8);
         expect(self.audionode.gain.value).toBe(0.8);
 

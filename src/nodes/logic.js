@@ -81,6 +81,9 @@ class Sequence {
             this.current_sequence = seq;
         }
         var index = this.getInputData(0);
+        if (typeof index === "string" && index.trim() !== "") {
+            index = Number(index); // "2" still selects the third value
+        }
         if (typeof index !== "number" || !Number.isFinite(index)) {
             index = 0;
         }

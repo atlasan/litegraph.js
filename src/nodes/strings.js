@@ -42,7 +42,13 @@ LiteGraph.wrapFunctionAsNode(
 
 
 function contains(a, b) {
-    if (typeof a !== "string" || b == null) {
+    if (b == null) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return a.includes(b);
+    }
+    if (typeof a !== "string") {
         return false;
     }
     return a.indexOf(String(b)) != -1;

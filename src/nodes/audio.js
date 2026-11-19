@@ -12,6 +12,8 @@ class LGAudio {
         var isParam = typeof AudioParam !== "undefined" && target instanceof AudioParam;
         try {
             if (isParam) {
+                // numeric strings are converted, as the browser itself would
+                if (typeof value === "string" && value.trim() !== "") value = Number(value);
                 if (typeof value !== "number" || !Number.isFinite(value)) return false;
                 target.value = value;
             } else {

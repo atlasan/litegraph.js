@@ -115,3 +115,22 @@ test('geometry/points3D generates sphere points without litegl', () => {
         }
     }
 });
+
+test('property changes skipped without WebGL are applied once WebGL is up', () => {
+    const applied = [];
+    class SavedCode {
+        constructor() { this.properties = { code: 'default', other: 1 }; }
+        onPropertyChanged(name, value) { applied.push([name, value]); }
+        onExecute() { applied.push(['execute']); }
+    }
+    LGraphTexture.requireWebGL(SavedCode);
+    const node = new SavedCode();
+    node.properties.code = 'saved';
+    node.onPropertyChanged('code', 'saved'); // what configure() does when restoring
+    assert.deepEqual(applied, [], 'nothing runs without WebGL');
+    withFakeWebGL(() => {
+        node.onExecute();
+        node.onExecute();
+    });
+    assert.deepEqual(applied, [['code', 'saved'], ['execute'], ['execute']], 'replayed once, before running');
+});
