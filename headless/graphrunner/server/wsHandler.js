@@ -4,16 +4,16 @@ import {
   getGraphStatus, unloadGraph, stopAllGraphs, setConsolePipeCallback, setStatusCallback,
 } from './graphManager.js';
 import { logger } from '../logger.js';
-import { isAllowedUpgrade } from './security.js';
+import { upgradeRefusal } from './security.js';
 
 export function setupWebSocket(server) {
   const wss = new WebSocketServer({
     server,
     maxPayload: 4 * 1024 * 1024,
     verifyClient: ({ origin, req }) => {
-      const allowed = isAllowedUpgrade({ origin, host: req.headers.host });
-      if (!allowed) logger.warn(`Rejected WebSocket connection (origin: ${origin ?? 'none'}, host: ${req.headers.host ?? 'none'})`);
-      return allowed;
+      const refusal = upgradeRefusal({ origin, host: req.headers.host });
+      if (refusal) logger.warn(`Rejected WebSocket connection: ${refusal}`);
+      return refusal === null;
     },
   });
   const send = (ws, message) => {

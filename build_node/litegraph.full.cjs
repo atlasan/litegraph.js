@@ -20220,6 +20220,13 @@ class LibraryManager {
          * @type {boolean}
          */
         this.allowServerRemoteCode = false;
+        /**
+         * Let `npmInstall` pass any package spec npm understands (git URLs, tarball URLs, paths, tags),
+         * not only plain `name@version` specs. Flags (a leading "-") are refused either way, and on
+         * Windows, where npm runs through cmd.exe, so are shell metacharacters.
+         * @type {boolean}
+         */
+        this.allowAnyPackageSpec = false;
 
         // Dynamically import Node.js modules (avoid errors in browsers)
         this.ready = isBrowser() ? Promise.resolve() : this.importNodeModules();
@@ -20479,7 +20486,7 @@ class LibraryManager {
      */
     async loadServerRemoteScript(url) {
         if (!this.allowServerRemoteCode) {
-            throw new Error(`Refusing to evaluate remote server code from ${url}; set LibraryManager.allowServerRemoteCode = true for trusted sources`);
+            throw new Error(`Refusing to evaluate remote server code from ${url}; set LiteGraph.LibraryManager.allowServerRemoteCode = true for trusted sources (the code runs with full process rights)`);
         }
         if (!this.fetch || !this.vm) throw new Error("Node.js modules 'fetch' and 'vm' are required.");
 
@@ -20598,10 +20605,26 @@ class LibraryManager {
     }
 
     /**
+     * True for a package spec that can be passed to npm as one argument when
+     * `allowAnyPackageSpec` is set: not a flag, no control characters, and, when npm runs through
+     * cmd.exe (Windows), no shell metacharacters.
+     * @param {string} spec
+     * @param {boolean} [throughShell]
+     * @returns {boolean}
+     */
+    static isPassableArgument(spec, throughShell = false) {
+        if (typeof spec !== "string" || !spec || spec.length > 2048 || spec.startsWith("-")) return false;
+        // whitespace and control characters (code points below 0x20, and 0x7f)
+        if (/\s/.test(spec) || [...spec].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f)) return false;
+        return !throughShell || !/[&|<>^%"!()]/.test(spec);
+    }
+
+    /**
      * Attempt to install NPM packages required for a library.
      * This method is only supported in Node.js or Bun environments.
      * Runs without a shell: the command and every package spec are separate arguments, and
-     * package specs must pass {@link LibraryManager.isSafePackageSpec}.
+     * package specs must pass {@link LibraryManager.isSafePackageSpec} (or, with
+     * `allowAnyPackageSpec`, {@link LibraryManager.isPassableArgument}).
      * @param {string} libKey The key of the library.
      * @param {string|string[]} [command] Program and leading arguments, e.g. "npm install" or ["pnpm", "add"].
      * @returns {Promise<string>} The stdout from the npm install command.
@@ -20628,16 +20651,21 @@ class LibraryManager {
             return;
         }
         const packages = library.npmPackages.filter((name) => !name.startsWith("node:"));
-        const unsafe = packages.filter((name) => !LibraryManager.isSafePackageSpec(name));
+        const useShell = typeof process !== "undefined" && process.platform === "win32";
+        const unsafe = packages.filter((name) => this.allowAnyPackageSpec ?
+            !LibraryManager.isPassableArgument(name, useShell) :
+            !LibraryManager.isSafePackageSpec(name));
         if (unsafe.length) {
-            throw new Error(`Refusing to install unsafe package spec(s) for ${libKey}: ${unsafe.join(", ")}`);
+            const hint = this.allowAnyPackageSpec ?
+                "flags and shell metacharacters are always refused" :
+                "only plain name@version specs are accepted; set LiteGraph.LibraryManager.allowAnyPackageSpec = true to allow git/URL/path specs from trusted sources";
+            throw new Error(`Refusing to install unsafe package spec(s) for ${libKey}: ${unsafe.join(", ")} (${hint})`);
         }
         const argv = (Array.isArray(command) ? command : String(command).trim().split(/\s+/)).filter(Boolean);
         if (!argv.length) throw new Error("npmInstall needs a command, e.g. \"npm install\"");
         const [program, ...programArgs] = argv;
         // npm is a .cmd script on Windows, which execFile can only start through a shell; the
         // arguments were validated above, so no shell metacharacters can reach it.
-        const useShell = typeof process !== "undefined" && process.platform === "win32";
         return new Promise((resolve, reject) => {
             child_process.execFile(program, [...programArgs, ...packages], {
                 shell: useShell
