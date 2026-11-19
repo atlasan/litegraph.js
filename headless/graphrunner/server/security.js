@@ -16,11 +16,19 @@ function hostnameOf(hostHeader) {
   try { return new URL(`http://${hostHeader}`).hostname.toLowerCase(); } catch { return null; }
 }
 
+// A configured name as it appears in a Host header: a bare IPv6 address ("fe80::1") is bracketed.
+function configuredHostname(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  return hostnameOf(trimmed.includes(':') && !trimmed.startsWith('[') ? `[${trimmed}]` : trimmed);
+}
+
 export function allowedHostnames(env = process.env) {
   const hosts = new Set(LOOPBACK);
-  if (env.HOST && env.HOST !== '0.0.0.0' && env.HOST !== '::') hosts.add(env.HOST.toLowerCase());
-  for (const extra of (env.RUNNER_ALLOWED_HOSTS || '').split(',')) {
-    if (extra.trim()) hosts.add(extra.trim().toLowerCase());
+  const configured = [(env.HOST && env.HOST !== '0.0.0.0' && env.HOST !== '::') ? env.HOST : '', ...(env.RUNNER_ALLOWED_HOSTS || '').split(',')];
+  for (const name of configured) {
+    const hostname = configuredHostname(name);
+    if (hostname) hosts.add(hostname);
   }
   return hosts;
 }
@@ -42,7 +50,10 @@ export function isAllowedUpgrade({ origin, host }, env = process.env) {
   let parsed;
   try { parsed = new URL(origin); } catch { return false; }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-  return parsed.host.toLowerCase() === String(host).toLowerCase();
+  // compare in URL-normalised form, so a default port ("localhost:80" vs "http://localhost") matches
+  let hostUrl;
+  try { hostUrl = new URL(`${parsed.protocol}//${host}`); } catch { return false; }
+  return parsed.host === hostUrl.host;
 }
 
 /** Express middleware rejecting requests whose Host header is not this runner. */
