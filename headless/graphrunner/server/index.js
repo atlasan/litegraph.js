@@ -7,9 +7,11 @@ import { setupWebSocket } from './wsHandler.js';
 import { router } from './routes.js';
 import { unloadAllGraphs } from './graphManager.js';
 import { logger } from '../logger.js';
+import { hostGuard } from './security.js';
 
 export function createRunnerServer() {
   const app = express();
+  app.use(hostGuard);
   app.use(express.static(path.join(runnerRoot, 'public')));
   for (const directory of ['css', 'src', 'build', 'external', 'editor']) {
     app.use('/' + directory, express.static(path.join(repositoryRoot, directory)));

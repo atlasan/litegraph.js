@@ -96,3 +96,36 @@ test('waitForLib starts loading, surfaces errors, and unload works without a DOM
         assert.equal(manager.areAllLibrariesLoaded(), false);
     } finally { delete globalThis.__testWaitPath; }
 });
+
+test('npm install specs are validated and never reach a shell', async () => {
+    const ok = ['ws', 'socket.io-client', '@scope/pkg', 'osc-js@2.4.1', 'pkg@^1.2.3', 'pkg@latest', 'pkg@1.x'];
+    const bad = ['ws; rm -rf ~', '$(id)', '`id`', 'a && b', '--registry=http://evil', '../local', 'git+https://x/y.git', 'https://x/y.tgz', 'pkg@1 || 2', 'pkg@>1', 'Upper', ''];
+    for (const spec of ok) assert.equal(LibraryManager.isSafePackageSpec(spec), true, spec);
+    for (const spec of bad) assert.equal(LibraryManager.isSafePackageSpec(spec), false, spec);
+    const manager = new LibraryManager();
+    manager.registerLibrary({ key: 'evil', server: { npm: 'ws; touch /tmp/pwned' } });
+    await assert.rejects(manager.npmInstall('evil'), /unsafe package spec/);
+});
+
+test('remote server code is refused unless explicitly allowed', async () => {
+    const manager = new LibraryManager();
+    await manager.ready;
+    await assert.rejects(manager.loadServerRemoteScript('https://example.invalid/lib.js'), /Refusing to evaluate remote server code/);
+});
+
+test('waitAllLibrariesLoaded settles on success, rejects on failure and on timeout', async () => {
+    const manager = new LibraryManager();
+    manager.registerLibrary({ key: 'good', server: { npm: 'node:path' } });
+    manager.registerLibrary({ key: 'bad', server: { npm: 'node:path' } });
+    await manager.waitAllLibrariesLoaded();
+    const loading = manager.loadLibrary('good');
+    await manager.waitAllLibrariesLoaded();
+    await loading;
+    manager.loadServerLibrary = async () => { throw new Error('offline'); };
+    manager.loadLibrary('bad').catch(() => {});
+    await assert.rejects(manager.waitAllLibrariesLoaded(), /Libraries failed to load: bad/);
+    manager.libraries_state.bad = 'not_loaded';
+    manager.loadServerLibrary = () => new Promise(() => {});
+    manager.loadLibrary('bad').catch(() => {});
+    await assert.rejects(manager.waitAllLibrariesLoaded({ timeout: 30 }), /still loading after 30ms: bad/);
+});

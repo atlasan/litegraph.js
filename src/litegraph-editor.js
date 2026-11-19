@@ -280,7 +280,7 @@ export class Editor {
         close_button.className = "corner-button";
         close_button.innerHTML = "&#10060;";
         close_button.addEventListener("click", (_event) => {
-            graphcanvas.setGraph(null);
+            graphcanvas.dispose(); // stops its render loop and unbinds its listeners
             miniwindow.parentNode.removeChild(miniwindow);
         });
         miniwindow.appendChild(close_button);
@@ -305,10 +305,11 @@ export class Editor {
 
         // toggle test
         if (this.graphcanvas2) {
-            this.graphcanvas2.unbindEvents();
-            this.graphcanvas2.setGraph(null, true);
-            this.graphcanvas2.viewport = null;
+            // both canvases share one element: dispose the second (render loop + listeners),
+            // then hand the element back to the main canvas
+            this.graphcanvas2.dispose();
             this.graphcanvas2 = null;
+            canvas.data = this.graphcanvas;
 
             // this.graphcanvas.unbindEvents();
             // this.graphcanvas.setGraph(null, false);

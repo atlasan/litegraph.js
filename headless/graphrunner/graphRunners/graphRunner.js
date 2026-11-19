@@ -2,10 +2,14 @@ import { parentPort, workerData } from 'node:worker_threads';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { format } from 'node:util';
+import { assertAllowedGraph, scriptsAllowed } from '../nodePolicy.js';
 
 const require = createRequire(import.meta.url);
 const { LiteGraph, LGraph } = require('../../../build_node/litegraph_nodejs.full.cjs');
 LiteGraph.logging_set_level(process.env.LOG_LEVEL === 'debug' ? 4 : 2);
+// the Node.js build enables script nodes (math/formula, basic/script, ...); a pushed workflow must
+// not run arbitrary code unless the operator opts in
+LiteGraph.allow_scripts = scriptsAllowed();
 
 for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
   console[level] = (...args) => parentPort.postMessage({
@@ -17,11 +21,7 @@ async function configure(data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
     throw new Error('Workflow must contain nodes and links arrays');
   }
-  for (const node of data.nodes) {
-    if (!node || !Object.hasOwn(LiteGraph.registered_node_types, node.type)) {
-      throw new Error(`Unknown node type: ${node?.type}`);
-    }
-  }
+  assertAllowedGraph(data, (type) => Object.hasOwn(LiteGraph.registered_node_types, type));
   const candidate = new LGraph();
   try {
     if (candidate.configure(data)) throw new Error('Workflow contains unsupported nodes');

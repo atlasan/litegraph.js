@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import { Worker } from 'node:worker_threads';
@@ -148,6 +149,17 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
   };
   try {
     await Promise.all([once(ws, 'open'), once(peer, 'open')]);
+    const foreign = new WebSocket(`ws://${address}`, { origin: 'https://evil.example' });
+    foreign.on('error', () => {});
+    const [, rejection] = await once(foreign, 'unexpected-response');
+    assert.equal(rejection.statusCode, 401, 'cross-origin WebSocket upgrade is refused');
+    rejection.destroy();
+    const reboundStatus = await new Promise((resolve, reject) => {
+      const request = http.request({ host: '127.0.0.1', port: runner.server.address().port, path: '/api/list_files', headers: { host: 'evil.example' } }, (response) => { response.resume(); resolve(response.statusCode); });
+      request.on('error', reject);
+      request.end();
+    });
+    assert.equal(reboundStatus, 403, 'foreign Host header is refused');
     const listed = await fetch(`http://${address}/api/list_files`).then((r) => r.json());
     assert.ok(listed.includes('empty.json'));
     assert.ok(!listed.includes('escape.json'));
@@ -159,9 +171,18 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     const openedReply = await waitFor((m) => m.type === 'graph_opened');
     assert.equal(openedReply.requestId, 'open-fixture');
     assert.equal(openedReply.data.status, 'stopped');
+    ws.send(JSON.stringify({ type: 'update_graph', requestId: 'denied-fixture', data: { graphId: 'empty.json', serializedGraph: { ...workflow, nodes: [{ id: 1, type: 'sys/runCommand' }] } } }));
+    assert.match((await waitFor((m) => m.requestId === 'denied-fixture')).data.message, /not allowed in the runner: sys\/runCommand/);
+    // script nodes must not evaluate pushed code: a formula that would write a file stays inert
+    const marker = path.join(temp, 'formula-ran');
+    const formula = `process.getBuiltinModule('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`;
+    ws.send(JSON.stringify({ type: 'update_graph', requestId: 'script-fixture', data: { graphId: 'empty.json', serializedGraph: { ...workflow, nodes: [{ id: 1, type: 'math/formula', pos: [0, 0], size: [100, 50], properties: { formula } }] } } }));
+    assert.equal((await waitFor((m) => m.requestId === 'script-fixture')).type, 'graph_updated');
     ws.send(JSON.stringify({type:'unsupported', requestId:'error-fixture'}));
     assert.equal((await waitFor(m => m.type === 'error')).requestId, 'error-fixture');
     await waitFor((m) => m.type === 'graph_status' && m.data.status === 'running');
+    await new Promise((resolve) => setTimeout(resolve, 300)); // let the formula graph run a few steps
+    assert.equal(fs.existsSync(marker), false, 'math/formula evaluated pushed code');
     const peerUpdate = new Promise(resolve => {
       const receive = raw => {
         const packet = JSON.parse(raw);

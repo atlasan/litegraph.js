@@ -220,8 +220,9 @@ def update_version_in_files(version, files):
         try:
             with open(file_path, 'r') as file:
                 data = file.read()
-                data = re.sub(r'("version": )"\d+.\d+.\d+"', r'\1"{}"'.format(version), data)
-                data = re.sub(r'(this.VERSION = )"\d+.\d+.\d+";', r'\1"{}";'.format(version), data)
+                data = re.sub(r'("version": )"\d+\.\d+\.\d+"', r'\g<1>"{}"'.format(version), data, count=1)
+                # class field `VERSION = "x.y.z";` (an older `this.VERSION =` form is accepted too)
+                data = re.sub(r'^(\s*(?:this\.)?VERSION = )"[^"]*";', r'\g<1>"{}";'.format(version), data, flags=re.M)
             with open(file_path, 'w') as file:
                 file.write(data)
             print(f"Version updated in file: {file_path}")
@@ -238,11 +239,14 @@ def get_version_from_package_json():
 
 def get_new_version():
     version_number = get_version_from_package_json()
+    # --update-version alone syncs src/litegraph.js to package.json; add --patch, --minor or --major to bump
     for arg in sys.argv:
         if "--minor" in arg:
             version_number = update_version(version_number, "--minor")
         elif "--major" in arg:
             version_number = update_version(version_number, "--major")
+        elif "--patch" in arg:
+            version_number = update_version(version_number, "--patch")
     return version_number
 
 def convert_es6_to_commonjs(data):

@@ -1698,6 +1698,88 @@ export class LGraph {
     }
 
     /**
+     * Checks that the link table and the slot references agree, and optionally repairs them.
+     * The link table (`graph.links`) is the record of a connection; a slot reference is valid
+     * only when the link it names connects that exact node and slot. Checks:
+     * - a link whose origin/target node or slot does not exist (removed)
+     * - a link the target input does not point back to (removed: the input belongs to another link)
+     * - a valid link missing from its origin output's `links` (added back)
+     * - an input `link` / output `links` entry naming a missing or mismatched link (cleared)
+     * - a link `parentId` naming a missing reroute (cleared)
+     * Applies only to this graph (not to nested subgraphs). Repairs bypass history and callbacks.
+     * @param {object} [options]
+     * @param {boolean} [options.repair=false] fix the problems found
+     * @returns {{ok: boolean, repaired: boolean, issues: Array<{kind: string, link_id?: (number|string), node_id?: (number|string), slot?: number}>}}
+     */
+    validateLinks({ repair = false } = {}) {
+        const issues = [];
+        const nodeOf = (id) => this.getNodeById(id);
+        const remove = new Set();
+        for (const key of Object.keys(this.links)) {
+            const link = this.links[key];
+            if (!link) {
+                issues.push({ kind: "empty-link-entry", link_id: key });
+                remove.add(key);
+                continue;
+            }
+            const origin = nodeOf(link.origin_id);
+            const target = nodeOf(link.target_id);
+            const output = origin?.outputs?.[link.origin_slot];
+            const input = target?.inputs?.[link.target_slot];
+            if (!origin || !target || !output || !input) {
+                issues.push({ kind: "dangling-link", link_id: link.id, node_id: !origin ? link.origin_id : link.target_id });
+                remove.add(key);
+                continue;
+            }
+            if (input.link != link.id) {
+                issues.push({ kind: "link-not-referenced-by-input", link_id: link.id, node_id: target.id, slot: link.target_slot });
+                remove.add(key);
+                continue;
+            }
+            if (!output.links?.some((id) => id == link.id)) {
+                issues.push({ kind: "link-missing-from-output", link_id: link.id, node_id: origin.id, slot: link.origin_slot });
+                if (repair) (output.links ??= []).push(link.id);
+            }
+            if (link.parentId !== undefined && this.reroutes && !this.reroutes.has(link.parentId)) {
+                issues.push({ kind: "missing-reroute", link_id: link.id });
+                if (repair) delete link.parentId;
+            }
+        }
+        if (repair) {
+            for (const key of remove) delete this.links[key];
+        }
+        // links are keyed by id; anything scheduled for removal no longer counts as valid
+        const valid = (id) => {
+            const link = this.links[id];
+            return link && link.id == id && !remove.has(String(id)) ? link : null;
+        };
+        for (const node of this._nodes ?? []) {
+            node.inputs?.forEach((input, slot) => {
+                if (input.link == null) return;
+                const link = valid(input.link);
+                if (!link || link.target_id != node.id || link.target_slot != slot) {
+                    issues.push({ kind: "input-references-bad-link", link_id: input.link, node_id: node.id, slot });
+                    if (repair) input.link = null;
+                }
+            });
+            node.outputs?.forEach((output, slot) => {
+                if (!output.links) return;
+                const kept = output.links.filter((id) => {
+                    const link = valid(id);
+                    const ok = !!link && link.origin_id == node.id && link.origin_slot == slot;
+                    if (!ok) issues.push({ kind: "output-references-bad-link", link_id: id, node_id: node.id, slot });
+                    return ok;
+                });
+                if (repair && kept.length !== output.links.length) output.links = kept.length ? kept : null;
+            });
+        }
+        if (repair && issues.length) {
+            this.setDirtyCanvas?.(true, true);
+        }
+        return { ok: issues.length === 0, repaired: repair && issues.length > 0, issues };
+    }
+
+    /**
      * Adds a reroute to a link, as the point nearest the link's target.
      * @param {number[]} pos - graph-space position
      * @param {LLink} [link] - link to route through it

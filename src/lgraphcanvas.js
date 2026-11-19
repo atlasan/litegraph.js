@@ -162,9 +162,8 @@ export class LGraphCanvas {
             this.startRendering();
         }
 
-        // event dispatcher, along direct (single) assignment of callbacks [ event entrypoint ]
-        this.callbackhandler_setup();
-
+        // (the CallbackHandler was created at the top of the constructor; creating it again here
+        // would drop every handler registered while constructing)
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct",{
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
@@ -269,6 +268,7 @@ export class LGraphCanvas {
 
         // remove the graph stack in case a subgraph was open
         this._graph_stack &&= null;
+        this._view_stack &&= null;
         this.setDirty(true, true);
     }
 
@@ -279,7 +279,7 @@ export class LGraphCanvas {
      * @return {LGraph} graph
      */
     getTopGraph() {
-        if(this._graph_stack.length)
+        if(this._graph_stack?.length)
             return this._graph_stack[0];
         return this.graph;
     }
@@ -304,6 +304,9 @@ export class LGraphCanvas {
         if (this.graph) {
             this._graph_stack ||= [];
             this._graph_stack.push(this.graph);
+            // remember the parent view, restored by closeSubgraph
+            this._view_stack ||= [];
+            this._view_stack[this._graph_stack.length - 1] = { offset: [...this.ds.offset], scale: this.ds.scale };
         }
 
         var prev_graph = this.graph;
@@ -331,6 +334,8 @@ export class LGraphCanvas {
         var subgraph_node = this.graph._subgraph_node;
         var prev_graph = this.graph;
         var graph = this._graph_stack.pop();
+        var saved_view = this._view_stack?.[this._graph_stack.length];
+        if (this._view_stack) this._view_stack.length = this._graph_stack.length;
         this.selected_nodes = {};
         this.highlighted_links = {};
 
@@ -340,13 +345,16 @@ export class LGraphCanvas {
 
         graph.attachCanvas(this);
         this.setDirty(true, true);
-        if (subgraph_node) {
+        if (saved_view) {
+            // back to where the user was before opening the subgraph
+            this.ds.offset = [...saved_view.offset];
+            this.ds.scale = saved_view.scale;
+        } else if (subgraph_node) {
             this.centerOnNode(subgraph_node);
+        }
+        if (subgraph_node) {
             this.selectNodes([subgraph_node]);
         }
-        // when close sub graph back to offset [0, 0] scale 1
-        this.ds.offset = [0, 0]
-        this.ds.scale = 1
         this._emit("subgraph-closed", { graph, subgraph: prev_graph, node: subgraph_node ?? null });
     }
 
@@ -380,10 +388,13 @@ export class LGraphCanvas {
             return;
         }
 
-        if (!canvas && this.canvas) {
-            // maybe detach events from old_canvas
-            if (!skip_events) {
+        if (this.canvas) {
+            // listeners belong to the old element: detach them before switching (or detaching)
+            if (this._events_binded) {
                 this.unbindEvents();
+            }
+            if (this.canvas.data === this) {
+                delete this.canvas.data;
             }
         }
 
@@ -395,9 +406,12 @@ export class LGraphCanvas {
         }
 
         // this.canvas.tabindex = "1000";
-        canvas.className += " lgraphcanvas";
+        canvas.classList.add("lgraphcanvas");
         canvas.data = this;
-        canvas.tabindex = "1"; // to allow key events
+        // focusable, to receive key events (a <canvas> is not focusable by default)
+        if (!canvas.hasAttribute?.("tabindex")) {
+            canvas.tabIndex = 0;
+        }
 
         // bg canvas: used for non changing stuff
         this.bgcanvas = document.createElement("canvas");
@@ -655,16 +669,23 @@ export class LGraphCanvas {
         } // already rendering
 
         this.is_rendering = true;
+        // each start gets its own loop token, so a stop followed by a quick restart
+        // cannot leave the previous animation-frame chain running alongside the new one
+        const loop = this._render_loop = {};
         renderFrame.call(this);
 
         function renderFrame() {
+            if (this._render_loop !== loop || !this.is_rendering) {
+                return;
+            }
             if (!this.pause_rendering) {
                 this.draw();
             }
 
             var window = this.getCanvasWindow();
-            if (this.is_rendering) {
-                window.requestAnimationFrame(renderFrame.bind(this));
+            if (this.is_rendering && this._render_loop === loop) {
+                this._render_frame_window = window;
+                this._render_frame_id = window.requestAnimationFrame(renderFrame.bind(this));
             }
         }
     }
@@ -676,6 +697,12 @@ export class LGraphCanvas {
      */
     stopRendering() {
         this.is_rendering = false;
+        this._render_loop = null;
+        if (this._render_frame_id != null) {
+            this._render_frame_window?.cancelAnimationFrame?.(this._render_frame_id);
+            this._render_frame_id = null;
+            this._render_frame_window = null;
+        }
         /*
     if(this.rendering_timer_id)
     {
@@ -683,6 +710,38 @@ export class LGraphCanvas {
         this.rendering_timer_id = null;
     }
     */
+    }
+
+    /**
+     * Releases everything this canvas holds: stops the render loop, closes panels and the
+     * search box, detaches the graph and unbinds all DOM listeners. The instance must not be
+     * used afterwards. Safe to call more than once.
+     * @method dispose
+     */
+    dispose() {
+        if (this._disposed) {
+            return;
+        }
+        this.stopRendering();
+        if (this.canvas && typeof document !== "undefined") {
+            this.closePanels?.();
+            this.search_box?.close?.();
+        }
+        this._emit("disposed", { canvas: this });
+        if (this.graph) {
+            this.setGraph(null, true);
+        }
+        this.setCanvas(null);
+        this._graph_stack = null;
+        this._view_stack = null;
+        this.bgcanvas = null;
+        this.bgctx = null;
+        this.ctx = null;
+        this.visible_nodes = [];
+        this._disposed = true;
+        if (LGraphCanvas.active_canvas === this) {
+            LGraphCanvas.active_canvas = null;
+        }
     }
 
     /* LiteGraphCanvas input */
@@ -7316,6 +7375,11 @@ export class LGraphCanvas {
 
         dialog.close = function() {
             that.search_box = null;
+            // pending helper refresh must not run against a closed dialog
+            if (timeout) {
+                clearTimeout(timeout);
+                timeout = null;
+            }
             this.blur();
             canvas.focus();
             root_document.body.style.overflow = "";
@@ -7418,7 +7482,7 @@ export class LGraphCanvas {
                     }
                 } else {
                     if (timeout) {
-                        clearInterval(timeout);
+                        clearTimeout(timeout);
                     }
                     timeout = setTimeout(refreshHelper, 250);
                     return;
@@ -7548,6 +7612,8 @@ export class LGraphCanvas {
                     }
 
                     graphcanvas.graph.beforeChange();
+                    // every exit below (failure, early return, exception) must close the change
+                    try {
                     var node = LiteGraph.createNode(name);
 
                     if(!node){
@@ -7654,7 +7720,9 @@ export class LGraphCanvas {
                         }
                     }
 
-                    graphcanvas.graph.afterChange();
+                    } finally {
+                        graphcanvas.graph.afterChange();
+                    }
                 }
             }
 

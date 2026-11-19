@@ -164,6 +164,15 @@ export class CallbackHandler {
          * called for each callback to push and merge results
          * void
          */
+        // a result replaces the current one only when its result_priority (default 0) is not lower
+        // than the priority of the result currently held
+        var acceptResult = function(value, priority){
+            if(typeof(priority)!=="number" || isNaN(priority)) priority = 0;
+            if(cbRet === null || priority >= cbResPriority){
+                cbRet = value;
+                cbResPriority = priority;
+            }
+        }
         var checkStepRet = function(){
             aResChain.push(stepRet); // cache result
             opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
@@ -174,18 +183,8 @@ export class CallbackHandler {
                 if(typeof(stepRet.prevent_default)!=="undefined" && stepRet.prevent_default){
                     preventDefCb = true;
                 }
-                if(typeof(stepRet.return_value)!=="undefined"){
-                    if( !cbResPriority
-                        || (typeof(stepRet.result_priority)!=="undefined" && cbResPriority <= stepRet.result_priority)
-                        || (typeof(stepRet.result_priority)==="undefined" && (!cbResPriority || cbResPriority <= 0))
-                    ){
-                        if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","set result from object",stepRet,oCbInfo);
-                        cbRet = stepRet;
-                    }
-                }else{
-                    if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","set result, not object",stepRet,oCbInfo);
-                    cbRet = stepRet;
-                }
+                if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","object result",stepRet,oCbInfo);
+                acceptResult(stepRet, stepRet.result_priority);
                 if(typeof(stepRet.stop_replication)!=="undefined" && stepRet.stop_replication){
                     if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","stop_replication",oCbInfo);
                     breakCycle = true;
@@ -195,14 +194,14 @@ export class CallbackHandler {
                 if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","result NOT object",stepRet);
                 // ? save current result if not null or undefined (?)
                 if(stepRet !== null && stepRet !== undefined){
-                    cbRet = stepRet; // TODO maybe to remove, leave for current stability
+                    acceptResult(stepRet, 0); // plain values count as result_priority 0
                 }
             }
         }
         for(let cbhX of this.callbacks_handlers[name].handlers){
 
             // eventually prevent cb marked as default
-            if(preventDefCb && cbhX.is_default){
+            if(preventDefCb && cbhX.data.is_default){
                 if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers","preventing default registered",cbhX);
                 continue;
             }
@@ -212,6 +211,11 @@ export class CallbackHandler {
                 if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers","process default passed","nextCb:",cbhX);
                 executeDefaultCb();
                 if(breakCycle) break;
+            }
+
+            if(cbhX.data.call_once){
+                this.unregisterCallbackHandler(name, cbhX.id);
+                if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers","unregistered call_once",cbhX.id);
             }
 
             oCbInfo = {
@@ -235,15 +239,11 @@ export class CallbackHandler {
             if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers","result checked","cbRet", cbRet,"aResChain", aResChain,"cbResPriority", cbResPriority,"defCbChecked", defCbChecked,"preventDefCb", preventDefCb,"breakCycle", breakCycle);
             if(breakCycle) break;
 
-            if(cbhX.data.call_once){
-                this.unregisterCallbackHandler(name, cbhX.id);
-                if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers","unregistered call_once",oCbInfo);
-            }
-
         } // end cycle
     
-        // recheck for default cb passed after cycling
-        if(!defCbChecked){
+        // run the default callback if no handler ran it yet, unless the chain was stopped
+        // (stop_replication stops everything after it, the default callback included)
+        if(!defCbChecked && !breakCycle){
             executeDefaultCb();
         }
 
