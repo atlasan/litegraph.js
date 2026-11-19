@@ -153,7 +153,7 @@ A purpose describes **what the user is trying to make**, not a technology. Each 
 
 ## Purpose × kind at a glance
 
-Counts of catalog rows on 2026-11-19 (201 ideas). An idea that serves several purposes is counted once for each. Regenerate the table from [catalog.md](catalog.md) when rows change.
+Counts of catalog rows on 2026-11-20 (212 ideas). An idea that serves several purposes is counted once for each. Regenerate the table from [catalog.md](catalog.md) when rows change.
 
 | Purpose | node | widget | ext | io | runtime | core | proto | app | Total |
 |---|---|---|---|---|---|---|---|---|---|
@@ -164,11 +164,11 @@ Counts of catalog rows on 2026-11-19 (201 ideas). An idea that serves several pu
 | P5 Devices | 4 |  | 2 |  |  | 1 |  |  | 7 |
 | P6 Data | 7 | 4 | 1 | 5 | 1 | 1 |  | 1 | 20 |
 | P7 LLM | 3 | 1 |  | 3 | 6 | 2 | 2 |  | 17 |
-| P8 Process | 10 | 1 | 4 | 6 | 12 | 5 | 5 | 3 | 46 |
-| P9 Education | 3 | 1 | 5 | 4 |  |  |  | 2 | 15 |
-| P10 Host | | 9 | 14 | 4 | 7 | 31 | 3 | 2 | 70 |
+| P8 Process | 10 | 1 | 4 | 6 | 12 | 5 | 6 | 3 | 47 |
+| P9 Education | 3 | 1 | 5 | 4 |  | 2 |  | 3 | 18 |
+| P10 Host |  | 9 | 16 | 4 | 11 | 33 | 3 | 4 | 80 |
 
 **What the counts suggest [I]:**
-- **P10 is where the core work is:** 31 core hooks, and most other purposes depend on them.
+- **P10 is where the core work is:** 33 core hooks, and most other purposes depend on them.
 - **P8 is the largest application area,** because the Bun runner investigation decomposed it in detail.
 - **P5 Devices is under-explored** compared with the existing OSC, UDP and MIDI families. It is a candidate for the next investigation.

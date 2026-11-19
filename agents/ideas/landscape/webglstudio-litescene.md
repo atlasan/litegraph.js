@@ -59,4 +59,4 @@ Sources: `src/graph/`, `src/components/graphComponents.js`, `src/resources/graph
 ## 5. Open questions
 
 - Should the GL families stay on litegl or move to three.js/TSL? WGS-06 to WGS-08 depend on the answer, so it decides whether those ideas are worth doing.
-- Can GraphCode-style shared templates become a concrete use case for [ADR 0001](../../../docs/development/decisions/0001-subgraph-document-format.md)?
+- Can GraphCode-style shared templates become a concrete use case for [ADR 0001](../../memories/decisions/0001-subgraph-document-format.md)?

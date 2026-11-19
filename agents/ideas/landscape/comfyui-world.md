@@ -2,7 +2,7 @@
 
 Date: 2026-11-19. Status: **investigation**, living. Ideas `CFY-01`–`CFY-55`.
 
-**Question:** the ComfyUI ecosystem has thousands of custom-node packs and dozens of integrations. Beyond what the [ecosystem study](../../../docs/development/ecosystem-study/README.md) already covers, which patterns should a *general-purpose* litegraph host support?
+**Question:** the ComfyUI ecosystem has thousands of custom-node packs and dozens of integrations. Beyond what the [ecosystem study](../../memories/research/ecosystem-study/README.md) already covers, which patterns should a *general-purpose* litegraph host support?
 
 **Not repeated here** (see the study for these):
 - rgthree, pysssss, KJ comparer/SetGet, VHS, Easy-Use, Use-Everywhere, Impact, 0246, Crystools, N-Sidebar, workspace-manager, layout and link plugins.
@@ -92,7 +92,7 @@ Date: 2026-11-19. Status: **investigation**, living. Ideas `CFY-01`–`CFY-55`.
 | CFY-50 | **Owned UI layers**: named overlay layers instead of z-index fights among DOM widgets | [UI-LAYERS-0045](https://github.com/Comfy-Org/ComfyUI_frontend/blob/main/docs/adr/UI-LAYERS-0045-owned-stacking-contexts.md) (`ref`) | S | — |
 | CFY-51 | **Resizable widget rows** saved in properties; a visible fallback when a widget type is unknown | [WIDGET-LAYOUT-0057](https://github.com/Comfy-Org/ComfyUI_frontend/blob/main/docs/adr/WIDGET-LAYOUT-0057-user-sized-widget-heights-are-widget-intent.md) (`ref`) | M | — |
 | CFY-52 | **Late extension loading when idle**: queue late registrations and apply them in one batch | [EXTENSION-LOADING-0048](https://github.com/Comfy-Org/ComfyUI_frontend/blob/main/docs/adr/EXTENSION-LOADING-0048-late-custom-nodes-turn-on-after-the-editor-opens.md) (`ref`) | S | — |
-| CFY-53 | **i18n hook** for display names, menus and search | AIGODLIKE Translation (`none`) | M | i18n sidecars are already in the [harvest catalog](../../../planning/plans/261119_feature_harvest_and_priorities.md#43-node-types-and-registry); locales are in the Wave 4 pack manifest |
+| CFY-53 | **i18n hook** for display names, menus and search | AIGODLIKE Translation (`none`) | M | i18n sidecars are already in the [harvest catalog](../../plans/261119_feature_harvest_and_priorities.md#43-node-types-and-registry); locales are in the Wave 4 pack manifest |
 | CFY-54 | **Gestures**: shake a node to detach it, swap a node in place keeping its links, auto-fill connections | KJNodes (`ref`) | M | Build on `CanvasPointer` gesture handlers |
 | CFY-55 | **Pack manifest extras**: an editor version range (`requires.editor`) and platform tags | [registry spec](https://docs.comfy.org/registry/specifications) | S | Feeds the Wave 4 pack manifest |
 

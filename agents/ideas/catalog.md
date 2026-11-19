@@ -21,6 +21,11 @@ These ideas recur across several areas, so each one also absorbs related area id
 | X-05 | Schema-generated node packs: JSON Schema, zod, OpenAPI, MCP tools, backend operator catalogs, other-language decorators | P6 P7 P10 | io | L | adapt | sketched | JS-01, JS-19, USE-24, USE-26, CFY-33 |
 | X-06 | Exporter and code-generation registry (`exportAs(format)`) | P6 P8 P2 | io | M | adapt | sketched | CFY-35, USE-08, 3D-02, 3D-05, BUN-21, BUN-22 |
 | X-07 | Node-type aliases and migrations for renamed types | P10 | core | S | — | promoted | Roadmap Wave 4 "replacement mappings as data"; USE evidence: Talemate |
+| X-08 | Accessibility: keyboard traversal of nodes and slots, ARIA live region, screen-reader outline of the graph | P10 P9 | core | L | — | seed | 2025 improvements ledger |
+| X-09 | Touch and mobile gestures on `CanvasPointer` (pinch zoom, long-press menu, touch-sized hit areas) | P10 P9 | core | M | — | seed | Retires `editor_mobile.html` defaults |
+| X-10 | Runner health and metrics endpoint (runs, step time, worker memory) | P8 | proto | S | — | seed | Fold into X-01 `/features` |
+| X-11 | Node property presets: named value sets per node type, stored as a setting | P10 | ext | S | — | seed | 2025 improvements ledger |
+| X-12 | Settings export, import and profiles on `LiteGraph.settings` | P10 | ext | S | — | seed | 2025 improvements ledger |
 
 ## Census of litegraph users (`USE`)
 
@@ -264,3 +269,16 @@ These ideas recur across several areas, so each one also absorbs related area id
 | BUN-20 | Browser automation nodes | P8 | node | M | — | seed |
 | BUN-21 | Export to Actions-style YAML or an OS schedule | P8 | io | M | — | seed |
 | BUN-22 | BPMN XML import and export | P8 | io | XL | ref | seed |
+
+## Repository tooling (`DEV`)
+
+From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md): tooling gaps that are not product features.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| DEV-01 | Coverage report in the gate, with a floor threshold | P10 | runtime | S | — | seed |
+| DEV-02 | Large-graph benchmarks (`runStep` and draw at 1k and 10k nodes) with a regression budget, plus a performance guide | P10 | runtime | M | — | seed |
+| DEV-03 | Canvas visual-regression snapshots of `editor_build.html` fixtures | P10 | runtime | M | — | seed |
+| DEV-04 | Source maps for `build/` bundles | P10 | runtime | S | — | seed |
+| DEV-05 | Release workflow: version alignment checklist, tag-triggered publish after `npm run check` | P10 | app | S | — | seed |
+| DEV-06 | Node and extension scaffolder (template, test stub, declaration entry) | P10 P9 | app | S | — | seed |

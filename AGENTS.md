@@ -6,12 +6,12 @@ Short operational notes for contributors and coding agents. Keep this file refer
 
 | Need | Go to |
 |---|---|
-| Current work, waves, open decisions, branch model | [planning/roadmap.md](planning/roadmap.md) |
-| Plans, decisions and the lifecycle | [planning/README.md](planning/README.md) |
-| Setup, validation gate, package contracts | [docs/development/README.md](docs/development/README.md) |
-| Research on ComfyUI, LiteGraph-TSX and plugins | [docs/development/ecosystem-study/README.md](docs/development/ecosystem-study/README.md) |
-| Dated code reviews | [docs/development/audits/README.md](docs/development/audits/README.md) |
-| Living ideas database (not planned work) | [agents/ideas/README.md](agents/ideas/README.md) |
+| Use the library: guide, callbacks, generated API | [docs/](docs/guide.md) |
+| Setup, validation gate, package contracts | [docs/development.md](docs/development.md) |
+| The agent workspace: memories, plans, executions, audits, ideas | [agents/](agents/README.md) |
+| Current work, waves, open decisions, branch model | [agents/plans/roadmap.md](agents/plans/roadmap.md) |
+| Codebase map | [agents/memories/codebase](agents/memories/codebase/README.md) |
+| Ideas (not planned work) | [agents/ideas](agents/ideas/README.md) |
 | Changes per version | [CHANGES.md](CHANGES.md) |
 
 ## Workflow
@@ -24,7 +24,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
 - **New `src/` modules:**
   - Add them to the file lists in `build.py`, in dependency order.
   - Declare new public exports in `src/litegraph.d.cts`, or `src/litegraph.node.d.cts` for the Node bundle. `check:types` fails when the declared exports and the runtime exports differ.
-- **Docs:** update the behaviour docs, the [roadmap](planning/roadmap.md) and `CHANGES.md` with the change that makes them true.
+- **Docs:** update `docs/` (reference only), the [roadmap](agents/plans/roadmap.md) and `CHANGES.md` with the change that makes them true. Put research in `agents/memories/`, run records in `agents/executions/`, reviews in `agents/audits/`, ideas in `agents/ideas/`.
 
 ## Rules
 

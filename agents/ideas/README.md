@@ -3,9 +3,9 @@
 Started 2026-11-19. **Living.** This is a database of feature and integration ideas for this fork. It is grouped by *purpose* (what people build with node graphs) and informed by how other projects use litegraph and its neighbours.
 
 **This is not the production pipeline.** Nothing here is planned, scheduled or promised:
-- The [roadmap](../../planning/roadmap.md) and [planning/](../../planning/README.md) hold accepted work.
+- The [roadmap](../plans/roadmap.md) and [plans/](../plans/README.md) hold accepted work.
 - This folder is upstream of the first step there (*idea*).
-- Ideas move into `planning/` only by a deliberate promotion (see [Lifecycle](#lifecycle)). Adding ideas here never changes the roadmap.
+- Ideas move into `plans/` only by a deliberate promotion (see [Lifecycle](#lifecycle)). Adding ideas here never changes the roadmap.
 
 ## How to read it
 
@@ -16,11 +16,12 @@ Started 2026-11-19. **Living.** This is a database of feature and integration id
 | [landscape/](#landscape-investigations) | The investigations behind the ideas, one document per area |
 | [cards/](#cards) | Ideas that outgrew a row: design sketches, open questions, experiments |
 
-## State on 2026-11-19
+## State on 2026-11-20
 
 **Contents:**
-- **201 ideas**: 7 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries and 22 for the Bun runner.
-- **Maturity:** 139 seed, 58 sketched, 2 investigated (with cards), 1 promoted and 1 parked.
+- **212 ideas**: 12 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries, 22 for the Bun runner and 6 for repository tooling.
+- **Maturity:** 150 seed, 58 sketched, 2 investigated (with cards), 1 promoted and 1 parked.
+- **Sources:** the 11 newest ideas (X-08 to X-12, DEV-01 to DEV-06) are 2025 proposals that are still open; the [improvements ledger](../audits/2026-11-19-improvements-ledger.md) records what happened to the others.
 
 **What each area found:**
 - **Census of litegraph users:** 40 projects across 9 purposes. Four projects left litegraph for Rete because it lacked:
@@ -37,7 +38,6 @@ Started 2026-11-19. **Living.** This is a database of feature and integration id
 
 **Suggested next investigations [I]:**
 - P5 devices and IoT (only 7 ideas so far).
-- Accessibility and touch.
 - Measured performance of large graphs.
 - A deeper licence check of the `adapt` candidates before any of them is promoted.
 
@@ -46,7 +46,7 @@ Started 2026-11-19. **Living.** This is a database of feature and integration id
 | Document | Area | Question it answers |
 |---|---|---|
 | [litegraph-census.md](landscape/litegraph-census.md) | Other litegraph users | Who builds on litegraph, for which purpose, and what did they add on top? |
-| [comfyui-world.md](landscape/comfyui-world.md) | ComfyUI ecosystem | Which widgets, integrations and customizations beyond the [ecosystem study](../../docs/development/ecosystem-study/README.md) are worth generalizing? |
+| [comfyui-world.md](landscape/comfyui-world.md) | ComfyUI ecosystem | Which widgets, integrations and customizations beyond the [ecosystem study](../memories/research/ecosystem-study/README.md) are worth generalizing? |
 | [webglstudio-litescene.md](landscape/webglstudio-litescene.md) | WebGLStudio, litescene, litegl | How did litegraph's original 3D home use graphs, and what can be revived? |
 | [nunustudio.md](landscape/nunustudio.md) | nunuStudio | How could litegraph become the logic and material graph of a three.js editor? |
 | [3d-libraries.md](landscape/3d-libraries.md) | three.js, Babylon.js, glTF interactivity and others | Which 3D node systems can we learn from, import, export or drive? |
@@ -73,8 +73,9 @@ Ideas with a design sketch get a card in `cards/`, named `<ID>-<slug>.md` and co
 | `JS` | Other JS libraries |
 | `BUN` | Bun process designer and runner |
 | `X` | Cross-cutting platform ideas that several areas need |
+| `DEV` | Repository tooling: coverage, benchmarks, release |
 
-Hook IDs `H1`–`H10` refer to the monkey-patch hooks in the [feature harvest plan](../../planning/plans/261119_feature_harvest_and_priorities.md#3-the-monkey-patch-signal-hooks-core-must-own). Wave numbers refer to the [roadmap](../../planning/roadmap.md).
+Hook IDs `H1`–`H10` refer to the monkey-patch hooks in the [feature harvest plan](../plans/261119_feature_harvest_and_priorities.md#3-the-monkey-patch-signal-hooks-core-must-own). Wave numbers refer to the [roadmap](../plans/roadmap.md).
 
 ### Fields
 
@@ -116,13 +117,13 @@ Hook IDs `H1`–`H10` refer to the monkey-patch hooks in the [feature harvest pl
 ## Lifecycle
 
 ```
-seed → sketched → investigated → ready ──promote──► planning/ (idea → proposal → plan)
+seed → sketched → investigated → ready ──promote──► plans/ (idea → proposal → plan)
                          │
                          └──► parked / rejected (kept, with a reason)
 ```
 
 To promote an idea:
-1. Write a proposal in `planning/plans/`.
+1. Write a proposal in `agents/plans/`.
 2. Set the idea's maturity to `promoted`, with a link to that proposal.
 3. Leave the idea here. The roadmap decides whether the proposal becomes a wave item.
 
