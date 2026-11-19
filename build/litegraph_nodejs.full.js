@@ -2016,10 +2016,12 @@ export class CommandRegistry {
     /** Builds the usual context for a canvas: the graph shown on it and the selection. */
     contextFor(canvas, extra = {}) {
         const selected = canvas?.selected_nodes ? Object.values(canvas.selected_nodes) : [];
+        const items = canvas?.selectedItems ?? selected;
         return {
             canvas: canvas ?? null,
             graph: canvas?.graph ?? null,
             selectedNodes: selected,
+            selectedItems: items,
             ...extra
         };
     }
@@ -3730,6 +3732,13 @@ export class DragAndScale {
  *
  * Distinguishes clicks from drags with a movement tolerance (not only elapsed time), and detects
  * double clicks only when two clicks land close together in time and space.
+ *
+ * Gesture handlers: whoever handles a pointerdown can assign `onClick`, `onDoubleClick`,
+ * `onDragStart`, `onDrag`, `onDragEnd` and `finally` for that gesture only. While handlers are
+ * assigned the pointer owns the gesture (`hasHandlers`): move() calls onDragStart once the press
+ * becomes a drag and onDrag on every move after it; up() calls onDragEnd for a drag, or
+ * onClick / onDoubleClick for a click; finally runs at the end of every gesture, including cancel.
+ * Handlers are cleared when the gesture ends.
  * Design follows the CanvasPointer idea in Comfy-Org/litegraph.js (MIT); independent implementation.
  */
 export class CanvasPointer {
@@ -3742,10 +3751,33 @@ export class CanvasPointer {
     /** maximum press duration for a click (ms) */
     static click_time = 300;
 
+    static HANDLERS = ["onClick", "onDoubleClick", "onDragStart", "onDrag", "onDragEnd", "finally"];
+
     constructor() {
         this.reset();
+        this.clearHandlers();
         /** the last completed click, for double-click detection */
         this.lastClick = null;
+    }
+
+    /** true when the current gesture has handlers (the canvas then skips its legacy handling) */
+    get hasHandlers() {
+        return CanvasPointer.HANDLERS.some((name) => typeof this[name] === "function");
+    }
+
+    clearHandlers() {
+        for (const name of CanvasPointer.HANDLERS) this[name] = null;
+    }
+
+    /** calls a handler; an error is reported but cannot leave the gesture half-finished */
+    _call(name, e) {
+        const handler = this[name];
+        if (typeof handler !== "function") return;
+        try {
+            handler(e, this);
+        } catch (error) {
+            console.error?.(`CanvasPointer.${name} failed`, error);
+        }
     }
 
     /** forget the gesture in progress */
@@ -3768,6 +3800,7 @@ export class CanvasPointer {
             now - last.time <= CanvasPointer.double_click_time &&
             (last.button ?? 0) === (e.button ?? 0) &&
             Math.hypot(e.clientX - last.x, e.clientY - last.y) <= CanvasPointer.double_click_distance;
+        this.clearHandlers(); // a new gesture starts without the previous one's handlers
         this.isDown = true;
         this.dragged = false;
         this.maxDrift = 0;
@@ -3793,7 +3826,11 @@ export class CanvasPointer {
         if (!this.isDown || !this.downEvent) return false;
         const drift = Math.hypot(e.clientX - this.downEvent.x, e.clientY - this.downEvent.y);
         if (drift > this.maxDrift) this.maxDrift = drift;
-        if (drift > CanvasPointer.click_drift) this.dragged = true;
+        if (drift > CanvasPointer.click_drift && !this.dragged) {
+            this.dragged = true;
+            this._call("onDragStart", e);
+        }
+        if (this.dragged) this._call("onDrag", e);
         return this.dragged;
     }
 
@@ -3814,6 +3851,11 @@ export class CanvasPointer {
         const duration = now - this.downEvent.time;
         const dragged = this.dragged;
         const isClick = !dragged && duration <= CanvasPointer.click_time;
+        const handled = this.hasHandlers;
+        if (dragged) this._call("onDragEnd", e);
+        else if (isClick) this._call(this.downEvent.isDoubleClick ? "onDoubleClick" : "onClick", e);
+        this._call("finally", e);
+        this.clearHandlers();
         if (isClick && !this.downEvent.isDoubleClick) { // after a double click, a third click starts over
             const {
                 x,
@@ -3833,12 +3875,15 @@ export class CanvasPointer {
         return {
             isClick,
             dragged,
-            duration
+            duration,
+            handled
         };
     }
 
     /** the system cancelled the gesture (pointercancel, lost capture): nothing completes */
     cancel() {
+        this._call("finally", null);
+        this.clearHandlers();
         this.reset();
         this.lastClick = null;
     }
@@ -6960,6 +7005,8 @@ export class LGraphCanvas {
         this.dragging_reroute = null;
 
         this.selected_nodes = {};
+        /** selected groups and reroutes (nodes stay in selected_nodes; see selectedItems) */
+        this._selected_items = new Set();
         this.selected_group = null;
 
         this.visible_nodes = [];
@@ -8000,8 +8047,8 @@ export class LGraphCanvas {
                     if (is_double_click) {
                         this.graph.removeReroute(reroute.id);
                     } else {
-                        this.graph.beforeChange();
-                        this.dragging_reroute = reroute;
+                        this.selectItem(reroute, e.shiftKey || e.ctrlKey);
+                        this._dragRerouteGesture(reroute);
                     }
                     skip_action = true;
                 }
@@ -8037,6 +8084,12 @@ export class LGraphCanvas {
                         LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on group", link);
                         if (e.ctrlKey) {
                             this.dragging_rectangle = null;
+                        }
+
+                        // clicking the title band selects the group (shift/ctrl adds to the selection)
+                        const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+                        if (e.canvasY < this.selected_group.pos[1] + title_height) {
+                            this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
                         }
 
                         var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
@@ -8224,6 +8277,11 @@ export class LGraphCanvas {
         this.graph_mouse[0] = e.canvasX;
         this.graph_mouse[1] = e.canvasY;
 
+        // a gesture with handlers (see CanvasPointer) was handled by pointer.move above
+        if (this.pointer.isDown && this.pointer.hasHandlers) {
+            return;
+        }
+
         // DBG EXCESS LiteGraph.log_verbose("pointerevents: processMouseMove "+e.pointerId+" "+e.isPrimary);
 
         // TODO CHECK ensure block_click should prevent all following 
@@ -8279,10 +8337,6 @@ export class LGraphCanvas {
                     }, this.selected_group, deltax, deltay);
                 }
             }
-            this.dirty_bgcanvas = true;
-        } else if (this.dragging_reroute) {
-            this.dragging_reroute.move(delta[0] / this.ds.scale, delta[1] / this.ds.scale);
-            this.dirty_canvas = true;
             this.dirty_bgcanvas = true;
         } else if (this.dragging_canvas) {
             LiteGraph.log_verbose("lgraphcanvas", "processMouseMove", "dragging_canvas");
@@ -8553,22 +8607,8 @@ export class LGraphCanvas {
             // left button
             this.node_widget = null;
 
-            if (this.dragging_reroute) {
-                this.dragging_reroute.pos[0] = Math.round(this.dragging_reroute.pos[0]);
-                this.dragging_reroute.pos[1] = Math.round(this.dragging_reroute.pos[1]);
-                if (this.graph.config.align_to_grid || this.align_to_grid) {
-                    const grid = LiteGraph.CANVAS_GRID_SIZE;
-                    this.dragging_reroute.pos[0] = grid * Math.round(this.dragging_reroute.pos[0] / grid);
-                    this.dragging_reroute.pos[1] = grid * Math.round(this.dragging_reroute.pos[1] / grid);
-                }
-                if (gesture.dragged) this.graph.onGraphChanged({
-                    action: "rerouteMove"
-                });
-                this.graph.afterChange();
-                this.dragging_reroute = null;
-                this.dirty_canvas = true;
-                this.dirty_bgcanvas = true;
-            } else if (this.selected_group) {
+            // reroute drags are pointer gestures (see _dragRerouteGesture)
+            if (this.selected_group) {
                 var diffx =
                     this.selected_group.pos[0] -
                     Math.round(this.selected_group.pos[0]);
@@ -8655,9 +8695,11 @@ export class LGraphCanvas {
                             } // out of the visible area
                             to_select.push(nodeX);
                         }
-                        if (to_select.length) {
+                        const other_items = this._itemsInRectangle(this.dragging_rectangle);
+                        if (to_select.length || other_items.length) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseUp", "selecting nodes", to_select);
                             this.selectNodes(to_select, e.shiftKey); // add to selection with shift
+                            for (const item of other_items) this.selectItem(item, true);
                         }
                     } else {
                         // will select of update selection
@@ -8860,10 +8902,7 @@ export class LGraphCanvas {
         }
         this.dragging_canvas = false;
         this.dragging_rectangle = null;
-        if (this.dragging_reroute) {
-            this.graph?.afterChange();
-            this.dragging_reroute = null;
-        }
+        // a reroute drag ends through pointer.cancel() (its gesture `finally`)
         this.selected_group = null;
         this.selected_group_resizing = false;
         this._endWidgetTransaction();
@@ -9106,7 +9145,7 @@ export class LGraphCanvas {
                     e.target.localName != "input" &&
                     e.target.localName != "textarea"
                 ) {
-                    this.deleteSelectedNodes();
+                    this.deleteSelected();
                     block_default = true;
                 }
             }
@@ -9595,6 +9634,9 @@ export class LGraphCanvas {
         this.selected_nodes = {};
         this.current_node = null;
         this.highlighted_links = {};
+        // clicking empty canvas (or a fresh selection) also drops selected groups and reroutes
+        for (const item of this._selected_items ?? []) item.selected = false;
+        this._selected_items?.clear();
 
         this.processCallbackHandlers("onSelectionChange", {
             def_cb: this.onSelectionChange
@@ -9605,6 +9647,172 @@ export class LGraphCanvas {
         this.setDirty(true);
     }
 
+
+    /**
+     * Everything selected on this canvas: nodes, groups and reroutes (positionable items).
+     * Nodes stay in `selected_nodes` for compatibility; groups and reroutes are kept alongside.
+     * @returns {Array<object>}
+     */
+    get selectedItems() {
+        return [...Object.values(this.selected_nodes ?? {}), ...(this._selected_items ?? [])];
+    }
+
+    /**
+     * True for a graph node. Registered node classes need not extend LGraphNode (registration
+     * copies its methods), so this checks for node behaviour rather than the class.
+     */
+    static isNodeItem(item) {
+        return !!item && (item instanceof LiteGraph.LGraphNode ||
+            (typeof item.getConnectionPos === "function" && typeof item.computeSize === "function"));
+    }
+
+    /** @returns {boolean} */
+    isItemSelected(item) {
+        if (!item) return false;
+        if (this.selected_nodes?.[item.id] === item) return true;
+        return !!this._selected_items?.has(item);
+    }
+
+    /**
+     * Selects a node, group or reroute.
+     * @param {object} item
+     * @param {boolean} [add] - keep the current selection
+     */
+    selectItem(item, add = false) {
+        if (!item) return;
+        if (LGraphCanvas.isNodeItem(item)) {
+            if (!(add && item.is_selected)) this.selectNodes([item], add);
+            return;
+        }
+        if (!add) this.deselectAllNodes();
+        if (!this._selected_items.has(item)) {
+            this._selected_items.add(item);
+            item.selected = true;
+            this._emit?.("selection-changed", {
+                nodes: Object.values(this.selected_nodes),
+                items: this.selectedItems
+            });
+        }
+        this.setDirty(true, true);
+    }
+
+    /** Removes one item from the selection. */
+    deselectItem(item) {
+        if (!item) return;
+        if (LGraphCanvas.isNodeItem(item)) {
+            if (item.is_selected) this.deselectNode(item);
+            return;
+        }
+        if (this._selected_items.delete(item)) {
+            item.selected = false;
+            this._emit?.("selection-changed", {
+                nodes: Object.values(this.selected_nodes),
+                items: this.selectedItems
+            });
+            this.setDirty(true, true);
+        }
+    }
+
+    /** reroutes inside a rectangle and groups fully inside it */
+    _itemsInRectangle(rect) {
+        const items = [];
+        for (const reroute of this.graph?.reroutes?.values?.() ?? []) {
+            if (LiteGraph.isInsideRectangle(reroute.pos[0], reroute.pos[1], rect[0], rect[1], rect[2], rect[3])) items.push(reroute);
+        }
+        for (const group of this.graph?._groups ?? []) {
+            if (LiteGraph.isBoundingInsideRectangle(group._bounding, rect[0], rect[1], rect[2], rect[3])) items.push(group);
+        }
+        return items;
+    }
+
+    /**
+     * Moves every selected item by (dx, dy) in graph units, as one undo step. A group moves the
+     * nodes inside it, so those nodes are not moved a second time.
+     */
+    moveSelected(dx, dy) {
+        if (!this.graph || (!dx && !dy)) return;
+        const groups = [...this._selected_items].filter((item) => item instanceof LiteGraph.LGraphGroup);
+        const carried = new Set();
+        for (const group of groups) {
+            group.recomputeInsideNodes();
+            group._nodes.forEach((node) => carried.add(node));
+            group._groups.forEach((child) => carried.add(child));
+        }
+        this.graph.transact("moveSelected", () => {
+            for (const item of this.selectedItems) {
+                if (carried.has(item)) continue;
+                if (LGraphCanvas.isNodeItem(item)) {
+                    item.pos[0] += dx;
+                    item.pos[1] += dy;
+                    item.processCallbackHandlers?.("onMoved", {
+                        def_cb: item.onMoved
+                    });
+                } else if (typeof item.move === "function") {
+                    item.move(dx, dy);
+                }
+            }
+            this.graph.onGraphChanged({
+                action: "moveSelected"
+            });
+        });
+        this.setDirty(true, true);
+    }
+
+    /** Deletes the selected nodes, groups and reroutes as one undo step. */
+    deleteSelected() {
+        const graph = this.graph;
+        if (!graph) return;
+        const others = [...this._selected_items];
+        if (!others.length) return this.deleteSelectedNodes();
+        graph.transact("deleteSelected", () => {
+            for (const item of others) {
+                if (item instanceof LiteGraph.LGraphGroup) graph.remove(item);
+                else if (graph.reroutes?.get?.(item.id) === item) graph.removeReroute(item.id);
+            }
+            this._selected_items.clear();
+            this._deleteSelectedNodes();
+        });
+        this.setDirty(true, true);
+    }
+
+    /** Pointer gesture for dragging a reroute (handlers on this.pointer; one undo step per drag). */
+    _dragRerouteGesture(reroute) {
+        const graph = this.graph;
+        const pointer = this.pointer;
+        let transactionOpen = false;
+        let last = null;
+        this.dragging_reroute = reroute;
+        pointer.onDragStart = (e) => {
+            graph.beginTransaction("rerouteMove");
+            transactionOpen = true;
+            last = [e.canvasX, e.canvasY];
+        };
+        pointer.onDrag = (e) => {
+            if (!last) return;
+            reroute.move(e.canvasX - last[0], e.canvasY - last[1]);
+            last = [e.canvasX, e.canvasY];
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        pointer.onDragEnd = () => {
+            reroute.pos[0] = Math.round(reroute.pos[0]);
+            reroute.pos[1] = Math.round(reroute.pos[1]);
+            if (graph.config.align_to_grid || this.align_to_grid) {
+                const grid = LiteGraph.CANVAS_GRID_SIZE;
+                reroute.pos[0] = grid * Math.round(reroute.pos[0] / grid);
+                reroute.pos[1] = grid * Math.round(reroute.pos[1] / grid);
+            }
+            graph.onGraphChanged({
+                action: "rerouteMove"
+            });
+        };
+        pointer.finally = () => {
+            if (transactionOpen && graph.isInTransaction) graph.commitTransaction();
+            this.dragging_reroute = null;
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+    }
 
     /**
      * deletes all nodes in the current selection from the graph
@@ -11718,10 +11926,11 @@ export class LGraphCanvas {
             const link = this.graph.links[linkIds[0]];
             ctx.fillStyle = link?.color || LGraphCanvas.link_type_colors[link?.type] || this.default_link_color;
             ctx.beginPath();
-            ctx.arc(reroute.pos[0], reroute.pos[1], this.dragging_reroute === reroute ? 7 : 5, 0, Math.PI * 2);
+            const reroute_active = this.dragging_reroute === reroute || reroute.selected;
+            ctx.arc(reroute.pos[0], reroute.pos[1], reroute_active ? 7 : 5, 0, Math.PI * 2);
             ctx.fill();
             ctx.lineWidth = 1.5;
-            ctx.strokeStyle = this.dragging_reroute === reroute ? "#FFF" : "rgba(0,0,0,0.6)";
+            ctx.strokeStyle = reroute_active ? "#FFF" : "rgba(0,0,0,0.6)";
             ctx.stroke();
         }
         ctx.restore();
@@ -50709,13 +50918,20 @@ registerExtension_autoconnect();
  */
 
 const hasSelection = (ctx) => !!ctx.canvas?.graph && ctx.selectedNodes?.length > 0;
+const hasAnySelection = (ctx) => !!ctx.canvas?.graph && (ctx.selectedItems ?? ctx.selectedNodes)?.length > 0;
 const first = (ctx) => ctx.selectedNodes[0];
 
+/** moves the whole selection (nodes, groups, reroutes) one grid step; nodes snap to the grid first */
 function moveSelection(ctx, dx, dy) {
+    const grid = LiteGraph.CANVAS_GRID_SIZE;
+    for (const node of ctx.selectedNodes) node.alignToGrid();
+    if (typeof ctx.canvas.moveSelected === "function") {
+        ctx.canvas.moveSelected(dx * grid, dy * grid);
+        return;
+    }
     for (const node of ctx.selectedNodes) {
-        node.alignToGrid();
-        node.pos[0] += dx * LiteGraph.CANVAS_GRID_SIZE;
-        node.pos[1] += dy * LiteGraph.CANVAS_GRID_SIZE;
+        node.pos[0] += dx * grid;
+        node.pos[1] += dy * grid;
         node.processCallbackHandlers("onMoved", {
             def_cb: node.onMoved
         });
@@ -50762,7 +50978,7 @@ const move = (id, label, dx, dy, combo) => ({
         id,
         label,
         category: "selection",
-        when: hasSelection,
+        when: hasAnySelection,
         mutatesGraph: true,
         run: (ctx) => moveSelection(ctx, dx, dy)
     },
