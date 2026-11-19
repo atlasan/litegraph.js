@@ -1517,6 +1517,7 @@ export class LGraphNode {
 
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
+                if (LGraphNode.isWidgetInputSlot(input)) return maxWidth; // label shown by the widget
                 const text = input.label || input.name || "";
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
@@ -1584,7 +1585,8 @@ export class LGraphNode {
     getSlotsHeight(){
         // minimum height calculated by slots or 1
         const rowHeight = Math.max(
-            this.inputs ? this.inputs.length : 1,
+            // widget inputs sit on their widget rows, not in the slot rows
+            this.inputs ? this.inputs.filter((input) => !LGraphNode.isWidgetInputSlot(input)).length : 1,
             this.outputs ? this.outputs.length : 1,
             1,
         ) * LiteGraph.NODE_SLOT_HEIGHT + 10;
@@ -1698,13 +1700,16 @@ export class LGraphNode {
             callback = null;
         }
 
-        var w = {
+        const fields = {
             type: type.toLowerCase(),
             name: name,
             value: value,
             callback: callback,
             options: options || {},
         };
+        // an instance of the registered widget class (src/widgets.js), or a plain object for unknown types
+        const WidgetClass = LiteGraph.widget_types?.[fields.type];
+        var w = WidgetClass ? new WidgetClass(fields) : fields;
 
         if (w.options.y !== undefined) {
             w.y = w.options.y;
@@ -1716,6 +1721,10 @@ export class LGraphNode {
             return;
         }
         this.widgets.push(w);
+        // options.socket: also add an input attached to the widget (true, or the slot type)
+        if (w.options.socket) {
+            this.addWidgetInput(w, typeof w.options.socket === "string" ? w.options.socket : undefined);
+        }
         this.setSize( this.computeSize() );
         return w;
     }
@@ -1737,6 +1746,65 @@ export class LGraphNode {
             }
         }
         return -1;
+    }
+
+    /**
+     * True for an input attached to a widget (`input.widget = {name}`): it is drawn on the widget's
+     * row, and while it is linked the widget is disabled and the link provides the value
+     * (see getWidgetValue).
+     */
+    static isWidgetInputSlot(slot) {
+        return !!(slot && slot.widget && typeof slot.widget.name === "string");
+    }
+
+    /** @returns {object|null} the widget an input is attached to */
+    getWidgetFromSlot(slot) {
+        if (!LGraphNode.isWidgetInputSlot(slot)) return null;
+        return this.widgets?.find((widget) => widget?.name === slot.widget.name) ?? null;
+    }
+
+    /** @returns {object|null} the input attached to a widget */
+    getSlotFromWidget(widget) {
+        if (!widget || !this.inputs) return null;
+        return this.inputs.find((input) => LGraphNode.isWidgetInputSlot(input) && input.widget.name === widget.name) ?? null;
+    }
+
+    /** @returns {boolean} true when the widget's input is connected (the widget is then disabled) */
+    isWidgetLinked(widget) {
+        return this.getSlotFromWidget(widget)?.link != null;
+    }
+
+    /**
+     * Adds an input attached to a widget, so a link can drive the widget's value.
+     * @param {object|string} widgetOrName
+     * @param {string} [type] - slot type; default from the widget type (number, boolean, string, or "*")
+     * @returns {object|null} the input
+     */
+    addWidgetInput(widgetOrName, type) {
+        const widget = typeof widgetOrName === "string" ? this.widgets?.find((w) => w?.name === widgetOrName) : widgetOrName;
+        if (!widget) {
+            LiteGraph.log_warn("lgraphnode", "addWidgetInput", "widget not found", widgetOrName);
+            return null;
+        }
+        const existing = this.getSlotFromWidget(widget);
+        if (existing) return existing;
+        const byWidgetType = { number: "number", slider: "number", toggle: "boolean", boolean: "boolean", text: "string", string: "string" };
+        return this.addInput(widget.name, type ?? byWidgetType[widget.type] ?? "*", { widget: { name: widget.name }, label: widget.label });
+    }
+
+    /**
+     * The value of a widget for execution: the data of its linked input when connected,
+     * otherwise the widget value.
+     * @param {string} name - widget name
+     */
+    getWidgetValue(name) {
+        const widget = this.widgets?.find((w) => w?.name === name);
+        const input = widget ? this.getSlotFromWidget(widget) : null;
+        if (input && input.link != null) {
+            const data = this.getInputData(this.inputs.indexOf(input));
+            if (data !== undefined) return data;
+        }
+        return widget?.value;
     }
 
     addCustomWidget(custom_widget) {
@@ -2625,9 +2693,24 @@ export class LGraphNode {
         // default vertical slots
         if (is_input) {
             out[0] = this.pos[0] + offset;
-        } else {
-            out[0] = this.pos[0] + this.size[0] + 1 - offset;
+            const input = this.inputs?.[slot_number];
+            if (input && LGraphNode.isWidgetInputSlot(input)) {
+                // a widget input sits on its widget's row (known once the widgets were drawn)
+                const widget = this.getWidgetFromSlot(input);
+                if (widget?.last_y != null) {
+                    out[1] = this.pos[1] + widget.last_y + LiteGraph.NODE_WIDGET_HEIGHT * 0.5;
+                    return out;
+                }
+            }
+            // rows count only ordinary inputs
+            let row = 0;
+            for (let i = 0; i < slot_number; i++) {
+                if (!LGraphNode.isWidgetInputSlot(this.inputs[i])) row++;
+            }
+            out[1] = this.pos[1] + (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + (this.constructor.slot_start_y || 0);
+            return out;
         }
+        out[0] = this.pos[0] + this.size[0] + 1 - offset;
         out[1] =
             this.pos[1] +
             (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +

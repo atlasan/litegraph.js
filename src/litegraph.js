@@ -14,6 +14,7 @@ import { KeybindingRegistry } from "./keybindings.js";
 import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
 import { MenuRegistry } from "./menus.js";
+import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 
 /**
  * @class LiteGraph
@@ -422,6 +423,20 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers (or replaces) the class implementing a canvas widget type.
+     * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
+     * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
+     */
+    registerWidgetType(type, widgetClass) {
+        this.setupPlatform();
+        if (typeof type !== "string" || !type) throw new TypeError("widget type must be a non-empty string");
+        if (typeof widgetClass !== "function" || !(widgetClass.prototype instanceof BaseWidget)) {
+            throw new TypeError(`widget type ${type}: class must extend BaseWidget`);
+        }
+        this.widget_types[type.toLowerCase()] = widgetClass;
+    }
+
+    /**
      * Persists settings and the user key-binding layer through a storage adapter
      * (default: localStorage under "litegraph.settings"). The Editor calls this unless created
      * with `{ skip_persistence: true }`; embedders can call it with their own adapter.
@@ -454,6 +469,7 @@ export class LiteGraphClass {
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
+        this.widget_types ??= defaultWidgetTypes();
         this.extensions ??= new ExtensionRegistry(this);
     }
 

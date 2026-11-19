@@ -38,6 +38,8 @@ export interface INodeSlot {
 
 export interface INodeInputSlot extends INodeSlot {
     link: LLink["id"] | null;
+    /** set on an input attached to a widget (see LGraphNode.addWidgetInput) */
+    widget?: { name: string };
 }
 export interface INodeOutputSlot extends INodeSlot {
     links: LLink["id"][] | null;
@@ -342,6 +344,9 @@ export interface LiteGraphAPI extends CallbackHost {
     settings: SettingsRegistry;
     extensions: ExtensionRegistry;
     menus: MenuRegistry;
+    /** widget type name -> class (see registerWidgetType) */
+    widget_types: Record<string, typeof BaseWidget>;
+    registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
     persistPlatformState(storage?: SettingsStorage): void;
@@ -950,6 +955,15 @@ export declare class LGraphNode {
     ): T;
 
     addCustomWidget<T extends IWidget>(customWidget: T): T;
+    /** true for an input attached to a widget (`input.widget = {name}`) */
+    static isWidgetInputSlot(slot: unknown): boolean;
+    getWidgetFromSlot(slot: INodeInputSlot): IWidget | null;
+    getSlotFromWidget(widget: IWidget): INodeInputSlot | null;
+    isWidgetLinked(widget: IWidget): boolean;
+    /** adds an input on the widget's row; while linked the widget is disabled and the link drives it */
+    addWidgetInput(widgetOrName: IWidget | string, type?: string): INodeInputSlot | null;
+    /** the linked input's data when connected, else the widget value */
+    getWidgetValue(name: string): any;
 
     /**
      * returns the bounding of the object, used for rendering purposes
@@ -2026,3 +2040,52 @@ export declare class MenuRegistry {
     collect(location: MenuLocation, ctx?: object): MenuItem[];
     contribute<T extends any[]>(location: MenuLocation, ctx: object, options: T): T;
 }
+
+/** Context passed to BaseWidget.draw. */
+export interface WidgetDrawEnv {
+    canvas: LGraphCanvas;
+    show_text: boolean;
+    show_label: boolean;
+    active: boolean;
+    margin: number;
+    colors: { outline: string; background: string; text: string; secondary: string };
+}
+/** Context passed to BaseWidget.onPointer. */
+export interface WidgetPointerEnv {
+    canvas: LGraphCanvas;
+    node: LGraphNode;
+    x: number;
+    y: number;
+    pos: Vector2;
+    widget_width: number;
+    old_value: any;
+    ref_window: Window;
+    /** applies a new value: widget value, onWidgetChanged, history, widget-changed event, property, callback */
+    changed(widget: IWidget, value: any, old_value?: any): void;
+}
+/** Canvas widget base class; one subclass per widget type (see LiteGraph.registerWidgetType). */
+export declare class BaseWidget<TValue = any, TOptions = any> {
+    type: string;
+    name: string | null;
+    value: TValue;
+    options: TOptions;
+    constructor(init?: Partial<IWidget<TValue, TOptions>> & Record<string, any>);
+    [key: string]: any;
+    draw(ctx: CanvasRenderingContext2D, node: LGraphNode, widget_width: number, y: number, H: number, env: WidgetDrawEnv): void;
+    onPointer(event: PointerEvent, env: WidgetPointerEnv): void;
+    static drawPill(ctx: CanvasRenderingContext2D, widget_width: number, y: number, H: number, env: WidgetDrawEnv): void;
+    static clampToOptions(value: number, options: { min?: number; max?: number }): number;
+}
+export declare class ButtonWidget extends BaseWidget {}
+export declare class ToggleWidget extends BaseWidget<boolean> {}
+export declare class SliderWidget extends BaseWidget<number> {}
+export declare class NumberWidget extends BaseWidget<number> {}
+export declare class ComboWidget extends BaseWidget {
+    resolveValues(node: LGraphNode): any[] | Record<string, any>;
+}
+export declare class TextWidget extends BaseWidget<string> {}
+export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
+/** The object whose draw/onPointer applies to a widget (its class, or its type's class for plain objects), or null. */
+export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;
+/** Arithmetic for number entry (+ - * / % **, parentheses, pi, e); NaN for anything else. Nothing is executed. */
+export declare function evaluateMathExpression(text: string): number;

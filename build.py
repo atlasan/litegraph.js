@@ -71,6 +71,7 @@ lib_js_files = [
     "./src/llink.js",
     "./src/subgraph.js",
     "./src/librarymanager.js",
+    "./src/widgets.js",
     "./src/init_litegraph.js",
 ]
 
