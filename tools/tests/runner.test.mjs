@@ -173,9 +173,16 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     assert.equal(openedReply.data.status, 'stopped');
     ws.send(JSON.stringify({ type: 'update_graph', requestId: 'denied-fixture', data: { graphId: 'empty.json', serializedGraph: { ...workflow, nodes: [{ id: 1, type: 'sys/runCommand' }] } } }));
     assert.match((await waitFor((m) => m.requestId === 'denied-fixture')).data.message, /not allowed in the runner: sys\/runCommand/);
+    // script nodes must not evaluate pushed code: a formula that would write a file stays inert
+    const marker = path.join(temp, 'formula-ran');
+    const formula = `process.getBuiltinModule('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`;
+    ws.send(JSON.stringify({ type: 'update_graph', requestId: 'script-fixture', data: { graphId: 'empty.json', serializedGraph: { ...workflow, nodes: [{ id: 1, type: 'math/formula', pos: [0, 0], size: [100, 50], properties: { formula } }] } } }));
+    assert.equal((await waitFor((m) => m.requestId === 'script-fixture')).type, 'graph_updated');
     ws.send(JSON.stringify({type:'unsupported', requestId:'error-fixture'}));
     assert.equal((await waitFor(m => m.type === 'error')).requestId, 'error-fixture');
     await waitFor((m) => m.type === 'graph_status' && m.data.status === 'running');
+    await new Promise((resolve) => setTimeout(resolve, 300)); // let the formula graph run a few steps
+    assert.equal(fs.existsSync(marker), false, 'math/formula evaluated pushed code');
     const peerUpdate = new Promise(resolve => {
       const receive = raw => {
         const packet = JSON.parse(raw);
