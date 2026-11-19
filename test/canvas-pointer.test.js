@@ -13,7 +13,7 @@ describe('CanvasPointer', () => {
         const p = new CanvasPointer();
         p.down(at(10, 10), 0);
         p.move(at(12, 11));
-        expect(p.up(at(12, 11), 100)).toEqual({ isClick: true, dragged: false, duration: 100 });
+        expect(p.up(at(12, 11), 100)).toMatchObject({ isClick: true, dragged: false, duration: 100 });
     });
 
     test('movement beyond the drift tolerance is a drag even when fast', () => {
@@ -21,7 +21,7 @@ describe('CanvasPointer', () => {
         p.down(at(10, 10), 0);
         p.move(at(40, 10));
         p.move(at(11, 10)); // returning does not undo the drag
-        expect(p.up(at(11, 10), 50)).toEqual({ isClick: false, dragged: true, duration: 50 });
+        expect(p.up(at(11, 10), 50)).toMatchObject({ isClick: false, dragged: true, duration: 50 });
     });
 
     test('a long press is not a click', () => {

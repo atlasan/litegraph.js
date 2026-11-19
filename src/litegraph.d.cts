@@ -1258,7 +1258,7 @@ export interface LGraphCanvasEventMap {
     };
     "subgraph-opened": { graph: LGraph; parent: LGraph | null };
     "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
-    "selection-changed": { nodes: LGraphNode[] };
+    "selection-changed": { nodes: LGraphNode[]; items?: Array<LGraphNode | LGraphGroup | Reroute> };
     disposed: { canvas: LGraphCanvas };
 }
 
@@ -1310,8 +1310,20 @@ export declare class CanvasPointer {
     reset(): void;
     down(e: { clientX: number; clientY: number; button?: number; pointerId?: number }, now?: number): { isDoubleClick: boolean };
     move(e: { clientX: number; clientY: number }): boolean;
-    up(e?: { clientX: number; clientY: number }, now?: number): { isClick: boolean; dragged: boolean; duration: number };
+    up(e?: { clientX: number; clientY: number }, now?: number): { isClick: boolean; dragged: boolean; duration: number; handled: boolean };
     cancel(): void;
+    static HANDLERS: string[];
+    /** true when the current gesture has handlers: the pointer owns it */
+    readonly hasHandlers: boolean;
+    clearHandlers(): void;
+    /** per-gesture handlers, assigned after down() and cleared when the gesture ends */
+    onClick: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDoubleClick: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDragStart: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDrag: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDragEnd: ((e: any, pointer: CanvasPointer) => void) | null;
+    /** runs at the end of every gesture, including cancel (e is null then) */
+    finally: ((e: any, pointer: CanvasPointer) => void) | null;
 }
 
 export declare class DragAndScale {
@@ -1623,6 +1635,17 @@ export declare class LGraphCanvas {
     deselectAllNodes(): void;
     /** deletes all nodes in the current selection from the graph */
     deleteSelectedNodes(): void;
+    /** everything selected: nodes, groups and reroutes */
+    readonly selectedItems: Array<LGraphNode | LGraphGroup | Reroute>;
+    isItemSelected(item: LGraphNode | LGraphGroup | Reroute): boolean;
+    selectItem(item: LGraphNode | LGraphGroup | Reroute, add?: boolean): void;
+    deselectItem(item: LGraphNode | LGraphGroup | Reroute): void;
+    /** moves the selection (group children are carried once), one undo step */
+    moveSelected(dx: number, dy: number): void;
+    /** deletes selected nodes, groups and reroutes, one undo step */
+    deleteSelected(): void;
+    /** true for a graph node (registered classes need not extend LGraphNode) */
+    static isNodeItem(item: unknown): boolean;
 
     /** centers the camera on a given node */
     centerOnNode(node: LGraphNode): void;
