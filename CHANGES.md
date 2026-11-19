@@ -7,7 +7,10 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 * Graph runner: the WebSocket accepts only same-origin browser pages (Origin check) and the runner's own host names (Host check against DNS rebinding); HTTP requests with a foreign Host get 403. Extra names: `RUNNER_ALLOWED_HOSTS`.
 * Graph runner: node types that run commands, read, write or delete files (`sys/fileRead`, `sys/fileWrite`, `sys/fileDelete`), control processes/services, open listening network servers (WebSocket, Socket.IO, OSC, UDP), or load remote libraries are refused at any subgraph depth unless `RUNNER_ALLOW_SYS=1`. `RUNNER_ALLOW_TYPES` allows chosen types or prefixes again (e.g. `sys/fileRead,nodejs/network/`); `RUNNER_DENY_TYPES` adds more.
-* Graph runner: script nodes (`math/formula`, `basic/script`, `objects/evaluate`) no longer evaluate code (`LiteGraph.allow_scripts` is off) unless `RUNNER_ALLOW_SYS=1`; `geometry/eval` is refused.
+* Graph runner: script nodes (`math/formula`, `basic/script`, `objects/evaluate`) no longer evaluate code (`LiteGraph.allow_scripts` is off) unless `RUNNER_ALLOW_SCRIPTS=1` (or `RUNNER_ALLOW_SYS=1`); a workflow that contains them gets a note in the runner log saying so. `geometry/eval` is refused.
+* Graph runner: every refusal says how to allow it. A refused workflow lists all its refused types with a ready `RUNNER_ALLOW_TYPES=…` value; refused hosts and origins name `RUNNER_ALLOWED_HOSTS` / `RUNNER_ALLOWED_ORIGINS`; the active policy is logged at startup.
+* Graph runner: `RUNNER_ALLOWED_ORIGINS` lets chosen pages (e.g. the editor at `http://127.0.0.1:8000`) open the WebSocket.
+* LibraryManager: `allowAnyPackageSpec` lets `npmInstall` take git, URL and path specs from trusted sources; specs starting with `-` (npm flags) and, on Windows, shell metacharacters stay refused.
 * Graph runner: IPv6 `HOST`/`RUNNER_ALLOWED_HOSTS` entries without brackets are accepted, and an Origin matches a Host that spells out the default port.
 * LibraryManager: `npmInstall` runs without a shell and only accepts plain package specs; remote server scripts (`server.remote`) are refused unless `allowServerRemoteCode` is set, because `vm` is not a sandbox.
 * `ws` raised to 8.22.1.
