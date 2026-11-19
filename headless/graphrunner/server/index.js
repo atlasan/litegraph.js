@@ -8,6 +8,7 @@ import { router } from './routes.js';
 import { unloadAllGraphs } from './graphManager.js';
 import { logger } from '../logger.js';
 import { hostGuard } from './security.js';
+import { describePolicy } from '../nodePolicy.js';
 
 export function createRunnerServer() {
   const app = express();
@@ -31,7 +32,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const runner = createRunnerServer();
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '127.0.0.1';
-  runner.server.listen(port, host, () => logger.info(`Graph runner: http://${host}:${runner.server.address().port}`));
+  runner.server.listen(port, host, () => {
+    logger.info(`Graph runner: http://${host}:${runner.server.address().port}`);
+    logger.info(describePolicy());
+  });
   let closing = false;
   const shutdown = async () => {
     if (closing) return;
