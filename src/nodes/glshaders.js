@@ -545,8 +545,9 @@ class LGraphShaderGraph {
         this._uniforms = {};
         this._shader = null;
         this._context = new LGShaderContext();
-        this._context.vs_template =
-            "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+        this._context.vs_template = LGraphTexture.hasWebGL()
+            ? "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER
+            : "";
         this._context.fs_template = LGraphShaderGraph.template;
     }
 
@@ -775,7 +776,11 @@ class LGraphShaderGraph {
         return options;
     }
 }
-LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
+// fills in the vertex template skipped when the node was created before WebGL was on
+LGraphShaderGraph.prototype.initWebGL = function () {
+    if (!this._context.vs_template)
+        this._context.vs_template = "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+};
 
 /*
     * @TODO: Either write it or excise it.
@@ -942,12 +947,14 @@ class LGraphShaderConstant {
             this.widgets.length = 1; // remove extra widgets
             this.updateWidgets();
         }
-        if (name == "value") {
-            if (!value.length) this.widgets[1].value = value;
-            else {
-                this.widgets[1].value = value[1];
-                if (value.length > 2) this.widgets[2].value = value[2];
-                if (value.length > 3) this.widgets[3].value = value[3];
+        if (name == "value" && this.widgets) {
+            // widgets[0] is the type combo; value components follow it
+            if (value == null || !value.length) {
+                if (this.widgets[1]) this.widgets[1].value = value;
+            } else {
+                for (var i = 0; i < value.length; ++i) {
+                    if (this.widgets[i + 1]) this.widgets[i + 1].value = value[i];
+                }
             }
         }
     }
@@ -1416,7 +1423,7 @@ class LGraphShaderOperation {
             var param_code = inlinks[i].name;
             if (param_code == null) {
                 // not plugged
-                param_code = p.value != null ? p.value : "(1.0)";
+                param_code = "(1.0)";
                 inlinks[i].type = "float";
             }
 
@@ -1922,7 +1929,7 @@ class LGraphShaderTime {
         var outlink = getOutputLinkID(this, 0);
 
         context.addUniform("u_time" + this.id, "float", function () {
-            return getTime() * 0.001;
+            return performance.now() * 0.001;
         });
         context.addCode(
             "code",
@@ -2082,3 +2089,8 @@ class LGraphShaderRemap {
     }
 }
 registerShaderNode("math/remap", LGraphShaderRemap);
+
+// registered last: its constructor builds a subgraph out of the shader:: nodes above
+LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
+
+LGraphTexture.guardRegisteredWebGLNodes();

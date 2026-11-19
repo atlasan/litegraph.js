@@ -5,7 +5,7 @@
 
 import { LiteGraph } from '../../build/litegraph.js';
 import { csvCell, escapeReportResult } from './report-utils.js';
-import { setNodeInput } from './test-inputs.js';
+import { setNodeInput, slotName, slotType } from './test-inputs.js';
 const { LGraphNode } = LiteGraph;
 
 export class TestFramework {
@@ -265,10 +265,10 @@ export class TestFramework {
         }
         
         for (let i = 0; i < Math.min(actualInputs.length, expected.length); i++) {
-            const actual = actualInputs[i];
+            const actual = { name: slotName(actualInputs[i], i, 'input'), type: slotType(actualInputs[i].type) };
             const exp = expected[i];
             
-            if (exp.name && actual.name !== exp.name) {
+            if (exp.name && actual.name !== slotName(exp, i, 'input')) {
                 result.errors.push({
                     type: 'input_name_mismatch',
                     message: `Input ${i}: expected name '${exp.name}', got '${actual.name}'`,
@@ -278,7 +278,7 @@ export class TestFramework {
                 });
             }
             
-            if (exp.type && actual.type !== exp.type) {
+            if (exp.type && actual.type !== slotType(exp.type)) {
                 result.errors.push({
                     type: 'input_type_mismatch',
                     message: `Input ${i}: expected type '${exp.type}', got '${actual.type}'`,
@@ -309,10 +309,10 @@ export class TestFramework {
         }
         
         for (let i = 0; i < Math.min(actualOutputs.length, expected.length); i++) {
-            const actual = actualOutputs[i];
+            const actual = { name: slotName(actualOutputs[i], i, 'output'), type: slotType(actualOutputs[i].type) };
             const exp = expected[i];
             
-            if (exp.name && actual.name !== exp.name) {
+            if (exp.name && actual.name !== slotName(exp, i, 'output')) {
                 result.errors.push({
                     type: 'output_name_mismatch',
                     message: `Output ${i}: expected name '${exp.name}', got '${actual.name}'`,
@@ -322,7 +322,7 @@ export class TestFramework {
                 });
             }
             
-            if (exp.type && actual.type !== exp.type) {
+            if (exp.type && actual.type !== slotType(exp.type)) {
                 result.errors.push({
                     type: 'output_type_mismatch',
                     message: `Output ${i}: expected type '${exp.type}', got '${actual.type}'`,

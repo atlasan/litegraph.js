@@ -1,11 +1,16 @@
 import { LiteGraph } from "../litegraph.js";
 import { GL, Shader } from "../../editor/js/libs/litegl.js";
 import { gl } from "../../editor/js/code.js";
+import { CurveEditor } from "../curveeditor.js";
 
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";
 
 let DEG2RAD = 0.0174532925;
+
+function clamp(v, a, b) {
+    return a > v ? a : b < v ? b : v;
+}
 
 
 export class LGraphTexture {
@@ -55,6 +60,55 @@ export class LGraphTexture {
     };
 
     // returns the container where all the loaded textures are stored (overwrite if you have a Resources Manager)
+    // Texture/fx nodes need litegl (GL) and a live WebGL context (gl). Without
+    // them (no litegl, WebGL not enabled yet, headless) they must stay inert.
+    static hasWebGL() {
+        return typeof GL !== "undefined" && typeof gl !== "undefined" && !!gl;
+    }
+
+    static _webgl_guarded = new Set();
+
+    // Makes a node type a no-op while WebGL is unavailable, and lets its shared
+    // GPU resources (static initShader) be created on first use instead of in
+    // the constructor, so nodes created before WebGL was enabled still work.
+    static requireWebGL(ctor) {
+        if (!ctor || LGraphTexture._webgl_guarded.has(ctor)) return;
+        LGraphTexture._webgl_guarded.add(ctor);
+        var proto = ctor.prototype;
+        var original_property_changed = proto.onPropertyChanged;
+        ["onExecute", "onPropertyChanged", "onAction"].forEach(function (name) {
+            var original = proto[name];
+            if (typeof original !== "function") return;
+            proto[name] = function () {
+                if (!LGraphTexture.hasWebGL()) {
+                    // e.g. configure() restoring saved code: applied once WebGL is up
+                    if (name === "onPropertyChanged") {
+                        (this._webgl_skipped_properties ??= new Set()).add(arguments[0]);
+                    }
+                    // undefined (not false) from onPropertyChanged keeps the new value
+                    return undefined;
+                }
+                if (typeof ctor.initShader === "function") ctor.initShader();
+                if (typeof this.initWebGL === "function") this.initWebGL();
+                var skipped = this._webgl_skipped_properties;
+                if (skipped) {
+                    this._webgl_skipped_properties = null;
+                    for (var key of skipped) {
+                        original_property_changed.call(this, key, this.properties?.[key]);
+                    }
+                }
+                return original.apply(this, arguments);
+            };
+        });
+    }
+
+    static guardRegisteredWebGLNodes() {
+        var types = LiteGraph.registered_node_types;
+        for (var type in types) {
+            if (/^(texture|fx)\//.test(type)) LGraphTexture.requireWebGL(types[type]);
+        }
+    }
+
     static getTexturesContainer() {
         return gl.textures;
     }
@@ -660,7 +714,7 @@ class LGraphTextureOperation {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -1103,7 +1157,7 @@ class LGraphTextureScaleOffset {
             gl.disable(gl.CULL_FACE);
             gl.disable(gl.BLEND);
             tex.bind(0);
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -1211,10 +1265,9 @@ class LGraphTextureWarp {
             );
         }
 
-        var shader = this._shader;
-
+        var shader = LGraphTextureWarp._shader;
         if (!shader) {
-            shader = new GL.Shader(
+            shader = LGraphTextureWarp._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
                 LGraphTextureWarp.pixel_shader,
             );
@@ -1241,14 +1294,14 @@ class LGraphTextureWarp {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader.uniforms(uniforms).draw(mesh);
         });
 
         this.setOutputData(0, this._tex);
     }
 
-    pixel_shader = `
+    static pixel_shader = `
         precision highp float;
     
         uniform sampler2D u_texture;
@@ -1350,7 +1403,7 @@ class LGraphTextureToViewport {
                 );
             }
 
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             tex.bind(0);
             LGraphTextureToViewport._shader
                 .uniforms({
@@ -1870,129 +1923,105 @@ LiteGraph.registerNodeType("texture/average", LGraphTextureAverage);
 class LGraphTextureMinMax {
     constructor() {
         this.addInput("Texture", "Texture");
-        this.addOutput("min_t", "Texture");
-        this.addOutput("max_t", "Texture");
         this.addOutput("min", "vec4");
         this.addOutput("max", "vec4");
-        this.properties = {
-            mode: "max",
-            use_previous_frame: true, // to avoid stalls
-        };
-
-        this._uniforms = {u_texture: 0};
-
-        this._max = new Float32Array(4);
-        this._min = new Float32Array(4);
-
-        this._textures_chain = [];
+        this.addOutput("avg", "vec4");
+        this.properties = {};
+        this._chains = {};
+        this._values = [new Float32Array(4), new Float32Array(4), new Float32Array(4)];
     }
-
-    static widgets_info = {
-        mode: {
-            widget: "combo",
-            values: ["min", "max", "avg"],
-        },
-    };
 
     static title = "MinMax";
-    static desc = "Compute the scene min max";
+    static desc = "Per channel min, max and average of a texture (inputs over 1024px are sampled)";
+
+    static MODES = ["min", "max", "avg"];
+
+    onRemoved() {
+        for (var mode in this._chains) this._chains[mode].forEach((texture) => texture.delete());
+        this._chains = {};
+    }
+    // the reduction shrinks 4x per axis: 256 -> 64 -> 16 -> 4 -> 1
+    static LEVELS = [256, 64, 16, 4, 1];
+
+    static initShader() {
+        if (LGraphTextureMinMax._shader) return;
+        LGraphTextureMinMax._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureMinMax.pixel_shader,
+        );
+    }
 
     onExecute() {
-        if (!this.properties.use_previous_frame) {
-            this.update();
-        }
-
-        this.setOutputData(0, this._temp_texture);
-        this.setOutputData(1, this._luminance);
-    }
-
-    // executed before rendering the frame
-    onPreRenderExecute() {
-        this.update();
-    }
-
-    update() {
         var tex = this.getInputData(0);
-        if (!tex) {
-            return;
+        if (!tex || !tex.width || !tex.height) return;
+
+        // min/max of a byte texture are exact in bytes; the average and float inputs need
+        // float targets, which not every context can render to
+        var float_ok = !!(gl.getExtension("EXT_color_buffer_float") || gl.getExtension("WEBGL_color_buffer_float"));
+        for (let i = 0; i < LGraphTextureMinMax.MODES.length; ++i) {
+            if (!this.isOutputConnected(i)) continue;
+            var exact_in_bytes = tex.type == gl.UNSIGNED_BYTE && i != 2;
+            var type = exact_in_bytes || !float_ok ? gl.UNSIGNED_BYTE : gl.FLOAT;
+            this.reduce(tex, i, type, this._values[i]);
+            this.setOutputData(i, this._values[i]);
         }
+    }
 
-        if (!this.isOutputConnected(0) && !this.isOutputConnected(1)) {
-            return;
-        } // saves work
-
-        if (!LGraphTextureMinMax._shader) {
-            LGraphTextureMinMax._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureMinMax.pixel_shader,
+    // runs the reduction chain for one mode and reads back the final pixel into out
+    reduce(tex, mode, type, out) {
+        var chain = this._chains[mode];
+        if (!chain || chain[0].type != type) {
+            chain?.forEach((texture) => texture.delete());
+            chain = this._chains[mode] = LGraphTextureMinMax.LEVELS.map(
+                (size) => new GL.Texture(size, size, {type: type, format: gl.RGBA, filter: gl.NEAREST}),
             );
         }
-
-        var type = gl.UNSIGNED_BYTE;
-        if (tex.type != type) {
-            // force floats, half floats cannot be read with gl.readPixels
-            type = gl.FLOAT;
-        }
-
-        var size = 512;
-
-        if (
-            !this._textures_chain.length ||
-            this._textures_chain[0].type != type
-        ) {
-            while (i) {
-                this._textures_chain[i] = new GL.Texture(size, size, {
-                    type: type,
-                    format: gl.RGBA,
-                    filter: gl.NEAREST,
-                });
-                size = size >> 2;
-                i++;
-                if (size == 1) break;
-            }
-        }
-
-        // @BUG: the behavior of tex here is probably a bug.
-        tex.copyTo(this._textures_chain[0]);
-        for (let i = 1; i <= this._textures_chain.length; ++i) {
-            tex = this._textures_chain[i];
-        }
-
         var shader = LGraphTextureMinMax._shader;
-        var uniforms = this._uniforms;
-        uniforms.u_mipmap_offset = this.properties.mipmap_offset;
+        var uniforms = {u_texture: 0, u_mode: mode, u_texel: vec2.create()};
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.BLEND);
-        this._temp_texture.drawTo(function () {
-            tex.toViewport(shader, uniforms);
-        });
+        var origin = tex;
+        for (let i = 0; i < chain.length; ++i) {
+            var target = chain[i];
+            uniforms.u_texel[0] = 1 / target.width;
+            uniforms.u_texel[1] = 1 / target.height;
+            origin.copyTo(target, shader, uniforms);
+            origin = target;
+        }
+        var pixel = origin.getPixels();
+        var scale = type == gl.UNSIGNED_BYTE ? 1 / 255 : 1;
+        for (let c = 0; c < 4; ++c) out[c] = pixel[c] * scale;
+        return out;
     }
 
+    // every output pixel covers a 4x4 block of the source (exact when the source is 4x
+    // larger, a 4x4 sampling of the footprint for the first pass)
     static pixel_shader = `
         precision highp float;
-        uniform mat4 u_samples_a;
-        uniform mat4 u_samples_b;
         uniform sampler2D u_texture;
-        uniform float u_mipmap_offset;
+        uniform vec2 u_texel;
+        uniform float u_mode;
         varying vec2 v_coord;
-    
+
         void main() {
-            vec4 color = vec4(0.0);
-    
-            // Random average
-            for (int i = 0; i < 4; ++i) {
-                for (int j = 0; j < 4; ++j) {
-                    vec2 sampleCoordA = vec2(u_samples_a[i][j], u_samples_b[i][j]);
-                    vec2 sampleCoordB = vec2(1.0 - u_samples_a[i][j], 1.0 - u_samples_b[i][j]);
-                    color += texture2D(u_texture, sampleCoordA, u_mipmap_offset);
-                    color += texture2D(u_texture, sampleCoordB, u_mipmap_offset);
+            vec4 lo = vec4(1.0e20);
+            vec4 hi = vec4(-1.0e20);
+            vec4 sum = vec4(0.0);
+            for (int y = 0; y < 4; ++y) {
+                for (int x = 0; x < 4; ++x) {
+                    vec2 offset = (vec2(float(x), float(y)) - 1.5) * 0.25 * u_texel;
+                    vec4 color = texture2D(u_texture, v_coord + offset);
+                    lo = min(lo, color);
+                    hi = max(hi, color);
+                    sum += color;
                 }
             }
-    
-            gl_FragColor = color * 0.03125;
+            gl_FragColor = u_mode < 0.5 ? lo : (u_mode < 1.5 ? hi : sum / 16.0);
         }
     `;
 }
+LiteGraph.registerNodeType("texture/minmax", LGraphTextureMinMax);
+
 // LiteGraph.registerNodeType("texture/clustered_operation", LGraphTextureClusteredOperation);
 
 
@@ -2119,7 +2148,7 @@ class LGraphTextureLinearAvgSmooth {
             return;
         }
 
-        if (!LGraphTextureLinearAvgSmooth._shader) {
+        if (!LGraphTextureLinearAvgSmooth._shader_avg) {
             LGraphTextureLinearAvgSmooth._shader_copy = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
                 LGraphTextureLinearAvgSmooth.pixel_shader_copy,
@@ -2276,12 +2305,15 @@ class LGraphTextureLUT {
             texture: null,
         };
 
-        if (!LGraphTextureLUT._shader) {
-            LGraphTextureLUT._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureLUT.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureLUT.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureLUT._shader) return;
+        LGraphTextureLUT._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureLUT.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -2339,7 +2371,7 @@ class LGraphTextureLUT {
             this.properties.precision,
         );
 
-        // var mesh = Mesh.getScreenQuad();
+        // var mesh = GL.Mesh.getScreenQuad();
 
         this._tex.drawTo(function () {
             lut_tex.bind(1);
@@ -2404,12 +2436,7 @@ class LGraphTextureEncode {
             texture: null,
         };
 
-        if (!LGraphTextureEncode._shader) {
-            LGraphTextureEncode._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEncode.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEncode.initShader();
 
         this._uniforms = {
             u_texture: 0,
@@ -2418,6 +2445,14 @@ class LGraphTextureEncode {
             u_simbol_size: 16,
             u_res: vec2.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureEncode._shader) return;
+        LGraphTextureEncode._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEncode.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -2549,12 +2584,15 @@ class LGraphTextureChannels {
         this.addOutput("A", "Texture");
 
         // this.properties = { use_single_channel: true };
-        if (!LGraphTextureChannels._shader) {
-            LGraphTextureChannels._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureChannels.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureChannels.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureChannels._shader) return;
+        LGraphTextureChannels._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureChannels.pixel_shader,
+        );
     }
 
     static title = "Texture to Channels";
@@ -2605,7 +2643,7 @@ class LGraphTextureChannels {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureChannels._shader;
         var masks = [
             [1, 0, 0, 0],
@@ -2687,7 +2725,7 @@ class LGraphChannelsTexture {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphChannelsTexture._shader) {
             LGraphChannelsTexture._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -2700,7 +2738,7 @@ class LGraphChannelsTexture {
         var h = Math.max(texR.height, texG.height, texB.height, texA.height);
         var type =
             this.properties.precision == LGraphTexture.HIGH
-                ? LGraphTexture.HIGH_PRECISION_FORMAT
+                ? gl.HIGH_PRECISION_FORMAT
                 : gl.UNSIGNED_BYTE;
 
         if (
@@ -2796,7 +2834,7 @@ class LGraphTextureColor {
     onExecute() {
         var type =
             this.properties.precision == LGraphTexture.HIGH
-                ? LGraphTexture.HIGH_PRECISION_FORMAT
+                ? gl.HIGH_PRECISION_FORMAT
                 : gl.UNSIGNED_BYTE;
 
         if (!this._tex || this._tex.type != type) {
@@ -2870,18 +2908,21 @@ class LGraphTextureGradient {
             B: [1, 1, 1],
             texture_size: 32,
         };
-        if (!LGraphTextureGradient._shader) {
-            LGraphTextureGradient._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureGradient.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureGradient.initShader();
 
         this._uniforms = {
             u_angle: 0,
             u_colorA: vec3.create(),
             u_colorB: vec3.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureGradient._shader) return;
+        LGraphTextureGradient._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureGradient.pixel_shader,
+        );
     }
 
     static title = "Gradient";
@@ -3037,7 +3078,7 @@ class LGraphTextureMix {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = null;
         var uniforms = this._uniforms;
         if (texMix) {
@@ -3116,12 +3157,15 @@ class LGraphTextureEdges {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphTextureEdges._shader) {
-            LGraphTextureEdges._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEdges.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEdges.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureEdges._shader) return;
+        LGraphTextureEdges._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEdges.pixel_shader,
+        );
     }
 
     static title = "Edges";
@@ -3159,7 +3203,7 @@ class LGraphTextureEdges {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureEdges._shader;
         var invert = this.properties.invert;
         var factor = this.properties.factor;
@@ -3282,7 +3326,7 @@ class LGraphTextureDepthRange {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureDepthRange._shader) {
             LGraphTextureDepthRange._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -3414,7 +3458,7 @@ class LGraphTextureLinearDepth {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureLinearDepth._shader)
             LGraphTextureLinearDepth._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
@@ -4852,7 +4896,7 @@ class LGraphTextureCurve {
 
     onConfigure(o) {
         this._points = o.curves;
-        if (this.curve_editor) curve_editor.points = this._points;
+        if (this.curve_editor) this.curve_editor.points = this._points;
         this._must_update = true;
     }
 
@@ -4895,7 +4939,7 @@ class LGraphTextureCurve {
         if (this.flags.collapsed) return;
 
         if (!this.curve_editor)
-            this.curve_editor = new LiteGraph.CurveEditor(this._points.R);
+            this.curve_editor = new CurveEditor(this._points.R);
         ctx.save();
         ctx.translate(0, this.curve_offset);
         var channel = this.widgets[1].value;
@@ -4950,7 +4994,7 @@ class LGraphTextureCurve {
         ctx.restore();
     }
 
-    pixel_shader =
+    static pixel_shader =
         "precision highp float;\n\
         varying vec2 v_coord;\n\
         uniform sampler2D u_texture;\n\
@@ -5483,7 +5527,7 @@ class LGraphTextureCanvas2D {
         var time = this.graph.getTime();
         var ctx = gl;
         var canvas = gl.canvas;
-        if (this.properties.use_html_canvas || !enableWebGLCanvas) {
+        if (this.properties.use_html_canvas || typeof enableWebGLCanvas === "undefined") {
             if (!this._canvas) {
                 canvas = this._canvas = GL.createCanvas(width.height);
                 ctx = this._ctx = canvas.getContext("2d");
@@ -5622,7 +5666,7 @@ class LGraphTextureMatte {
         }
         var uniforms = this._uniforms;
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureMatte._shader;
         if (!shader) {
             shader = LGraphTextureMatte._shader = new GL.Shader(
@@ -5697,3 +5741,4 @@ class LGraphCubemapToTexture2D {
 }
 LiteGraph.registerNodeType("texture/cubemapToTexture2D",LGraphCubemapToTexture2D);
 
+LGraphTexture.guardRegisteredWebGLNodes();

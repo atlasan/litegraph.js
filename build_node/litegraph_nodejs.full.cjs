@@ -152,6 +152,17 @@ class LiteGraphClass {
     AUTOHIDE_TITLE = 3;
     VERTICAL_LAYOUT = "vertical"; // arrange nodes vertically
 
+    // canvas flags the graph Options panel offers as on/off switches
+    availableCanvasOptions = [
+        "allow_addOutSlot_onExecuted", "free_resize", "highquality_render", "use_gradients",
+        "pause_rendering", "clear_background", "read_only", "live_mode", "show_info",
+        "allow_dragcanvas", "allow_dragnodes", "allow_interaction", "allow_searchbox",
+        "move_destination_link_without_shift", "set_canvas_dirty_on_mouse_event",
+        "always_render_background", "render_shadows", "render_canvas_border",
+        "render_connections_shadows", "render_connections_border", "render_connection_arrows",
+        "render_collapsed_slots", "render_execution_order", "render_title_colored", "render_link_tooltip",
+    ];
+
     proxy = null; // used to redirect calls
     node_images_path = "";
 
@@ -478,7 +489,7 @@ class LiteGraphClass {
         }
 
         this.registered_node_types[type] = base_class;
-        if (base_class.constructor.name) {
+        if (classname) {
             this.Nodes[classname] = base_class;
         }
 
@@ -533,8 +544,9 @@ class LiteGraphClass {
             throw new Error("node type not found to unregister: " + type);
         }
         delete this.registered_node_types[base_class.type];
-        if (base_class.constructor.name) {
-            delete this.Nodes[base_class.constructor.name];
+        // Nodes is keyed by class name (base_class.constructor is always Function)
+        if (base_class.name && this.Nodes[base_class.name] === base_class) {
+            delete this.Nodes[base_class.name];
         }
     }
 
@@ -921,6 +933,11 @@ class LiteGraphClass {
         const clonedObj = JSON.parse(JSON.stringify(obj));
         if (!target) {
             return clonedObj;
+        }
+        // copying a shorter array over a longer one must not keep the old tail
+        // (e.g. node.inputs after removeInput, then clone/configure)
+        if (Array.isArray(target) && Array.isArray(clonedObj)) {
+            target.length = clonedObj.length;
         }
         for (const key in clonedObj) {
             if (Object.prototype.hasOwnProperty.call(clonedObj, key)) {
@@ -2493,9 +2510,7 @@ class CurveEditor {
             var p = points[i];
             p2[0] = p[0] * w;
             p2[1] = (1.0 - p[1]) * h;
-            if (p2[0] < pos[0])
-                last_valid = i;
-            var dist = vec2.distance(pos, p2);
+            var dist = Math.hypot(pos[0] - p2[0], pos[1] - p2[1]);
             if (dist > min_dist || dist > max_dist)
                 continue;
             closest = i;
@@ -4119,9 +4134,12 @@ class LGraph {
             return;
         }
 
+        // params is an argument list; a single value or nothing is allowed too
+        // ("clear" and "checkPanels" are sent without any and used to be dropped)
+        const args = params == null ? [] : Array.isArray(params) ? params : [params];
         for (const c of this.list_of_graphcanvas) {
-            if (typeof(c[action]) == "function" && c[action] && params) {
-                c[action](...params);
+            if (typeof(c[action]) == "function") {
+                c[action](...args);
             }
         }
     }
@@ -4221,7 +4239,9 @@ class LGraph {
         }, node);
 
         if (opts.doCalcSize) {
-            node.setSize(node.computeSize());
+            // a node on the generic default size gets its computed size; a size assigned
+            // by the node class or the caller is kept and only grown to fit
+            node.autoSize(!node.hasDefaultSize?.());
         }
         // record after the node is in the graph, so the history snapshot contains it
         this.onGraphChanged({
@@ -4423,7 +4443,8 @@ class LGraph {
      * @return {LiteGraph.LGraphNode} the node at this position or null
      */
     getNodeOnPos(x, y, nodes_list = this._nodes, margin = 0) {
-        return nodes_list.reverse().find((node) => node.isPointInside(x, y, margin)) ?? null;
+        // last drawn is top-most; findLast, because reverse() would flip the caller's list
+        return nodes_list?.findLast((node) => node.isPointInside(x, y, margin)) ?? null;
     }
 
     /**
@@ -5876,6 +5897,7 @@ class LGraphCanvas {
         this.node_capturing_input = null;
         this.linkConnector?.cancel(); // restores links being moved
         this.linkConnector = new LinkConnector(); // link-drag state; connecting_* are accessors over it
+        this.clearSlotHighlights();
         this.highlighted_links = {};
 
         this.dragging_canvas = false;
@@ -5884,6 +5906,8 @@ class LGraphCanvas {
         this.dirty_bgcanvas = true;
         this.dirty_area = null;
 
+        // panels show nodes that are gone now
+        if (this.canvas && typeof document !== "undefined") this.closePanels();
         this.node_in_panel = null;
         this.node_widget = null;
 
@@ -6401,7 +6425,7 @@ class LGraphCanvas {
                 case "touch":
                     break;
                 default:
-                    LiteGraph.log_debug("pointerType unknown " + ev.pointerType);
+                    LiteGraph.log_debug("pointerType unknown " + e.pointerType);
             }
         }
 
@@ -6594,7 +6618,7 @@ class LGraphCanvas {
                 if (this.allow_interaction && !this.connecting_node && !node.flags.collapsed && !this.live_mode) {
                     // Search for corner for resize
                     if (!skip_action &&
-                        node.resizable !== false &&
+                        node.resizable !== false && !node.flags.pinned &&
                         LiteGraph.isInsideRectangle(
                             e.canvasX,
                             e.canvasY,
@@ -7188,16 +7212,18 @@ class LGraphCanvas {
                         pos = this._highlight_output || [0, 0]; // to store the output of isOverNodeOutput
 
                         // on top of output
-                        if (this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
+                        if (!this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
                             // check if I have a slot below de mouse
                             let slot = this.isOverNodeOutput(node, e.canvasX, e.canvasY, pos);
                             if (slot != -1 && node.outputs[slot]) {
                                 let slot_type = node.outputs[slot].type;
                                 if (LiteGraph.isValidConnection(this.connecting_input.type, slot_type)) {
                                     this._highlight_output = pos;
+                                    this._highlight_output_slot = node.outputs[slot];
                                 }
                             } else {
                                 this._highlight_output = null;
+                                this._highlight_output_slot = null;
                             }
                         }
                     }
@@ -7262,6 +7288,7 @@ class LGraphCanvas {
                 LiteGraph.log_verbose("lgraphcanvas", "processMouseMove", "draggin!", this.selected_nodes);
                 for (let i in this.selected_nodes) {
                     let n = this.selected_nodes[i];
+                    if (n.flags?.pinned) continue; // pinned nodes keep their position
                     let off = [delta[0] / this.ds.scale, delta[1] / this.ds.scale];
                     n.pos[0] += off[0];
                     n.pos[1] += off[1];
@@ -7539,6 +7566,7 @@ class LGraphCanvas {
                     }
                 }
                 this.linkConnector.reset();
+                this.clearSlotHighlights();
             } else if (this.resizing_node) { // not dragging connection
                 this.dirty_canvas = true;
                 this.dirty_bgcanvas = true;
@@ -7860,6 +7888,7 @@ class LGraphCanvas {
                 if (this.node_panel) this.node_panel.close();
                 if (this.linkConnector?.isConnecting) { // abandon a link drag; moved links are restored
                     this.linkConnector.cancel();
+                    this.clearSlotHighlights();
                     this.dirty_canvas = true;
                     this.dirty_bgcanvas = true;
                 }
@@ -8331,9 +8360,14 @@ class LGraphCanvas {
             def_cb: node.onDeselected
         });
         node.is_selected = false;
+        delete this.selected_nodes[node.id];
+        if (this.current_node === node) this.current_node = null;
         this.processCallbackHandlers("onNodeDeselected", {
             def_cb: this.onNodeDeselected
         }, node);
+        this.processCallbackHandlers("onSelectionChange", {
+            def_cb: this.onSelectionChange
+        }, this.selected_nodes);
 
         // Remove highlighted
         node.inputs?.forEach((input) => {
@@ -8912,8 +8946,7 @@ class LGraphCanvas {
                 ctx.fillStyle = "#ffcc00";
                 if (this._highlight_input) {
                     ctx.beginPath();
-                    var shape = this._highlight_input_slot.shape;
-                    if (shape === LiteGraph.ARROW_SHAPE) {
+                    if (this._highlight_input_slot?.shape === LiteGraph.ARROW_SHAPE) {
                         ctx.moveTo(this._highlight_input[0] + 8, this._highlight_input[1] + 0.5);
                         ctx.lineTo(this._highlight_input[0] - 4, this._highlight_input[1] + 6 + 0.5);
                         ctx.lineTo(this._highlight_input[0] - 4, this._highlight_input[1] - 6 + 0.5);
@@ -8931,7 +8964,7 @@ class LGraphCanvas {
                 }
                 if (this._highlight_output) {
                     ctx.beginPath();
-                    if (shape === LiteGraph.ARROW_SHAPE) {
+                    if (this._highlight_output_slot?.shape === LiteGraph.ARROW_SHAPE) {
                         ctx.moveTo(this._highlight_output[0] + 8, this._highlight_output[1] + 0.5);
                         ctx.lineTo(this._highlight_output[0] - 4, this._highlight_output[1] + 6 + 0.5);
                         ctx.lineTo(this._highlight_output[0] - 4, this._highlight_output[1] - 6 + 0.5);
@@ -10788,6 +10821,11 @@ class LGraphCanvas {
         start_dir = start_dir || LiteGraph.RIGHT;
         end_dir = end_dir || LiteGraph.LEFT;
 
+        // follow the path renderLink actually draws, not always the spline
+        if (this.links_render_mode == LiteGraph.LINEAR_LINK || this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
+            return LGraphCanvas.pointAlongPolyline(this.getLinkPolyline(a, b, start_dir, end_dir), t);
+        }
+
         var dist = LiteGraph.distance(a, b);
         var p0 = a;
         var p1 = [a[0], a[1]];
@@ -10831,6 +10869,77 @@ class LGraphCanvas {
         var x = c1 * p0[0] + c2 * p1[0] + c3 * p2[0] + c4 * p3[0];
         var y = c1 * p0[1] + c2 * p1[1] + c3 * p2[1] + c4 * p3[1];
         return [x, y];
+    }
+
+    // text cut with an ellipsis to fit max_width as measured by ctx
+    static fitText(ctx, text, max_width) {
+        if (max_width <= 0) return "";
+        if (ctx.measureText(text).width <= max_width) return text;
+        var lo = 0;
+        var hi = text.length;
+        while (lo < hi) { // longest prefix that fits with the ellipsis
+            var mid = (lo + hi + 1) >> 1;
+            if (ctx.measureText(text.slice(0, mid) + "…").width <= max_width) lo = mid;
+            else hi = mid - 1;
+        }
+        return lo ? text.slice(0, lo) + "…" : "";
+    }
+
+    // the slot under the mouse while dragging a link; a new drag must not start with
+    // the previous one's highlight
+    clearSlotHighlights() {
+        this._highlight_input = null;
+        this._highlight_input_slot = null;
+        this._highlight_output = null;
+        this._highlight_output_slot = null;
+    }
+
+    // corner points of a LINEAR_LINK / STRAIGHT_LINK path, as drawn by renderLink
+    getLinkPolyline(a, b, start_dir, end_dir) {
+        if (this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
+            var start_x = a[0] + (start_dir == LiteGraph.RIGHT ? 10 : 0);
+            var start_y = a[1] + (start_dir == LiteGraph.RIGHT ? 0 : 10);
+            var end_x = b[0] - (end_dir == LiteGraph.LEFT ? 10 : 0);
+            var end_y = b[1] - (end_dir == LiteGraph.LEFT ? 0 : 10);
+            var mid_x = (start_x + end_x) * 0.5;
+            return [a, [start_x, start_y],
+                [mid_x, start_y],
+                [mid_x, end_y],
+                [end_x, end_y], b
+            ];
+        }
+        var dir = (d) => [
+            d == LiteGraph.LEFT ? -1 : d == LiteGraph.RIGHT ? 1 : 0,
+            d == LiteGraph.UP ? -1 : d == LiteGraph.DOWN ? 1 : 0,
+        ];
+        var l = 15;
+        var s = dir(start_dir);
+        var e = dir(end_dir);
+        return [a, [a[0] + s[0] * l, a[1] + s[1] * l],
+            [b[0] + e[0] * l, b[1] + e[1] * l], b
+        ];
+    }
+
+    // point at fraction t (0..1) of the total length of a polyline
+    static pointAlongPolyline(points, t) {
+        var lengths = [];
+        var total = 0;
+        for (let i = 1; i < points.length; ++i) {
+            var len = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+            lengths.push(len);
+            total += len;
+        }
+        if (!total) return [points[0][0], points[0][1]];
+        var target = LiteGraph.clamp(t, 0, 1) * total;
+        for (let i = 0; i < lengths.length; ++i) {
+            if (target <= lengths[i] || i == lengths.length - 1) {
+                var f = lengths[i] ? Math.min(target / lengths[i], 1) : 0;
+                var p = points[i];
+                var q = points[i + 1];
+                return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+            }
+            target -= lengths[i];
+        }
     }
 
     drawExecutionOrder(ctx) {
@@ -11076,14 +11185,18 @@ class LGraphCanvas {
                         // ctx.stroke();
                         ctx.fillStyle = secondary_text_color;
                         const label = w.label || w.name;
+                        let label_width = 0;
                         if (label != null) {
                             if (is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width) {
                                 ctx.fillText(label, margin * 2, y + H * 0.7);
+                                label_width = ctx.measureText(String(label)).width + margin * 2;
                             }
                         }
                         ctx.fillStyle = text_color;
                         ctx.textAlign = "right";
-                        ctx.fillText(String(w.value).substr(0, 30), widget_width - margin * 2, y + H * 0.7); // 30 chars max
+                        // show as much of the value as fits beside the label (it used to stop at 30 chars)
+                        const value_width = widget_width - margin * 4 - label_width;
+                        ctx.fillText(LGraphCanvas.fitText(ctx, String(w.value), value_width), widget_width - margin * 2, y + H * 0.7);
                         ctx.restore();
                     }
                     break;
@@ -11107,6 +11220,7 @@ class LGraphCanvas {
      **/
     processNodeWidgets(node, pos, event, active_widget) {
         // if node has no widgets or not allowed interaction, return null
+        if (node.flags?.collapsed) return null; // widgets are hidden, nothing to click
         if (!node.widgets || !node.widgets.length || (!this.allow_interaction && !node.flags.allow_interaction)) {
             if (!node.widgets || !node.widgets.length) LiteGraph.log_verbose("graph processNodeWidgets", "no widgets for node", node);
             if (!this.allow_interaction && !node.flags.allow_interaction) LiteGraph.log_verbose("graph processNodeWidgets", "interaction not allowed on graph and not overridden on node", node);
@@ -11169,6 +11283,11 @@ class LGraphCanvas {
                         var nvalue = LiteGraph.clamp((x - 15) / (widget_width - 30), 0, 1);
                         if (w.options.read_only) break;
                         w.value = w.options.min + (w.options.max - w.options.min) * nvalue;
+                        if (w.options.step > 0) {
+                            // snap to min + k * step, staying inside the range
+                            w.value = w.options.min + Math.round((w.value - w.options.min) / w.options.step) * w.options.step;
+                            w.value = LiteGraph.clamp(w.value, w.options.min, w.options.max);
+                        }
                         if (old_value != w.value) {
                             setTimeout(function() {
                                 inner_value_change(w, w.value, old_value);
@@ -14006,7 +14125,7 @@ class LGraphCanvas {
             } else if (type == "string" || type == "number" || type == "undefined") {
                 value_element.setAttribute("contenteditable", true);
                 value_element.addEventListener("keydown", function(e) {
-                    if (e.code == "Enter" && (type != "string" || !e.shiftKey)) { // allow for multiline
+                    if (e.key == "Enter" && (type != "string" || !e.shiftKey)) { // allow for multiline; key also covers NumpadEnter
                         e.preventDefault();
                         this.blur();
                     }
@@ -14110,7 +14229,7 @@ class LGraphCanvas {
         }
         graphcanvas.closePanels();
         var ref_window = graphcanvas.getCanvasWindow();
-        panel = graphcanvas.createPanel("Options", {
+        var panel = graphcanvas.createPanel("Options", {
             closable: true,
             window: ref_window,
             onOpen: function() {
@@ -14161,8 +14280,7 @@ class LGraphCanvas {
 
             // panel.addWidget( "string", "Graph name", "", {}, fUpdate); // implement
 
-            var aProps = LiteGraph.availableCanvasOptions;
-            aProps.sort();
+            var aProps = [...(LiteGraph.availableCanvasOptions || [])].sort();
             for (var pI in aProps) {
                 var pX = aProps[pI];
                 panel.addWidget("boolean", pX, graphcanvas[pX], {
@@ -14318,7 +14436,7 @@ class LGraphCanvas {
             }
             textarea.value = node.properties[propname];
             textarea.addEventListener("keydown", function(e) {
-                if (e.code == "Enter" && e.ctrlKey) {
+                if (e.key == "Enter" && e.ctrlKey) {
                     node.setProperty(propname, textarea.value);
                     fDoneWith();
                 }
@@ -14488,14 +14606,15 @@ class LGraphCanvas {
      * @returns void
      */
     checkPanels() {
-        if (!this.canvas)
+        if (!this.canvas || !this.canvas.parentNode)
             return;
         var panels = this.canvas.parentNode.querySelectorAll(".litegraph.dialog");
         for (let i = 0; i < panels.length; ++i) {
             var panel = panels[i];
             if (!panel.node)
                 continue;
-            if (!panel.node.graph || panel.graph != this.graph)
+            // close panels of nodes that left this graph (panels have no .graph of their own)
+            if (panel.node.graph !== this.graph)
                 panel.close();
         }
     }
@@ -15574,6 +15693,17 @@ supported callbacks:
 
 class LGraphNode {
 
+    // trace() keeps at most this many messages in node.console
+    static MAX_CONSOLE = 100;
+
+    // size arrays created as the generic default (slot changes may resize them in place)
+    static _default_sizes = new WeakSet();
+
+    /** true while the node still uses the generic default size, i.e. no size was assigned */
+    hasDefaultSize() {
+        return LGraphNode._default_sizes.has(this.size);
+    }
+
     cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
@@ -15606,7 +15736,10 @@ class LGraphNode {
         this.flags ??= {};
         this.mode ??= LiteGraph.ALWAYS;
         this._pos ??= new Float32Array(LiteGraph.DEFAULT_POSITION);
-        this.size ??= [LiteGraph.NODE_WIDTH, 60];
+        if (this.size == null) {
+            this.size = [LiteGraph.NODE_WIDTH, 60];
+            LGraphNode._default_sizes.add(this.size);
+        }
         this.size_basic ??= this.size;
         this.callbackhandler_setup();
     }
@@ -15787,9 +15920,9 @@ class LGraphNode {
         this.outputs?.forEach((output, i) => {
             if (!output.links)
                 return;
-            output.links.forEach((link, i) => {
+            output.links.forEach((link, link_index) => {
                 const link_info = this.graph?.links[link] || null; // fixed
-                LiteGraph.log_verbose("lgraphnode", "configure", "cycle outputlinks", link, i, link_info);
+                LiteGraph.log_verbose("lgraphnode", "configure", "cycle outputlinks", link, link_index, link_info);
                 this.processCallbackHandlers("onConnectionsChange", {
                     def_cb: this.onConnectionsChange
                 }, LiteGraph.OUTPUT, i, true, link_info, output);
@@ -16769,7 +16902,7 @@ class LGraphNode {
                     LiteGraph.log_verbose("lgraphnode", "doUpdateBindedOutputProperties", "update value", ob_output.name, propertyData, thisNode);
                     this.setOutputData(ob_output.name, propertyData);
                 } else {
-                    LiteGraph.log_warn("lgraphnode", "doUpdateBindedOutputProperties", "inexisting property", ob_output.name, outputData, thisNode);
+                    LiteGraph.log_warn("lgraphnode", "doUpdateBindedOutputProperties", "inexisting property", ob_output.name, thisNode);
                 }
             }
         });
@@ -16784,7 +16917,10 @@ class LGraphNode {
         let newSize = only_greater_than_current && this.size ?
             [Math.max(this.size[0], minSize[0]), Math.max(this.size[1], minSize[1])] :
             minSize;
+        const was_default = this.hasDefaultSize();
         this.setSize(newSize);
+        // fitting the slots is not choosing a size
+        if (was_default) LGraphNode._default_sizes.add(this.size);
     }
 
     /**
@@ -16893,7 +17029,9 @@ class LGraphNode {
     }
     addSlots(array, isInput) {
         if (typeof array === 'string')
-            array = [array];
+            array = [
+                [array]
+            ]; // a single slot name, not a list of [name, type] entries
 
         array.forEach((info) => {
             const slot = isInput ? {
@@ -17887,13 +18025,24 @@ class LGraphNode {
             return null;
         }
 
-        // callback ,allow the node to change target slot
+        // callback, allow the node to change target slot: it gets the slot and returns
+        // another slot index (plain or as {return_value}), or false to refuse
         r = target_node.processCallbackHandlers("onBeforeConnectInput", {
             def_cb: target_node.onBeforeConnectInput
-        }, target_node);
-        if (r !== null && (typeof(r) == "object" && r.return_value !== null)) {
-            LiteGraph.log_debug("lgraphnode", "connect", "Node onBeforeConnectInput changing target_slot", target_slot, r.return_value);
-            target_slot = r.return_value;
+        }, target_slot);
+        var redirect = r !== null && typeof(r) == "object" ? r.return_value : r;
+        if (redirect === false) {
+            LiteGraph.log_debug("lgraphnode", "connect", "Node onBeforeConnectInput refused the connection", target_slot);
+            return null;
+        }
+        if (typeof(redirect) == "number" && redirect !== target_slot) {
+            LiteGraph.log_debug("lgraphnode", "connect", "Node onBeforeConnectInput changing target_slot", target_slot, redirect);
+            target_slot = redirect;
+            input = target_node.inputs[target_slot];
+            if (!input) {
+                LiteGraph.log_warn("lgraphnode", "connect", "onBeforeConnectInput returned a missing slot", target_slot);
+                return null;
+            }
         }
 
         // callback, allow the node to stop connection
@@ -18227,8 +18376,8 @@ class LGraphNode {
             this.console.shift?.();
         }
 
-        this.graph.processCallbackHandlers("onNodeTrace", {
-            def_cb: this.graph.onNodeTrace
+        this.graph?.processCallbackHandlers("onNodeTrace", {
+            def_cb: this.graph?.onNodeTrace
         }, this, msg);
     }
 
@@ -19204,30 +19353,32 @@ class Subgraph {
         // Recurse!
         for (const node of graph.nodes) {
             if (node.type === "graph/subgraph") {
-                const merge = reassignGraphUUIDs(node.subgraph);
-                idMap.nodeIDs.assign(merge.nodeIDs);
-                idMap.linkIDs.assign(merge.linkIDs);
+                const merge = this.reassignSubgraphUUIDs(node.subgraph);
+                Object.assign(idMap.nodeIDs, merge.nodeIDs);
+                Object.assign(idMap.linkIDs, merge.linkIDs);
             }
         }
+        return idMap;
     }
 
     clone() {
         var node = LiteGraph.createNode(this.type);
-        var data = this.serialize();
+        // serialize() shares containers with this node and its inner graph
+        var data = LiteGraph.cloneObject(this.serialize());
 
         if (LiteGraph.use_uuids) {
-            // LiteGraph.LGraph.serialize() seems to reuse objects in the original graph. But we
-            // need to change node IDs here, so clone it first.
-            const subgraph = LiteGraph.cloneObject(data.subgraph);
-
-            this.reassignSubgraphUUIDs(subgraph);
-
-            data.subgraph = subgraph;
+            this.reassignSubgraphUUIDs(data.subgraph);
         }
 
         delete data["id"];
-        delete data["inputs"];
-        delete data["outputs"];
+        // keep the outer slots (order and any added by hand), just not their links;
+        // the inner GraphInput/GraphOutput nodes match them by name
+        data.inputs?.forEach((input) => {
+            input.link = null;
+        });
+        data.outputs?.forEach((output) => {
+            if (output.links) output.links.length = 0;
+        });
         node.configure(data);
         return node;
     }
@@ -19244,7 +19395,7 @@ class Subgraph {
         //    var min_x = 0;
         //    var max_x = 0;
         for (let i = 0; i < nodes.length; ++i) {
-            ids[node.id] = nodes[i];
+            ids[nodes[i].id] = nodes[i];
             //      min_x = Math.min(node.pos[0], min_x);
             //      max_x = Math.max(node.pos[0], min_x);
         }
@@ -21524,6 +21675,10 @@ class GenericCompare {
                     result = true;
                     switch (typeof A) {
                         case "object":
+                            if (A === null || B === null) {
+                                result = A === B;
+                                break;
+                            }
                             var aProps = Object.getOwnPropertyNames(A);
                             var bProps = Object.getOwnPropertyNames(B);
                             if (aProps.length != bProps.length) {
@@ -21738,7 +21893,7 @@ class WaitAll {
         if (slot_index == null) return;
 
         // check all
-        this.ready.length = this.outputs.length;
+        this.ready.length = this.inputs.length; // one flag per input to wait for
         this.ready[slot_index] = true;
         for (var i = 0; i < this.ready.length; ++i)
             if (!this.ready[i])
@@ -23184,6 +23339,8 @@ class GamepadInput {
                 Math.abs(gamepad.xbox.axes["rtrigger"]) > threshold ?
                 gamepad.xbox.axes["rtrigger"] :
                 0;
+            // the node draws the pad state; without this it only updated on mouse moves
+            this.setDirtyCanvas(true);
         }
 
         if (this.outputs) {
@@ -24259,7 +24416,7 @@ class MathOperation {
             B = this.properties["B"];
         }
 
-        var func = MathOperation.funcs[this.properties.OP];
+        var func = MathOperation.funcs[this.properties.OP] || this._func || ((a) => a);
 
         var result;
         if (A.constructor === Number) {
@@ -24997,6 +25154,17 @@ class Math3DXYZWToVec4 {
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
+const MATH3D_DEG2RAD = Math.PI / 180;
+const MATH3D_RAD2DEG = 180 / Math.PI;
+
+function isNumberArray(value, minLength) {
+    if (!value || typeof value.length !== "number" || value.length < minLength) return false;
+    for (var i = 0; i < minLength; ++i) {
+        if (typeof value[i] !== "number") return false;
+    }
+    return true;
+}
+
 class Math3DMat4 {
 
     static title = "mat4";
@@ -25033,9 +25201,9 @@ class Math3DMat4 {
         var S = this.getInputData(2);
 
         if (this._must_update || T || R || S) {
-            T = T || this.properties.T;
-            R = R || this.properties.R;
-            S = S || this.properties.S;
+            T = isNumberArray(T, 3) ? T : this.properties.T;
+            R = isNumberArray(R, 3) ? R : this.properties.R;
+            S = isNumberArray(S, 3) ? S : this.properties.S;
             mat4.identity(M);
             mat4.translate(M, M, T);
             if (this.properties.R_in_degrees) {
@@ -25434,10 +25602,11 @@ if (typeof(glMatrix) !== "undefined") {
 
         onExecute() {
             var euler = this.getInputData(0);
-            if (euler == null) {
+            if (!isNumberArray(euler, 3)) {
                 euler = this.properties.euler;
             }
-            vec3.scale(this._degs, euler, this.DEG2RAD);
+            if (typeof quat.fromEuler !== "function") return;
+            vec3.scale(this._degs, euler, MATH3D_DEG2RAD);
             if (this.properties.use_yaw_pitch_roll)
                 this._degs = [this._degs[2], this._degs[0], this._degs[1]];
             var R = quat.fromEuler(this._value, this._degs);
@@ -25449,22 +25618,21 @@ if (typeof(glMatrix) !== "undefined") {
 
     class MathQuatToEuler {
 
-        static title = "Euler->Quat";
-        static desc = "Converts rotX,rotY,rotZ in degrees to quat";
+        static title = "Quat->Euler";
+        static desc = "Converts a quat to euler angles (rotX,rotY,rotZ) in degrees";
 
         constructor() {
-            this.addInput(["quat", "quat"]);
+            this.addInput("quat", "quat");
             this.addOutput("euler", "vec3");
             this._value = vec3.create();
         }
 
         onExecute() {
             var q = this.getInputData(0);
-            if (!q) return;
-            // @BUG: R is unused, but I don't know where it *should* be used because I don't know this math off the top
-            // It *probably* goes in one of the next two lines
-            var R = quat.toEuler(this._value, q);
-            vec3.scale(this._value, this._value, this.DEG2RAD);
+            if (!isNumberArray(q, 4)) return;
+            if (typeof quat.toEuler !== "function") return; // provided by litegl
+            quat.toEuler(this._value, q); // radians
+            vec3.scale(this._value, this._value, MATH3D_RAD2DEG);
             this.setOutputData(0, this._value);
         }
     }
@@ -25596,7 +25764,7 @@ if (typeof(glMatrix) !== "undefined") {
 
         onExecute() {
             var vec = this.getInputData(0);
-            if (vec) this._value.set(vec);
+            if (isNumberArray(vec, 3)) this._value.set(vec);
             var range_min = this.properties.range_min;
             var range_max = this.properties.range_max;
             var target_min = this.properties.target_min;
@@ -25688,10 +25856,16 @@ LiteGraph.wrapFunctionAsNode(
 
 
 function contains(a, b) {
-    if (a === undefined || b === undefined) {
+    if (b == null) {
         return false;
     }
-    return a.indexOf(b) != -1;
+    if (Array.isArray(a)) {
+        return a.includes(b);
+    }
+    if (typeof a !== "string") {
+        return false;
+    }
+    return a.indexOf(String(b)) != -1;
 }
 LiteGraph.wrapFunctionAsNode(
     "string/contains",
@@ -25766,7 +25940,7 @@ class StringToTable {
 
     onExecute() {
         var input = this.getInputData(0);
-        if (!input) return;
+        if (!input || typeof input !== "string") return;
         var separator = this.properties.separator || ",";
         if (input != this._str || separator != this._last_separator) {
             this._last_separator = separator;
@@ -25812,8 +25986,9 @@ class Selector {
 
     onExecute() {
         var sel = this.getInputData(0);
-        if (sel == null || sel.constructor !== Number) sel = 0;
-        this.selected = sel = Math.round(sel) % (this.inputs.length - 1);
+        if (typeof sel !== "number" || !Number.isFinite(sel)) sel = 0;
+        var count = this.inputs.length - 1;
+        this.selected = sel = ((Math.round(sel) % count) + count) % count;
         var v = this.getInputData(sel + 1);
         if (v !== undefined) {
             this.setOutputData(0, v);
@@ -25850,7 +26025,7 @@ class Sequence {
     }
 
     onPropertyChanged(name, value) {
-        if (name == "sequence") {
+        if (name == "sequence" && typeof value === "string") {
             this.values = value.split(",");
         }
     }
@@ -25858,14 +26033,19 @@ class Sequence {
     onExecute() {
         var seq = this.getInputData(1);
         if (seq && seq != this.current_sequence) {
-            this.values = seq.split(",");
+            if (typeof seq === "string") this.values = seq.split(",");
+            else if (Array.isArray(seq)) this.values = seq;
             this.current_sequence = seq;
         }
         var index = this.getInputData(0);
-        if (index == null) {
+        if (typeof index === "string" && index.trim() !== "") {
+            index = Number(index); // "2" still selects the third value
+        }
+        if (typeof index !== "number" || !Number.isFinite(index)) {
             index = 0;
         }
-        this.index = index = Math.round(index) % this.values.length;
+        var count = this.values.length || 1;
+        this.index = index = ((Math.round(index) % count) + count) % count;
 
         this.setOutputData(0, this.values[index]);
     }
@@ -26176,7 +26356,7 @@ class logicWhile {
                     this.triggerSlot(0, param);
                     // done
                     if (this.stopped) {
-                        console.debug?.("while cycle stopped on index " + k);
+                        console.debug?.("while cycle stopped on index " + this.k);
                         break;
                     }
                     this.k++;
@@ -26418,7 +26598,7 @@ class ColorPalette {
         }
 
         var f = this.getInputData(0);
-        if (f == null) {
+        if (typeof f !== "number" || Number.isNaN(f)) {
             f = 0.5;
         }
         if (f > 1.0) {
@@ -26507,7 +26687,8 @@ class ImageFrame {
 
     show() {
         // var str = this.canvas.toDataURL("image/png");
-        if (showElement && this.frame) {
+        // showElement is an optional host-page helper
+        if (typeof showElement === "function" && this.frame) {
             showElement(this.frame);
         }
     }
@@ -26526,6 +26707,19 @@ class ImageFrame {
 }
 LiteGraph.registerNodeType("graphics/frame", ImageFrame);
 
+
+// Accepts what CanvasRenderingContext2D.drawImage takes; anything else would throw.
+function isDrawableImage(value) {
+    if (!value || typeof value !== "object") return false;
+    var types = ["HTMLImageElement", "HTMLCanvasElement", "HTMLVideoElement",
+        "ImageBitmap", "OffscreenCanvas", "SVGImageElement", "VideoFrame"
+    ];
+    for (var i = 0; i < types.length; ++i) {
+        var Ctor = globalThis[types[i]];
+        if (typeof Ctor === "function" && value instanceof Ctor) return true;
+    }
+    return false;
+}
 
 class ImageFade {
 
@@ -26564,12 +26758,12 @@ class ImageFade {
         // this.canvas.width = this.canvas.width; //@BUG: Test with this excised, I couldn't find a setter
 
         var A = this.getInputData(0);
-        if (A != null) {
+        if (isDrawableImage(A)) {
             ctx.drawImage(A, 0, 0, this.canvas.width, this.canvas.height);
         }
 
         var fade = this.getInputData(2);
-        if (fade == null) {
+        if (typeof fade !== "number" || !Number.isFinite(fade)) {
             fade = this.properties["fade"];
         } else {
             this.properties["fade"] = fade;
@@ -26577,7 +26771,7 @@ class ImageFade {
 
         ctx.globalAlpha = fade;
         var B = this.getInputData(1);
-        if (B != null) {
+        if (isDrawableImage(B)) {
             ctx.drawImage(B, 0, 0, this.canvas.width, this.canvas.height);
         }
         ctx.globalAlpha = 1.0;
@@ -26754,12 +26948,12 @@ class DrawImageNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 
         var img = this.getInputOrProperty("img");
-        if (!img) {
+        if (!isDrawableImage(img)) {
             return;
         }
 
@@ -26795,7 +26989,7 @@ class DrawRectangleNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 
@@ -27194,6 +27388,10 @@ LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
 
 let DEG2RAD = 0.0174532925;
 
+function clamp(v, a, b) {
+    return a > v ? a : b < v ? b : v;
+}
+
 
 class LGraphTexture {
 
@@ -27246,6 +27444,55 @@ class LGraphTexture {
     };
 
     // returns the container where all the loaded textures are stored (overwrite if you have a Resources Manager)
+    // Texture/fx nodes need litegl (GL) and a live WebGL context (gl). Without
+    // them (no litegl, WebGL not enabled yet, headless) they must stay inert.
+    static hasWebGL() {
+        return typeof GL !== "undefined" && typeof gl !== "undefined" && !!gl;
+    }
+
+    static _webgl_guarded = new Set();
+
+    // Makes a node type a no-op while WebGL is unavailable, and lets its shared
+    // GPU resources (static initShader) be created on first use instead of in
+    // the constructor, so nodes created before WebGL was enabled still work.
+    static requireWebGL(ctor) {
+        if (!ctor || LGraphTexture._webgl_guarded.has(ctor)) return;
+        LGraphTexture._webgl_guarded.add(ctor);
+        var proto = ctor.prototype;
+        var original_property_changed = proto.onPropertyChanged;
+        ["onExecute", "onPropertyChanged", "onAction"].forEach(function(name) {
+            var original = proto[name];
+            if (typeof original !== "function") return;
+            proto[name] = function() {
+                if (!LGraphTexture.hasWebGL()) {
+                    // e.g. configure() restoring saved code: applied once WebGL is up
+                    if (name === "onPropertyChanged") {
+                        (this._webgl_skipped_properties ??= new Set()).add(arguments[0]);
+                    }
+                    // undefined (not false) from onPropertyChanged keeps the new value
+                    return undefined;
+                }
+                if (typeof ctor.initShader === "function") ctor.initShader();
+                if (typeof this.initWebGL === "function") this.initWebGL();
+                var skipped = this._webgl_skipped_properties;
+                if (skipped) {
+                    this._webgl_skipped_properties = null;
+                    for (var key of skipped) {
+                        original_property_changed.call(this, key, this.properties?.[key]);
+                    }
+                }
+                return original.apply(this, arguments);
+            };
+        });
+    }
+
+    static guardRegisteredWebGLNodes() {
+        var types = LiteGraph.registered_node_types;
+        for (var type in types) {
+            if (/^(texture|fx)\//.test(type)) LGraphTexture.requireWebGL(types[type]);
+        }
+    }
+
     static getTexturesContainer() {
         return gl.textures;
     }
@@ -27868,7 +28115,7 @@ class LGraphTextureOperation {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -28317,7 +28564,7 @@ class LGraphTextureScaleOffset {
             gl.disable(gl.CULL_FACE);
             gl.disable(gl.BLEND);
             tex.bind(0);
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -28424,10 +28671,9 @@ class LGraphTextureWarp {
             );
         }
 
-        var shader = this._shader;
-
+        var shader = LGraphTextureWarp._shader;
         if (!shader) {
-            shader = new GL.Shader(
+            shader = LGraphTextureWarp._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
                 LGraphTextureWarp.pixel_shader,
             );
@@ -28454,14 +28700,14 @@ class LGraphTextureWarp {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader.uniforms(uniforms).draw(mesh);
         });
 
         this.setOutputData(0, this._tex);
     }
 
-    pixel_shader = `
+    static pixel_shader = `
         precision highp float;
     
         uniform sampler2D u_texture;
@@ -28563,7 +28809,7 @@ class LGraphTextureToViewport {
                 );
             }
 
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             tex.bind(0);
             LGraphTextureToViewport._shader
                 .uniforms({
@@ -29108,131 +29354,113 @@ LiteGraph.registerNodeType("texture/average", LGraphTextureAverage);
 class LGraphTextureMinMax {
     constructor() {
         this.addInput("Texture", "Texture");
-        this.addOutput("min_t", "Texture");
-        this.addOutput("max_t", "Texture");
         this.addOutput("min", "vec4");
         this.addOutput("max", "vec4");
-        this.properties = {
-            mode: "max",
-            use_previous_frame: true, // to avoid stalls
-        };
-
-        this._uniforms = {
-            u_texture: 0
-        };
-
-        this._max = new Float32Array(4);
-        this._min = new Float32Array(4);
-
-        this._textures_chain = [];
+        this.addOutput("avg", "vec4");
+        this.properties = {};
+        this._chains = {};
+        this._values = [new Float32Array(4), new Float32Array(4), new Float32Array(4)];
     }
-
-    static widgets_info = {
-        mode: {
-            widget: "combo",
-            values: ["min", "max", "avg"],
-        },
-    };
 
     static title = "MinMax";
-    static desc = "Compute the scene min max";
+    static desc = "Per channel min, max and average of a texture (inputs over 1024px are sampled)";
+
+    static MODES = ["min", "max", "avg"];
+
+    onRemoved() {
+        for (var mode in this._chains) this._chains[mode].forEach((texture) => texture.delete());
+        this._chains = {};
+    }
+    // the reduction shrinks 4x per axis: 256 -> 64 -> 16 -> 4 -> 1
+    static LEVELS = [256, 64, 16, 4, 1];
+
+    static initShader() {
+        if (LGraphTextureMinMax._shader) return;
+        LGraphTextureMinMax._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureMinMax.pixel_shader,
+        );
+    }
 
     onExecute() {
-        if (!this.properties.use_previous_frame) {
-            this.update();
-        }
-
-        this.setOutputData(0, this._temp_texture);
-        this.setOutputData(1, this._luminance);
-    }
-
-    // executed before rendering the frame
-    onPreRenderExecute() {
-        this.update();
-    }
-
-    update() {
         var tex = this.getInputData(0);
-        if (!tex) {
-            return;
+        if (!tex || !tex.width || !tex.height) return;
+
+        // min/max of a byte texture are exact in bytes; the average and float inputs need
+        // float targets, which not every context can render to
+        var float_ok = !!(gl.getExtension("EXT_color_buffer_float") || gl.getExtension("WEBGL_color_buffer_float"));
+        for (let i = 0; i < LGraphTextureMinMax.MODES.length; ++i) {
+            if (!this.isOutputConnected(i)) continue;
+            var exact_in_bytes = tex.type == gl.UNSIGNED_BYTE && i != 2;
+            var type = exact_in_bytes || !float_ok ? gl.UNSIGNED_BYTE : gl.FLOAT;
+            this.reduce(tex, i, type, this._values[i]);
+            this.setOutputData(i, this._values[i]);
         }
+    }
 
-        if (!this.isOutputConnected(0) && !this.isOutputConnected(1)) {
-            return;
-        } // saves work
-
-        if (!LGraphTextureMinMax._shader) {
-            LGraphTextureMinMax._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureMinMax.pixel_shader,
-            );
-        }
-
-        var type = gl.UNSIGNED_BYTE;
-        if (tex.type != type) {
-            // force floats, half floats cannot be read with gl.readPixels
-            type = gl.FLOAT;
-        }
-
-        var size = 512;
-
-        if (
-            !this._textures_chain.length ||
-            this._textures_chain[0].type != type
-        ) {
-            while (i) {
-                this._textures_chain[i] = new GL.Texture(size, size, {
+    // runs the reduction chain for one mode and reads back the final pixel into out
+    reduce(tex, mode, type, out) {
+        var chain = this._chains[mode];
+        if (!chain || chain[0].type != type) {
+            chain?.forEach((texture) => texture.delete());
+            chain = this._chains[mode] = LGraphTextureMinMax.LEVELS.map(
+                (size) => new GL.Texture(size, size, {
                     type: type,
                     format: gl.RGBA,
-                    filter: gl.NEAREST,
-                });
-                size = size >> 2;
-                i++;
-                if (size == 1) break;
-            }
+                    filter: gl.NEAREST
+                }),
+            );
         }
-
-        // @BUG: the behavior of tex here is probably a bug.
-        tex.copyTo(this._textures_chain[0]);
-        for (let i = 1; i <= this._textures_chain.length; ++i) {
-            tex = this._textures_chain[i];
-        }
-
         var shader = LGraphTextureMinMax._shader;
-        var uniforms = this._uniforms;
-        uniforms.u_mipmap_offset = this.properties.mipmap_offset;
+        var uniforms = {
+            u_texture: 0,
+            u_mode: mode,
+            u_texel: vec2.create()
+        };
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.BLEND);
-        this._temp_texture.drawTo(function() {
-            tex.toViewport(shader, uniforms);
-        });
+        var origin = tex;
+        for (let i = 0; i < chain.length; ++i) {
+            var target = chain[i];
+            uniforms.u_texel[0] = 1 / target.width;
+            uniforms.u_texel[1] = 1 / target.height;
+            origin.copyTo(target, shader, uniforms);
+            origin = target;
+        }
+        var pixel = origin.getPixels();
+        var scale = type == gl.UNSIGNED_BYTE ? 1 / 255 : 1;
+        for (let c = 0; c < 4; ++c) out[c] = pixel[c] * scale;
+        return out;
     }
 
+    // every output pixel covers a 4x4 block of the source (exact when the source is 4x
+    // larger, a 4x4 sampling of the footprint for the first pass)
     static pixel_shader = `
         precision highp float;
-        uniform mat4 u_samples_a;
-        uniform mat4 u_samples_b;
         uniform sampler2D u_texture;
-        uniform float u_mipmap_offset;
+        uniform vec2 u_texel;
+        uniform float u_mode;
         varying vec2 v_coord;
-    
+
         void main() {
-            vec4 color = vec4(0.0);
-    
-            // Random average
-            for (int i = 0; i < 4; ++i) {
-                for (int j = 0; j < 4; ++j) {
-                    vec2 sampleCoordA = vec2(u_samples_a[i][j], u_samples_b[i][j]);
-                    vec2 sampleCoordB = vec2(1.0 - u_samples_a[i][j], 1.0 - u_samples_b[i][j]);
-                    color += texture2D(u_texture, sampleCoordA, u_mipmap_offset);
-                    color += texture2D(u_texture, sampleCoordB, u_mipmap_offset);
+            vec4 lo = vec4(1.0e20);
+            vec4 hi = vec4(-1.0e20);
+            vec4 sum = vec4(0.0);
+            for (int y = 0; y < 4; ++y) {
+                for (int x = 0; x < 4; ++x) {
+                    vec2 offset = (vec2(float(x), float(y)) - 1.5) * 0.25 * u_texel;
+                    vec4 color = texture2D(u_texture, v_coord + offset);
+                    lo = min(lo, color);
+                    hi = max(hi, color);
+                    sum += color;
                 }
             }
-    
-            gl_FragColor = color * 0.03125;
+            gl_FragColor = u_mode < 0.5 ? lo : (u_mode < 1.5 ? hi : sum / 16.0);
         }
     `;
 }
+LiteGraph.registerNodeType("texture/minmax", LGraphTextureMinMax);
+
 // LiteGraph.registerNodeType("texture/clustered_operation", LGraphTextureClusteredOperation);
 
 
@@ -29364,7 +29592,7 @@ class LGraphTextureLinearAvgSmooth {
             return;
         }
 
-        if (!LGraphTextureLinearAvgSmooth._shader) {
+        if (!LGraphTextureLinearAvgSmooth._shader_avg) {
             LGraphTextureLinearAvgSmooth._shader_copy = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
                 LGraphTextureLinearAvgSmooth.pixel_shader_copy,
@@ -29521,12 +29749,15 @@ class LGraphTextureLUT {
             texture: null,
         };
 
-        if (!LGraphTextureLUT._shader) {
-            LGraphTextureLUT._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureLUT.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureLUT.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureLUT._shader) return;
+        LGraphTextureLUT._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureLUT.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -29589,7 +29820,7 @@ class LGraphTextureLUT {
             this.properties.precision,
         );
 
-        // var mesh = Mesh.getScreenQuad();
+        // var mesh = GL.Mesh.getScreenQuad();
 
         this._tex.drawTo(function() {
             lut_tex.bind(1);
@@ -29654,12 +29885,7 @@ class LGraphTextureEncode {
             texture: null,
         };
 
-        if (!LGraphTextureEncode._shader) {
-            LGraphTextureEncode._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEncode.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEncode.initShader();
 
         this._uniforms = {
             u_texture: 0,
@@ -29668,6 +29894,14 @@ class LGraphTextureEncode {
             u_simbol_size: 16,
             u_res: vec2.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureEncode._shader) return;
+        LGraphTextureEncode._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEncode.pixel_shader,
+        );
     }
 
     static widgets_info = {
@@ -29804,12 +30038,15 @@ class LGraphTextureChannels {
         this.addOutput("A", "Texture");
 
         // this.properties = { use_single_channel: true };
-        if (!LGraphTextureChannels._shader) {
-            LGraphTextureChannels._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureChannels.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureChannels.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureChannels._shader) return;
+        LGraphTextureChannels._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureChannels.pixel_shader,
+        );
     }
 
     static title = "Texture to Channels";
@@ -29859,7 +30096,7 @@ class LGraphTextureChannels {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureChannels._shader;
         var masks = [
             [1, 0, 0, 0],
@@ -29944,7 +30181,7 @@ class LGraphChannelsTexture {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphChannelsTexture._shader) {
             LGraphChannelsTexture._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -29957,7 +30194,7 @@ class LGraphChannelsTexture {
         var h = Math.max(texR.height, texG.height, texB.height, texA.height);
         var type =
             this.properties.precision == LGraphTexture.HIGH ?
-            LGraphTexture.HIGH_PRECISION_FORMAT :
+            gl.HIGH_PRECISION_FORMAT :
             gl.UNSIGNED_BYTE;
 
         if (
@@ -30053,7 +30290,7 @@ class LGraphTextureColor {
     onExecute() {
         var type =
             this.properties.precision == LGraphTexture.HIGH ?
-            LGraphTexture.HIGH_PRECISION_FORMAT :
+            gl.HIGH_PRECISION_FORMAT :
             gl.UNSIGNED_BYTE;
 
         if (!this._tex || this._tex.type != type) {
@@ -30127,18 +30364,21 @@ class LGraphTextureGradient {
             B: [1, 1, 1],
             texture_size: 32,
         };
-        if (!LGraphTextureGradient._shader) {
-            LGraphTextureGradient._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureGradient.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureGradient.initShader();
 
         this._uniforms = {
             u_angle: 0,
             u_colorA: vec3.create(),
             u_colorB: vec3.create(),
         };
+    }
+
+    static initShader() {
+        if (LGraphTextureGradient._shader) return;
+        LGraphTextureGradient._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureGradient.pixel_shader,
+        );
     }
 
     static title = "Gradient";
@@ -30298,7 +30538,7 @@ class LGraphTextureMix {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = null;
         var uniforms = this._uniforms;
         if (texMix) {
@@ -30380,12 +30620,15 @@ class LGraphTextureEdges {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphTextureEdges._shader) {
-            LGraphTextureEdges._shader = new GL.Shader(
-                Shader.SCREEN_VERTEX_SHADER,
-                LGraphTextureEdges.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphTextureEdges.initShader();
+    }
+
+    static initShader() {
+        if (LGraphTextureEdges._shader) return;
+        LGraphTextureEdges._shader = new GL.Shader(
+            Shader.SCREEN_VERTEX_SHADER,
+            LGraphTextureEdges.pixel_shader,
+        );
     }
 
     static title = "Edges";
@@ -30423,7 +30666,7 @@ class LGraphTextureEdges {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureEdges._shader;
         var invert = this.properties.invert;
         var factor = this.properties.factor;
@@ -30546,7 +30789,7 @@ class LGraphTextureDepthRange {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureDepthRange._shader) {
             LGraphTextureDepthRange._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -30679,7 +30922,7 @@ class LGraphTextureLinearDepth {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureLinearDepth._shader)
             LGraphTextureLinearDepth._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
@@ -32154,7 +32397,7 @@ class LGraphTextureCurve {
 
     onConfigure(o) {
         this._points = o.curves;
-        if (this.curve_editor) curve_editor.points = this._points;
+        if (this.curve_editor) this.curve_editor.points = this._points;
         this._must_update = true;
     }
 
@@ -32197,7 +32440,7 @@ class LGraphTextureCurve {
         if (this.flags.collapsed) return;
 
         if (!this.curve_editor)
-            this.curve_editor = new LiteGraph.CurveEditor(this._points.R);
+            this.curve_editor = new CurveEditor(this._points.R);
         ctx.save();
         ctx.translate(0, this.curve_offset);
         var channel = this.widgets[1].value;
@@ -32252,7 +32495,7 @@ class LGraphTextureCurve {
         ctx.restore();
     }
 
-    pixel_shader =
+    static pixel_shader =
         "precision highp float;\n\
         varying vec2 v_coord;\n\
         uniform sampler2D u_texture;\n\
@@ -32836,7 +33079,7 @@ class LGraphTextureCanvas2D {
         var time = this.graph.getTime();
         var ctx = gl;
         var canvas = gl.canvas;
-        if (this.properties.use_html_canvas || !enableWebGLCanvas) {
+        if (this.properties.use_html_canvas || typeof enableWebGLCanvas === "undefined") {
             if (!this._canvas) {
                 canvas = this._canvas = GL.createCanvas(width.height);
                 ctx = this._ctx = canvas.getContext("2d");
@@ -32980,7 +33223,7 @@ class LGraphTextureMatte {
         }
         var uniforms = this._uniforms;
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureMatte._shader;
         if (!shader) {
             shader = LGraphTextureMatte._shader = new GL.Shader(
@@ -33057,6 +33300,7 @@ class LGraphCubemapToTexture2D {
 }
 LiteGraph.registerNodeType("texture/cubemapToTexture2D", LGraphCubemapToTexture2D);
 
+LGraphTexture.guardRegisteredWebGLNodes();
 
 var SHADERNODES_COLOR = "#345";
 
@@ -33606,8 +33850,9 @@ class LGraphShaderGraph {
         this._uniforms = {};
         this._shader = null;
         this._context = new LGShaderContext();
-        this._context.vs_template =
-            "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+        this._context.vs_template = LGraphTexture.hasWebGL() ?
+            "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER :
+            "";
         this._context.fs_template = LGraphShaderGraph.template;
     }
 
@@ -33834,7 +34079,11 @@ class LGraphShaderGraph {
         return options;
     }
 }
-LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
+// fills in the vertex template skipped when the node was created before WebGL was on
+LGraphShaderGraph.prototype.initWebGL = function() {
+    if (!this._context.vs_template)
+        this._context.vs_template = "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
+};
 
 /*
  * @TODO: Either write it or excise it.
@@ -34007,12 +34256,14 @@ class LGraphShaderConstant {
             this.widgets.length = 1; // remove extra widgets
             this.updateWidgets();
         }
-        if (name == "value") {
-            if (!value.length) this.widgets[1].value = value;
-            else {
-                this.widgets[1].value = value[1];
-                if (value.length > 2) this.widgets[2].value = value[2];
-                if (value.length > 3) this.widgets[3].value = value[3];
+        if (name == "value" && this.widgets) {
+            // widgets[0] is the type combo; value components follow it
+            if (value == null || !value.length) {
+                if (this.widgets[1]) this.widgets[1].value = value;
+            } else {
+                for (var i = 0; i < value.length; ++i) {
+                    if (this.widgets[i + 1]) this.widgets[i + 1].value = value[i];
+                }
             }
         }
     }
@@ -34497,7 +34748,7 @@ class LGraphShaderOperation {
             var param_code = inlinks[i].name;
             if (param_code == null) {
                 // not plugged
-                param_code = p.value != null ? p.value : "(1.0)";
+                param_code = "(1.0)";
                 inlinks[i].type = "float";
             }
 
@@ -35009,7 +35260,7 @@ class LGraphShaderTime {
         var outlink = getOutputLinkID(this, 0);
 
         context.addUniform("u_time" + this.id, "float", function() {
-            return getTime() * 0.001;
+            return performance.now() * 0.001;
         });
         context.addCode(
             "code",
@@ -35170,8 +35421,21 @@ class LGraphShaderRemap {
 }
 registerShaderNode("math/remap", LGraphShaderRemap);
 
+// registered last: its constructor builds a subgraph out of the shader:: nodes above
+LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
+
+LGraphTexture.guardRegisteredWebGLNodes();
+
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // var { GL } = require('../../editor/js/libs/litegl.js');
+
+// Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
+function polarToCartesian(out, azimuth, inclination, radius) {
+    out[0] = radius * Math.sin(inclination) * Math.cos(azimuth);
+    out[1] = radius * Math.cos(inclination);
+    out[2] = radius * Math.sin(inclination) * Math.sin(azimuth);
+    return out;
+}
 
 var view_matrix = new Float32Array(16);
 var projection_matrix = new Float32Array(16);
@@ -35318,7 +35582,7 @@ class LGraphPoints3D {
                 for (let i = 0; i < side; ++i)
                     for (let j = 0; j < side; ++j) {
                         let pos = i * 3 + j * 3 * side;
-                        GL.polarToCartesian(
+                        polarToCartesian(
                             temp,
                             (i / side) * 2 * Math.PI,
                             (j / side - 0.5) * 2 * Math.PI,
@@ -35972,6 +36236,7 @@ class LGraphGeometryPolygon {
             vertices = this.geometry.vertices = new Float32Array(3 * sides);
         var delta = (Math.PI * 2) / sides;
         var gen_uvs = this.properties.uvs;
+        var uvs = null;
         if (gen_uvs) {
             uvs = this.geometry.coords = new Float32Array(3 * sides);
         }
@@ -36151,7 +36416,7 @@ class LGraphGeometryEval {
             if (this.properties.execute_every_frame) this.version++;
             else this.version = geometry._version;
             var func = this.func;
-            var T = getTime();
+            var T = performance.now();
 
             // clone
             if (!this.geometry) this.geometry = {};
@@ -36289,7 +36554,7 @@ class LGraphConnectPoints {
 
     onExecute() {
         var geometry = this.getInputData(0);
-        if (!geometry) return;
+        if (!geometry || !geometry.vertices || typeof geometry.vertices.length !== "number") return;
 
         if (
             this.geometry_id != geometry._id ||
@@ -36353,8 +36618,11 @@ class LGraphConnectPoints {
 LiteGraph.registerNodeType("geometry/connectPoints", LGraphConnectPoints);
 
 
-// Works with Litegl.js to create WebGL nodes
-if (typeof GL != "undefined") {
+// Works with Litegl.js to create WebGL nodes. litegl is usually loaded after this
+// file (the editor's WebGL button), so registration also waits for "litegl:ready".
+function registerWebGLGeometryNodes() {
+    if (typeof GL == "undefined" || registerWebGLGeometryNodes.done) return;
+    registerWebGLGeometryNodes.done = true;
 
     class LGraphToGeometry {
         constructor() {
@@ -36371,7 +36639,7 @@ if (typeof GL != "undefined") {
 
             if (mesh != this.last_mesh) {
                 this.last_mesh = mesh;
-                for (i in mesh.vertexBuffers) {
+                for (var i in mesh.vertexBuffers) {
                     var buffer = mesh.vertexBuffers[i];
                     this.geometry[i] = buffer.data;
                 }
@@ -37144,6 +37412,10 @@ if (typeof GL != "undefined") {
 	';
 	*/
 }
+registerWebGLGeometryNodes();
+globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, {
+    once: true
+});
 
 // Works with Litegl.js to create WebGL nodes
 
@@ -37162,19 +37434,22 @@ class LGraphFXLens {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXLens._shader) {
-            LGraphFXLens._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXLens.pixel_shader,
-            );
-            LGraphFXLens._texture = new GL.Texture(3, 1, {
-                format: gl.RGB,
-                wrap: gl.CLAMP_TO_EDGE,
-                magFilter: gl.LINEAR,
-                minFilter: gl.LINEAR,
-                pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
-            });
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXLens.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXLens._shader) return;
+        LGraphFXLens._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXLens.pixel_shader,
+        );
+        LGraphFXLens._texture = new GL.Texture(3, 1, {
+            format: gl.RGB,
+            wrap: gl.CLAMP_TO_EDGE,
+            magFilter: gl.LINEAR,
+            minFilter: gl.LINEAR,
+            pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
+        });
     }
 
     static title = "Lens";
@@ -37223,7 +37498,7 @@ class LGraphFXLens {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXLens._shader;
         // var camera = LS.Renderer._current_camera;
 
@@ -37311,7 +37586,7 @@ if(!this._temp_texture || this._temp_texture.type != precision ||
 
 var shader = LGraphDepthOfField._shader = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphDepthOfField._pixel_shader );
 
-var screen_mesh = Mesh.getScreenQuad();
+var screen_mesh = GL.Mesh.getScreenQuad();
 
 gl.disable( gl.DEPTH_TEST );
 gl.disable( gl.BLEND );
@@ -37482,7 +37757,7 @@ class LGraphFXBokeh {
             points_mesh = this.createPointsMesh(tex.width, tex.height, 2);
         }
 
-        var screen_mesh = Mesh.getScreenQuad();
+        var screen_mesh = GL.Mesh.getScreenQuad();
 
         var point_size = this.properties.size;
         var alpha = this.properties.alpha;
@@ -37714,8 +37989,9 @@ class LGraphFXGeneric {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
-        var camera = LS ? LS.Renderer._current_camera : null;
+        var mesh = GL.Mesh.getScreenQuad();
+        var LS = globalThis.LS; // litescene, when the graph runs inside it
+        var camera = LS && LS.Renderer ? LS.Renderer._current_camera : null;
         var camera_planes;
         if (camera) {
             camera_planes = [
@@ -37855,12 +38131,15 @@ class LGraphFXVigneting {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXVigneting._shader) {
-            LGraphFXVigneting._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXVigneting.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXVigneting.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXVigneting._shader) return;
+        LGraphFXVigneting._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXVigneting.pixel_shader,
+        );
     }
 
     static title = "Vigneting";
@@ -37899,7 +38178,7 @@ class LGraphFXVigneting {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXVigneting._shader;
         var invert = this.properties.invert;
 
@@ -37939,6 +38218,8 @@ class LGraphFXVigneting {
     `;
 }
 LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
+
+LGraphTexture.guardRegisteredWebGLNodes();
 
 // TODO :: MIDI WORKS WITH ACTIONS SLOTS REVISE: (CANT ASSIGN MULTIPLE, WHEN IT SHOULD WITH THIS DATA TYPE, AND DATA SEEMS NOT PASSED BY (eg. MIDI Show using his input does not seems to work))
 
@@ -39619,6 +39900,28 @@ class LGAudio {
 
     static audios_connected = {};
 
+    // Assigns `value` to audionode[name] without throwing: AudioParams only take
+    // finite numbers, and some fields are read-only or range-checked by the browser.
+    static setNodeValue(audionode, name, value) {
+        if (!audionode || audionode[name] === undefined) return false;
+        var target = audionode[name];
+        var isParam = typeof AudioParam !== "undefined" && target instanceof AudioParam;
+        try {
+            if (isParam) {
+                // numeric strings are converted, as the browser itself would
+                if (typeof value === "string" && value.trim() !== "") value = Number(value);
+                if (typeof value !== "number" || !Number.isFinite(value)) return false;
+                target.value = value;
+            } else {
+                audionode[name] = value;
+            }
+            return true;
+        } catch (e) {
+            console.warn?.("LGAudio: cannot set " + name, value, e.message);
+            return false;
+        }
+    }
+
     static getAudioContext() {
         if (!this._audio_context) {
             window.AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -39802,15 +40105,7 @@ class LGAudio {
                 return;
             }
 
-            if (this.audionode[name] === undefined) {
-                return;
-            }
-
-            if (this.audionode[name].value !== undefined) {
-                this.audionode[name].value = value;
-            } else {
-                this.audionode[name] = value;
-            }
+            LGAudio.setNodeValue(this.audionode, name, value);
         };
 
         class_object.prototype.onConnectionsChange = LGAudio.onConnectionsChange;
@@ -39973,13 +40268,13 @@ class LGAudioSource {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") this.audionode.gain.value = v;
+                if (input.name == "gain") LGAudio.setNodeValue(this.audionode, "gain", v);
                 else if (input.name == "src") {
                     this.setProperty("src", v);
                 } else if (input.name == "playbackRate") {
                     this.properties.playbackRate = v;
                     for (let j = 0; j < this._audionodes.length; ++j) {
-                        this._audionodes[j].playbackRate.value = v;
+                        LGAudio.setNodeValue(this._audionodes[j], "playbackRate", v);
                     }
                 }
             }
@@ -40009,10 +40304,10 @@ class LGAudioSource {
         if (name == "src") {
             this.loadSound(value);
         } else if (name == "gain") {
-            this.audionode.gain.value = value;
+            LGAudio.setNodeValue(this.audionode, "gain", value);
         } else if (name == "playbackRate") {
             for (var j = 0; j < this._audionodes.length; ++j) {
-                this._audionodes[j].playbackRate.value = value;
+                LGAudio.setNodeValue(this._audionodes[j], "playbackRate", value);
             }
         }
     }
@@ -40237,8 +40532,8 @@ class LGAudioMediaSource {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") {
-                    this.audionode.gain.value = this.properties.gain = v;
+                if (input.name == "gain" && LGAudio.setNodeValue(this.audionode, "gain", v)) {
+                    this.properties.gain = v;
                 }
             }
         }
@@ -40254,7 +40549,7 @@ class LGAudioMediaSource {
 
     onPropertyChanged(name, value) {
         if (name == "gain") {
-            this.audionode.gain.value = value;
+            LGAudio.setNodeValue(this.audionode, "gain", value);
         }
     }
 
@@ -40303,7 +40598,7 @@ class LGAudioAnalyser {
     }
 
     onPropertyChanged(name, value) {
-        this.audionode[name] = value;
+        LGAudio.setNodeValue(this.audionode, name, value);
     }
 
     onExecute() {
@@ -40337,7 +40632,7 @@ class LGAudioAnalyser {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
 
@@ -40389,7 +40684,7 @@ class LGAudioGain {
             var input = this.inputs[i];
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -40503,7 +40798,7 @@ class LGAudioDynamicsCompressor {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -40598,9 +40893,9 @@ class LGAudioMixer {
 
     onPropertyChanged(name, value) {
         if (name == "gain1") {
-            this.audionode1.gain.value = value;
+            LGAudio.setNodeValue(this.audionode1, "gain", value);
         } else if (name == "gain2") {
-            this.audionode2.gain.value = value;
+            LGAudio.setNodeValue(this.audionode2, "gain", value);
         }
     }
 
@@ -40622,9 +40917,9 @@ class LGAudioMixer {
             }
 
             if (i == 1) {
-                this.audionode1.gain.value = v;
+                LGAudio.setNodeValue(this.audionode1, "gain", v);
             } else if (i == 3) {
-                this.audionode2.gain.value = v;
+                LGAudio.setNodeValue(this.audionode2, "gain", v);
             }
         }
     }
@@ -40715,7 +41010,7 @@ class LGAudioDelay {
     onExecute() {
         var v = this.getInputData(1);
         if (v !== undefined) {
-            this.audionode.delayTime.value = v;
+            LGAudio.setNodeValue(this.audionode, "delayTime", v);
         }
     }
 }
@@ -40768,7 +41063,7 @@ class LGAudioBiquadFilter {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -40856,7 +41151,7 @@ class LGAudioOscillatorNode {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -42226,7 +42521,7 @@ class objMethodWidget {
         return [{
             content: "NodeObjMethod DBG", // has_submenu: false,
             callback: function(menuitO, obX, ev, htmO, nodeX) {
-                console.debug?.(NodeObjMethod, nodeX.widg_prop, nodeX);
+                console.debug?.("NodeObjMethod", nodeX.widg_prop, nodeX);
             },
         }];
     }
@@ -43547,8 +43842,12 @@ class DOMSelectorAll {
     onExecute() {
         var sSel = this.getInputData(0);
         var res = null;
-        if (sSel) {
-            res = document.querySelectorAll(sSel);
+        if (sSel && typeof sSel === "string") {
+            try {
+                res = document.querySelectorAll(sSel);
+            } catch (e) {
+                console.warn?.("DOMSelectorAll: invalid selector", sSel, e.message);
+            }
         }
         this.setOutputData(0, res);
     }
@@ -43580,11 +43879,11 @@ class HtmlEventListener {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         } else this.setOutputData(3, null);
         var sSel = this.getInputData(0);
-        if (sSel) {
+        if (sSel && sSel.attributes) {
             this.setOutputData(4, sSel.attributes["data-listeners"]);
         }
     }
@@ -43648,7 +43947,7 @@ class HtmlEventListenerRemove {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -43780,7 +44079,7 @@ class HtmlCreateElement {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -43824,7 +44123,7 @@ class HtmlAppendChild {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -43859,7 +44158,7 @@ class HtmlRemoveElement {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -45296,7 +45595,7 @@ class HtmlElementStyle {
     onExecute(param, options) {
         // no code?
         if (this.mode == LiteGraph.ON_TRIGGER) {
-            action = this.id + "_" + (action ? action : "action") + "_exectoact_" + LiteGraph.uuidv4();
+            var action = this.id + "_action_exectoact_" + LiteGraph.uuidv4();
             this.onAction(action, param, options);
         }
     }
@@ -45672,7 +45971,7 @@ class WatchValue {
             Object.keys(data).forEach((key, index) => {
                 const childNodeId = `${nodeId}-${key}`;
                 console.debug(currentDepth + "::" + childNodeId);
-                expandUpToDepth(data[key], maxDepth, currentDepth + 1, childNodeId);
+                this.expandUpToDepth(data[key], maxDepth, currentDepth + 1, childNodeId);
             });
         }
     }

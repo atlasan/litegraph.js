@@ -394,30 +394,32 @@ export class Subgraph {
         // Recurse!
         for (const node of graph.nodes) {
             if (node.type === "graph/subgraph") {
-                const merge = reassignGraphUUIDs(node.subgraph);
-                idMap.nodeIDs.assign(merge.nodeIDs);
-                idMap.linkIDs.assign(merge.linkIDs);
+                const merge = this.reassignSubgraphUUIDs(node.subgraph);
+                Object.assign(idMap.nodeIDs, merge.nodeIDs);
+                Object.assign(idMap.linkIDs, merge.linkIDs);
             }
         }
+        return idMap;
     }
 
     clone() {
         var node = LiteGraph.createNode(this.type);
-        var data = this.serialize();
+        // serialize() shares containers with this node and its inner graph
+        var data = LiteGraph.cloneObject(this.serialize());
 
         if (LiteGraph.use_uuids) {
-            // LiteGraph.LGraph.serialize() seems to reuse objects in the original graph. But we
-            // need to change node IDs here, so clone it first.
-            const subgraph = LiteGraph.cloneObject(data.subgraph);
-
-            this.reassignSubgraphUUIDs(subgraph);
-
-            data.subgraph = subgraph;
+            this.reassignSubgraphUUIDs(data.subgraph);
         }
 
         delete data["id"];
-        delete data["inputs"];
-        delete data["outputs"];
+        // keep the outer slots (order and any added by hand), just not their links;
+        // the inner GraphInput/GraphOutput nodes match them by name
+        data.inputs?.forEach((input) => {
+            input.link = null;
+        });
+        data.outputs?.forEach((output) => {
+            if (output.links) output.links.length = 0;
+        });
         node.configure(data);
         return node;
     }
@@ -434,7 +436,7 @@ export class Subgraph {
         //    var min_x = 0;
         //    var max_x = 0;
         for (let i = 0; i < nodes.length; ++i) {
-            ids[node.id] = nodes[i];
+            ids[nodes[i].id] = nodes[i];
             //      min_x = Math.min(node.pos[0], min_x);
             //      max_x = Math.max(node.pos[0], min_x);
         }

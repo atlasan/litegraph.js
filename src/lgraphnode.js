@@ -64,6 +64,17 @@ supported callbacks:
 
 export class LGraphNode {
 
+    // trace() keeps at most this many messages in node.console
+    static MAX_CONSOLE = 100;
+
+    // size arrays created as the generic default (slot changes may resize them in place)
+    static _default_sizes = new WeakSet();
+
+    /** true while the node still uses the generic default size, i.e. no size was assigned */
+    hasDefaultSize() {
+        return LGraphNode._default_sizes.has(this.size);
+    }
+
     cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
@@ -96,7 +107,10 @@ export class LGraphNode {
         this.flags ??= {};
         this.mode ??= LiteGraph.ALWAYS;
         this._pos ??= new Float32Array(LiteGraph.DEFAULT_POSITION);
-        this.size ??= [LiteGraph.NODE_WIDTH, 60];
+        if (this.size == null) {
+            this.size = [LiteGraph.NODE_WIDTH, 60];
+            LGraphNode._default_sizes.add(this.size);
+        }
         this.size_basic ??= this.size;
         this.callbackhandler_setup();
     }
@@ -273,9 +287,9 @@ export class LGraphNode {
         this.outputs?.forEach((output, i) => {
             if (!output.links)
                 return;
-            output.links.forEach((link, i) => {
+            output.links.forEach((link, link_index) => {
                 const link_info = this.graph?.links[link] || null; // fixed
-                LiteGraph.log_verbose("lgraphnode", "configure","cycle outputlinks",link,i,link_info);
+                LiteGraph.log_verbose("lgraphnode", "configure","cycle outputlinks",link,link_index,link_info);
                 this.processCallbackHandlers("onConnectionsChange",{
                     def_cb: this.onConnectionsChange
                 }, LiteGraph.OUTPUT, i, true, link_info, output);
@@ -1220,7 +1234,7 @@ export class LGraphNode {
                     LiteGraph.log_verbose("lgraphnode","doUpdateBindedOutputProperties","update value",ob_output.name,propertyData,thisNode);
                     this.setOutputData(ob_output.name, propertyData);
                 }else{
-                    LiteGraph.log_warn("lgraphnode","doUpdateBindedOutputProperties","inexisting property",ob_output.name,outputData,thisNode);
+                    LiteGraph.log_warn("lgraphnode","doUpdateBindedOutputProperties","inexisting property",ob_output.name,thisNode);
                 }
             }   
         });
@@ -1235,7 +1249,10 @@ export class LGraphNode {
         let newSize = only_greater_than_current && this.size
                         ? [Math.max(this.size[0], minSize[0]),Math.max(this.size[1], minSize[1])]
                         : minSize;
+        const was_default = this.hasDefaultSize();
         this.setSize(newSize);
+        // fitting the slots is not choosing a size
+        if (was_default) LGraphNode._default_sizes.add(this.size);
     }
 
     /**
@@ -1331,7 +1348,7 @@ export class LGraphNode {
     }
     addSlots(array, isInput) {
         if(typeof array === 'string')
-            array = [array];
+            array = [[array]]; // a single slot name, not a list of [name, type] entries
 
         array.forEach((info) => {
             const slot = isInput ? {
@@ -2311,13 +2328,24 @@ export class LGraphNode {
             return null;
         }
 
-        // callback ,allow the node to change target slot
+        // callback, allow the node to change target slot: it gets the slot and returns
+        // another slot index (plain or as {return_value}), or false to refuse
         r = target_node.processCallbackHandlers("onBeforeConnectInput",{
             def_cb: target_node.onBeforeConnectInput
-        }, target_node);
-        if(r!==null && (typeof(r)=="object" && r.return_value!==null)){
-            LiteGraph.log_debug("lgraphnode","connect", "Node onBeforeConnectInput changing target_slot",target_slot,r.return_value);
-            target_slot = r.return_value;
+        }, target_slot);
+        var redirect = r!==null && typeof(r)=="object" ? r.return_value : r;
+        if (redirect === false) {
+            LiteGraph.log_debug("lgraphnode","connect", "Node onBeforeConnectInput refused the connection",target_slot);
+            return null;
+        }
+        if (typeof(redirect)=="number" && redirect !== target_slot) {
+            LiteGraph.log_debug("lgraphnode","connect", "Node onBeforeConnectInput changing target_slot",target_slot,redirect);
+            target_slot = redirect;
+            input = target_node.inputs[target_slot];
+            if (!input) {
+                LiteGraph.log_warn("lgraphnode","connect", "onBeforeConnectInput returned a missing slot",target_slot);
+                return null;
+            }
         }
 
         // callback, allow the node to stop connection
@@ -2623,8 +2651,8 @@ export class LGraphNode {
             this.console.shift?.();
         }
 
-        this.graph.processCallbackHandlers("onNodeTrace",{
-            def_cb: this.graph.onNodeTrace
+        this.graph?.processCallbackHandlers("onNodeTrace",{
+            def_cb: this.graph?.onNodeTrace
         }, this, msg);
     }
 

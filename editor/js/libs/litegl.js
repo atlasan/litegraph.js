@@ -1,5 +1,4 @@
 import { DDS } from "./dds.js";
-import { gl as localGL } from "../code.js";
 
 /*
  * File history
@@ -9,8 +8,9 @@ import { gl as localGL } from "../code.js";
  * Updated to ES6 and reorganized by Daniel Lewis (daniel.lewis.ab@gmail.com) in 2024
  */
 
-// temporary shunt to patch things in this file.
-const global = { gl: localGL };
+// litegl publishes its context and helpers (gl, getTime, BBox, geo...) as globals
+// and the rest of this file reads them back unqualified, so global must be the real one.
+const global = globalThis;
 
 //polyfill
 window.requestAnimationFrame ??= window.mozRequestAnimationFrame ?? 
@@ -409,9 +409,9 @@ var GL = new class {
 		}else{
 			var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
 			var p = 2 * l - q;
-			r = HUEToRGB(p, q, h + 1/3);
-			g = HUEToRGB(p, q, h);
-			b = HUEToRGB(p, q, h - 1/3);
+			r = GL.HUEToRGB(p, q, h + 1/3);
+			g = GL.HUEToRGB(p, q, h);
+			b = GL.HUEToRGB(p, q, h - 1/3);
 		}
 		out[0] = r;
 		out[1] = g;
@@ -2036,9 +2036,9 @@ mat4.swapRows = function(out, mat, row, row2)
 		return out;
 	}
 
-	var temp = new Float32Array(matrix.subarray(row*4,row*5));
-	matrix.set( matrix.subarray(row2*4,row2*5), row*4 );
-	matrix.set( temp, row2*4 );
+	var temp = new Float32Array(mat.subarray(row*4,row*5));
+	mat.set( mat.subarray(row2*4,row2*5), row*4 );
+	mat.set( temp, row2*4 );
 	return out;
 }
 
@@ -4440,7 +4440,7 @@ class Mesh {
 	* @method Mesh.plane
 	* @param {Object} options valid options: detail, detailX, detailY, size, width, heigth, xz (horizontal plane)
 	*/
-	plane(options = {}, gl) {
+	static plane(options = {}, gl) {
 		options.triangles = [];
 		var mesh = {};
 		var detailX = options.detailX || options.detail || 1;
@@ -4495,7 +4495,7 @@ class Mesh {
 	* Returns a 2D Mesh (be careful, stream is vertices2D, used for 2D engines )
 	* @method Mesh.plane2D
 	*/
-	plane2D(options, gl) {
+	static plane2D(options, gl) {
 		var vertices = new Float32Array([-1,1, 1,-1, 1,1, -1,1, -1,-1, 1,-1]);
 		var coords = new Float32Array([0,1, 1,0, 1,1, 0,1, 0,0, 1,0]);
 
@@ -4513,7 +4513,7 @@ class Mesh {
 	* @method Mesh.point
 	* @param {Object} options no options
 	*/
-	point(options) {
+	static point(options) {
 		return new Mesh( {vertices: [0,0,0]} );
 	}
 
@@ -4522,7 +4522,7 @@ class Mesh {
 	* @method Mesh.cube
 	* @param {Object} options valid options: size 
 	*/
-	cube(options = {}, gl) {
+	static cube(options = {}, gl) {
 		var halfsize = (options.size || 1) * 0.5;
 
 		var buffers = {};
@@ -4548,7 +4548,7 @@ class Mesh {
 	* @method Mesh.cube
 	* @param {Object} options valid options: size, sizex, sizey, sizez
 	*/
-	box(options = {}, gl) {
+	static box(options = {}, gl) {
 		var sizex = options.sizex || 1;
 		var sizey = options.sizey || 1;
 		var sizez = options.sizez || 1;
@@ -4585,7 +4585,7 @@ class Mesh {
 	* @method Mesh.circle
 	* @param {Object} options valid options: size,radius, xz = in xz plane, otherwise xy plane
 	*/
-	circle( options = {}, gl ) {
+	static circle( options = {}, gl ) {
 		var size = options.size || options.radius || 1;
 		var slices = Math.ceil(options.slices || 24);
 		var xz = options.xz || false;
@@ -4694,7 +4694,7 @@ class Mesh {
 	* @method Mesh.cylinder
 	* @param {Object} options valid options: radius, height, subdivisions 
 	*/
-	cylinder( options = {}, gl ) {
+	static cylinder( options = {}, gl ) {
 		var radius = options.radius || options.size || 1;
 		var height = options.height || options.size || 2;
 		var subdivisions = options.subdivisions || 64;
@@ -4815,7 +4815,7 @@ class Mesh {
 	* @method Mesh.cone
 	* @param {Object} options valid options: radius, height, subdivisions 
 	*/
-	cone( options = {}, gl ) {
+	static cone( options = {}, gl ) {
 		var radius = options.radius || options.size || 1;
 		var height = options.height || options.size || 2;
 		var subdivisions = options.subdivisions || 64;
@@ -4896,7 +4896,7 @@ class Mesh {
 	* @method Mesh.sphere
 	* @param {Object} options valid options: radius, lat, long, subdivisions, hemi
 	*/
-	sphere(options = {}, gl) {
+	static sphere(options = {}, gl) {
 		var radius = options.radius || options.size || 1;
 		var latitudeBands = options.lat || options.subdivisions || 16;
 		var longitudeBands = options["long"] || options.subdivisions || 16;
@@ -4992,7 +4992,7 @@ class Mesh {
 	* @method Mesh.grid
 	* @param {Object} options valid options: size, lines
 	*/
-	grid( options = {}, gl ) {
+	static grid( options = {}, gl ) {
 		var num_lines = options.lines || 11;
 		if(num_lines < 0) 
 			num_lines = 1;
@@ -5029,7 +5029,7 @@ class Mesh {
 	* @method Mesh.icosahedron
 	* @param {Object} options valid options: radius, subdivisions (max: 6)
 	*/
-	icosahedron( options = {}, gl ) {
+	static icosahedron( options = {}, gl ) {
 		var radius = options.radius || options.size || 1;
 		var subdivisions = options.subdivisions === undefined ? 0 : options.subdivisions;
 		if(subdivisions > 6) //dangerous
@@ -5932,6 +5932,7 @@ Mesh.decompressors["bounding_compressed"] = function(o)
 class DynamicMesh {
 	constructor( size, normals, coords, colors, gl ) {
 		size = size || 1024;
+		this._has = { normals: !!normals, coords: !!coords, colors: !!colors };
 
 		if(GL.debug)
 			console.log("GL.Mesh created");
@@ -5967,11 +5968,11 @@ class DynamicMesh {
 		this._vertex_data = new Float32Array( size * 3 );
 		buffers.vertices = this._vertex_data;
 
-		if( normals )
+		if( this._has.normals )
 			buffers.normals = this._normal_data = new Float32Array( size * 3 );
-		if( coords )
+		if( this._has.coords )
 			buffers.coords = this._coord_data = new Float32Array( size * 2 );
-		if( colors )
+		if( this._has.colors )
 			buffers.colors = this._color_data = new Float32Array( size * 4 );
 
 		this.addBuffers( buffers );
@@ -6105,7 +6106,7 @@ class Texture {
 				this.type = this.format == gl.RGB ? gl.RGB16F : gl.RGBA16F;
 			}
 		}
-		if( (!isPowerOfTwo(this.width) || !isPowerOfTwo(this.height)) && //non power of two
+		if( (!GL.isPowerOfTwo(this.width) || !GL.isPowerOfTwo(this.height)) && //non power of two
 			( (this.minFilter != gl.NEAREST && this.minFilter != gl.LINEAR) || //uses mipmaps
 			(this.wrapS != gl.CLAMP_TO_EDGE || this.wrapT != gl.CLAMP_TO_EDGE) ) ) //uses wrap
 		{
@@ -6448,7 +6449,8 @@ class Texture {
 	* @param {ArrayBuffer} data
 	* @param {Object} options [optional] upload options (premultiply_alpha, no_flip, cubemap_face, mipmap_level)
 	*/
-	uploadData( data, options = {}, skip_mipmaps ) {
+	uploadData( data, options, skip_mipmaps ) {
+		options = options || {}; // callers pass null to mean "no options"
 		if(!data)
 			throw("no data passed");
 		var gl = this.gl;
@@ -8083,6 +8085,7 @@ class Texture {
 		return Math.pow( 2, Math.ceil( Math.log(size) / Math.log(2) ) );
 	}
 }
+GL.Texture = Texture;
 
 /**
 * Similar to CopyTo, but more specific, only for color texture_2D. It doesnt change the blend flag
@@ -8639,7 +8642,7 @@ class Shader {
 	}
 
 	//this is done to avoid problems with the #version which must be in the first line
-	injectCode( inject_code, code, gl )	{
+	static injectCode( inject_code, code, gl )	{
 		var index = code.indexOf("\n");
 		var version = ( gl ? "#define WEBGL" + gl.webgl_version + "\n" : "");
 		var first_line = code.substr(0,index).trim();
@@ -8657,7 +8660,7 @@ class Shader {
 	* @param {String} source the source file to compile
 	* @return {WebGLShader} the handler from webgl
 	*/
-	compileSource( type, source, gl, shader ) {
+	static compileSource( type, source, gl, shader ) {
 		gl = gl || global.gl;
 		shader = shader || gl.createShader(type);
 		gl.shaderSource(shader, source);
@@ -9440,7 +9443,7 @@ class Shader {
 			case GL.FLOAT: 
 			case GL.SAMPLER_2D: 
 			case GL.SAMPLER_CUBE: 
-				return isNumber(value);
+				return typeof value === "number" || typeof value === "boolean";
 			case GL.INT_VEC2: 
 			case GL.FLOAT_VEC2:
 				return value.length === 2;
@@ -9756,7 +9759,7 @@ class Shader {
 	* shader must have: u_factor, u_texture, u_texture2
 	* @method Shader.getBlendShader
 	*/
-	getBlendShader(gl) {
+	static getBlendShader(gl) {
 		gl = gl || global.gl;
 		var shader = gl.shaders[":blend"];
 		if(shader)
@@ -9769,7 +9772,7 @@ class Shader {
 	* shader params are: vec2 u_offset, float u_intensity
 	* @method Shader.getBlurShader
 	*/
-	getBlurShader(gl) {
+	static getBlurShader(gl) {
 		gl = gl || global.gl;
 		var shader = gl.shaders[":blur"];
 		if(shader)
@@ -9818,7 +9821,7 @@ class Shader {
 		return gl.shaders[":copy_depth"] = shader;
 	}
 
-	getCubemapShowShader(gl) {
+	static getCubemapShowShader(gl) {
 		gl = gl || global.gl;
 		var shader = gl.shaders[":show_cubemap"];
 		if(shader)
@@ -9863,7 +9866,7 @@ class Shader {
 	}
 
 	//shader to copy a cubemap into another 
-	getCubemapCopyShader(gl) {
+	static getCubemapCopyShader(gl) {
 		gl = gl || global.gl;
 		var shader = gl.shaders[":copy_cubemap"];
 		if(shader)
@@ -10016,7 +10019,7 @@ class Shader {
 	* Returns a flat shader (useful to render lines)
 	* @method Shader.getFlatShader
 	*/
-	getFlatShader(gl) {
+	static getFlatShader(gl) {
 		gl = gl || global.gl;
 		var shader = gl.shaders[":flat"];
 		if(shader)
@@ -10172,7 +10175,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 			return;
 		delete events[ event_type ];
 		if( instance.onLEventUnbindAll )
-			instance.onLEventUnbindAll( event_type, target_instance, callback );
+			instance.onLEventUnbindAll( event_type );
 		return;
 	},
 
@@ -10402,7 +10405,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 
 		object.unbind = function( event_type, callback, target_instance )
 		{
-			return LEvent.unbind( this, event_type, callback, instance );
+			return LEvent.unbind( this, event_type, callback, target_instance );
 		};
 
 		object.unbindAll = function( target_instance, callback )
@@ -12285,5 +12288,8 @@ Raytracer.prototype.getRayForPixel = (function(){
 		return vec3.normalize( out, out );
 	}
 })();
+
+// the original litegl was a global script; keep GL reachable the same way
+global.GL = GL;
 
 export { GL, Shader };

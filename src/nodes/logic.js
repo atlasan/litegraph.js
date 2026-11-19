@@ -31,8 +31,9 @@ class Selector {
 
     onExecute() {
         var sel = this.getInputData(0);
-        if (sel == null || sel.constructor !== Number) sel = 0;
-        this.selected = sel = Math.round(sel) % (this.inputs.length - 1);
+        if (typeof sel !== "number" || !Number.isFinite(sel)) sel = 0;
+        var count = this.inputs.length - 1;
+        this.selected = sel = ((Math.round(sel) % count) + count) % count;
         var v = this.getInputData(sel + 1);
         if (v !== undefined) {
             this.setOutputData(0, v);
@@ -67,7 +68,7 @@ class Sequence {
     }
 
     onPropertyChanged(name, value) {
-        if (name == "sequence") {
+        if (name == "sequence" && typeof value === "string") {
             this.values = value.split(",");
         }
     }
@@ -75,14 +76,19 @@ class Sequence {
     onExecute() {
         var seq = this.getInputData(1);
         if (seq && seq != this.current_sequence) {
-            this.values = seq.split(",");
+            if (typeof seq === "string") this.values = seq.split(",");
+            else if (Array.isArray(seq)) this.values = seq;
             this.current_sequence = seq;
         }
         var index = this.getInputData(0);
-        if (index == null) {
+        if (typeof index === "string" && index.trim() !== "") {
+            index = Number(index); // "2" still selects the third value
+        }
+        if (typeof index !== "number" || !Number.isFinite(index)) {
             index = 0;
         }
-        this.index = index = Math.round(index) % this.values.length;
+        var count = this.values.length || 1;
+        this.index = index = ((Math.round(index) % count) + count) % count;
 
         this.setOutputData(0, this.values[index]);
     }
@@ -384,7 +390,7 @@ class logicWhile {
                     this.triggerSlot(0, param);
                     // done
                     if (this.stopped) {
-                        console.debug?.("while cycle stopped on index "+k);
+                        console.debug?.("while cycle stopped on index "+this.k);
                         break;
                     }
                     this.k++;

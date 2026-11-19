@@ -82,7 +82,8 @@ export class JQueryOnClick extends JQueryBaseNode {
 
     onExecute() {
         if (!this.checkJQuery()) return;
-        this.setOutputData(0, this.getElements());
+        const elements = this.getElements();
+        this.setOutputData(0, elements);
         if (!elements || elements.length === 0) return;
         let that = this;
         elements.off("click").on("click", function () {
@@ -267,7 +268,8 @@ export class JQueryCss extends JQueryBaseNode {
 
     onExecute() {
         if (!this.checkJQuery()) return;
-        this.setOutputData(0, this.getElements());
+        const elements = this.getElements();
+        this.setOutputData(0, elements);
         let styles = this.getInputOrProperty("styles");
         if (!elements || !styles) return;
         elements.css(styles);

@@ -875,9 +875,12 @@ export class LGraph {
             return;
         }
 
+        // params is an argument list; a single value or nothing is allowed too
+        // ("clear" and "checkPanels" are sent without any and used to be dropped)
+        const args = params == null ? [] : Array.isArray(params) ? params : [params];
         for (const c of this.list_of_graphcanvas) {
-            if (typeof(c[action])=="function" && c[action] && params) {
-                c[action](...params);
+            if (typeof(c[action])=="function") {
+                c[action](...args);
             }
         }
     }
@@ -974,7 +977,9 @@ export class LGraph {
         }, node);
 
         if (opts.doCalcSize) {
-            node.setSize( node.computeSize() );
+            // a node on the generic default size gets its computed size; a size assigned
+            // by the node class or the caller is kept and only grown to fit
+            node.autoSize(!node.hasDefaultSize?.());
         }
         // record after the node is in the graph, so the history snapshot contains it
         this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
@@ -1150,7 +1155,8 @@ export class LGraph {
      * @return {LiteGraph.LGraphNode} the node at this position or null
      */
     getNodeOnPos(x, y, nodes_list = this._nodes, margin = 0) {
-        return nodes_list.reverse().find((node) => node.isPointInside(x, y, margin)) ?? null;
+        // last drawn is top-most; findLast, because reverse() would flip the caller's list
+        return nodes_list?.findLast((node) => node.isPointInside(x, y, margin)) ?? null;
     }
 
     /**

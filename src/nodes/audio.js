@@ -4,6 +4,28 @@ class LGAudio {
 
     static audios_connected = {};
 
+    // Assigns `value` to audionode[name] without throwing: AudioParams only take
+    // finite numbers, and some fields are read-only or range-checked by the browser.
+    static setNodeValue(audionode, name, value) {
+        if (!audionode || audionode[name] === undefined) return false;
+        var target = audionode[name];
+        var isParam = typeof AudioParam !== "undefined" && target instanceof AudioParam;
+        try {
+            if (isParam) {
+                // numeric strings are converted, as the browser itself would
+                if (typeof value === "string" && value.trim() !== "") value = Number(value);
+                if (typeof value !== "number" || !Number.isFinite(value)) return false;
+                target.value = value;
+            } else {
+                audionode[name] = value;
+            }
+            return true;
+        } catch (e) {
+            console.warn?.("LGAudio: cannot set " + name, value, e.message);
+            return false;
+        }
+    }
+
     static getAudioContext() {
         if (!this._audio_context) {
             window.AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -187,15 +209,7 @@ class LGAudio {
                 return;
             }
 
-            if (this.audionode[name] === undefined) {
-                return;
-            }
-
-            if (this.audionode[name].value !== undefined) {
-                this.audionode[name].value = value;
-            } else {
-                this.audionode[name] = value;
-            }
+            LGAudio.setNodeValue(this.audionode, name, value);
         };
 
         class_object.prototype.onConnectionsChange = LGAudio.onConnectionsChange;
@@ -358,13 +372,13 @@ class LGAudioSource {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") this.audionode.gain.value = v;
+                if (input.name == "gain") LGAudio.setNodeValue(this.audionode, "gain", v);
                 else if (input.name == "src") {
                     this.setProperty("src", v);
                 } else if (input.name == "playbackRate") {
                     this.properties.playbackRate = v;
                     for (let j = 0; j < this._audionodes.length; ++j) {
-                        this._audionodes[j].playbackRate.value = v;
+                        LGAudio.setNodeValue(this._audionodes[j], "playbackRate", v);
                     }
                 }
             }
@@ -394,10 +408,10 @@ class LGAudioSource {
         if (name == "src") {
             this.loadSound(value);
         } else if (name == "gain") {
-            this.audionode.gain.value = value;
+            LGAudio.setNodeValue(this.audionode, "gain", value);
         } else if (name == "playbackRate") {
             for (var j = 0; j < this._audionodes.length; ++j) {
-                this._audionodes[j].playbackRate.value = value;
+                LGAudio.setNodeValue(this._audionodes[j], "playbackRate", value);
             }
         }
     }
@@ -614,8 +628,8 @@ class LGAudioMediaSource {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") {
-                    this.audionode.gain.value = this.properties.gain = v;
+                if (input.name == "gain" && LGAudio.setNodeValue(this.audionode, "gain", v)) {
+                    this.properties.gain = v;
                 }
             }
         }
@@ -631,7 +645,7 @@ class LGAudioMediaSource {
 
     onPropertyChanged(name, value) {
         if (name == "gain") {
-            this.audionode.gain.value = value;
+            LGAudio.setNodeValue(this.audionode, "gain", value);
         }
     }
 
@@ -680,7 +694,7 @@ class LGAudioAnalyser {
     }
 
     onPropertyChanged(name, value) {
-        this.audionode[name] = value;
+        LGAudio.setNodeValue(this.audionode, name, value);
     }
 
     onExecute() {
@@ -714,7 +728,7 @@ class LGAudioAnalyser {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
 
@@ -764,7 +778,7 @@ class LGAudioGain {
             var input = this.inputs[i];
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -878,7 +892,7 @@ class LGAudioDynamicsCompressor {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -973,9 +987,9 @@ class LGAudioMixer {
 
     onPropertyChanged(name, value) {
         if (name == "gain1") {
-            this.audionode1.gain.value = value;
+            LGAudio.setNodeValue(this.audionode1, "gain", value);
         } else if (name == "gain2") {
-            this.audionode2.gain.value = value;
+            LGAudio.setNodeValue(this.audionode2, "gain", value);
         }
     }
 
@@ -997,9 +1011,9 @@ class LGAudioMixer {
             }
 
             if (i == 1) {
-                this.audionode1.gain.value = v;
+                LGAudio.setNodeValue(this.audionode1, "gain", v);
             } else if (i == 3) {
-                this.audionode2.gain.value = v;
+                LGAudio.setNodeValue(this.audionode2, "gain", v);
             }
         }
     }
@@ -1088,7 +1102,7 @@ class LGAudioDelay {
     onExecute() {
         var v = this.getInputData(1);
         if (v !== undefined) {
-            this.audionode.delayTime.value = v;
+            LGAudio.setNodeValue(this.audionode, "delayTime", v);
         }
     }
 }
@@ -1141,7 +1155,7 @@ class LGAudioBiquadFilter {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }
@@ -1229,7 +1243,7 @@ class LGAudioOscillatorNode {
             }
             var v = this.getInputData(i);
             if (v !== undefined) {
-                this.audionode[input.name].value = v;
+                LGAudio.setNodeValue(this.audionode, input.name, v);
             }
         }
     }

@@ -213,7 +213,7 @@ class ColorPalette {
         }
 
         var f = this.getInputData(0);
-        if (f == null) {
+        if (typeof f !== "number" || Number.isNaN(f)) {
             f = 0.5;
         }
         if (f > 1.0) {
@@ -302,7 +302,8 @@ class ImageFrame {
 
     show() {
         // var str = this.canvas.toDataURL("image/png");
-        if (showElement && this.frame) {
+        // showElement is an optional host-page helper
+        if (typeof showElement === "function" && this.frame) {
             showElement(this.frame);
         }
     }
@@ -314,6 +315,18 @@ class ImageFrame {
 }
 LiteGraph.registerNodeType("graphics/frame", ImageFrame);
 
+
+// Accepts what CanvasRenderingContext2D.drawImage takes; anything else would throw.
+function isDrawableImage(value) {
+    if (!value || typeof value !== "object") return false;
+    var types = ["HTMLImageElement", "HTMLCanvasElement", "HTMLVideoElement",
+        "ImageBitmap", "OffscreenCanvas", "SVGImageElement", "VideoFrame"];
+    for (var i = 0; i < types.length; ++i) {
+        var Ctor = globalThis[types[i]];
+        if (typeof Ctor === "function" && value instanceof Ctor) return true;
+    }
+    return false;
+}
 
 class ImageFade {
 
@@ -348,12 +361,12 @@ class ImageFade {
         // this.canvas.width = this.canvas.width; //@BUG: Test with this excised, I couldn't find a setter
 
         var A = this.getInputData(0);
-        if (A != null) {
+        if (isDrawableImage(A)) {
             ctx.drawImage(A, 0, 0, this.canvas.width, this.canvas.height);
         }
 
         var fade = this.getInputData(2);
-        if (fade == null) {
+        if (typeof fade !== "number" || !Number.isFinite(fade)) {
             fade = this.properties["fade"];
         } else {
             this.properties["fade"] = fade;
@@ -361,7 +374,7 @@ class ImageFade {
 
         ctx.globalAlpha = fade;
         var B = this.getInputData(1);
-        if (B != null) {
+        if (isDrawableImage(B)) {
             ctx.drawImage(B, 0, 0, this.canvas.width, this.canvas.height);
         }
         ctx.globalAlpha = 1.0;
@@ -517,12 +530,12 @@ class DrawImageNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 
         var img = this.getInputOrProperty("img");
-        if (!img) {
+        if (!isDrawableImage(img)) {
             return;
         }
 
@@ -558,7 +571,7 @@ class DrawRectangleNode {
 
     onExecute() {
         var canvas = this.getInputData(0);
-        if (!canvas) {
+        if (!canvas || typeof canvas.getContext !== "function") {
             return;
         }
 

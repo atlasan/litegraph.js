@@ -66,7 +66,7 @@ LGraphCanvas.showShowGraphOptionsPanel = function(refOpts, obEv) {
     }
     graphcanvas.closePanels();
     var ref_window = graphcanvas.getCanvasWindow();
-    panel = graphcanvas.createPanel("Options",{
+    var panel = graphcanvas.createPanel("Options",{
         closable: true,
         window: ref_window,
         onOpen: function() {

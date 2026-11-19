@@ -91,3 +91,24 @@ test('tester waits for initialization and reports dependency failures', async ()
         LiteGraph.unregisterNodeType('test/delayed');
     }
 });
+
+test('slot validation treats unnamed and generic slots as matching their analysis', async () => {
+    // basic/watch has an input of type 0 and widget/number an unnamed output: they used to
+    // fail with "expected type 'any', got '0'" / "expected name 'output_0', got ''".
+    for (const nodeType of ['basic/watch', 'widget/number', 'logic/selector']) {
+        const generated = new TestCaseGenerator().generateBasicTests(nodeType);
+        const result = await new TestFramework().runSingleTest(definition({ ...generated[0], nodeType }));
+        const slotErrors = result.errors.filter((e) => /_(name|type)_mismatch$/.test(e.type));
+        assert.deepEqual(slotErrors, [], `${nodeType}: ${JSON.stringify(slotErrors)}`);
+    }
+});
+
+test('slot validation still reports a real slot mismatch', async () => {
+    const result = await new TestFramework().runSingleTest(definition({
+        nodeType: 'basic/watch',
+        expectedInputs: [{ name: 'other', type: 'number' }],
+    }));
+    const messages = result.errors.map((e) => e.message);
+    assert.ok(messages.some((m) => /Input 0: expected name 'other', got 'value'/.test(m)), messages.join('\n'));
+    assert.ok(messages.some((m) => /Input 0: expected type 'number', got 'any'/.test(m)), messages.join('\n'));
+});

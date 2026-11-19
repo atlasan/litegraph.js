@@ -151,79 +151,89 @@ function addDemo( name, url ) {
 
 
 //allows to use the WebGL nodes like textures
+let webgl_setup = null;
 function enableWebGL() {
 	if( webgl_canvas ) {
 		webgl_canvas.style.display = (webgl_canvas.style.display == "none" ? "block" : "none");
-		return;
+		return Promise.resolve(gl);
+	}
+	// a second click while the libraries are still loading must not set up twice
+	webgl_setup ??= setupWebGL().finally(() => { if(!gl) webgl_setup = null; });
+	return webgl_setup;
+}
+
+async function setupWebGL() {
+	// gl-matrix is a classic script every editor page loads before the modules
+	if( typeof glMatrix == "undefined" ) {
+		LiteGraph.log_warn("Editor:","WebGL needs gl-matrix (js/libs/gl-matrix-min.js) loaded first");
+		return null;
+	}
+	let GL;
+	try {
+		({ GL } = await import("./libs/litegl.js"));
+	} catch (error) {
+		LiteGraph.log_error("Editor:","could not load litegl",error);
+		return null;
 	}
 
-	let libs = [
-		"./libs/gl-matrix-min.js",
-		"./libs/litegl.js",
-	];
-	  
-	async function fetchJS(scriptPath) {
-		if (libs.length === 0) {
-		 	return on_ready();
+	const canvas = document.createElement("canvas");
+	canvas.width = 400;
+	canvas.height = 300;
+	canvas.style.position = "absolute";
+	canvas.style.top = "0px";
+	canvas.style.right = "0px";
+	canvas.style.border = "1px solid #AAA";
+	canvas.addEventListener("click", function() {
+		var rect = canvas.parentNode.getBoundingClientRect();
+		if( canvas.width != rect.width ) {
+			canvas.width = rect.width;
+			canvas.height = rect.height;
 		}
-	  	try {
-		 	await import(scriptPath);
-		  	console.log?.(`${scriptPath} loaded successfully`);
+		else {
+			canvas.width = 400;
+			canvas.height = 300;
+		}
+	});
+
+	let context = null;
+	try {
+		context = GL.create({ canvas: canvas }); // throws when WebGL is unavailable
+	} catch (error) {
+		LiteGraph.log_warn("Editor:","WebGL is not available in this browser",error);
+		return null;
+	}
+	if( !context ) {
+		LiteGraph.log_warn("Editor:","WebGL is not available in this browser");
+		return null;
+	}
+	gl = context;
+	webgl_canvas = canvas;
+	// lets modules that loaded before litegl (geometry.js) register their WebGL nodes
+	window.dispatchEvent(new Event("litegl:ready"));
+	(document.querySelector(".editor-area") || document.body).appendChild( canvas );
+
+	// module paths resolve from this file (editor/js/)
+	for( const lib of [
+		"../../src/nodes/gltextures.js",
+		"../../src/nodes/glfx.js",
+		"../../src/nodes/glshaders.js",
+		"../../src/nodes/geometry.js",
+	] ) {
+		try {
+			await import(lib);
 		} catch (error) {
-		  	console.error?.(`Error loading ${scriptPath}: ${error}`);
+			LiteGraph.log_error("Editor:","could not load",lib,error);
 		}
 	}
-	libs.forEach(lib => fetchJS(lib));
 
-	const on_ready = () => {
-		console.log?.(this.src);
-		if(!window.GL) {
-			LiteGraph.log_warn("GL doesn't exist");
-			return;
-		}
-		webgl_canvas = document.createElement("canvas");
-		webgl_canvas.width = 400;
-		webgl_canvas.height = 300;
-		webgl_canvas.style.position = "absolute";
-		webgl_canvas.style.top = "0px";
-		webgl_canvas.style.right = "0px";
-		webgl_canvas.style.border = "1px solid #AAA";
-
-		webgl_canvas.addEventListener("click", function() {
-			var rect = webgl_canvas.parentNode.getBoundingClientRect();
-			if( webgl_canvas.width != rect.width ) {
-				webgl_canvas.width = rect.width;
-				webgl_canvas.height = rect.height;
-			}
-			else {
-				webgl_canvas.width = 400;
-				webgl_canvas.height = 300;
-			}
-		});
-
-		var parent = document.querySelector(".editor-area");
-		parent.appendChild( webgl_canvas );
-		gl = GL.create({ canvas: webgl_canvas });
-		if(!gl) {
-			LiteGraph.log_warn("gl doesn't exist");
-			return;
-		}
-		libs = [
-			"../src/nodes/gltextures.js",
-			"../src/nodes/glfx.js",
-			"../src/nodes/glshaders.js",
-			"../src/nodes/geometry.js"
-		];
-		libs.forEach(lib => fetchJS(lib));
-
-		editor.graph.onBeforeStep = () => {
-			gl.clearColor(0,0,0,0);
-			gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
-			gl.viewport(0,0,gl.canvas.width, gl.canvas.height );
-		}
-
-		console.log?.("webgl ready");
+	editor.graph.onBeforeStep = () => {
+		gl.clearColor(0,0,0,0);
+		gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+		gl.viewport(0,0,gl.canvas.width, gl.canvas.height );
 	}
+
+	LiteGraph.log_info("Editor:","WebGL ready");
+	return gl;
 }
 
 // Tests

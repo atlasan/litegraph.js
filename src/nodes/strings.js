@@ -42,10 +42,16 @@ LiteGraph.wrapFunctionAsNode(
 
 
 function contains(a, b) {
-    if (a === undefined || b === undefined) {
+    if (b == null) {
         return false;
     }
-    return a.indexOf(b) != -1;
+    if (Array.isArray(a)) {
+        return a.includes(b);
+    }
+    if (typeof a !== "string") {
+        return false;
+    }
+    return a.indexOf(String(b)) != -1;
 }
 LiteGraph.wrapFunctionAsNode(
     "string/contains",
@@ -117,7 +123,7 @@ class StringToTable {
 
     onExecute() {
         var input = this.getInputData(0);
-        if (!input) return;
+        if (!input || typeof input !== "string") return;
         var separator = this.properties.separator || ",";
         if (input != this._str || separator != this._last_separator) {
             this._last_separator = separator;

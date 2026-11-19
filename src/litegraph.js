@@ -118,6 +118,17 @@ export class LiteGraphClass {
     AUTOHIDE_TITLE = 3;
     VERTICAL_LAYOUT = "vertical"; // arrange nodes vertically
 
+    // canvas flags the graph Options panel offers as on/off switches
+    availableCanvasOptions = [
+        "allow_addOutSlot_onExecuted", "free_resize", "highquality_render", "use_gradients",
+        "pause_rendering", "clear_background", "read_only", "live_mode", "show_info",
+        "allow_dragcanvas", "allow_dragnodes", "allow_interaction", "allow_searchbox",
+        "move_destination_link_without_shift", "set_canvas_dirty_on_mouse_event",
+        "always_render_background", "render_shadows", "render_canvas_border",
+        "render_connections_shadows", "render_connections_border", "render_connection_arrows",
+        "render_collapsed_slots", "render_execution_order", "render_title_colored", "render_link_tooltip",
+    ];
+
     proxy = null; // used to redirect calls
     node_images_path = "";
 
@@ -436,7 +447,7 @@ export class LiteGraphClass {
         }
 
         this.registered_node_types[type] = base_class;
-        if (base_class.constructor.name) {
+        if (classname) {
             this.Nodes[classname] = base_class;
         }
 
@@ -491,8 +502,9 @@ export class LiteGraphClass {
             throw new Error("node type not found to unregister: " + type);
         }
         delete this.registered_node_types[base_class.type];
-        if (base_class.constructor.name) {
-            delete this.Nodes[base_class.constructor.name];
+        // Nodes is keyed by class name (base_class.constructor is always Function)
+        if (base_class.name && this.Nodes[base_class.name] === base_class) {
+            delete this.Nodes[base_class.name];
         }
     }
 
@@ -875,6 +887,11 @@ export class LiteGraphClass {
         const clonedObj = JSON.parse(JSON.stringify(obj));
         if (!target) {
             return clonedObj;
+        }
+        // copying a shorter array over a longer one must not keep the old tail
+        // (e.g. node.inputs after removeInput, then clone/configure)
+        if (Array.isArray(target) && Array.isArray(clonedObj)) {
+            target.length = clonedObj.length;
         }
         for (const key in clonedObj) {
             if (Object.prototype.hasOwnProperty.call(clonedObj, key)) {

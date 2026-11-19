@@ -48,6 +48,8 @@ class GamepadInput {
                 Math.abs(gamepad.xbox.axes["rtrigger"]) > threshold
                     ? gamepad.xbox.axes["rtrigger"]
                     : 0;
+            // the node draws the pad state; without this it only updated on mouse moves
+            this.setDirtyCanvas(true);
         }
 
         if (this.outputs) {

@@ -3,6 +3,14 @@ import { LiteGraph } from "../litegraph.js";
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // import { GL } from "../../editor/js/libs/litegl.js";
 
+// Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
+function polarToCartesian(out, azimuth, inclination, radius) {
+    out[0] = radius * Math.sin(inclination) * Math.cos(azimuth);
+    out[1] = radius * Math.cos(inclination);
+    out[2] = radius * Math.sin(inclination) * Math.sin(azimuth);
+    return out;
+}
+
 var view_matrix = new Float32Array(16);
 var projection_matrix = new Float32Array(16);
 var viewprojection_matrix = new Float32Array(16);
@@ -146,7 +154,7 @@ class LGraphPoints3D {
                 for (let i = 0; i < side; ++i)
                     for (let j = 0; j < side; ++j) {
                         let pos = i * 3 + j * 3 * side;
-                        GL.polarToCartesian(
+                        polarToCartesian(
                             temp,
                             (i / side) * 2 * Math.PI,
                             (j / side - 0.5) * 2 * Math.PI,
@@ -793,6 +801,7 @@ class LGraphGeometryPolygon {
             vertices = this.geometry.vertices = new Float32Array(3 * sides);
         var delta = (Math.PI * 2) / sides;
         var gen_uvs = this.properties.uvs;
+        var uvs = null;
         if (gen_uvs) {
             uvs = this.geometry.coords = new Float32Array(3 * sides);
         }
@@ -972,7 +981,7 @@ class LGraphGeometryEval {
             if (this.properties.execute_every_frame) this.version++;
             else this.version = geometry._version;
             var func = this.func;
-            var T = getTime();
+            var T = performance.now();
 
             // clone
             if (!this.geometry) this.geometry = {};
@@ -1106,7 +1115,7 @@ class LGraphConnectPoints {
 
     onExecute() {
         var geometry = this.getInputData(0);
-        if (!geometry) return;
+        if (!geometry || !geometry.vertices || typeof geometry.vertices.length !== "number") return;
 
         if (
             this.geometry_id != geometry._id ||
@@ -1170,8 +1179,11 @@ class LGraphConnectPoints {
 LiteGraph.registerNodeType("geometry/connectPoints", LGraphConnectPoints);
 
 
-// Works with Litegl.js to create WebGL nodes
-if (typeof GL != "undefined") {
+// Works with Litegl.js to create WebGL nodes. litegl is usually loaded after this
+// file (the editor's WebGL button), so registration also waits for "litegl:ready".
+function registerWebGLGeometryNodes() {
+    if (typeof GL == "undefined" || registerWebGLGeometryNodes.done) return;
+    registerWebGLGeometryNodes.done = true;
 
     class LGraphToGeometry {
         constructor() {
@@ -1188,7 +1200,7 @@ if (typeof GL != "undefined") {
 
             if (mesh != this.last_mesh) {
                 this.last_mesh = mesh;
-                for (i in mesh.vertexBuffers) {
+                for (var i in mesh.vertexBuffers) {
                     var buffer = mesh.vertexBuffers[i];
                     this.geometry[i] = buffer.data;
                 }
@@ -1944,3 +1956,5 @@ if (typeof GL != "undefined") {
 	';
 	*/
 }
+registerWebGLGeometryNodes();
+globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, { once: true });

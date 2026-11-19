@@ -20,19 +20,22 @@ class LGraphFXLens {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXLens._shader) {
-            LGraphFXLens._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXLens.pixel_shader,
-            );
-            LGraphFXLens._texture = new GL.Texture(3, 1, {
-                format: gl.RGB,
-                wrap: gl.CLAMP_TO_EDGE,
-                magFilter: gl.LINEAR,
-                minFilter: gl.LINEAR,
-                pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
-            });
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXLens.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXLens._shader) return;
+        LGraphFXLens._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXLens.pixel_shader,
+        );
+        LGraphFXLens._texture = new GL.Texture(3, 1, {
+            format: gl.RGB,
+            wrap: gl.CLAMP_TO_EDGE,
+            magFilter: gl.LINEAR,
+            minFilter: gl.LINEAR,
+            pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255],
+        });
     }
 
     static title = "Lens";
@@ -81,7 +84,7 @@ class LGraphFXLens {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXLens._shader;
         // var camera = LS.Renderer._current_camera;
 
@@ -169,7 +172,7 @@ if(!this._temp_texture || this._temp_texture.type != precision ||
 
 var shader = LGraphDepthOfField._shader = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphDepthOfField._pixel_shader );
 
-var screen_mesh = Mesh.getScreenQuad();
+var screen_mesh = GL.Mesh.getScreenQuad();
 
 gl.disable( gl.DEPTH_TEST );
 gl.disable( gl.BLEND );
@@ -336,7 +339,7 @@ class LGraphFXBokeh {
             points_mesh = this.createPointsMesh(tex.width, tex.height, 2);
         }
 
-        var screen_mesh = Mesh.getScreenQuad();
+        var screen_mesh = GL.Mesh.getScreenQuad();
 
         var point_size = this.properties.size;
         var alpha = this.properties.alpha;
@@ -566,8 +569,9 @@ class LGraphFXGeneric {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
-        var camera = LS ? LS.Renderer._current_camera : null;
+        var mesh = GL.Mesh.getScreenQuad();
+        var LS = globalThis.LS; // litescene, when the graph runs inside it
+        var camera = LS && LS.Renderer ? LS.Renderer._current_camera : null;
         var camera_planes;
         if (camera) {
             camera_planes = [
@@ -707,12 +711,15 @@ class LGraphFXVigneting {
             precision: LGraphTexture.DEFAULT,
         };
 
-        if (!LGraphFXVigneting._shader) {
-            LGraphFXVigneting._shader = new GL.Shader(
-                GL.Shader.SCREEN_VERTEX_SHADER,
-                LGraphFXVigneting.pixel_shader,
-            );
-        }
+        if (LGraphTexture.hasWebGL()) LGraphFXVigneting.initShader();
+    }
+
+    static initShader() {
+        if (LGraphFXVigneting._shader) return;
+        LGraphFXVigneting._shader = new GL.Shader(
+            GL.Shader.SCREEN_VERTEX_SHADER,
+            LGraphFXVigneting.pixel_shader,
+        );
     }
 
     static title = "Vigneting";
@@ -751,7 +758,7 @@ class LGraphFXVigneting {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXVigneting._shader;
         var invert = this.properties.invert;
 
@@ -791,3 +798,5 @@ class LGraphFXVigneting {
     `;
 }
 LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
+
+LGraphTexture.guardRegisteredWebGLNodes();

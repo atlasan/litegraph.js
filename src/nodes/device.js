@@ -1,4 +1,5 @@
 // src/nodes/device.js
+import { LiteGraph } from "../litegraph.js";
 
 class MobileOrientationNode {
     constructor() {
