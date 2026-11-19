@@ -27225,6 +27225,10 @@ LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
 
 let DEG2RAD = 0.0174532925;
 
+function clamp(v, a, b) {
+    return a > v ? a : b < v ? b : v;
+}
+
 
 class LGraphTexture {
 
@@ -27934,7 +27938,7 @@ class LGraphTextureOperation {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -28383,7 +28387,7 @@ class LGraphTextureScaleOffset {
             gl.disable(gl.CULL_FACE);
             gl.disable(gl.BLEND);
             tex.bind(0);
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader
                 .uniforms({
                     u_texture: 0,
@@ -28520,7 +28524,7 @@ class LGraphTextureWarp {
             if (texB) {
                 texB.bind(1);
             }
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             shader.uniforms(uniforms).draw(mesh);
         });
 
@@ -28629,7 +28633,7 @@ class LGraphTextureToViewport {
                 );
             }
 
-            var mesh = Mesh.getScreenQuad();
+            var mesh = GL.Mesh.getScreenQuad();
             tex.bind(0);
             LGraphTextureToViewport._shader
                 .uniforms({
@@ -29246,7 +29250,8 @@ class LGraphTextureMinMax {
             !this._textures_chain.length ||
             this._textures_chain[0].type != type
         ) {
-            while (i) {
+            let i = 0;
+            while (size >= 1) {
                 this._textures_chain[i] = new GL.Texture(size, size, {
                     type: type,
                     format: gl.RGBA,
@@ -29260,7 +29265,7 @@ class LGraphTextureMinMax {
 
         // @BUG: the behavior of tex here is probably a bug.
         tex.copyTo(this._textures_chain[0]);
-        for (let i = 1; i <= this._textures_chain.length; ++i) {
+        for (let i = 1; i < this._textures_chain.length; ++i) {
             tex = this._textures_chain[i];
         }
 
@@ -29658,7 +29663,7 @@ class LGraphTextureLUT {
             this.properties.precision,
         );
 
-        // var mesh = Mesh.getScreenQuad();
+        // var mesh = GL.Mesh.getScreenQuad();
 
         this._tex.drawTo(function() {
             lut_tex.bind(1);
@@ -29934,7 +29939,7 @@ class LGraphTextureChannels {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureChannels._shader;
         var masks = [
             [1, 0, 0, 0],
@@ -30019,7 +30024,7 @@ class LGraphChannelsTexture {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphChannelsTexture._shader) {
             LGraphChannelsTexture._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -30376,7 +30381,7 @@ class LGraphTextureMix {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = null;
         var uniforms = this._uniforms;
         if (texMix) {
@@ -30504,7 +30509,7 @@ class LGraphTextureEdges {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureEdges._shader;
         var invert = this.properties.invert;
         var factor = this.properties.factor;
@@ -30627,7 +30632,7 @@ class LGraphTextureDepthRange {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureDepthRange._shader) {
             LGraphTextureDepthRange._shader = new GL.Shader(
                 Shader.SCREEN_VERTEX_SHADER,
@@ -30760,7 +30765,7 @@ class LGraphTextureLinearDepth {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         if (!LGraphTextureLinearDepth._shader)
             LGraphTextureLinearDepth._shader = new GL.Shader(
                 GL.Shader.SCREEN_VERTEX_SHADER,
@@ -32235,7 +32240,7 @@ class LGraphTextureCurve {
 
     onConfigure(o) {
         this._points = o.curves;
-        if (this.curve_editor) curve_editor.points = this._points;
+        if (this.curve_editor) this.curve_editor.points = this._points;
         this._must_update = true;
     }
 
@@ -32917,7 +32922,7 @@ class LGraphTextureCanvas2D {
         var time = this.graph.getTime();
         var ctx = gl;
         var canvas = gl.canvas;
-        if (this.properties.use_html_canvas || !enableWebGLCanvas) {
+        if (this.properties.use_html_canvas || typeof enableWebGLCanvas === "undefined") {
             if (!this._canvas) {
                 canvas = this._canvas = GL.createCanvas(width.height);
                 ctx = this._ctx = canvas.getContext("2d");
@@ -33061,7 +33066,7 @@ class LGraphTextureMatte {
         }
         var uniforms = this._uniforms;
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphTextureMatte._shader;
         if (!shader) {
             shader = LGraphTextureMatte._shader = new GL.Shader(
@@ -33922,7 +33927,6 @@ LGraphShaderGraph.prototype.initWebGL = function() {
     if (!this._context.vs_template)
         this._context.vs_template = "#define VERTEX\n" + GL.Shader.SCREEN_VERTEX_SHADER;
 };
-LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 /*
  * @TODO: Either write it or excise it.
@@ -34587,7 +34591,7 @@ class LGraphShaderOperation {
             var param_code = inlinks[i].name;
             if (param_code == null) {
                 // not plugged
-                param_code = p.value != null ? p.value : "(1.0)";
+                param_code = "(1.0)";
                 inlinks[i].type = "float";
             }
 
@@ -35099,7 +35103,7 @@ class LGraphShaderTime {
         var outlink = getOutputLinkID(this, 0);
 
         context.addUniform("u_time" + this.id, "float", function() {
-            return getTime() * 0.001;
+            return performance.now() * 0.001;
         });
         context.addCode(
             "code",
@@ -35259,6 +35263,9 @@ class LGraphShaderRemap {
     }
 }
 registerShaderNode("math/remap", LGraphShaderRemap);
+
+// registered last: its constructor builds a subgraph out of the shader:: nodes above
+LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 LGraphTexture.guardRegisteredWebGLNodes();
 
@@ -36072,6 +36079,7 @@ class LGraphGeometryPolygon {
             vertices = this.geometry.vertices = new Float32Array(3 * sides);
         var delta = (Math.PI * 2) / sides;
         var gen_uvs = this.properties.uvs;
+        var uvs = null;
         if (gen_uvs) {
             uvs = this.geometry.coords = new Float32Array(3 * sides);
         }
@@ -36251,7 +36259,7 @@ class LGraphGeometryEval {
             if (this.properties.execute_every_frame) this.version++;
             else this.version = geometry._version;
             var func = this.func;
-            var T = getTime();
+            var T = performance.now();
 
             // clone
             if (!this.geometry) this.geometry = {};
@@ -36453,8 +36461,11 @@ class LGraphConnectPoints {
 LiteGraph.registerNodeType("geometry/connectPoints", LGraphConnectPoints);
 
 
-// Works with Litegl.js to create WebGL nodes
-if (typeof GL != "undefined") {
+// Works with Litegl.js to create WebGL nodes. litegl is usually loaded after this
+// file (the editor's WebGL button), so registration also waits for "litegl:ready".
+function registerWebGLGeometryNodes() {
+    if (typeof GL == "undefined" || registerWebGLGeometryNodes.done) return;
+    registerWebGLGeometryNodes.done = true;
 
     class LGraphToGeometry {
         constructor() {
@@ -36471,7 +36482,7 @@ if (typeof GL != "undefined") {
 
             if (mesh != this.last_mesh) {
                 this.last_mesh = mesh;
-                for (i in mesh.vertexBuffers) {
+                for (var i in mesh.vertexBuffers) {
                     var buffer = mesh.vertexBuffers[i];
                     this.geometry[i] = buffer.data;
                 }
@@ -37244,6 +37255,10 @@ if (typeof GL != "undefined") {
 	';
 	*/
 }
+registerWebGLGeometryNodes();
+globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, {
+    once: true
+});
 
 // Works with Litegl.js to create WebGL nodes
 
@@ -37326,7 +37341,7 @@ class LGraphFXLens {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXLens._shader;
         // var camera = LS.Renderer._current_camera;
 
@@ -37414,7 +37429,7 @@ if(!this._temp_texture || this._temp_texture.type != precision ||
 
 var shader = LGraphDepthOfField._shader = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphDepthOfField._pixel_shader );
 
-var screen_mesh = Mesh.getScreenQuad();
+var screen_mesh = GL.Mesh.getScreenQuad();
 
 gl.disable( gl.DEPTH_TEST );
 gl.disable( gl.BLEND );
@@ -37585,7 +37600,7 @@ class LGraphFXBokeh {
             points_mesh = this.createPointsMesh(tex.width, tex.height, 2);
         }
 
-        var screen_mesh = Mesh.getScreenQuad();
+        var screen_mesh = GL.Mesh.getScreenQuad();
 
         var point_size = this.properties.size;
         var alpha = this.properties.alpha;
@@ -37817,7 +37832,7 @@ class LGraphFXGeneric {
 
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var camera = LS ? LS.Renderer._current_camera : null;
         var camera_planes;
         if (camera) {
@@ -38005,7 +38020,7 @@ class LGraphFXVigneting {
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
 
-        var mesh = Mesh.getScreenQuad();
+        var mesh = GL.Mesh.getScreenQuad();
         var shader = LGraphFXVigneting._shader;
         var invert = this.properties.invert;
 
