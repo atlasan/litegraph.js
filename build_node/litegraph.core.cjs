@@ -473,6 +473,32 @@ class LiteGraphClass {
     }
 
     /**
+     * Persists settings and the user key-binding layer through a storage adapter
+     * (default: localStorage under "litegraph.settings"). The Editor calls this unless created
+     * with `{ skip_persistence: true }`; embedders can call it with their own adapter.
+     * Calling it again only switches the storage.
+     * @param {{load(): object, save(values: object): void}} [storage]
+     */
+    persistPlatformState(storage = SettingsRegistry.localStorageAdapter()) {
+        this.setupPlatform();
+        this.settings.setStorage(storage);
+        const id = "LiteGraph.Keybindings.UserLayer";
+        if (!this.settings.has(id)) {
+            this.settings.define({
+                id,
+                type: "json",
+                name: "Key bindings changed by the user",
+                default: () => ({
+                    bindings: {},
+                    unset: []
+                }),
+                onChange: (value) => this.keybindings.importUserLayer(value),
+            });
+            this.keybindings.onUserLayerChange = (layer) => this.settings.set(id, layer);
+        }
+    }
+
+    /**
      * Creates the platform registries once: shared operations (commands), key bindings,
      * settings and extensions. Called by initialize(); safe to call earlier.
      */
@@ -481,6 +507,7 @@ class LiteGraphClass {
         this.commands ??= new CommandRegistry();
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
+        this.menus ??= new MenuRegistry(this.commands);
         this.extensions ??= new ExtensionRegistry(this);
     }
 
@@ -2044,6 +2071,16 @@ class KeybindingRegistry {
         this._user = new Map();
         /** @type {Set<string>} "combo|commandId" defaults hidden by the user */
         this._unset = new Set();
+        /** called after the user layer changes (e.g. to persist exportUserLayer()) */
+        this.onUserLayerChange = null;
+    }
+
+    _userLayerChanged() {
+        try {
+            this.onUserLayerChange?.(this.exportUserLayer());
+        } catch (error) {
+            console.error?.("keybindings: onUserLayerChange failed", error);
+        }
     }
 
     static isMac() {
@@ -2123,15 +2160,17 @@ class KeybindingRegistry {
     /** Binds a combo for the user, overriding defaults; `commandId: null` disables the combo. */
     setUserBinding(combo, commandId) {
         this._user.set(KeybindingRegistry.normalize(combo), commandId ?? null);
+        this._userLayerChanged();
     }
 
     clearUserBinding(combo) {
-        this._user.delete(KeybindingRegistry.normalize(combo));
+        if (this._user.delete(KeybindingRegistry.normalize(combo))) this._userLayerChanged();
     }
 
     /** Hides one default binding (without binding the combo to something else). */
     unsetDefault(combo, commandId) {
         this._unset.add(`${KeybindingRegistry.normalize(combo)}|${commandId}`);
+        this._userLayerChanged();
     }
 
     /** User layer as plain data, for persistence. */
@@ -2249,11 +2288,13 @@ class SettingsRegistry {
     /** Uses a storage adapter and loads its values (defined settings are re-applied). */
     setStorage(storage) {
         this._storage = storage;
+        // values as they were before the switch, so onChange reports what actually changed
+        const before = new Map([...this._defs.keys()].map((id) => [id, this.get(id)]));
         const loaded = storage?.load?.() ?? {};
         this._values = (loaded && typeof loaded === "object") ? {
             ...loaded
         } : {};
-        for (const def of this._defs.values()) this._applyLoaded(def);
+        for (const def of this._defs.values()) this._applyLoaded(def, before.get(def.id));
     }
 
     _save() {
@@ -2262,9 +2303,9 @@ class SettingsRegistry {
         });
     }
 
-    _applyLoaded(def) {
-        // the first application reports no previous value
-        const previous = def._initialized === true ? this.get(def.id) : undefined;
+    _applyLoaded(def, previousValue) {
+        // the first application reports no previous value; a storage switch passes the old value
+        const previous = arguments.length > 1 ? previousValue : (def._initialized === true ? this.get(def.id) : undefined);
         if (Object.hasOwn(this._values, def.id) && typeof def.migrate === "function") {
             const migrated = def.migrate(this._values[def.id]);
             if (migrated !== this._values[def.id]) {
@@ -2369,6 +2410,97 @@ class SettingsRegistry {
 }
 
 /**
+ * Context-menu contributions: extensions add items to the canvas and node menus without
+ * patching `getCanvasMenuOptions` / `getNodeMenuOptions`.
+ *
+ * ```js
+ * LiteGraph.menus.register("node", (ctx) => [
+ *     null,                                        // separator
+ *     { command: "litegraph.rename" },             // runs a command (label from the command)
+ *     { content: "Log", callback: () => console.log(ctx.node) }, // plain ContextMenu item
+ * ]);
+ * ```
+ *
+ * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}) and "node" (ctx adds `node`).
+ * Contributions are appended after the built-in items, in registration order. A failing provider
+ * is skipped (and logged) so one extension cannot break the menu.
+ */
+class MenuRegistry {
+
+    static LOCATIONS = ["canvas", "node"];
+
+    /** @param {import("./commands.js").CommandRegistry} commands */
+    constructor(commands) {
+        this.commands = commands;
+        /** @type {Map<string, Array<(ctx: object) => Array<object|null>>>} */
+        this._providers = new Map();
+    }
+
+    /**
+     * @param {"canvas"|"node"} location
+     * @param {(ctx: object) => Array<object|null>|null|undefined} provider
+     * @returns {() => void} disposer
+     */
+    register(location, provider) {
+        if (!MenuRegistry.LOCATIONS.includes(location)) throw new Error(`unknown menu location ${location}`);
+        if (typeof provider !== "function") throw new TypeError("menu provider must be a function");
+        const list = this._providers.get(location) ?? [];
+        list.push(provider);
+        this._providers.set(location, list);
+        return () => {
+            const index = list.indexOf(provider);
+            if (index !== -1) list.splice(index, 1);
+        };
+    }
+
+    /** Converts `{command: id}` shorthands into ContextMenu items bound to the context. */
+    _toItem(item, ctx) {
+        if (!item || typeof item !== "object" || typeof item.command !== "string") return item;
+        const command = this.commands?.get(item.command);
+        if (!command) return null;
+        const label = item.content ?? (typeof command.label === "function" ? command.label(ctx) : command.label);
+        return {
+            ...item,
+            content: label,
+            disabled: item.disabled ?? !this.commands.isEnabled(item.command, ctx),
+            callback: () => {
+                this.commands.execute(item.command, ctx);
+            },
+        };
+    }
+
+    /**
+     * Collects the contributed items for a location.
+     * @returns {Array<object|null>} ContextMenu items (null = separator)
+     */
+    collect(location, ctx = {}) {
+        const items = [];
+        for (const provider of [...(this._providers.get(location) ?? [])]) {
+            let contributed;
+            try {
+                contributed = provider(ctx);
+            } catch (error) {
+                console.error?.(`menu provider for ${location} failed`, error);
+                continue;
+            }
+            if (!Array.isArray(contributed)) continue;
+            for (const item of contributed) {
+                const converted = this._toItem(item, ctx);
+                if (converted !== null || item === null) items.push(converted);
+            }
+        }
+        return items;
+    }
+
+    /** Appends contributions to a built-in option list (returns the same array). */
+    contribute(location, ctx, options) {
+        const items = this.collect(location, ctx);
+        if (items.length && Array.isArray(options)) options.push(...items);
+        return options;
+    }
+}
+
+/**
  * Extensions with identity and clean removal.
  *
  * ```js
@@ -2436,7 +2568,7 @@ class ExtensionRegistry {
 
     /**
      * Registers an extension.
-     * @param {object} def - {name, version?, requires?: string[], commands?, keybindings?, settings?, setup?(ctx)}
+     * @param {object} def - {name, version?, requires?: string[], commands?, keybindings?, settings?, menus?: {canvas?, node?}, setup?(ctx)}
      * @returns {() => void} disposer (a no-op when the extension is disabled)
      * @throws when the name is missing or taken, a required extension is missing, or setup throws
      *   (whatever was registered before the failure is undone first)
@@ -2489,6 +2621,16 @@ class ExtensionRegistry {
             },
             /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
             on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Adds context-menu items ("canvas" or "node"; see MenuRegistry). */
+            menus: {
+                register: (location, provider) => track(host.menus.register(location, provider))
+            },
+            /** Typed event listener (graph.events / canvas.events), removed on dispose. */
+            onEvent: (target, type, listener, options) => {
+                const events = target?.events;
+                if (!events?.on) throw new Error(`extension ${def.name}: target has no typed events`);
+                return track(events.on(type, listener, options));
+            },
             /** Hook on any object with a CallbackHandler (graph, node, canvas). */
             onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
             /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
@@ -2511,6 +2653,7 @@ class ExtensionRegistry {
             for (const setting of def.settings ?? []) ctx.settings.define(setting);
             for (const command of def.commands ?? []) ctx.commands.register(command);
             for (const binding of def.keybindings ?? []) ctx.keybindings.add(binding);
+            for (const [location, provider] of Object.entries(def.menus ?? {})) ctx.menus.register(location, provider);
             if (typeof def.setup === "function") track(def.setup(ctx));
         } catch (error) {
             disposeAll();
@@ -4000,7 +4143,8 @@ class LGraph {
 
     /**
      * Typed graph events: configuring (cancelable), configured, node-added, node-removed,
-     * changed, reroute-added, reroute-removed. See LGraphEventTarget.
+     * changed, reroute-added, reroute-removed, link-connected, link-removed,
+     * node-property-changed, widget-changed, execution-step, node-error. See LGraphEventTarget.
      */
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
@@ -4527,6 +4671,9 @@ class LGraph {
                     def_cb: this.onExecuteStep
                 });
                 this.iteration++;
+                this._emit("execution-step", {
+                    iteration: this.iteration
+                });
                 if (step + 1 < num) resetExecutionState();
             }
             this.processCallbackHandlers("onAfterExecute", {
@@ -4535,6 +4682,10 @@ class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
+            this._emit("node-error", {
+                error,
+                node: error?.node ?? this.nodes_executing?.at?.(-1) ?? null
+            });
             try {
                 this.stop();
             } catch (cleanupError) {
@@ -7131,7 +7282,7 @@ class LGraphCanvas {
 
     /**
      * Typed canvas events: link-dropped-on-empty (cancelable: skip the default menu),
-     * subgraph-opened, subgraph-closed. See LGraphEventTarget.
+     * subgraph-opened, subgraph-closed, selection-changed, disposed. See LGraphEventTarget.
      */
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
@@ -9355,6 +9506,9 @@ class LGraphCanvas {
         this.processCallbackHandlers("onSelectionChange", {
             def_cb: this.onSelectionChange
         }, this.selected_nodes);
+        this._emit?.("selection-changed", {
+            nodes: Object.values(this.selected_nodes)
+        });
         this.setDirty(true);
     }
 
@@ -9377,6 +9531,9 @@ class LGraphCanvas {
         this.processCallbackHandlers("onSelectionChange", {
             def_cb: this.onSelectionChange
         }, this.selected_nodes);
+        this._emit?.("selection-changed", {
+            nodes: Object.values(this.selected_nodes)
+        });
 
         // Remove highlighted
         node.inputs?.forEach((input) => {
@@ -9416,6 +9573,9 @@ class LGraphCanvas {
         this.processCallbackHandlers("onSelectionChange", {
             def_cb: this.onSelectionChange
         }, this.selected_nodes);
+        this._emit?.("selection-changed", {
+            nodes: Object.values(this.selected_nodes)
+        });
         this.setDirty(true);
     }
 
@@ -12484,6 +12644,12 @@ class LGraphCanvas {
                     action: "widgetChanged",
                     doSave: true
                 }); // tag: graph event entrypoint
+                node.graph._emit?.("widget-changed", {
+                    node,
+                    widget: w,
+                    value: w.value,
+                    previous: old_value
+                });
             }
             if (widget.type == "number") {
                 value = Number(value);
@@ -15963,6 +16129,8 @@ class LGraphCanvas {
             }
         }
 
+        // extension contributions (LiteGraph.menus.register("canvas", ...))
+        if (options) LiteGraph.menus?.contribute("canvas", LiteGraph.commands.contextFor(this), options);
         return options;
     }
 
@@ -16116,6 +16284,10 @@ class LGraphCanvas {
             }, options, node);
         }
 
+        // extension contributions (LiteGraph.menus.register("node", ...))
+        LiteGraph.menus?.contribute("node", LiteGraph.commands.contextFor(this, {
+            node
+        }), options);
         return options;
     }
 
@@ -17159,6 +17331,15 @@ class LGraphNode {
         if (r === false || (r !== null && (typeof(r) == "object" && r.return_value === false))) {
             this.properties[name] = prevValue;
             LiteGraph.log_debug("lgraphnode", "setProperty", "prevent property set by cbHandler", name, value, prevValue, r);
+        }
+
+        if (this.properties[name] !== prevValue) {
+            this.graph?._emit?.("node-property-changed", {
+                node: this,
+                name,
+                value: this.properties[name],
+                previous: prevValue
+            });
         }
 
         // Update the widget value associated with the property name
@@ -19195,6 +19376,13 @@ class LGraphNode {
         this.setDirtyCanvas(false, true);
         this.graph.afterChange();
         this.graph.connectionChange(this, link_info);
+        this.graph._emit?.("link-connected", {
+            link: link_info,
+            origin: this,
+            originSlot: slot,
+            target: target_node,
+            targetSlot: target_slot
+        });
 
         return link_info;
     }
@@ -19280,6 +19468,11 @@ class LGraphNode {
             notify(() => graph.onGraphChanged({
                 action,
                 doSave: opts.doProcessChange ?? true
+            }));
+            notify(() => graph._emit?.("link-removed", {
+                link,
+                origin: origin ?? null,
+                target: target ?? null
             }));
             if (target) notify(() => target.processCallbackHandlers("onConnectionsChange", {
                 def_cb: target.onConnectionsChange,
@@ -21099,12 +21292,16 @@ class LibraryManager {
                 globalObject,
                 browser = {},
                 server = {},
-                defaultExport
+                defaultExport,
+                description,
+                optional
             } = args[0];
             newLib = {
                 key,
                 version,
                 globalObject,
+                description: description ?? "",
+                optional: optional ?? true,
                 localPaths: this.ensureArray(browser.local),
                 remoteUrls: this.ensureArray(browser.remote),
                 browserTarget: browser.target || "both",
@@ -21152,6 +21349,8 @@ class LibraryManager {
             if (newLib.defaultExport !== undefined) {
                 existing.defaultExport = newLib.defaultExport;
             }
+            if (newLib.description) existing.description = newLib.description;
+            if (newLib.optional === false) existing.optional = false;
             // Do not change the load state if already loaded.
             this.libraries_known[newLib.key] = existing;
         } else {
@@ -21537,6 +21736,90 @@ class LibraryManager {
     }
 
     /**
+     * The library manifest: every registered library with its sources and current state,
+     * as plain data (for editors, runners and diagnostics).
+     * @returns {Array<{key: string, version: string, globalObject: string, description: string, optional: boolean,
+     *   browser: {local: string[], remote: string[]}, server: {npm: string[], remote: string[]}, state: string}>}
+     */
+    describeLibraries() {
+        return Object.values(this.libraries_known).map((library) => ({
+            key: library.key,
+            version: library.version ?? "",
+            globalObject: library.globalObject ?? "",
+            description: library.description ?? "",
+            optional: library.optional !== false,
+            browser: {
+                local: [...library.localPaths],
+                remote: [...library.remoteUrls]
+            },
+            server: {
+                npm: [...library.npmPackages],
+                remote: [...library.serverRemoteUrls]
+            },
+            state: this.getLibraryState(library.key) || "not_loaded",
+        }));
+    }
+
+    /**
+     * Checks, in Node.js, whether the npm packages of registered libraries can be imported, without
+     * changing their load state or globals. In a browser nothing is fetched: every entry reports
+     * "unknown" unless it is already loaded.
+     * @param {string[]} [keys] - libraries to check (default: all)
+     * @returns {Promise<Array<{key: string, available: boolean|null, missing: string[], error?: string}>>}
+     */
+    async probeLibraries(keys = Object.keys(this.libraries_known)) {
+        await this.ready;
+        const results = [];
+        for (const key of keys) {
+            const library = this.libraries_known[key];
+            if (!library) {
+                results.push({
+                    key,
+                    available: false,
+                    missing: [],
+                    error: "not registered"
+                });
+                continue;
+            }
+            if (this.getLibraryState(key) === "loaded") {
+                results.push({
+                    key,
+                    available: true,
+                    missing: []
+                });
+                continue;
+            }
+            if (isBrowser() || !library.npmPackages.length) {
+                results.push({
+                    key,
+                    available: null,
+                    missing: []
+                });
+                continue;
+            }
+            const missing = [];
+            let error;
+            for (const name of library.npmPackages) {
+                try {
+                    await import(name);
+                } catch (e) {
+                    missing.push(name);
+                    error ??= e?.message ?? String(e);
+                }
+            }
+            results.push({
+                key,
+                available: missing.length === 0,
+                missing,
+                ...(error ? {
+                    error
+                } : {})
+            });
+        }
+        return results;
+    }
+
+    /**
      * Get a list of all registered library keys.
      * @returns {string[]} An array of registered library keys.
      */
@@ -21557,6 +21840,7 @@ exports.LGraphEventTarget = LGraphEventTarget;
 exports.CommandRegistry = CommandRegistry;
 exports.KeybindingRegistry = KeybindingRegistry;
 exports.SettingsRegistry = SettingsRegistry;
+exports.MenuRegistry = MenuRegistry;
 exports.ExtensionRegistry = ExtensionRegistry;
 exports.ContextMenu = ContextMenu;
 exports.CurveEditor = CurveEditor;
