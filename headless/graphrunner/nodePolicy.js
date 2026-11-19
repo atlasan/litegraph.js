@@ -5,7 +5,11 @@
 // operator opts in. The check is recursive: inline subgraphs (`node.subgraph`) are inspected too.
 //
 // Configuration (environment):
-// - RUNNER_ALLOW_SYS=1: allow every registered type (trusted, local-only use).
+// - RUNNER_ALLOW_SYS=1: allow every registered type and script evaluation (trusted, local-only use).
+//
+// Script evaluation: nodes such as `math/formula`, `basic/script` and `objects/evaluate` compile code
+// from their properties when `LiteGraph.allow_scripts` is true, which the Node.js build turns on by
+// default. That code runs with full process rights, so the runner turns it off (see scriptsAllowed).
 // - RUNNER_DENY_TYPES: comma-separated extra types to deny; an entry ending in "/" denies a prefix.
 
 export const DEFAULT_DENIED_TYPES = Object.freeze([
@@ -17,7 +21,13 @@ export const DEFAULT_DENIED_TYPES = Object.freeze([
   'libraries/load',
   'libraries/register',
   'libraries/search_CDN_lib',
+  'geometry/eval', // compiles its `code` property without checking LiteGraph.allow_scripts
 ]);
+
+/** Whether nodes may compile code from their properties (`LiteGraph.allow_scripts`) in the runner. */
+export function scriptsAllowed(env = process.env) {
+  return env.RUNNER_ALLOW_SYS === '1';
+}
 
 export function deniedTypes(env = process.env) {
   if (env.RUNNER_ALLOW_SYS === '1') return [];
