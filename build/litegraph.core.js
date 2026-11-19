@@ -15574,6 +15574,9 @@ supported callbacks:
 
 export class LGraphNode {
 
+    // trace() keeps at most this many messages in node.console
+    static MAX_CONSOLE = 100;
+
     cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
