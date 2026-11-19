@@ -29,12 +29,15 @@ export function createRunnerServer() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  let policy;
+  try { policy = describePolicy(); } // also validates RUNNER_ALLOW_TYPES before anything listens
+  catch (error) { logger.error(error.message); process.exit(1); }
   const runner = createRunnerServer();
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '127.0.0.1';
   runner.server.listen(port, host, () => {
     logger.info(`Graph runner: http://${host}:${runner.server.address().port}`);
-    logger.info(describePolicy());
+    logger.info(policy);
   });
   let closing = false;
   const shutdown = async () => {

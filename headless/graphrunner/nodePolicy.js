@@ -1,9 +1,9 @@
 // Node-type policy for graphs executed by the runner.
 //
-// Some Node.js node types run shell commands, read or change the file system, control processes and
-// services, open listening network servers, or load remote code. A workflow pushed over the WebSocket
-// must not be able to use them unless the operator opts in. The check is recursive: inline subgraphs
-// (`node.subgraph`) are inspected too.
+// Some Node.js node types run shell commands, read or change the file system, inspect the host,
+// open listening servers, make outbound requests, reach databases, or load remote code. A workflow
+// pushed over the WebSocket must not be able to use them unless the operator opts in. The check is
+// recursive: inline subgraphs (`node.subgraph`) are inspected too.
 //
 // Script evaluation: nodes such as `math/formula`, `basic/script` and `objects/evaluate` compile code
 // from their properties when `LiteGraph.allow_scripts` is true, which the Node.js build turns on by
@@ -12,33 +12,42 @@
 // Configuration (environment):
 // - RUNNER_ALLOW_SYS=1: allow every registered type and script evaluation (trusted, local-only use).
 // - RUNNER_ALLOW_SCRIPTS=1: let script nodes evaluate their code, without allowing the other types.
-// - RUNNER_ALLOW_TYPES: comma-separated default-denied types to allow again, e.g.
-//   "sys/fileRead,nodejs/network/OSC_server"; an entry ending in "/" allows a prefix
-//   ("nodejs/network/" allows every network server node).
+// - RUNNER_ALLOW_TYPES: comma-separated default-denied types to allow again. Entries can be
+//   - a type: "sys/fileRead";
+//   - a prefix ending in "/": "nodejs/network/";
+//   - a family from DENIED_FAMILIES: "@outbound", "@host-read", ...
+//   e.g. RUNNER_ALLOW_TYPES=@outbound,sys/fileRead
 // - RUNNER_DENY_TYPES: comma-separated extra types to deny; an entry ending in "/" denies a prefix.
 //   It wins over RUNNER_ALLOW_TYPES.
 
-export const DEFAULT_DENIED_TYPES = Object.freeze([
-  // shell commands, file system changes, process and service control
-  'sys/runCommand',
-  'sys/fileWrite',
-  'sys/fileDelete',
-  'sys/processControl',
-  'sys/serviceManager',
-  // reads any file the runner user can read
-  'sys/fileRead',
-  // open listening network servers on the runner host
-  'server/network/websocketserver',
-  'nodejs/network/SocketIO_server',
-  'nodejs/network/OSC_server',
-  'nodejs/network/UDP_server',
-  'nodejs/network/osc_bridge',
-  // load or register remote code
-  'libraries/load',
-  'libraries/register',
-  'libraries/search_CDN_lib',
-  'geometry/eval', // compiles its `code` property without checking LiteGraph.allow_scripts
-]);
+/** Default-denied node types, by family; `@<family>` in RUNNER_ALLOW_TYPES re-allows a whole family. */
+export const DENIED_FAMILIES = Object.freeze({
+  'commands': { description: 'run shell commands, control processes and services', types: [
+    'sys/runCommand', 'sys/processControl', 'sys/serviceManager',
+  ] },
+  'file-write': { description: 'write or delete files', types: ['sys/fileWrite', 'sys/fileDelete'] },
+  'host-read': { description: 'read files and inspect the runner host', types: [
+    'sys/fileRead', 'sys/fileList', 'sys/fileExists', 'sys/processList', 'sys/serviceList', 'sys/info',
+    'server/process/NodeProcessInfo',
+  ] },
+  'servers': { description: 'open listening network servers on the runner host', types: [
+    'server/network/websocketserver', 'nodejs/network/SocketIO_server', 'nodejs/network/OSC_server',
+    'nodejs/network/UDP_server', 'nodejs/network/osc_bridge',
+  ] },
+  'outbound': { description: 'make requests from the runner host (HTTP, WebSocket, Socket.IO, WebRTC)', types: [
+    'network/httprequest', 'network/websocket', 'network/SocketIO', 'network/webrtc', 'basic/file',
+  ] },
+  'databases': { description: 'connect to databases with credentials from the workflow', types: [
+    'mysql/connection', 'mysql/query', 'mysql/insert', 'mysql/update', 'mysql/delete', 'mysql/transaction',
+  ] },
+  'remote-code': { description: 'load or register remote code, or compile code without allow_scripts', types: [
+    'libraries/load', 'libraries/register', 'libraries/search_CDN_lib', 'geometry/eval',
+  ] },
+});
+
+export const DEFAULT_DENIED_TYPES = Object.freeze(Object.values(DENIED_FAMILIES).flatMap((family) => family.types));
+
+const familyOf = (type) => Object.keys(DENIED_FAMILIES).find((name) => DENIED_FAMILIES[name].types.includes(type));
 
 /** Node types that compile code from their properties only when `LiteGraph.allow_scripts` is true. */
 export const SCRIPT_NODE_TYPES = Object.freeze(['math/formula', 'basic/script', 'objects/evaluate']);
@@ -48,11 +57,17 @@ export function scriptsAllowed(env = process.env) {
   return env.RUNNER_ALLOW_SYS === '1' || env.RUNNER_ALLOW_SCRIPTS === '1';
 }
 
+function unknownFamily(entry) {
+  throw new Error(`RUNNER_ALLOW_TYPES: unknown family ${entry}; known: ${Object.keys(DENIED_FAMILIES).map((name) => '@' + name).join(', ')}`);
+}
+
 const listOf = (value) => (value || '').split(',').map((type) => type.trim()).filter(Boolean);
 
 export function deniedTypes(env = process.env) {
   if (env.RUNNER_ALLOW_SYS === '1') return [];
-  const allowed = listOf(env.RUNNER_ALLOW_TYPES);
+  const allowed = listOf(env.RUNNER_ALLOW_TYPES).flatMap((entry) => entry.startsWith('@')
+    ? (DENIED_FAMILIES[entry.slice(1)]?.types ?? unknownFamily(entry))
+    : [entry]);
   const defaults = DEFAULT_DENIED_TYPES.filter((type) => !isDenied(type, allowed));
   return [...defaults, ...listOf(env.RUNNER_DENY_TYPES)];
 }
@@ -98,7 +113,11 @@ export function assertAllowedGraph(data, isRegistered, { env = process.env, maxD
   const byDenyList = [...refused.keys()].filter((type) => isDenied(type, extraDenied));
   const enable = [...refused.keys()].filter((type) => !byDenyList.includes(type));
   const hints = [];
-  if (enable.length) hints.push(`to enable, start the runner with RUNNER_ALLOW_TYPES=${enable.join(',')} (or RUNNER_ALLOW_SYS=1 to allow every restricted type)`);
+  if (enable.length) {
+    const families = [...new Set(enable.map(familyOf).filter(Boolean))];
+    const familyHint = families.length ? `, or whole families with RUNNER_ALLOW_TYPES=${families.map((name) => '@' + name).join(',')}` : '';
+    hints.push(`to enable, start the runner with RUNNER_ALLOW_TYPES=${enable.join(',')}${familyHint} (or RUNNER_ALLOW_SYS=1 to allow every restricted type)`);
+  }
   if (byDenyList.length) hints.push(`${byDenyList.join(', ')} ${byDenyList.length > 1 ? 'are' : 'is'} refused by RUNNER_DENY_TYPES; remove ${byDenyList.length > 1 ? 'them' : 'it'} there`);
   throw new Error(`Node type not allowed in the runner: ${list}. ${hints.join('; ')}.`);
 }
@@ -121,14 +140,21 @@ export function graphPolicyNotes(data, env = process.env) {
   return [`Script evaluation is off in the runner, so these nodes output nothing: ${list}. To enable, start the runner with RUNNER_ALLOW_SCRIPTS=1 (their code then runs with the runner's full rights).`];
 }
 
-/** One-line summary of the active policy, logged when the runner starts. */
+/** Summary of the active policy, logged when the runner starts: one line per family. */
 export function describePolicy(env = process.env) {
   if (env.RUNNER_ALLOW_SYS === '1') return 'Runner policy: RUNNER_ALLOW_SYS=1, every node type and script evaluation is allowed.';
   const denied = deniedTypes(env);
-  const allowed = DEFAULT_DENIED_TYPES.filter((type) => !denied.includes(type));
-  return [
-    `Runner policy: ${denied.length} node types refused (${denied.join(', ')}).`,
-    allowed.length ? `Re-allowed by RUNNER_ALLOW_TYPES: ${allowed.join(', ')}.` : 'Enable chosen ones with RUNNER_ALLOW_TYPES=<type,prefix/>, or all with RUNNER_ALLOW_SYS=1.',
-    scriptsAllowed(env) ? 'Script nodes evaluate code (RUNNER_ALLOW_SCRIPTS=1).' : 'Script nodes (math/formula, basic/script, objects/evaluate) are off; enable with RUNNER_ALLOW_SCRIPTS=1.',
-  ].join(' ');
+  const lines = ['Runner policy (allow with RUNNER_ALLOW_TYPES=<type>,<prefix/>,@<family>, or everything with RUNNER_ALLOW_SYS=1):'];
+  for (const [name, family] of Object.entries(DENIED_FAMILIES)) {
+    const refused = family.types.filter((type) => denied.includes(type));
+    const state = refused.length === family.types.length ? 'refused'
+      : refused.length ? `partly allowed (refused: ${refused.join(', ')})` : 'allowed';
+    lines.push(`  @${name}: ${state}; ${family.description} (${family.types.join(', ')})`);
+  }
+  const extra = listOf(env.RUNNER_DENY_TYPES);
+  if (extra.length) lines.push(`  RUNNER_DENY_TYPES: ${extra.join(', ')}`);
+  lines.push(scriptsAllowed(env)
+    ? '  scripts: allowed (RUNNER_ALLOW_SCRIPTS=1)'
+    : '  scripts: off; math/formula, basic/script, objects/evaluate output nothing (enable with RUNNER_ALLOW_SCRIPTS=1)');
+  return lines.join('\n');
 }
