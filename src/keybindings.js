@@ -23,6 +23,12 @@ export class KeybindingRegistry {
         this._user = new Map();
         /** @type {Set<string>} "combo|commandId" defaults hidden by the user */
         this._unset = new Set();
+        /** called after the user layer changes (e.g. to persist exportUserLayer()) */
+        this.onUserLayerChange = null;
+    }
+
+    _userLayerChanged() {
+        try { this.onUserLayerChange?.(this.exportUserLayer()); } catch (error) { console.error?.("keybindings: onUserLayerChange failed", error); }
     }
 
     static isMac() {
@@ -94,15 +100,17 @@ export class KeybindingRegistry {
     /** Binds a combo for the user, overriding defaults; `commandId: null` disables the combo. */
     setUserBinding(combo, commandId) {
         this._user.set(KeybindingRegistry.normalize(combo), commandId ?? null);
+        this._userLayerChanged();
     }
 
     clearUserBinding(combo) {
-        this._user.delete(KeybindingRegistry.normalize(combo));
+        if (this._user.delete(KeybindingRegistry.normalize(combo))) this._userLayerChanged();
     }
 
     /** Hides one default binding (without binding the combo to something else). */
     unsetDefault(combo, commandId) {
         this._unset.add(`${KeybindingRegistry.normalize(combo)}|${commandId}`);
+        this._userLayerChanged();
     }
 
     /** User layer as plain data, for persistence. */

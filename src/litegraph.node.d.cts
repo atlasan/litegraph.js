@@ -2,7 +2,7 @@
 export * from './litegraph.full.cjs';
 import { LGraph, LGraphCanvas, ExtensionDefinition } from './litegraph.cjs';
 export declare class Editor {
-    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean });
+    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean });
     root: HTMLDivElement;
     canvas: HTMLCanvasElement;
     graph: LGraph;

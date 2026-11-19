@@ -37,18 +37,20 @@ export class SettingsRegistry {
     /** Uses a storage adapter and loads its values (defined settings are re-applied). */
     setStorage(storage) {
         this._storage = storage;
+        // values as they were before the switch, so onChange reports what actually changed
+        const before = new Map([...this._defs.keys()].map((id) => [id, this.get(id)]));
         const loaded = storage?.load?.() ?? {};
         this._values = (loaded && typeof loaded === "object") ? { ...loaded } : {};
-        for (const def of this._defs.values()) this._applyLoaded(def);
+        for (const def of this._defs.values()) this._applyLoaded(def, before.get(def.id));
     }
 
     _save() {
         this._storage?.save?.({ ...this._values });
     }
 
-    _applyLoaded(def) {
-        // the first application reports no previous value
-        const previous = def._initialized === true ? this.get(def.id) : undefined;
+    _applyLoaded(def, previousValue) {
+        // the first application reports no previous value; a storage switch passes the old value
+        const previous = arguments.length > 1 ? previousValue : (def._initialized === true ? this.get(def.id) : undefined);
         if (Object.hasOwn(this._values, def.id) && typeof def.migrate === "function") {
             const migrated = def.migrate(this._values[def.id]);
             if (migrated !== this._values[def.id]) {

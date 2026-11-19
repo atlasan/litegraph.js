@@ -16,13 +16,20 @@ import { LiteGraph } from "../litegraph.js";
  */
 
 const hasSelection = (ctx) => !!ctx.canvas?.graph && ctx.selectedNodes?.length > 0;
+const hasAnySelection = (ctx) => !!ctx.canvas?.graph && (ctx.selectedItems ?? ctx.selectedNodes)?.length > 0;
 const first = (ctx) => ctx.selectedNodes[0];
 
+/** moves the whole selection (nodes, groups, reroutes) one grid step; nodes snap to the grid first */
 function moveSelection(ctx, dx, dy) {
+    const grid = LiteGraph.CANVAS_GRID_SIZE;
+    for (const node of ctx.selectedNodes) node.alignToGrid();
+    if (typeof ctx.canvas.moveSelected === "function") {
+        ctx.canvas.moveSelected(dx * grid, dy * grid);
+        return;
+    }
     for (const node of ctx.selectedNodes) {
-        node.alignToGrid();
-        node.pos[0] += dx * LiteGraph.CANVAS_GRID_SIZE;
-        node.pos[1] += dy * LiteGraph.CANVAS_GRID_SIZE;
+        node.pos[0] += dx * grid;
+        node.pos[1] += dy * grid;
         node.processCallbackHandlers("onMoved", { def_cb: node.onMoved });
     }
     ctx.graph.onGraphChanged({ action: "keyboardMove" });
@@ -61,7 +68,7 @@ function selectSibling(ctx, step) {
 }
 
 const move = (id, label, dx, dy, combo) => ({
-    command: { id, label, category: "selection", when: hasSelection, mutatesGraph: true, run: (ctx) => moveSelection(ctx, dx, dy) },
+    command: { id, label, category: "selection", when: hasAnySelection, mutatesGraph: true, run: (ctx) => moveSelection(ctx, dx, dy) },
     binding: { combo, commandId: id, allowRepeat: true },
 });
 

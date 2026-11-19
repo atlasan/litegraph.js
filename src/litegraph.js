@@ -13,6 +13,8 @@ import { CommandRegistry } from "./commands.js";
 import { KeybindingRegistry } from "./keybindings.js";
 import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
+import { MenuRegistry } from "./menus.js";
+import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 
 /**
  * @class LiteGraph
@@ -421,6 +423,43 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers (or replaces) the class implementing a canvas widget type.
+     * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
+     * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
+     */
+    registerWidgetType(type, widgetClass) {
+        this.setupPlatform();
+        if (typeof type !== "string" || !type) throw new TypeError("widget type must be a non-empty string");
+        if (typeof widgetClass !== "function" || !(widgetClass.prototype instanceof BaseWidget)) {
+            throw new TypeError(`widget type ${type}: class must extend BaseWidget`);
+        }
+        this.widget_types[type.toLowerCase()] = widgetClass;
+    }
+
+    /**
+     * Persists settings and the user key-binding layer through a storage adapter
+     * (default: localStorage under "litegraph.settings"). The Editor calls this unless created
+     * with `{ skip_persistence: true }`; embedders can call it with their own adapter.
+     * Calling it again only switches the storage.
+     * @param {{load(): object, save(values: object): void}} [storage]
+     */
+    persistPlatformState(storage = SettingsRegistry.localStorageAdapter()) {
+        this.setupPlatform();
+        this.settings.setStorage(storage);
+        const id = "LiteGraph.Keybindings.UserLayer";
+        if (!this.settings.has(id)) {
+            this.settings.define({
+                id,
+                type: "json",
+                name: "Key bindings changed by the user",
+                default: () => ({ bindings: {}, unset: [] }),
+                onChange: (value) => this.keybindings.importUserLayer(value),
+            });
+            this.keybindings.onUserLayerChange = (layer) => this.settings.set(id, layer);
+        }
+    }
+
+    /**
      * Creates the platform registries once: shared operations (commands), key bindings,
      * settings and extensions. Called by initialize(); safe to call earlier.
      */
@@ -429,6 +468,8 @@ export class LiteGraphClass {
         this.commands ??= new CommandRegistry();
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
+        this.menus ??= new MenuRegistry(this.commands);
+        this.widget_types ??= defaultWidgetTypes();
         this.extensions ??= new ExtensionRegistry(this);
     }
 

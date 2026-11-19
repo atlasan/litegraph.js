@@ -59,7 +59,8 @@ export class CommandRegistry {
     /** Builds the usual context for a canvas: the graph shown on it and the selection. */
     contextFor(canvas, extra = {}) {
         const selected = canvas?.selected_nodes ? Object.values(canvas.selected_nodes) : [];
-        return { canvas: canvas ?? null, graph: canvas?.graph ?? null, selectedNodes: selected, ...extra };
+        const items = canvas?.selectedItems ?? selected;
+        return { canvas: canvas ?? null, graph: canvas?.graph ?? null, selectedNodes: selected, selectedItems: items, ...extra };
     }
 
     /** @returns {boolean} true when the command exists and its `when` accepts the context */

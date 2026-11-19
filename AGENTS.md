@@ -41,6 +41,9 @@ Short operational notes for contributors and coding agents. Keep this file refer
 - **Undo history:** the first saved change on a fresh graph becomes the first history entry; there is no empty baseline. Tests that check "one undo step" need an earlier change first.
 - **Edit paths:** use `graph.transact(label, fn)` for anything a user should undo in one step. `beforeChange`/`afterChange` are hooks only; the pointer paths call them asymmetrically.
 - **`LGraphCanvas.active_canvas`** is set by pointer down and by keydown. Prefer `this` (the canvas instance) in new code.
+- **Node classes:** registered node classes often do **not** extend `LGraphNode`, because registration copies its methods. `x instanceof LGraphNode` is therefore unreliable; use `LGraphCanvas.isNodeItem(x)`.
+- **Widgets:** per-type behaviour lives in `src/widgets.js`. Add new types with `LiteGraph.registerWidgetType`; don't add cases to the canvas.
+- **New pointer interactions:** assign `this.pointer.onDragStart` / `onDrag` / `onDragEnd` / `finally` at pointer down, as `_dragRerouteGesture` does. The canvas then skips its legacy move handling for that gesture.
 - **jsdom tests:**
   - jsdom has no 2D context: stub `HTMLCanvasElement.prototype.getContext` (see `test/canvas-lifecycle.test.js`).
   - `innerText` is not supported.

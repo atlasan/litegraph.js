@@ -28,6 +28,9 @@ export class Editor {
         this.content = root.querySelector(".content");
         this.footer = root.querySelector(".footer");
 
+        // keep settings and user key bindings across reloads (embedders may opt out)
+        if (!options.skip_persistence) LiteGraph.persistPlatformState?.();
+
         const canvas = this.canvas = root.querySelector(".graphcanvas");
         const graph = this.graph = new LGraph();
         const graphcanvas = this.graphcanvas = new LGraphCanvas(canvas, graph);

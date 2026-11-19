@@ -30,7 +30,8 @@ export class LGraph {
 
     /**
      * Typed graph events: configuring (cancelable), configured, node-added, node-removed,
-     * changed, reroute-added, reroute-removed. See LGraphEventTarget.
+     * changed, reroute-added, reroute-removed, link-connected, link-removed,
+     * node-property-changed, widget-changed, execution-step, node-error. See LGraphEventTarget.
      */
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
@@ -491,12 +492,14 @@ export class LGraph {
                 this.fixedtime += this.fixedtime_lapse;
                 this.processCallbackHandlers("onExecuteStep", { def_cb: this.onExecuteStep });
                 this.iteration++;
+                this._emit("execution-step", { iteration: this.iteration });
                 if (step + 1 < num) resetExecutionState();
             }
             this.processCallbackHandlers("onAfterExecute", { def_cb: this.onAfterExecute });
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
+            this._emit("node-error", { error, node: error?.node ?? this.nodes_executing?.at?.(-1) ?? null });
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);

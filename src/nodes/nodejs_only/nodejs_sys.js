@@ -1,10 +1,7 @@
 /**
- * NodeJsSysHelper - Centralized Library Manager for Node.js System Utilities
+ * NodeJsSysHelper - shared helpers for the Node.js system nodes (libraries: LiteGraph.LibraryManager)
  */
 class NodeJsSysHelper {
-    static getLib(libKey) {
-        return LiteGraph.LibraryManager.getLib(libKey);
-    }
     static logError(nodeTitle, error) {
         console.warn(`SysUtil Error: ${nodeTitle}: ${error.message || error} (line ${error.line || "?"})`);
     }
@@ -115,9 +112,9 @@ class SysUtil_InfoNode {
     }
 
     async fetchSystemInfo() {
-        let os = NodeJsSysHelper.getLib("os");
-        let diskusage = NodeJsSysHelper.getLib("diskusage");
-        let network = NodeJsSysHelper.getLib("node-os-utils");
+        let os = LiteGraph.LibraryManager.getLib("os");
+        let diskusage = LiteGraph.LibraryManager.getLib("diskusage");
+        let network = LiteGraph.LibraryManager.getLib("node-os-utils");
 
         if (!os) return NodeJsSysHelper.logError(this.title, "Missing required system libraries.");
 
@@ -207,7 +204,7 @@ class SysUtil_ProcessListNode {
     }
 
     async fetchProcessList() {
-        let psList = NodeJsSysHelper.getLib("ps-list");
+        let psList = LiteGraph.LibraryManager.getLib("ps-list");
 
         if (!psList || typeof psList !== "function") return NodeJsSysHelper.logError(this.title, "ps-list function unavailable.");
 
@@ -292,7 +289,7 @@ class SysUtil_RunCommandNode {
     }
 
     async executeCommand() {
-        let child_process = NodeJsSysHelper.getLib("child_process");
+        let child_process = LiteGraph.LibraryManager.getLib("child_process");
         if (!child_process) {
             NodeJsSysHelper.logError(this.title, "Missing child_process module.");
             return;
@@ -416,7 +413,7 @@ LiteGraph.registerNodeType("sys/runCommand", SysUtil_RunCommandNode);
 //     }
 
 //     async handleFileOperation() {
-//         this.fs = NodeJsSysHelper.getLib("fs");
+//         this.fs = LiteGraph.LibraryManager.getLib("fs");
 //         if (!this.fs) {
 //             NodeJsSysHelper.logError(this.title, "Missing fs module.");
 //             return;
@@ -547,7 +544,7 @@ class SysUtil_FileBaseNode {
     }
 
     async handleFileOperation() {
-        let fs = NodeJsSysHelper.getLib("fs");
+        let fs = LiteGraph.LibraryManager.getLib("fs");
         if (!fs) return;
 
         let filePath = this.getInputOrProperty("filePath");
@@ -740,7 +737,7 @@ class SysUtil_ProcessControlNode {
     }
 
     onAction(action) {
-        let child_process = NodeJsSysHelper.getLib("child_process");
+        let child_process = LiteGraph.LibraryManager.getLib("child_process");
         if (!child_process) {
             NodeJsSysHelper.logError(this.title, "Missing child_process module.");
             return;
@@ -915,8 +912,8 @@ class SysUtil_LogNode {
     }
 
     async writeLog() {
-        this.fs = NodeJsSysHelper.getLib("fs");
-        this.chalk = NodeJsSysHelper.getLib("chalk");
+        this.fs = LiteGraph.LibraryManager.getLib("fs");
+        this.chalk = LiteGraph.LibraryManager.getLib("chalk");
 
         if (!this.chalk && typeof console !== "undefined") {
             console.warn("SysUtil_LogNode: Chalk library is missing, proceeding without styling.");
@@ -1026,9 +1023,9 @@ class SysUtil_ServiceManagerNode {
     initializeLibrary() {
         if (typeof process === "undefined") return;
         if (this.platform === "win32") {
-            this.windowsService = NodeJsSysHelper.getLib("node-windows");
+            this.windowsService = LiteGraph.LibraryManager.getLib("node-windows");
         } else if (this.platform === "linux") {
-            this.linuxService = NodeJsSysHelper.getLib("node-linux-systemd");
+            this.linuxService = LiteGraph.LibraryManager.getLib("node-linux-systemd");
         }
     }
 
@@ -1158,9 +1155,9 @@ class SysUtil_ServiceListNode {
     initializeLibrary() {
         if (typeof process === "undefined") return;
         if (this.platform === "win32") {
-            this.windowsService = NodeJsSysHelper.getLib("node-windows");
+            this.windowsService = LiteGraph.LibraryManager.getLib("node-windows");
         } else if (this.platform === "linux") {
-            this.linuxService = NodeJsSysHelper.getLib("node-linux-systemd");
+            this.linuxService = LiteGraph.LibraryManager.getLib("node-linux-systemd");
         }
     }
 
@@ -1201,7 +1198,7 @@ class SysUtil_ServiceListNode {
 
     async listWindowsServices() {
         return new Promise((resolve, reject) => {
-            let nodeWindows = NodeJsSysHelper.getLib("node-windows");
+            let nodeWindows = LiteGraph.LibraryManager.getLib("node-windows");
     
             if (nodeWindows && nodeWindows.list) {
                 try {
@@ -1241,7 +1238,7 @@ class SysUtil_ServiceListNode {
     
     fallbackListWindowsServices() {
         return new Promise((resolve, reject) => {
-            let child_process = NodeJsSysHelper.getLib("child_process");
+            let child_process = LiteGraph.LibraryManager.getLib("child_process");
             if (!child_process) {
                 // reject("Missing child_process module.");
                 return;
@@ -1277,7 +1274,7 @@ class SysUtil_ServiceListNode {
 
     listLinuxServices() {
         return new Promise((resolve, reject) => {
-            let child_process = NodeJsSysHelper.getLib("child_process");
+            let child_process = LiteGraph.LibraryManager.getLib("child_process");
             if (!child_process) {
                 // reject("Missing child_process module.");
                 return;

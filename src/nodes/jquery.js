@@ -2,7 +2,7 @@
 import { LiteGraph } from "../litegraph.js";
 
 // Ensure jQuery is loaded using LibraryManager
-LiteGraph.LibraryManager.registerLibrary("jquery", "latest", "jQuery", [], ["https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"]);
+LiteGraph.LibraryManager.registerLibrary({ key: "jquery", version: "3.6.4", globalObject: "jQuery", description: "jQuery for the jquery/* nodes", browser: { remote: "https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js" } });
 
 // deferred loading
 // LiteGraph.LibraryManager.loadLibrary("jquery", () => {
