@@ -473,6 +473,20 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers (or replaces) the class implementing a canvas widget type.
+     * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
+     * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
+     */
+    registerWidgetType(type, widgetClass) {
+        this.setupPlatform();
+        if (typeof type !== "string" || !type) throw new TypeError("widget type must be a non-empty string");
+        if (typeof widgetClass !== "function" || !(widgetClass.prototype instanceof BaseWidget)) {
+            throw new TypeError(`widget type ${type}: class must extend BaseWidget`);
+        }
+        this.widget_types[type.toLowerCase()] = widgetClass;
+    }
+
+    /**
      * Persists settings and the user key-binding layer through a storage adapter
      * (default: localStorage under "litegraph.settings"). The Editor calls this unless created
      * with `{ skip_persistence: true }`; embedders can call it with their own adapter.
@@ -508,6 +522,7 @@ export class LiteGraphClass {
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
+        this.widget_types ??= defaultWidgetTypes();
         this.extensions ??= new ExtensionRegistry(this);
     }
 
@@ -8930,7 +8945,18 @@ export class LGraphCanvas {
             for (let i = 0, l = node.inputs.length; i < l; ++i) {
                 var link_pos = node.getConnectionPos(true, i);
                 var is_inside = false;
-                if (node.horizontal) {
+                const widget = LiteGraph.LGraphNode.isWidgetInputSlot(node.inputs[i]) ? node.getWidgetFromSlot(node.inputs[i]) : null;
+                if (widget?.last_y != null && !node.horizontal) {
+                    // a widget input accepts a link dropped anywhere on its widget row
+                    is_inside = LiteGraph.isInsideRectangle(
+                        canvasx,
+                        canvasy,
+                        node.pos[0] - 10,
+                        node.pos[1] + widget.last_y,
+                        node.size[0] + 10,
+                        LiteGraph.NODE_WIDGET_HEIGHT,
+                    );
+                } else if (node.horizontal) {
                     is_inside = LiteGraph.isInsideRectangle(
                         canvasx,
                         canvasy,
@@ -10769,7 +10795,9 @@ export class LGraphCanvas {
                     let pos = node.getConnectionPos(true, i, slot_pos);
                     pos[0] -= node.pos[0];
                     pos[1] -= node.pos[1];
-                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                    // widget inputs sit on their widget rows: they must not push the widgets down
+                    const is_widget_input = LiteGraph.LGraphNode.isWidgetInputSlot(slot);
+                    if (!is_widget_input && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
                         max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
                     }
 
@@ -10825,8 +10853,8 @@ export class LGraphCanvas {
                     }
                     ctx.fill();
 
-                    // render name
-                    if (render_text &&
+                    // render name (a widget input is labelled by its widget)
+                    if (render_text && !is_widget_input &&
                         !(slot.name == "onTrigger" || slot.name == "onExecuted")
                     ) {
                         let text = slot.label != null ? slot.label : slot.name;
@@ -12180,7 +12208,8 @@ export class LGraphCanvas {
             ctx.fillStyle = "#222";
             ctx.textAlign = "left";
             // ctx.lineWidth = 2;
-            if (w.disabled)
+            // a widget whose input is linked is driven by the link: shown disabled
+            if (w.disabled || node.isWidgetLinked?.(w))
                 ctx.globalAlpha *= 0.5;
             var widget_width = w.width || width;
 
@@ -12191,189 +12220,24 @@ export class LGraphCanvas {
                 //
             }
 
-            switch (w.type) {
-                case "button":
-                    if (w.clicked) {
-                        ctx.fillStyle = "#AAA";
-                        w.clicked = false;
-                        this.dirty_canvas = true;
-                    }
-                    ctx.fillRect(margin, y, widget_width - margin * 2, H);
-                    if (show_text && !w.disabled)
-                        ctx.strokeRect(margin, y, widget_width - margin * 2, H);
-                    if (show_text) {
-                        ctx.textAlign = "center";
-                        ctx.fillStyle = text_color;
-                        if (is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width) {
-                            ctx.fillText(w.label || w.name, widget_width * 0.5, y + H * 0.7);
-                        }
-                    }
-                    break;
-                case "toggle":
-                    ctx.textAlign = "left";
-                    ctx.strokeStyle = outline_color;
-                    ctx.fillStyle = background_color;
-                    ctx.beginPath();
-                    if (show_text)
-                        ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5]);
-                    else
-                        ctx.rect(margin, y, widget_width - margin * 2, H);
-                    ctx.fill();
-                    if (show_text && !w.disabled)
-                        ctx.stroke();
-                    ctx.fillStyle = w.value ? "#89A" : "#333";
-                    ctx.beginPath();
-                    ctx.arc(widget_width - margin * 2, y + H * 0.5, H * 0.36, 0, Math.PI * 2);
-                    ctx.fill();
-                    if (show_text) {
-                        ctx.fillStyle = secondary_text_color;
-                        const label = w.label || w.name;
-                        if (label != null) {
-                            if (is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width) {
-                                ctx.fillText(label, margin * 2, y + H * 0.7);
-                            }
-                        }
-                        ctx.fillStyle = w.value ? text_color : secondary_text_color;
-                        ctx.textAlign = "right";
-                        ctx.fillText(
-                            w.value ?
-                            w.options.on || "on" :
-                            w.options.off || "off",
-                            widget_width - 40,
-                            y + H * 0.7,
-                        );
-                    }
-                    break;
-                case "slider":
-                    ctx.fillStyle = background_color;
-                    ctx.fillRect(margin, y, widget_width - margin * 2, H);
-                    var range = w.options.max - w.options.min;
-                    var nvalue = (w.value - w.options.min) / range;
-                    if (nvalue < 0.0) nvalue = 0.0;
-                    if (nvalue > 1.0) nvalue = 1.0;
-                    ctx.fillStyle = Object.hasOwn(w.options, "slider_color") ? w.options.slider_color : (active_widget == w ? "#89A" : "#678");
-                    ctx.fillRect(margin, y, nvalue * (widget_width - margin * 2), H);
-                    if (show_text && !w.disabled)
-                        ctx.strokeRect(margin, y, widget_width - margin * 2, H);
-                    if (w.marker) {
-                        var marker_nvalue = (w.marker - w.options.min) / range;
-                        if (marker_nvalue < 0.0) marker_nvalue = 0.0;
-                        if (marker_nvalue > 1.0) marker_nvalue = 1.0;
-                        ctx.fillStyle = Object.hasOwn(w.options, "marker_color") ? w.options.marker_color : "#AA9";
-                        ctx.fillRect(margin + marker_nvalue * (widget_width - margin * 2), y, 2, H);
-                    }
-                    if (show_text) {
-                        ctx.textAlign = "center";
-                        ctx.fillStyle = text_color;
-                        if (is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width) {
-                            ctx.fillText(
-                                w.label ||
-                                w.name + "  " +
-                                LiteGraph.formatNumber(w.value, w.options.precision != null ? w.options.precision : 3),
-                                widget_width * 0.5,
-                                y + H * 0.7,
-                            );
-                        }
-                    }
-                    break;
-                case "number":
-                case "combo":
-                    ctx.textAlign = "left";
-                    ctx.strokeStyle = outline_color;
-                    ctx.fillStyle = background_color;
-                    ctx.beginPath();
-                    if (show_text)
-                        ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5]);
-                    else
-                        ctx.rect(margin, y, widget_width - margin * 2, H);
-                    ctx.fill();
-                    if (show_text) {
-                        if (!w.disabled)
-                            ctx.stroke();
-                        ctx.fillStyle = text_color;
-                        if (!w.disabled) {
-                            ctx.beginPath();
-                            ctx.moveTo(margin + 16, y + 5);
-                            ctx.lineTo(margin + 6, y + H * 0.5);
-                            ctx.lineTo(margin + 16, y + H - 5);
-                            ctx.fill();
-                            ctx.beginPath();
-                            ctx.moveTo(widget_width - margin - 16, y + 5);
-                            ctx.lineTo(widget_width - margin - 6, y + H * 0.5);
-                            ctx.lineTo(widget_width - margin - 16, y + H - 5);
-                            ctx.fill();
-                        }
-                        ctx.fillStyle = secondary_text_color;
-                        if (is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width) {
-                            ctx.fillText(w.label || w.name, margin * 2 + 5, y + H * 0.7);
-                        }
-                        ctx.fillStyle = text_color;
-                        ctx.textAlign = "right";
-                        if (w.type == "number") {
-                            ctx.fillText(
-                                LiteGraph.formatNumber(w.value, w.options.precision !== undefined ? w.options.precision : 3),
-                                widget_width - margin * 2 - 20,
-                                y + H * 0.7,
-                            );
-                        } else {
-                            var v = w.value;
-                            if (w.options.values) {
-                                var values = w.options.values;
-                                if (values.constructor === Function)
-                                    values = values();
-                                if (values && values.constructor !== Array)
-                                    v = values[w.value];
-                            }
-                            ctx.fillText(
-                                v,
-                                widget_width - margin * 2 - 20,
-                                y + H * 0.7,
-                            );
-                        }
-                    }
-                    break;
-                case "string":
-                case "text":
-                    ctx.textAlign = "left";
-                    ctx.strokeStyle = outline_color;
-                    ctx.fillStyle = background_color;
-                    ctx.beginPath();
-                    if (show_text)
-                        ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5]);
-                    else
-                        ctx.rect(margin, y, widget_width - margin * 2, H);
-                    ctx.fill();
-                    if (show_text) {
-                        if (!w.disabled)
-                            ctx.stroke();
-                        ctx.save();
-                        ctx.beginPath();
-                        ctx.rect(margin, y, widget_width - margin * 2, H);
-                        ctx.clip();
-
-                        // ctx.stroke();
-                        ctx.fillStyle = secondary_text_color;
-                        const label = w.label || w.name;
-                        let label_width = 0;
-                        if (label != null) {
-                            if (is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width) {
-                                ctx.fillText(label, margin * 2, y + H * 0.7);
-                                label_width = ctx.measureText(String(label)).width + margin * 2;
-                            }
-                        }
-                        ctx.fillStyle = text_color;
-                        ctx.textAlign = "right";
-                        // show as much of the value as fits beside the label (it used to stop at 30 chars)
-                        const value_width = widget_width - margin * 4 - label_width;
-                        ctx.fillText(LGraphCanvas.fitText(ctx, String(w.value), value_width), widget_width - margin * 2, y + H * 0.7);
-                        ctx.restore();
-                    }
-                    break;
-                default:
-                    if (w.draw) {
-                        w.draw(ctx, node, widget_width, y, H);
-                    }
-                    break;
+            // per-type drawing lives in the widget classes (src/widgets.js)
+            const impl = widgetImplementation(w);
+            if (impl) {
+                impl.draw.call(w, ctx, node, widget_width, y, H, {
+                    canvas: this,
+                    show_text,
+                    show_label: is_over_widget || this.options.hide_widget_label_when_small === true || this.options.hide_widget_label_when_small < width,
+                    active: active_widget == w,
+                    margin,
+                    colors: {
+                        outline: outline_color,
+                        background: background_color,
+                        text: text_color,
+                        secondary: secondary_text_color
+                    },
+                });
+            } else if (w.draw) {
+                w.draw(ctx, node, widget_width, y, H); // legacy custom widget
             }
             posY += (w.computeSize ? w.computeSize(widget_width)[1] : H) + 4;
             ctx.globalAlpha = this.editor_alpha;
@@ -12408,7 +12272,7 @@ export class LGraphCanvas {
 
         for (let i = 0; i < node.widgets.length; ++i) {
             var w = node.widgets[i];
-            if (!w || w.disabled)
+            if (!w || w.disabled || node.isWidgetLinked?.(w))
                 continue;
             if (typeof(w.computeSize) == "function") {
                 const wSize = w.computeSize(node.size[0], node.size[1]);
@@ -12431,200 +12295,22 @@ export class LGraphCanvas {
             // if ( w == active_widget || (x > 6 && x < widget_width - 12 && y > w.last_y && y < w.last_y + widget_height) ) {
             // inside widget
             if (event) {
-                switch (w.type) {
-                    case "button":
-                        if (event.type === "pointerdown") {
-                            if (w.callback) {
-                                LiteGraph.log_debug("graph processNodeWidgets", "button, calling callback", w.callback);
-                                setTimeout(function() {
-                                    w.callback(w, that, node, pos, event);
-                                }, 20);
-                            } else {
-                                LiteGraph.log_verbose("graph processNodeWidgets", "button, has not callback", w);
-                            }
-                            w.clicked = true;
-                            this.dirty_canvas = true;
-                        } else {
-                            LiteGraph.log_verbose("graph processNodeWidgets", "button, event is not pointer down", event);
-                        }
-                        break;
-                    case "slider":
-                        var nvalue = LiteGraph.clamp((x - 15) / (widget_width - 30), 0, 1);
-                        if (w.options.read_only) break;
-                        w.value = w.options.min + (w.options.max - w.options.min) * nvalue;
-                        if (w.options.step > 0) {
-                            // snap to min + k * step, staying inside the range
-                            w.value = w.options.min + Math.round((w.value - w.options.min) / w.options.step) * w.options.step;
-                            w.value = LiteGraph.clamp(w.value, w.options.min, w.options.max);
-                        }
-                        if (old_value != w.value) {
-                            setTimeout(function() {
-                                inner_value_change(w, w.value, old_value);
-                            }, 20);
-                        }
-                        this.dirty_canvas = true;
-                        break;
-                    case "number":
-                    case "combo":
-                    case "enum":
-                        if (event.type == "pointermove" && w.type == "number") {
-                            if (deltaX)
-                                w.value += deltaX * 0.1 * (w.options.step || 1);
-                            if (w.options.min != null && w.value < w.options.min) {
-                                w.value = w.options.min;
-                            }
-                            if (w.options.max != null && w.value > w.options.max) {
-                                w.value = w.options.max;
-                            }
-                        } else if (event.type == "pointerdown") {
-                            var values = w.options.values;
-                            if (values && values.constructor === Function) {
-                                values = w.options.values(w, node);
-                            }
-                            var values_list = null;
-
-                            if (w.type != "number")
-                                values_list = values.constructor === Array ? values : Object.keys(values);
-
-                            let delta = x < 40 ? -1 : x > widget_width - 40 ? 1 : 0;
-                            if (w.type == "number") {
-                                w.value += delta * (w.options.step || 1);
-                                if (w.options.min != null && w.value < w.options.min) {
-                                    w.value = w.options.min;
-                                }
-                                if (w.options.max != null && w.value > w.options.max) {
-                                    w.value = w.options.max;
-                                }
-                            } else if (delta) { // clicked on arrow, used for combos
-                                var index = -1;
-                                this.last_mouseclick = 0; // avoids double click event
-                                if (values.constructor === Object)
-                                    index = values_list.indexOf(String(w.value)) + delta;
-                                else
-                                    index = values_list.indexOf(w.value) + delta;
-                                if (index >= values_list.length) {
-                                    index = values_list.length - 1;
-                                }
-                                if (index < 0) {
-                                    index = 0;
-                                }
-                                if (values.constructor === Array)
-                                    w.value = values[index];
-                                else {
-                                    // combo arrow
-                                    console.debug("ARROW_ComboOrOtherWidget", "clickCHECK", w, index, values);
-                                    if (values != values_list) {
-                                        w.value = Object.keys(values)[index];
-                                    } else {
-                                        w.value = index;
-                                    }
-                                }
-                            } else { // combo clicked
-                                // var text_values = values != values_list ? Object.values(values) : values;
-                                var entries = [];
-                                if (values != values_list) {
-                                    Object.keys(values).forEach((element) => {
-                                        entries.push({
-                                            value: element,
-                                            content: values[element]
-                                        });
-                                    });
-                                } else {
-                                    // using simple
-                                    entries = values;
-                                }
-                                console.debug("ComboOrOtherWidget", "filling from", values, "to", entries);
-                                let inner_clicked = function(v, cnv, node, pos, event, value_original) {
-                                    console.debug("ComboOrOtherWidget", "inner_clicked", ...arguments);
-                                    console.debug("ComboOrOtherWidget", "inner_clicked", v, entries, values, values_list, "old_value", old_value);
-                                    if (typeof v == "object" && typeof v.value !== "undefined") {
-                                        console.debug("ComboOrOtherWidget", "inner_clicked", "using object key value", v);
-                                        this.value = v.value;
-                                        inner_value_change(this, v.value, old_value);
-                                    } else {
-                                        // if(values != values_list){
-                                        //     console.debug("ComboOrOtherWidget","inner_clicked","value from key?",v,);
-                                        //     // using simples
-                                        //     v = entries.indexOf(v);
-                                        // }
-                                        console.debug("ComboOrOtherWidget", "inner_clicked", "using simple", v);
-                                        // using simples
-                                        this.value = v;
-                                        inner_value_change(this, v, old_value);
-                                    }
-                                    that.dirty_canvas = true;
-                                    return false;
-                                }
-                                LiteGraph.ContextMenu(
-                                    entries, {
-                                        scale: Math.max(1, this.ds.scale),
-                                        event: event,
-                                        className: "dark",
-                                        callback: inner_clicked.bind(w),
-                                    },
-                                    ref_window,
-                                );
-                            }
-                            // end mousedown
-                        } else if (event.type == "pointerup" && w.type == "number") {
-                            let delta = x < 40 ? -1 : x > widget_width - 40 ? 1 : 0;
-                            if (event.click_time < 200 && delta == 0) {
-                                this.prompt(
-                                    "Value", w.value,
-                                    function(v) {
-                                        // check if v is a valid equation or a number
-                                        if (/^[0-9+\-*/()\s]+|\d+\.\d+$/.test(v)) {
-                                            try { // solve the equation if possible
-                                                v = eval(v);
-                                            } catch (error) {
-                                                LiteGraph.log_warn(error);
-                                            }
-                                        }
-                                        // typed values respect the widget range like drag and arrows do (Comfy c5db2d8)
-                                        this.value = LGraphCanvas.clampWidgetNumber(Number(v), this.options);
-                                        inner_value_change(this, this.value, old_value);
-                                    }.bind(w),
-                                    event,
-                                );
-                            }
-                        }
-
-                        if (old_value != w.value)
-                            setTimeout(
-                                function() {
-                                    inner_value_change(this, this.value, old_value);
-                                }.bind(w),
-                                20,
-                            );
-                        this.dirty_canvas = true;
-                        break;
-                    case "boolean":
-                    case "toggle":
-                        if (event.type == "pointerdown") {
-                            w.value = !w.value;
-                            setTimeout(function() {
-                                inner_value_change(w, w.value);
-                            }, 20);
-                        }
-                        break;
-                    case "string":
-                    case "text":
-                        if (event.type == "pointerdown") {
-                            this.prompt(
-                                "Value", w.value,
-                                function(v) {
-                                    // @TODO: this.value = v; // CHECK
-                                    inner_value_change(this, v);
-                                }.bind(w),
-                                event, w.options ? w.options.multiline : false,
-                            );
-                        }
-                        break;
-                    default:
-                        if (w.mouse) {
-                            this.dirty_canvas = w.mouse(event, [x, y], node);
-                        }
-                        break;
+                // per-type behaviour lives in the widget classes (src/widgets.js)
+                const impl = widgetImplementation(w);
+                if (impl) {
+                    impl.onPointer.call(w, event, {
+                        canvas: this,
+                        node,
+                        x,
+                        y,
+                        pos,
+                        widget_width,
+                        old_value,
+                        ref_window,
+                        changed: inner_value_change,
+                    });
+                } else if (w.mouse) {
+                    this.dirty_canvas = w.mouse(event, [x, y], node); // legacy custom widget
                 }
             }
 
@@ -12634,27 +12320,26 @@ export class LGraphCanvas {
         function inner_value_change(widget, value, old_value) {
             LiteGraph.log_debug("inner_value_change for processNodeWidgets", widget, value);
             const value_original = value;
-            // value changed
-            if (old_value != w.value) {
+            if (widget.type == "number") {
+                value = Number(value);
+            }
+            widget.value = value;
+            // value changed: notify with the new value (text widgets used to report the old one)
+            if (old_value != value) {
                 node.processCallbackHandlers("onWidgetChanged", {
                     def_cb: node.onWidgetChanged
-                }, w.name, w.value, old_value, w);
-                // node.graph._version++;
+                }, widget.name, value, old_value, widget);
                 node.graph.onGraphChanged({
                     action: "widgetChanged",
                     doSave: true
                 }); // tag: graph event entrypoint
                 node.graph._emit?.("widget-changed", {
                     node,
-                    widget: w,
-                    value: w.value,
+                    widget,
+                    value,
                     previous: old_value
                 });
             }
-            if (widget.type == "number") {
-                value = Number(value);
-            }
-            widget.value = value;
             if (widget.options && widget.options.property && node.properties[widget.options.property] !== undefined) {
                 node.setProperty(widget.options.property, value);
             }
@@ -18414,6 +18099,7 @@ export class LGraphNode {
 
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
+                if (LGraphNode.isWidgetInputSlot(input)) return maxWidth; // label shown by the widget
                 const text = input.label || input.name || "";
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
@@ -18481,7 +18167,8 @@ export class LGraphNode {
     getSlotsHeight() {
         // minimum height calculated by slots or 1
         const rowHeight = Math.max(
-            this.inputs ? this.inputs.length : 1,
+            // widget inputs sit on their widget rows, not in the slot rows
+            this.inputs ? this.inputs.filter((input) => !LGraphNode.isWidgetInputSlot(input)).length : 1,
             this.outputs ? this.outputs.length : 1,
             1,
         ) * LiteGraph.NODE_SLOT_HEIGHT + 10;
@@ -18597,13 +18284,16 @@ export class LGraphNode {
             callback = null;
         }
 
-        var w = {
+        const fields = {
             type: type.toLowerCase(),
             name: name,
             value: value,
             callback: callback,
             options: options || {},
         };
+        // an instance of the registered widget class (src/widgets.js), or a plain object for unknown types
+        const WidgetClass = LiteGraph.widget_types?.[fields.type];
+        var w = WidgetClass ? new WidgetClass(fields) : fields;
 
         if (w.options.y !== undefined) {
             w.y = w.options.y;
@@ -18615,6 +18305,10 @@ export class LGraphNode {
             return;
         }
         this.widgets.push(w);
+        // options.socket: also add an input attached to the widget (true, or the slot type)
+        if (w.options.socket) {
+            this.addWidgetInput(w, typeof w.options.socket === "string" ? w.options.socket : undefined);
+        }
         this.setSize(this.computeSize());
         return w;
     }
@@ -18636,6 +18330,77 @@ export class LGraphNode {
             }
         }
         return -1;
+    }
+
+    /**
+     * True for an input attached to a widget (`input.widget = {name}`): it is drawn on the widget's
+     * row, and while it is linked the widget is disabled and the link provides the value
+     * (see getWidgetValue).
+     */
+    static isWidgetInputSlot(slot) {
+        return !!(slot && slot.widget && typeof slot.widget.name === "string");
+    }
+
+    /** @returns {object|null} the widget an input is attached to */
+    getWidgetFromSlot(slot) {
+        if (!LGraphNode.isWidgetInputSlot(slot)) return null;
+        return this.widgets?.find((widget) => widget?.name === slot.widget.name) ?? null;
+    }
+
+    /** @returns {object|null} the input attached to a widget */
+    getSlotFromWidget(widget) {
+        if (!widget || !this.inputs) return null;
+        return this.inputs.find((input) => LGraphNode.isWidgetInputSlot(input) && input.widget.name === widget.name) ?? null;
+    }
+
+    /** @returns {boolean} true when the widget's input is connected (the widget is then disabled) */
+    isWidgetLinked(widget) {
+        return this.getSlotFromWidget(widget)?.link != null;
+    }
+
+    /**
+     * Adds an input attached to a widget, so a link can drive the widget's value.
+     * @param {object|string} widgetOrName
+     * @param {string} [type] - slot type; default from the widget type (number, boolean, string, or "*")
+     * @returns {object|null} the input
+     */
+    addWidgetInput(widgetOrName, type) {
+        const widget = typeof widgetOrName === "string" ? this.widgets?.find((w) => w?.name === widgetOrName) : widgetOrName;
+        if (!widget) {
+            LiteGraph.log_warn("lgraphnode", "addWidgetInput", "widget not found", widgetOrName);
+            return null;
+        }
+        const existing = this.getSlotFromWidget(widget);
+        if (existing) return existing;
+        const byWidgetType = {
+            number: "number",
+            slider: "number",
+            toggle: "boolean",
+            boolean: "boolean",
+            text: "string",
+            string: "string"
+        };
+        return this.addInput(widget.name, type ?? byWidgetType[widget.type] ?? "*", {
+            widget: {
+                name: widget.name
+            },
+            label: widget.label
+        });
+    }
+
+    /**
+     * The value of a widget for execution: the data of its linked input when connected,
+     * otherwise the widget value.
+     * @param {string} name - widget name
+     */
+    getWidgetValue(name) {
+        const widget = this.widgets?.find((w) => w?.name === name);
+        const input = widget ? this.getSlotFromWidget(widget) : null;
+        if (input && input.link != null) {
+            const data = this.getInputData(this.inputs.indexOf(input));
+            if (data !== undefined) return data;
+        }
+        return widget?.value;
     }
 
     addCustomWidget(custom_widget) {
@@ -19574,9 +19339,24 @@ export class LGraphNode {
         // default vertical slots
         if (is_input) {
             out[0] = this.pos[0] + offset;
-        } else {
-            out[0] = this.pos[0] + this.size[0] + 1 - offset;
+            const input = this.inputs?.[slot_number];
+            if (input && LGraphNode.isWidgetInputSlot(input)) {
+                // a widget input sits on its widget's row (known once the widgets were drawn)
+                const widget = this.getWidgetFromSlot(input);
+                if (widget?.last_y != null) {
+                    out[1] = this.pos[1] + widget.last_y + LiteGraph.NODE_WIDGET_HEIGHT * 0.5;
+                    return out;
+                }
+            }
+            // rows count only ordinary inputs
+            let row = 0;
+            for (let i = 0; i < slot_number; i++) {
+                if (!LGraphNode.isWidgetInputSlot(this.inputs[i])) row++;
+            }
+            out[1] = this.pos[1] + (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + (this.constructor.slot_start_y || 0);
+            return out;
         }
+        out[0] = this.pos[0] + this.size[0] + 1 - offset;
         out[1] =
             this.pos[1] +
             (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
@@ -21829,6 +21609,423 @@ export class LibraryManager {
 }
 
 export default LibraryManager;
+
+/**
+ * Canvas widgets as classes, one per type, replacing the two `switch (w.type)` blocks that used
+ * to live in LGraphCanvas.drawNodeWidgets / processNodeWidgets. The structure follows the MIT
+ * Comfy-Org/litegraph.js standalone (BaseWidget + one class per type + a legacy fallback); the
+ * drawing and pointer behaviour is this fork's own, moved here unchanged.
+ *
+ * Compatibility:
+ * - `node.addWidget(type, ...)` returns an instance of the registered class (same own fields as before).
+ * - Plain-object widgets (pushed directly, or created by older code) still work: the canvas calls
+ *   the class methods for their `type` with the object as `this` (see {@link widgetImplementation}).
+ * - Unknown types keep the legacy custom hooks `w.draw(ctx, node, width, y, H)` and
+ *   `w.mouse(event, [x, y], node)`.
+ *
+ * Custom types: `LiteGraph.registerWidgetType("mytype", class extends BaseWidget { draw(...) {...}
+ * onPointer(...) {...} })`.
+ */
+export class BaseWidget {
+
+    /** @param {object} [init] - widget fields (type, name, value, callback, options, ...) */
+    constructor(init = {}) {
+        Object.assign(this, init);
+        this.options ??= {};
+    }
+
+    /**
+     * Draws the widget.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {object} node
+     * @param {number} widget_width
+     * @param {number} y
+     * @param {number} H - row height
+     * @param {object} env - {canvas, show_text, show_label, active, margin, colors: {outline, background, text, secondary}}
+     */
+    // eslint-disable-next-line no-unused-vars
+    draw(ctx, node, widget_width, y, H, env) {}
+
+    /**
+     * Handles a pointer event inside the widget.
+     * @param {PointerEvent} event
+     * @param {object} env - {canvas, node, x, y, pos, widget_width, old_value, changed(widget, value, old_value), ref_window}
+     */
+    // eslint-disable-next-line no-unused-vars
+    onPointer(event, env) {}
+
+    /** Background shape shared by most widgets: a pill when text is shown, a plain box otherwise. */
+    static drawPill(ctx, widget_width, y, H, env) {
+        const margin = env.margin;
+        ctx.textAlign = "left";
+        ctx.strokeStyle = env.colors.outline;
+        ctx.fillStyle = env.colors.background;
+        ctx.beginPath();
+        if (env.show_text) ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5]);
+        else ctx.rect(margin, y, widget_width - margin * 2, H);
+        ctx.fill();
+    }
+
+    /** Clamps a number to the widget's min/max options. */
+    static clampToOptions(value, options) {
+        if (options.min != null && value < options.min) value = options.min;
+        if (options.max != null && value > options.max) value = options.max;
+        return value;
+    }
+}
+
+export class ButtonWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        const margin = env.margin;
+        if (this.clicked) {
+            ctx.fillStyle = "#AAA";
+            this.clicked = false;
+            env.canvas.dirty_canvas = true;
+        }
+        ctx.fillRect(margin, y, widget_width - margin * 2, H);
+        if (env.show_text && !this.disabled) ctx.strokeRect(margin, y, widget_width - margin * 2, H);
+        if (env.show_text) {
+            ctx.textAlign = "center";
+            ctx.fillStyle = env.colors.text;
+            if (env.show_label) ctx.fillText(this.label || this.name, widget_width * 0.5, y + H * 0.7);
+        }
+    }
+
+    onPointer(event, env) {
+        if (event.type !== "pointerdown") return;
+        if (this.callback) {
+            setTimeout(() => this.callback(this, env.canvas, env.node, env.pos, event), 20);
+        }
+        this.clicked = true;
+        env.canvas.dirty_canvas = true;
+    }
+}
+
+export class ToggleWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        const margin = env.margin;
+        BaseWidget.drawPill(ctx, widget_width, y, H, env);
+        if (env.show_text && !this.disabled) ctx.stroke();
+        ctx.fillStyle = this.value ? "#89A" : "#333";
+        ctx.beginPath();
+        ctx.arc(widget_width - margin * 2, y + H * 0.5, H * 0.36, 0, Math.PI * 2);
+        ctx.fill();
+        if (env.show_text) {
+            ctx.fillStyle = env.colors.secondary;
+            const label = this.label || this.name;
+            if (label != null && env.show_label) ctx.fillText(label, margin * 2, y + H * 0.7);
+            ctx.fillStyle = this.value ? env.colors.text : env.colors.secondary;
+            ctx.textAlign = "right";
+            ctx.fillText(this.value ? this.options.on || "on" : this.options.off || "off", widget_width - 40, y + H * 0.7);
+        }
+    }
+
+    onPointer(event, env) {
+        if (event.type !== "pointerdown") return;
+        const old_value = env.old_value;
+        this.value = !this.value;
+        setTimeout(() => env.changed(this, this.value, old_value), 20);
+    }
+}
+
+export class SliderWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        const margin = env.margin;
+        const options = this.options;
+        ctx.fillStyle = env.colors.background;
+        ctx.fillRect(margin, y, widget_width - margin * 2, H);
+        const range = options.max - options.min;
+        const nvalue = LiteGraph.clamp((this.value - options.min) / range, 0, 1);
+        ctx.fillStyle = Object.hasOwn(options, "slider_color") ? options.slider_color : (env.active ? "#89A" : "#678");
+        ctx.fillRect(margin, y, nvalue * (widget_width - margin * 2), H);
+        if (env.show_text && !this.disabled) ctx.strokeRect(margin, y, widget_width - margin * 2, H);
+        if (this.marker) {
+            const marker_nvalue = LiteGraph.clamp((this.marker - options.min) / range, 0, 1);
+            ctx.fillStyle = Object.hasOwn(options, "marker_color") ? options.marker_color : "#AA9";
+            ctx.fillRect(margin + marker_nvalue * (widget_width - margin * 2), y, 2, H);
+        }
+        if (env.show_text) {
+            ctx.textAlign = "center";
+            ctx.fillStyle = env.colors.text;
+            if (env.show_label) {
+                ctx.fillText(
+                    this.label || this.name + "  " + LiteGraph.formatNumber(this.value, options.precision != null ? options.precision : 3),
+                    widget_width * 0.5,
+                    y + H * 0.7,
+                );
+            }
+        }
+    }
+
+    onPointer(event, env) {
+        const options = this.options;
+        if (options.read_only) return;
+        const nvalue = LiteGraph.clamp((env.x - 15) / (env.widget_width - 30), 0, 1);
+        this.value = options.min + (options.max - options.min) * nvalue;
+        if (options.step > 0) {
+            // snap to min + k * step, staying inside the range
+            this.value = options.min + Math.round((this.value - options.min) / options.step) * options.step;
+            this.value = LiteGraph.clamp(this.value, options.min, options.max);
+        }
+        const old_value = env.old_value;
+        if (old_value != this.value) setTimeout(() => env.changed(this, this.value, old_value), 20);
+        env.canvas.dirty_canvas = true;
+    }
+}
+
+/** Shared drawing of number and combo widgets: arrows, label and right-aligned value. */
+function drawArrowsAndLabel(widget, ctx, widget_width, y, H, env, valueText) {
+    const margin = env.margin;
+    BaseWidget.drawPill(ctx, widget_width, y, H, env);
+    if (!env.show_text) return;
+    if (!widget.disabled) ctx.stroke();
+    ctx.fillStyle = env.colors.text;
+    if (!widget.disabled) {
+        ctx.beginPath();
+        ctx.moveTo(margin + 16, y + 5);
+        ctx.lineTo(margin + 6, y + H * 0.5);
+        ctx.lineTo(margin + 16, y + H - 5);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(widget_width - margin - 16, y + 5);
+        ctx.lineTo(widget_width - margin - 6, y + H * 0.5);
+        ctx.lineTo(widget_width - margin - 16, y + H - 5);
+        ctx.fill();
+    }
+    ctx.fillStyle = env.colors.secondary;
+    if (env.show_label) ctx.fillText(widget.label || widget.name, margin * 2 + 5, y + H * 0.7);
+    ctx.fillStyle = env.colors.text;
+    ctx.textAlign = "right";
+    ctx.fillText(valueText, widget_width - margin * 2 - 20, y + H * 0.7);
+}
+
+export class NumberWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        drawArrowsAndLabel(this, ctx, widget_width, y, H, env,
+            LiteGraph.formatNumber(this.value, this.options.precision !== undefined ? this.options.precision : 3));
+    }
+
+    onPointer(event, env) {
+        const options = this.options;
+        const old_value = env.old_value;
+        if (event.type == "pointermove") {
+            const deltaX = event.deltaX || event.deltax || 0;
+            if (deltaX) this.value += deltaX * 0.1 * (options.step || 1);
+            this.value = BaseWidget.clampToOptions(this.value, options);
+        } else if (event.type == "pointerdown") {
+            const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
+            this.value = BaseWidget.clampToOptions(this.value + delta * (options.step || 1), options);
+        } else if (event.type == "pointerup") {
+            const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
+            if (event.click_time < 200 && delta == 0) {
+                env.canvas.prompt("Value", this.value, (typed) => {
+                    // arithmetic is allowed ("2*8+1"); anything else is read as a number
+                    const computed = evaluateMathExpression(typed);
+                    const value = Number.isFinite(computed) ? computed : Number(typed);
+                    // typed values respect the widget range like drag and arrows do (Comfy c5db2d8)
+                    this.value = LGraphCanvas.clampWidgetNumber(value, options);
+                    env.changed(this, this.value, old_value);
+                }, event);
+            }
+        }
+        if (old_value != this.value) setTimeout(() => env.changed(this, this.value, old_value), 20);
+        env.canvas.dirty_canvas = true;
+    }
+}
+
+export class ComboWidget extends BaseWidget {
+    /** the option list as given (array, object map, or the result of a values function) */
+    resolveValues(node) {
+        let values = this.options.values;
+        if (values && values.constructor === Function) values = this.options.values(this, node);
+        return values;
+    }
+
+    draw(ctx, node, widget_width, y, H, env) {
+        let shown = this.value;
+        if (this.options.values) {
+            let values = this.options.values;
+            if (values.constructor === Function) values = values();
+            if (values && values.constructor !== Array) shown = values[this.value];
+        }
+        drawArrowsAndLabel(this, ctx, widget_width, y, H, env, shown);
+    }
+
+    onPointer(event, env) {
+        const old_value = env.old_value;
+        if (event.type == "pointerdown") {
+            const values = this.resolveValues(env.node);
+            const values_list = values.constructor === Array ? values : Object.keys(values);
+            const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
+            if (delta) { // clicked on an arrow
+                env.canvas.last_mouseclick = 0; // avoids a double click event
+                let index = values.constructor === Object ?
+                    values_list.indexOf(String(this.value)) + delta :
+                    values_list.indexOf(this.value) + delta;
+                index = LiteGraph.clamp(index, 0, values_list.length - 1);
+                if (values.constructor === Array) this.value = values[index];
+                else if (values != values_list) this.value = Object.keys(values)[index];
+                else this.value = index;
+            } else { // clicked on the value: pick from a menu
+                const entries = values != values_list ?
+                    Object.keys(values).map((key) => ({
+                        value: key,
+                        content: values[key]
+                    })) :
+                    values;
+                const widget = this;
+                LiteGraph.ContextMenu(entries, {
+                    scale: Math.max(1, env.canvas.ds.scale),
+                    event,
+                    className: "dark",
+                    callback(v) {
+                        const picked = (typeof v == "object" && typeof v.value !== "undefined") ? v.value : v;
+                        widget.value = picked;
+                        env.changed(widget, picked, old_value);
+                        env.canvas.dirty_canvas = true;
+                        return false;
+                    },
+                }, env.ref_window);
+            }
+        }
+        if (old_value != this.value) setTimeout(() => env.changed(this, this.value, old_value), 20);
+        env.canvas.dirty_canvas = true;
+    }
+}
+
+export class TextWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        const margin = env.margin;
+        BaseWidget.drawPill(ctx, widget_width, y, H, env);
+        if (!env.show_text) return;
+        if (!this.disabled) ctx.stroke();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(margin, y, widget_width - margin * 2, H);
+        ctx.clip();
+        ctx.fillStyle = env.colors.secondary;
+        const label = this.label || this.name;
+        let label_width = 0;
+        if (label != null && env.show_label) {
+            ctx.fillText(label, margin * 2, y + H * 0.7);
+            label_width = ctx.measureText(String(label)).width + margin * 2;
+        }
+        ctx.fillStyle = env.colors.text;
+        ctx.textAlign = "right";
+        // show as much of the value as fits beside the label
+        const value_width = widget_width - margin * 4 - label_width;
+        ctx.fillText(LGraphCanvas.fitText(ctx, String(this.value), value_width), widget_width - margin * 2, y + H * 0.7);
+        ctx.restore();
+    }
+
+    onPointer(event, env) {
+        if (event.type != "pointerdown") return;
+        const old_value = this.value;
+        env.canvas.prompt("Value", this.value, (typed) => env.changed(this, typed, old_value), event, this.options ? this.options.multiline : false);
+    }
+}
+
+/** The built-in widget types (several type names share a class). */
+export function defaultWidgetTypes() {
+    return {
+        button: ButtonWidget,
+        toggle: ToggleWidget,
+        boolean: ToggleWidget,
+        slider: SliderWidget,
+        number: NumberWidget,
+        combo: ComboWidget,
+        enum: ComboWidget,
+        text: TextWidget,
+        string: TextWidget,
+    };
+}
+
+/**
+ * The behaviour to use for a widget: its own class methods when it is a BaseWidget, otherwise the
+ * registered class for its type (applied to the plain object), otherwise null (legacy draw/mouse).
+ * @returns {BaseWidget|null} an object whose draw/onPointer should be called with the widget as `this`
+ */
+export function widgetImplementation(widget, types = LiteGraph.widget_types) {
+    if (!widget) return null;
+    if (widget instanceof BaseWidget) return widget;
+    const cls = types?.[widget.type];
+    return cls ? cls.prototype : null;
+}
+
+/**
+ * Evaluates arithmetic typed into a number field: numbers, + - * / % **, parentheses, unary signs,
+ * and the constants pi and e. Anything else returns NaN (nothing is executed).
+ * @param {string} text
+ * @returns {number}
+ */
+export function evaluateMathExpression(text) {
+    const source = String(text ?? "").trim();
+    if (!source) return NaN;
+    const tokens = source.match(/\d+\.?\d*(?:e[+-]?\d+)?|\.\d+(?:e[+-]?\d+)?|\*\*|[-+*/%()]|pi|e|\s+|./gi)
+        ?.filter((token) => !/^\s+$/.test(token)) ?? [];
+    let index = 0;
+    const peek = () => tokens[index];
+    const take = () => tokens[index++];
+    const fail = () => {
+        throw new SyntaxError("not an arithmetic expression");
+    };
+    const primary = () => {
+        const token = take();
+        if (token === undefined) fail();
+        if (token === "(") {
+            const value = sum();
+            if (take() !== ")") fail();
+            return value;
+        }
+        if (/^pi$/i.test(token)) return Math.PI;
+        if (/^e$/i.test(token)) return Math.E;
+        if (/^(\d|\.\d)/.test(token)) return Number(token);
+        return fail();
+    };
+    const unary = () => {
+        if (peek() === "-") {
+            take();
+            return -unary();
+        }
+        if (peek() === "+") {
+            take();
+            return unary();
+        }
+        return power();
+    };
+    const power = () => {
+        const base = primary();
+        if (peek() === "**") {
+            take();
+            return base ** unary();
+        }
+        return base;
+    };
+    const product = () => {
+        let value = unary();
+        while (["*", "/", "%"].includes(peek())) {
+            const op = take();
+            const right = unary();
+            value = op === "*" ? value * right : op === "/" ? value / right : value % right;
+        }
+        return value;
+    };
+    const sum = () => {
+        let value = product();
+        while (peek() === "+" || peek() === "-") {
+            const op = take();
+            const right = product();
+            value = op === "+" ? value + right : value - right;
+        }
+        return value;
+    };
+    try {
+        const value = sum();
+        return index === tokens.length ? value : NaN;
+    } catch {
+        return NaN;
+    }
+}
 
 // this needs to be called after all classes has been included, before registering nodes and creating canvas
 // will setup callback handlers and LiteGraph.CLASSES references ( eg. LitegGraph.LGraph, .. )
