@@ -8,7 +8,7 @@ What may change, and its status. Behaviour that exists today is documented under
 
 **Idea → proposal → accepted plan → completed work**. An item may also be deferred, rejected or superseded.
 
-- **Idea:** a problem or opportunity, why it matters, where it came from.
+- **Idea:** a problem or opportunity, why it matters, where it came from. Ideas that are not yet in this lifecycle live in the [ideas docspace](../agents/ideas/README.md). An idea enters here only when someone writes a proposal for it.
 - **Proposal:** alternatives, tradeoffs, compatibility impact, a recommendation.
 - **Plan:** the accepted outcome, its boundaries, dependencies, acceptance checks and status.
 - **Decision record:** a durable architectural choice and its consequences. These live in [docs/development/decisions](../docs/development/decisions/).

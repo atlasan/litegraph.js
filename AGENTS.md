@@ -11,6 +11,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
 | Setup, validation gate, package contracts | [docs/development/README.md](docs/development/README.md) |
 | Research on ComfyUI, LiteGraph-TSX and plugins | [docs/development/ecosystem-study/README.md](docs/development/ecosystem-study/README.md) |
 | Dated code reviews | [docs/development/audits/README.md](docs/development/audits/README.md) |
+| Living ideas database (not planned work) | [agents/ideas/README.md](agents/ideas/README.md) |
 | Changes per version | [CHANGES.md](CHANGES.md) |
 
 ## Workflow
