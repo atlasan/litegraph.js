@@ -14,6 +14,7 @@ Living document; last updated 2026-11-19 (Wave 1 complete). This is the single p
 | `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. |
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
+| `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins) to `master`, open. Already merged into `LG/dev`. |
 
 Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
 
@@ -51,7 +52,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 - Browser checks: editor multiview, search, subgraphs; runner own-origin and cross-origin connections.
 - The [independent review](../docs/development/audits/2026-11-19-wave0-pr5-review.md).
 
-**Left open:** the advisories on `socket.io-parser`, `engine.io` and `osc` (a dependency check is needed first), and decision D1 below.
+**Left open:** the advisories on `socket.io-parser`, `engine.io` and `osc` (a dependency check is needed first), (decision D1 is now settled, see below).
 
 ## Wave 1: platform layer (done)
 
@@ -143,7 +144,7 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 
 | # | Question | Recommendation |
 |---|---|---|
-| D1 | Should the runner also deny host-reading `sys/*` nodes, `mysql/*`, network servers and outbound request nodes ([review finding 3](../docs/development/audits/2026-11-19-wave0-pr5-review.md))? | **Partly decided (2026-11-19, [PR #6](https://github.com/atlasan/litegraph.js/pull/6)):** `sys/fileRead` and the network server nodes are denied by default, with `RUNNER_ALLOW_TYPES` to re-allow them. Still open: `sys/fileList`/`fileExists`/`processList`/`serviceList`/`info`, `mysql/*`, and outbound request nodes. Principle: safe by default, with each restriction liftable by a named setting that its refusal message names. |
+| D1 | Should the runner also deny host-reading `sys/*` nodes, `mysql/*`, network servers and outbound request nodes ([review finding 3](../docs/development/audits/2026-11-19-wave0-pr5-review.md))? | **Decided (2026-11-19, [PR #6](https://github.com/atlasan/litegraph.js/pull/6) + [PR #7](https://github.com/atlasan/litegraph.js/pull/7)):** all of them are denied by default, grouped in families (`@commands`, `@file-write`, `@host-read`, `@servers`, `@outbound`, `@databases`, `@remote-code`) and re-allowed with `RUNNER_ALLOW_TYPES` (types, prefixes or `@family`). Principle: safe by default, with each restriction liftable by a named setting that its refusal message names. |
 | D2 | When should [ADR 0001](../docs/development/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | Decide it after Wave 2 conversion and unpack work on the inline model |
 | D3 | Porting style for SA modules | Adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
 | D4 | Node metadata direction | Hybrid (`static def` today); add `defineNodeType` later |

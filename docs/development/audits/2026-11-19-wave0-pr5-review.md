@@ -10,7 +10,7 @@ Date: 2026-11-19. Status: **audit**. This is an independent review of [PR #5](ht
   - `sys/fileRead` and the network server nodes are now denied by default.
   - New opt-ins: `RUNNER_ALLOW_TYPES`, `RUNNER_ALLOW_SCRIPTS`, `RUNNER_ALLOWED_ORIGINS` and `LibraryManager.allowAnyPackageSpec`.
   - Every refusal names the setting that lifts it.
-  - The rest of finding 3 is still decision D1 in the [roadmap](../../../planning/roadmap.md).
+  - [PR #7](https://github.com/atlasan/litegraph.js/pull/7) denies the rest of finding 3 (host inspection, outbound requests, `mysql/*`), grouped into families that `RUNNER_ALLOW_TYPES=@<family>` re-allows. Decision D1 in the [roadmap](../../../planning/roadmap.md) is settled.
 
 Pushed to `LG/wave0_safety` (fast-forward, 7f2c8e3..547e2b3):
 - 085ceaa fix: runner Host check accepts IPv6 HOST and default-port Origins
