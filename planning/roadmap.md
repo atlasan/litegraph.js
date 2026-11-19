@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-Living document; last updated 2026-11-19. This is the single place for the current status of planned work.
+Living document; last updated 2026-11-19 (Wave 1 complete). This is the single place for the current status of planned work.
 
 - **Design reasoning and idea catalog:** [feature harvest and priorities](plans/261119_feature_harvest_and_priorities.md).
 - **Evidence:** [ecosystem study](../docs/development/ecosystem-study/README.md) and [audits](../docs/development/audits/README.md).
@@ -21,8 +21,8 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Wave | Theme | Status |
 |---|---|---|
 | 0 | Safety and correctness | **Done** on `LG/wave0_safety` ([PR #5](https://github.com/atlasan/litegraph.js/pull/5) open), merged into `LG/dev` |
-| 1 | Platform layer | **Core done** on `LG/wave1_platform`, merged into `LG/dev`; ports remaining |
-| 2 | Authoring core (standalone ports) | Proposed, next |
+| 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` |
+| 2 | Authoring core (standalone ports) | **Next** |
 | 3 | Subgraph v2 and components | Proposed; needs the ADR 0001 decision |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
@@ -52,37 +52,49 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 
 **Left open:** the advisories on `socket.io-parser`, `engine.io` and `osc` (a dependency check is needed first), and decision D1 below.
 
-## Wave 1: platform layer (core done)
+## Wave 1: platform layer (done)
 
 **Delivered:**
-- **Registries:** `LiteGraph.commands`, `keybindings` (default/user/unset layers) and `settings` (defaults, migrate, `onChange`, bind onto flags, storage adapter).
-- **`LiteGraph.registerExtension`** with tracked disposal, a disabled list, required extensions and per-canvas hooks.
+- **Registries:** `LiteGraph.commands`, `keybindings` (default/user/unset layers), `settings` (defaults, migrate, `onChange`, bind onto flags, storage adapter) and `menus` (canvas/node contributions, `{command: id}` items).
+- **`LiteGraph.registerExtension`:** tracked disposal of commands, bindings, settings, hooks, menus and typed listeners; disabled list; required extensions; per-canvas hooks.
 - **Extensions rebuilt on commands and key bindings:** renamer, autoconnect, keyboard_helper.
+- **`LiteGraph.persistPlatformState`:** settings and the user key-binding layer survive reloads; the Editor enables it.
 - **Node definitions:**
   - `static def` plus classic statics → `getNodeDefinition` / `listNodeDefinitions`.
   - `declareCapabilities` per node family; `isNodeTypeSupported`.
   - Search box matching titles, aliases and descriptions.
-- **Undo:** one step per widget gesture, per search-box insert, per group drag, per keyboard move, per rename.
-- **Keyboard-opened prompts and the search box** work before any pointer input.
+- **Library manifest:** `describeLibraries()` and `probeLibraries()`; object-form registrations everywhere; dead manager code removed.
+- **Typed events:** link-connected/removed, node-property-changed, widget-changed, execution-step, node-error, selection-changed.
+- **Widget classes** (`src/widgets.js`, `registerWidgetType`) in place of the two `switch` blocks:
+  - Plain-object and legacy custom widgets keep working.
+  - Number entry uses a safe arithmetic parser (it was `eval`).
+  - Text and toggle widgets report correct values.
+- **Widget-input sockets:**
+  - `addWidgetInput` or `socket: true`: the input sits on the widget's row.
+  - The widget is disabled while linked.
+  - `getWidgetValue` returns the link value.
+  - Dropping a link on the row connects it.
+- **Unified selection:**
+  - `selectedItems` covers nodes, groups and reroutes.
+  - `selectItem`, `moveSelected` and `deleteSelected` are one undo step each.
+  - Rectangle selection, Delete and the keyboard moves cover all three.
+- **`CanvasPointer` gesture handlers** (`onClick` … `onDragEnd`, `finally`); reroute dragging moved onto them.
+- **Undo:** one step per widget gesture, search insert, group drag, keyboard move, rename.
 
-**Evidence:** 325 Jest and 87 integration tests; browser checks in `editor_build.html` (widget drag, F2 rename, Shift+→ insert, group drag, all with undo).
+**Evidence:**
+- 344 Jest and 88 integration tests.
+- Browser checks in `editor_build.html`: widgets through the classes; a link dropped on a widget row; arrow keys, F2, Shift+→; a reroute drag with undo.
 
-**Remaining in Wave 1** (enablers for Wave 2):
+**Carried over to Wave 2** (they belong with the standalone ports):
+- Moving node, group and link dragging onto the gesture pattern (with the `LinkConnector` port).
+- Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
+- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events.
 
-| Item | Source | Effort |
-|---|---|---|
-| Widget class hierarchy plus `LegacyWidget`; replace the two `switch(w.type)` blocks | SA `widgets/*` (MIT) | M |
-| Widget-input sockets (input on the widget row; disabled when linked) | SA `LGraphNode` (MIT) | M |
-| `Positionable` selection model (`selectedItems` for nodes, groups, reroutes) | SA `interfaces.ts` (MIT) | M |
-| `CanvasPointer` callback-assignment pattern; absorb canvas pointer flags and DragAndScale listeners | SA `CanvasPointer.ts` (MIT) | M |
-| Library manifest table (one declarative list of optional dependencies); drop the commented-out manager | inventory | S |
-| Merge CallbackHandler and `LGraphEventTarget` into one pipe that also emits typed events; more events (`selection-changed`, `widget-changed`, `link-connected`, …) | inventory, Rete | M |
-| Menu contribution registry (`menus.canvas`, `menus.node`) on the extension registry | FE design | S–M |
-| Editor: persist settings and the keybinding user layer with the localStorage adapter | Wave 1 | S |
-
-## Wave 2: authoring core (proposed, next)
+## Wave 2: authoring core (next)
 
 Mostly ports from the MIT standalone; each item is M unless noted.
+
+- **Pointer migration** (carried over from Wave 1): node, group and link dragging on `CanvasPointer` handlers; DragAndScale listeners and the canvas pointer flags folded into it.
 
 - **Full `LinkConnector`** with RenderLink classes: shift-drag moves all links, drag from a reroute or link segment, snap and highlight to a compatible slot, `dropped-on-canvas` → search pre-filtered by type.
 - **Link-drag lifecycle hooks** (H5) and **quick-connect** candidates as an extension.
