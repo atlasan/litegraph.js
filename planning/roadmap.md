@@ -13,7 +13,7 @@ Living document; last updated 2026-11-19 (Wave 1 complete). This is the single p
 | `LG/dev` | **Progressive integration branch.** Every finished wave (or part of one) lands here first. Docs, plans and audits are kept current here. |
 | `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. |
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
-| `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) to `master` (safe runner defaults with clear opt-ins), open. Already merged into `LG/dev`. |
+| `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 
 Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
 
@@ -21,7 +21,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 
 | Wave | Theme | Status |
 |---|---|---|
-| 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) open, merged into `LG/dev` |
+| 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` |
 | 2 | Authoring core (standalone ports) | **Next** |
 | 3 | Subgraph v2 and components | Proposed; needs the ADR 0001 decision |

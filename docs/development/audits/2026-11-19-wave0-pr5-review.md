@@ -6,7 +6,7 @@ Date: 2026-11-19. Status: **audit**. This is an independent review of [PR #5](ht
 - The two fixes below were merged into `LG/wave1_platform` and `LG/dev`.
 - Finding 4 (search insert could not be undone) was fixed in Wave 1.
 - PR #5 was merged into `master` on 2026-11-19, together with the two fixes; the review was also posted [on the PR](https://github.com/atlasan/litegraph.js/pull/5#issuecomment-7024003348).
-- Finding 3 is partly settled by [PR #6](https://github.com/atlasan/litegraph.js/pull/6), which is merged into `LG/dev`.
+- Finding 3 is partly settled by [PR #6](https://github.com/atlasan/litegraph.js/pull/6), which is merged into `master` and `LG/dev`.
   - `sys/fileRead` and the network server nodes are now denied by default.
   - New opt-ins: `RUNNER_ALLOW_TYPES`, `RUNNER_ALLOW_SCRIPTS`, `RUNNER_ALLOWED_ORIGINS` and `LibraryManager.allowAnyPackageSpec`.
   - Every refusal names the setting that lifts it.
