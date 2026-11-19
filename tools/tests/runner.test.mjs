@@ -11,6 +11,8 @@ import { Worker } from 'node:worker_threads';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'litegraph-runner-'));
 process.env.WORKFLOWS_DIR = path.join(temp, 'workflows');
+// fixtures below use default-denied types: the dependent node and the port-binding server
+process.env.RUNNER_ALLOW_TYPES = 'sys/fileRead,server/network/websocketserver';
 fs.mkdirSync(process.env.WORKFLOWS_DIR);
 const workflow = { nodes: [], links: [], groups: [], config: {}, extra: {}, version: 0.4 };
 fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'empty.json'), JSON.stringify(workflow));

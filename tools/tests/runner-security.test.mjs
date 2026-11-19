@@ -29,7 +29,7 @@ test('runner accepts only its own Host and same-origin WebSocket upgrades', () =
 test('runner node policy refuses dangerous types at any subgraph depth', () => {
   const known = (type) => type !== 'nope/missing';
   const graph = (nodes) => ({ nodes, links: [] });
-  assert.doesNotThrow(() => assertAllowedGraph(graph([{ id: 1, type: 'basic/const' }, { id: 2, type: 'sys/fileRead' }]), known, { env: {} }));
+  assert.doesNotThrow(() => assertAllowedGraph(graph([{ id: 1, type: 'basic/const' }, { id: 2, type: 'sys/fileExists' }]), known, { env: {} }));
   for (const type of DEFAULT_DENIED_TYPES) {
     assert.throws(() => assertAllowedGraph(graph([{ id: 1, type }]), known, { env: {} }), /not allowed/, type);
   }
@@ -37,7 +37,17 @@ test('runner node policy refuses dangerous types at any subgraph depth', () => {
   assert.throws(() => assertAllowedGraph(nested, known, { env: {} }), /sys\/runCommand \(node 1\/7\/3\)/);
   assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'nope/missing' }]), known, { env: {} }), /Unknown node type/);
   assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'graph/subgraph', subgraph: {} }]), known, { env: {} }), /nodes array/);
-  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'sys/fileRead' }]), known, { env: { RUNNER_DENY_TYPES: 'sys/' } }), /not allowed/);
+  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'sys/fileExists' }]), known, { env: { RUNNER_DENY_TYPES: 'sys/' } }), /not allowed/);
+  // default-denied types can be allowed one by one or by prefix
+  const reader = graph([{ id: 1, type: 'sys/fileRead' }]);
+  const servers = graph([{ id: 1, type: 'nodejs/network/OSC_server' }, { id: 2, type: 'server/network/websocketserver' }]);
+  assert.throws(() => assertAllowedGraph(reader, known, { env: {} }), /not allowed in the runner: sys\/fileRead/);
+  assert.throws(() => assertAllowedGraph(servers, known, { env: {} }), /not allowed/);
+  assert.doesNotThrow(() => assertAllowedGraph(reader, known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead' } }));
+  assert.throws(() => assertAllowedGraph(servers, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/' } }), /server\/network\/websocketserver/);
+  assert.doesNotThrow(() => assertAllowedGraph(servers, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/, server/network/websocketserver' } }));
+  assert.throws(() => assertAllowedGraph(reader, known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead', RUNNER_DENY_TYPES: 'sys/' } }), /not allowed/, 'deny wins over allow');
+  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'sys/runCommand' }]), known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead' } }), /not allowed/, 'allow is per type');
   assert.doesNotThrow(() => assertAllowedGraph(nested, known, { env: { RUNNER_ALLOW_SYS: '1' } }));
   assert.equal(scriptsAllowed({}), false, 'script nodes are off by default');
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SYS: '1' }), true);

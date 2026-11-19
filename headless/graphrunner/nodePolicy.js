@@ -1,23 +1,38 @@
 // Node-type policy for graphs executed by the runner.
 //
-// Some Node.js node types run shell commands, change the file system, control processes and services,
-// or load remote code. A workflow pushed over the WebSocket must not be able to use them unless the
-// operator opts in. The check is recursive: inline subgraphs (`node.subgraph`) are inspected too.
-//
-// Configuration (environment):
-// - RUNNER_ALLOW_SYS=1: allow every registered type and script evaluation (trusted, local-only use).
+// Some Node.js node types run shell commands, read or change the file system, control processes and
+// services, open listening network servers, or load remote code. A workflow pushed over the WebSocket
+// must not be able to use them unless the operator opts in. The check is recursive: inline subgraphs
+// (`node.subgraph`) are inspected too.
 //
 // Script evaluation: nodes such as `math/formula`, `basic/script` and `objects/evaluate` compile code
 // from their properties when `LiteGraph.allow_scripts` is true, which the Node.js build turns on by
 // default. That code runs with full process rights, so the runner turns it off (see scriptsAllowed).
+//
+// Configuration (environment):
+// - RUNNER_ALLOW_SYS=1: allow every registered type and script evaluation (trusted, local-only use).
+// - RUNNER_ALLOW_TYPES: comma-separated default-denied types to allow again, e.g.
+//   "sys/fileRead,nodejs/network/OSC_server"; an entry ending in "/" allows a prefix
+//   ("nodejs/network/" allows every network server node).
 // - RUNNER_DENY_TYPES: comma-separated extra types to deny; an entry ending in "/" denies a prefix.
+//   It wins over RUNNER_ALLOW_TYPES.
 
 export const DEFAULT_DENIED_TYPES = Object.freeze([
+  // shell commands, file system changes, process and service control
   'sys/runCommand',
   'sys/fileWrite',
   'sys/fileDelete',
   'sys/processControl',
   'sys/serviceManager',
+  // reads any file the runner user can read
+  'sys/fileRead',
+  // open listening network servers on the runner host
+  'server/network/websocketserver',
+  'nodejs/network/SocketIO_server',
+  'nodejs/network/OSC_server',
+  'nodejs/network/UDP_server',
+  'nodejs/network/osc_bridge',
+  // load or register remote code
   'libraries/load',
   'libraries/register',
   'libraries/search_CDN_lib',
@@ -29,10 +44,13 @@ export function scriptsAllowed(env = process.env) {
   return env.RUNNER_ALLOW_SYS === '1';
 }
 
+const listOf = (value) => (value || '').split(',').map((type) => type.trim()).filter(Boolean);
+
 export function deniedTypes(env = process.env) {
   if (env.RUNNER_ALLOW_SYS === '1') return [];
-  const extra = (env.RUNNER_DENY_TYPES || '').split(',').map((type) => type.trim()).filter(Boolean);
-  return [...DEFAULT_DENIED_TYPES, ...extra];
+  const allowed = listOf(env.RUNNER_ALLOW_TYPES);
+  const defaults = DEFAULT_DENIED_TYPES.filter((type) => !isDenied(type, allowed));
+  return [...defaults, ...listOf(env.RUNNER_DENY_TYPES)];
 }
 
 function isDenied(type, denied) {

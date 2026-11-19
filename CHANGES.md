@@ -6,7 +6,9 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 ## Security
 
 * Graph runner: the WebSocket accepts only same-origin browser pages (Origin check) and the runner's own host names (Host check against DNS rebinding); HTTP requests with a foreign Host get 403. Extra names: `RUNNER_ALLOWED_HOSTS`.
-* Graph runner: node types that run commands, write or delete files, control processes/services, or load remote libraries are refused at any subgraph depth unless `RUNNER_ALLOW_SYS=1`; `RUNNER_DENY_TYPES` adds more.
+* Graph runner: node types that run commands, read, write or delete files (`sys/fileRead`, `sys/fileWrite`, `sys/fileDelete`), control processes/services, open listening network servers (WebSocket, Socket.IO, OSC, UDP), or load remote libraries are refused at any subgraph depth unless `RUNNER_ALLOW_SYS=1`. `RUNNER_ALLOW_TYPES` allows chosen types or prefixes again (e.g. `sys/fileRead,nodejs/network/`); `RUNNER_DENY_TYPES` adds more.
+* Graph runner: script nodes (`math/formula`, `basic/script`, `objects/evaluate`) no longer evaluate code (`LiteGraph.allow_scripts` is off) unless `RUNNER_ALLOW_SYS=1`; `geometry/eval` is refused.
+* Graph runner: IPv6 `HOST`/`RUNNER_ALLOWED_HOSTS` entries without brackets are accepted, and an Origin matches a Host that spells out the default port.
 * LibraryManager: `npmInstall` runs without a shell and only accepts plain package specs; remote server scripts (`server.remote`) are refused unless `allowServerRemoteCode` is set, because `vm` is not a sandbox.
 * `ws` raised to 8.22.1.
 
