@@ -1119,3 +1119,6 @@ class ThreeJsObjectPropertiesSet {
     }
 }
 LiteGraph.registerNodeType("threejs/ObjectPropertiesSet", ThreeJsObjectPropertiesSet);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("threejs/", ["browser", "webgl"]);

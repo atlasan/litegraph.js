@@ -503,3 +503,6 @@ class CDNLibrarySelector {
 
 // Register the node
 LiteGraph.registerNodeType("libraries/selector", CDNLibrarySelector);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("libraries/", ["network"]);

@@ -231,6 +231,7 @@ export class LGraphCanvas {
         // panels show nodes that are gone now
         if (this.canvas && typeof document !== "undefined") this.closePanels();
         this.node_in_panel = null;
+        this._endWidgetTransaction();
         this.node_widget = null;
 
         this.last_mouse = [0, 0];
@@ -746,6 +747,15 @@ export class LGraphCanvas {
         }
     }
 
+    /** Commits the transaction opened for a widget gesture (see processMouseDown), if any. */
+    _endWidgetTransaction() {
+        const graph = this._widget_transaction;
+        this._widget_transaction = null;
+        if (graph?.isInTransaction) {
+            graph.commitTransaction();
+        }
+    }
+
     /* LiteGraphCanvas input */
 
     // used to block future mouse events (because of im gui)
@@ -1113,11 +1123,22 @@ export class LGraphCanvas {
                     var block_drag_node = false;
                     var pos = [e.canvasX - node.pos[0], e.canvasY - node.pos[1]];
 
-                    // widgets
-                    var widget = this.processNodeWidgets( node, this.graph_mouse, e );
+                    // widgets: a whole widget gesture (click, or drag until pointer up) is one undo step
+                    const widgetGraph = this.graph;
+                    widgetGraph.beginTransaction("widgetChanged");
+                    var widget;
+                    try {
+                        widget = this.processNodeWidgets( node, this.graph_mouse, e );
+                    } catch (error) {
+                        widgetGraph.commitTransaction();
+                        throw error;
+                    }
                     if (widget) {
                         block_drag_node = true;
                         this.node_widget = [node, widget];
+                        this._widget_transaction = widgetGraph;
+                    } else {
+                        widgetGraph.commitTransaction();
                     }
 
                     let cbRet = null;
@@ -1732,7 +1753,11 @@ export class LGraphCanvas {
         if (e.which == 1) {
 
             if( this.node_widget ) {
-                this.processNodeWidgets( this.node_widget[0], this.graph_mouse, e );
+                try {
+                    this.processNodeWidgets( this.node_widget[0], this.graph_mouse, e );
+                } finally {
+                    this._endWidgetTransaction();
+                }
             }
 
             // left button
@@ -1774,7 +1799,8 @@ export class LGraphCanvas {
                     this.graph.onGraphChanged({action: "groupResize", doSave: true});
                     this.graph.afterChange(); // this.selected_group
                 }else{
-                    if(diffx || diffy){
+                    // diffx/diffy is only the rounding of the final position: a drag is a move too
+                    if(gesture.dragged || diffx || diffy){
                         this.processCallbackHandlers("onGroupMoved",{
                             def_cb: this.onGroupMoved
                         }, this.selected_group );
@@ -2017,6 +2043,7 @@ export class LGraphCanvas {
         }
         this.selected_group = null;
         this.selected_group_resizing = false;
+        this._endWidgetTransaction();
         this.node_widget = null;
         this.node_capturing_input = null;
         this.pointer_is_down = false;
@@ -2186,6 +2213,11 @@ export class LGraphCanvas {
 
         if (e.target.localName == "input") {
             return;
+        }
+
+        // the canvas receiving key events is the active one (dialogs and the search box use it)
+        if (e.type == "keydown") {
+            LGraphCanvas.active_canvas = this;
         }
 
         // bound key combos run their command instead of the built-in handling below
@@ -7216,7 +7248,8 @@ export class LGraphCanvas {
             dialog.parentNode?.removeChild(dialog);
         };
 
-        var graphcanvas = LGraphCanvas.active_canvas;
+        // this canvas (active_canvas is only set by pointer input, so keyboard-opened prompts had none)
+        var graphcanvas = this.canvas ? this : LGraphCanvas.active_canvas;
         var canvas = graphcanvas.canvas;
         canvas.parentNode.appendChild(dialog);
 
@@ -7620,7 +7653,9 @@ export class LGraphCanvas {
                         name = extra.type;
                     }
 
-                    graphcanvas.graph.beforeChange();
+                    const insertGraph = graphcanvas.graph;
+                    insertGraph.beforeChange();
+                    insertGraph.beginTransaction("insertNode");
                     // every exit below (failure, early return, exception) must close the change
                     try {
                     var node = LiteGraph.createNode(name);
@@ -7729,8 +7764,10 @@ export class LGraphCanvas {
                         }
                     }
 
+                    insertGraph.onGraphChanged({ action: "insertNode" }); // the add itself skips history
                     } finally {
-                        graphcanvas.graph.afterChange();
+                        insertGraph.commitTransaction();
+                        insertGraph.afterChange();
                     }
                 }
             }
@@ -7805,7 +7842,8 @@ export class LGraphCanvas {
                     if(filter && ctor.filter != filter )
                         return false;
 
-                    let str_node = type.toLowerCase();
+                    // type, title, aliases and description (see LiteGraph.getNodeSearchText)
+                    let str_node = LiteGraph.getNodeSearchText(type);
                     let a_srch_parts = str.toLowerCase().split(" ");
                     let passTextSearch = true;
                     for(let i_srch of a_srch_parts){

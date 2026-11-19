@@ -5742,3 +5742,6 @@ class LGraphCubemapToTexture2D {
 LiteGraph.registerNodeType("texture/cubemapToTexture2D",LGraphCubemapToTexture2D);
 
 LGraphTexture.guardRegisteredWebGLNodes();
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);

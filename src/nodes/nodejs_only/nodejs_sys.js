@@ -1327,3 +1327,6 @@ class SysUtil_ServiceListNode {
     }
 }
 LiteGraph.registerNodeType("sys/serviceList", SysUtil_ServiceListNode);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("sys/", ["node", "sys"]);

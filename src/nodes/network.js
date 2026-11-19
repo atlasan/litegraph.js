@@ -546,3 +546,5 @@ class WebRTCNode {
 }
 LiteGraph.registerNodeType("network/webrtc", WebRTCNode);
 
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("network/", ["network"]);

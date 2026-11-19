@@ -892,3 +892,6 @@ class UDPServerNode extends BaseServer {
 if (typeof LiteGraph !== "undefined") {
     LiteGraph.registerNodeType("nodejs/network/UDP_server", UDPServerNode);
 }
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities(["nodejs/", "server/network/"], ["node", "network"]);

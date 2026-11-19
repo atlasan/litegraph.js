@@ -942,3 +942,6 @@ class ImageWebcam {
     static is_webcam_open = false;
 }
 LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("graphics/", ["browser", "dom"]);

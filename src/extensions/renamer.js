@@ -25,11 +25,17 @@ export const renamerExtension = {
 
             if (selected.length) {
                 const current = selected.length == 1 ? selected[0].title : "titleForMany";
+                const ids = selected.map((node) => node.id);
                 graphcanvas.prompt("Title", current, (title) => {
+                    // resolve by id when the title is applied: an undo while the prompt was open
+                    // reloads the graph and replaces the node objects
+                    const nodes = ids.map((id) => graph.getNodeById(id)).filter(Boolean);
+                    if (!nodes.length) return;
                     graph.transact("rename", () => {
-                        for (const node of selected) node.title = title;
+                        for (const node of nodes) node.title = title;
                         graph.onGraphChanged({ action: "rename" });
                     });
+                    graphcanvas.setDirty(true, true);
                 }, promptEvent);
                 return true;
             }

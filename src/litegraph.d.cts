@@ -343,6 +343,15 @@ export interface LiteGraphAPI extends CallbackHost {
     extensions: ExtensionRegistry;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
+    node_definitions: Record<string, Readonly<NodeDefinition>>;
+    describeNodeType(type: string, base: Function): Readonly<NodeDefinition>;
+    getNodeDefinition(type: string): Readonly<NodeDefinition> | null;
+    listNodeDefinitions(filter?: { category?: string; capability?: string; includeDeprecated?: boolean; includeHidden?: boolean; supportedOnly?: boolean }): Readonly<NodeDefinition>[];
+    declareCapabilities(selector: string | string[] | ((type: string) => boolean), capabilities: string[]): void;
+    getRuntimeCapabilities(): Set<string>;
+    getMissingCapabilities(type: string, runtime?: Set<string>): string[];
+    isNodeTypeSupported(type: string, runtime?: Set<string>): boolean;
+    getNodeSearchText(type: string): string;
     LGraphNode: typeof LGraphNode;
     LGraphCanvas: typeof LGraphCanvas;
     LGraphGroup: typeof LGraphGroup;
@@ -1947,4 +1956,28 @@ export declare class ExtensionRegistry {
     get(name: string): ExtensionDefinition | null;
     register(def: ExtensionDefinition): () => void;
     unregister(name: string): boolean;
+}
+
+export interface NodeSlotDefinition {
+    name: string;
+    type?: string | number;
+    tooltip?: string;
+    optional?: boolean;
+    [key: string]: any;
+}
+/** Metadata of a registered node type (see LiteGraph.getNodeDefinition); a class may provide it as `static def`. */
+export interface NodeDefinition {
+    type: string;
+    title: string;
+    description: string;
+    category: string;
+    search_aliases: readonly string[];
+    /** what the type needs from its runtime: "browser", "node", "webgl", "audio", "midi", "dom", "network", "sys", or custom */
+    capabilities: readonly string[];
+    deprecated: boolean;
+    experimental: boolean;
+    hidden: boolean;
+    source: string | null;
+    inputs: readonly Readonly<NodeSlotDefinition>[] | null;
+    outputs: readonly Readonly<NodeSlotDefinition>[] | null;
 }

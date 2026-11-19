@@ -244,6 +244,23 @@ describe('canvas integration', () => {
         } finally { LiteGraph.actionHistory_enabled = prev; canvas.dispose(); }
     });
 
+    test('keyboard input makes the canvas active, and F2 opens its rename prompt without pointer input', () => {
+        const { graph, canvas, el } = setup();
+        const node = LiteGraph.createNode('platform/box'); graph.add(node);
+        canvas.selectNodes([node]);
+        LGraphCanvas.active_canvas = undefined;
+        jest.spyOn(canvas, 'getMouseCoordinates').mockReturnValue([0, 0]);
+        jest.spyOn(canvas, 'convertOffsetToEditorArea').mockReturnValue([0, 0]);
+        press(el, 'F2');
+        expect(LGraphCanvas.active_canvas).toBe(canvas);
+        const dialog = document.querySelector('.graphdialog');
+        expect(dialog?.querySelector('input')?.value).toBe(node.title); // jsdom lacks innerText for the label
+        dialog.querySelector('input').value = 'Renamed';
+        dialog.querySelector('button').click();
+        expect(node.title).toBe('Renamed');
+        canvas.dispose();
+    });
+
     test('a disposed extension stops responding to its keys', () => {
         const { graph, canvas, el } = setup();
         const runs = [];

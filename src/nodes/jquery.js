@@ -276,3 +276,6 @@ export class JQueryCss extends JQueryBaseNode {
     }
 }
 LiteGraph.registerNodeType("jquery/css", JQueryCss);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("jquery/", ["browser", "dom"]);

@@ -800,3 +800,6 @@ class LGraphFXVigneting {
 LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
 
 LGraphTexture.guardRegisteredWebGLNodes();
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("fx/", ["browser", "webgl"]);

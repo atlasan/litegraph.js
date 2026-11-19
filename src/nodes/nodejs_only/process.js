@@ -29,3 +29,6 @@ class NodeProcessInfo {
 }
 
 LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("server/process/", ["node", "sys"]);
