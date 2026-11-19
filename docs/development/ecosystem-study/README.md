@@ -14,6 +14,11 @@ Research date: 2026-11-01. Status: first source-based research pass complete; im
 | 4 | [Custom-node UI patterns](comfyui-custom-node-ui.md) | What can rgthree, Custom-Scripts, KJNodes, VideoHelperSuite, and Easy-Use teach us? |
 | 5 | [Local fit and experiments](local-fit-and-experiments.md) | How can this fork adopt the useful behavior while preserving its contracts? |
 | 6 | [ComfyUI LiteGraph relationship](comfyui-litegraph-relationship.md) (2026-11-18) | Should we import, sync, derive, fork, or join? How interoperable is the graph JSON? |
+| 7 | [ComfyUI core harvest](2026-11-19-comfy-core-harvest.md) (2026-11-19) | Which subgraph, widget, link, rendering, group and selection features exist in Comfy's core, and are they available under MIT? |
+| 8 | [ComfyUI application layer](2026-11-19-comfy-app-layer.md) (2026-11-19) | How do Comfy's extension API, command/keybinding/settings registries, node definitions, library, packages and workspace work? |
+| 9 | [Plugin and litegraph UI survey](2026-11-19-plugin-ui-survey.md) (2026-11-19) | What do other custom-node UIs and litegraph-based apps add, and which core hooks do they keep monkey-patching? |
+
+These three reports feed the [feature harvest plan](../../../planning/plans/261119_feature_harvest_and_priorities.md) and the [roadmap](../../../planning/roadmap.md).
 
 ## What changed in our understanding
 

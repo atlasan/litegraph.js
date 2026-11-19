@@ -1,4 +1,6 @@
 > Development update (2026-10-30): see [current setup and validation](docs/development/README.md) and [history, upstream, and fork investigation](docs/development/2026-10-30-study.md).
+>
+> Current work (2026-11-19): see the [roadmap](planning/roadmap.md) for waves and open decisions, the [planning index](planning/README.md), and [AGENTS.md](AGENTS.md) for working notes.
 
 # EXPERIMENTS WITH litegraph.js
 

@@ -145,7 +145,15 @@ The default address is http://127.0.0.1:3000/. It binds loopback by default. Opt
 3. **Toggle Edit Mode**, edit the graph, then **Apply Edits** to replace the worker configuration. **Sync from Runner** retrieves the executing worker's serialized graph.
 4. **Stop All** pauses loaded workers. **Unload** clears and terminates one worker; reopening reloads its file.
 
-Edits are in memory and are not saved to the workflow file. Serialization returns graph configuration/properties, not a full live stream of slot values. Worker status responses include the execution iteration count. The HTTP list currently shows top-level JSON files only; protocol paths may address nested files within the root. Absolute paths, traversal and symlink escapes are rejected. Treat workflows as trusted programs: filesystem/process/network nodes are not sandboxed. There is no authentication or public-hosting support in this development runner.
+Edits are in memory and are not saved to the workflow file. Serialization returns graph configuration/properties, not a full live stream of slot values. Worker status responses include the execution iteration count. The HTTP list currently shows top-level JSON files only; protocol paths may address nested files within the root. Absolute paths, traversal and symlink escapes are rejected. Security (since Wave 0):
+
+- **Who can connect:** the WebSocket accepts only same-origin browser pages and the runner's own host names, which blocks DNS rebinding. Add extra names with `RUNNER_ALLOWED_HOSTS`.
+- **Refused node types:** workflows that use shell, file-write/delete, process/service control or remote-library node types are refused at any subgraph depth.
+- **Scripts:** script evaluation (`LiteGraph.allow_scripts`, used by `math/formula`, `basic/script`, …) is off.
+
+`RUNNER_ALLOW_SYS=1` lifts the node-type and script restrictions for trusted local use, and `RUNNER_DENY_TYPES` adds more types to refuse (see `headless/graphrunner/nodePolicy.js`).
+
+Host-reading `sys/*` nodes, `mysql/*`, network servers and outbound request nodes remain allowed (open decision D1 in the [roadmap](../../planning/roadmap.md)). Treat workflows as trusted programs. There is no authentication or public-hosting support in this development runner.
 
 The WebSocket address follows the browser host and protocol. Commands are ordered per connection and within each worker, and responses come from the worker. Initial load and replacement await node dependencies before acknowledgment; start awaits graph readiness. Errors and unexpected worker exits update clients rather than claiming successful execution. Shutdown waits for graph cleanup, with worker termination after a failed/timed-out clear command.
 
@@ -175,4 +183,6 @@ To reproduce worker failure locally, run `node tools/fixtures/runner-browser.mjs
 
 ## Evidence and follow-up
 
-The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up: per-node runtime capability metadata, optional integration fixtures, async I/O benchmark contracts, and runner edits during pending commands. The family-level runtime map, legacy workload bounds, worker-crash recovery, and basic multiple-client browser workflow now have evidence. Reproduce relevant upstream/fork defects locally before considering a port.
+**Current work:** see the [roadmap](../../planning/roadmap.md) (waves, branch model, open decisions) and the [planning index](../../planning/README.md). For short operational notes, see [AGENTS.md](../../AGENTS.md). Dated code reviews are in [audits](audits/README.md).
+
+The report records the pre-change baseline. Final verification results are recorded at the bottom of the investigation. The [readiness checklist](readiness.md) tracks the broader completion goal. Priority follow-up (per-node runtime capability metadata is now available through `LiteGraph.declareCapabilities` / `getNodeDefinition`): optional integration fixtures, async I/O benchmark contracts, and runner edits during pending commands. The family-level runtime map, legacy workload bounds, worker-crash recovery, and basic multiple-client browser workflow now have evidence. Reproduce relevant upstream/fork defects locally before considering a port.

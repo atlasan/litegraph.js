@@ -1,6 +1,8 @@
 # Feature harvest and priorities: ComfyUI LiteGraph, the litegraph plugin ecosystem, and this fork
 
-Date: 2026-11-19. Base: `master` @ `01cb4ea`. Status: **proposal**. Nothing in this document has been implemented.
+Date: 2026-11-19. Base: `master` @ `01cb4ea`.
+
+**Status:** accepted as the basis of the [roadmap](../roadmap.md), which tracks progress: Wave 0 and the Wave 1 core are delivered. The full research behind it is in [ecosystem-study](../../docs/development/ecosystem-study/README.md) (reports 7–9) and the [inventory audit](../../docs/development/audits/2026-11-19-fork-inventory.md).
 
 This builds on three earlier documents and does not repeat them:
 - the [ecosystem study](../../docs/development/ecosystem-study/README.md) (2026-11-01)
