@@ -14613,7 +14613,8 @@ class LGraphCanvas {
             var panel = panels[i];
             if (!panel.node)
                 continue;
-            if (!panel.node.graph || panel.graph != this.graph)
+            // close panels of nodes that left this graph (panels have no .graph of their own)
+            if (panel.node.graph !== this.graph)
                 panel.close();
         }
     }
@@ -25855,7 +25856,13 @@ LiteGraph.wrapFunctionAsNode(
 
 
 function contains(a, b) {
-    if (typeof a !== "string" || b == null) {
+    if (b == null) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return a.includes(b);
+    }
+    if (typeof a !== "string") {
         return false;
     }
     return a.indexOf(String(b)) != -1;
@@ -26031,6 +26038,9 @@ class Sequence {
             this.current_sequence = seq;
         }
         var index = this.getInputData(0);
+        if (typeof index === "string" && index.trim() !== "") {
+            index = Number(index); // "2" still selects the third value
+        }
         if (typeof index !== "number" || !Number.isFinite(index)) {
             index = 0;
         }
@@ -27449,14 +27459,28 @@ class LGraphTexture {
         if (!ctor || LGraphTexture._webgl_guarded.has(ctor)) return;
         LGraphTexture._webgl_guarded.add(ctor);
         var proto = ctor.prototype;
+        var original_property_changed = proto.onPropertyChanged;
         ["onExecute", "onPropertyChanged", "onAction"].forEach(function(name) {
             var original = proto[name];
             if (typeof original !== "function") return;
             proto[name] = function() {
-                // undefined (not false) from onPropertyChanged keeps the new value
-                if (!LGraphTexture.hasWebGL()) return undefined;
+                if (!LGraphTexture.hasWebGL()) {
+                    // e.g. configure() restoring saved code: applied once WebGL is up
+                    if (name === "onPropertyChanged") {
+                        (this._webgl_skipped_properties ??= new Set()).add(arguments[0]);
+                    }
+                    // undefined (not false) from onPropertyChanged keeps the new value
+                    return undefined;
+                }
                 if (typeof ctor.initShader === "function") ctor.initShader();
                 if (typeof this.initWebGL === "function") this.initWebGL();
+                var skipped = this._webgl_skipped_properties;
+                if (skipped) {
+                    this._webgl_skipped_properties = null;
+                    for (var key of skipped) {
+                        original_property_changed.call(this, key, this.properties?.[key]);
+                    }
+                }
                 return original.apply(this, arguments);
             };
         });
@@ -29342,6 +29366,11 @@ class LGraphTextureMinMax {
     static desc = "Per channel min, max and average of a texture (inputs over 1024px are sampled)";
 
     static MODES = ["min", "max", "avg"];
+
+    onRemoved() {
+        for (var mode in this._chains) this._chains[mode].forEach((texture) => texture.delete());
+        this._chains = {};
+    }
     // the reduction shrinks 4x per axis: 256 -> 64 -> 16 -> 4 -> 1
     static LEVELS = [256, 64, 16, 4, 1];
 
@@ -29373,6 +29402,7 @@ class LGraphTextureMinMax {
     reduce(tex, mode, type, out) {
         var chain = this._chains[mode];
         if (!chain || chain[0].type != type) {
+            chain?.forEach((texture) => texture.delete());
             chain = this._chains[mode] = LGraphTextureMinMax.LEVELS.map(
                 (size) => new GL.Texture(size, size, {
                     type: type,
@@ -39878,6 +39908,8 @@ class LGAudio {
         var isParam = typeof AudioParam !== "undefined" && target instanceof AudioParam;
         try {
             if (isParam) {
+                // numeric strings are converted, as the browser itself would
+                if (typeof value === "string" && value.trim() !== "") value = Number(value);
                 if (typeof value !== "number" || !Number.isFinite(value)) return false;
                 target.value = value;
             } else {

@@ -14613,7 +14613,8 @@ class LGraphCanvas {
             var panel = panels[i];
             if (!panel.node)
                 continue;
-            if (!panel.node.graph || panel.graph != this.graph)
+            // close panels of nodes that left this graph (panels have no .graph of their own)
+            if (panel.node.graph !== this.graph)
                 panel.close();
         }
     }
