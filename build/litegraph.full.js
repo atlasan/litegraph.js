@@ -53,7 +53,7 @@ export function getRuntime() {
  */
 export class LiteGraphClass {
 
-    VERSION = "a0.11.1";
+    VERSION = "0.10.10";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
     /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
@@ -1552,6 +1552,15 @@ export class CallbackHandler {
          * called for each callback to push and merge results
          * void
          */
+        // a result replaces the current one only when its result_priority (default 0) is not lower
+        // than the priority of the result currently held
+        var acceptResult = function(value, priority) {
+            if (typeof(priority) !== "number" || isNaN(priority)) priority = 0;
+            if (cbRet === null || priority >= cbResPriority) {
+                cbRet = value;
+                cbResPriority = priority;
+            }
+        }
         var checkStepRet = function() {
             aResChain.push(stepRet); // cache result
             opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
@@ -1562,18 +1571,8 @@ export class CallbackHandler {
                 if (typeof(stepRet.prevent_default) !== "undefined" && stepRet.prevent_default) {
                     preventDefCb = true;
                 }
-                if (typeof(stepRet.return_value) !== "undefined") {
-                    if (!cbResPriority ||
-                        (typeof(stepRet.result_priority) !== "undefined" && cbResPriority <= stepRet.result_priority) ||
-                        (typeof(stepRet.result_priority) === "undefined" && (!cbResPriority || cbResPriority <= 0))
-                    ) {
-                        if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "set result from object", stepRet, oCbInfo);
-                        cbRet = stepRet;
-                    }
-                } else {
-                    if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "set result, not object", stepRet, oCbInfo);
-                    cbRet = stepRet;
-                }
+                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "object result", stepRet, oCbInfo);
+                acceptResult(stepRet, stepRet.result_priority);
                 if (typeof(stepRet.stop_replication) !== "undefined" && stepRet.stop_replication) {
                     if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stop_replication", oCbInfo);
                     breakCycle = true;
@@ -1583,14 +1582,14 @@ export class CallbackHandler {
                 if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "result NOT object", stepRet);
                 // ? save current result if not null or undefined (?)
                 if (stepRet !== null && stepRet !== undefined) {
-                    cbRet = stepRet; // TODO maybe to remove, leave for current stability
+                    acceptResult(stepRet, 0); // plain values count as result_priority 0
                 }
             }
         }
         for (let cbhX of this.callbacks_handlers[name].handlers) {
 
             // eventually prevent cb marked as default
-            if (preventDefCb && cbhX.is_default) {
+            if (preventDefCb && cbhX.data.is_default) {
                 if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers", "preventing default registered", cbhX);
                 continue;
             }
@@ -1600,6 +1599,11 @@ export class CallbackHandler {
                 if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers", "process default passed", "nextCb:", cbhX);
                 executeDefaultCb();
                 if (breakCycle) break;
+            }
+
+            if (cbhX.data.call_once) {
+                this.unregisterCallbackHandler(name, cbhX.id);
+                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "unregistered call_once", cbhX.id);
             }
 
             oCbInfo = {
@@ -1627,15 +1631,11 @@ export class CallbackHandler {
             if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "result checked", "cbRet", cbRet, "aResChain", aResChain, "cbResPriority", cbResPriority, "defCbChecked", defCbChecked, "preventDefCb", preventDefCb, "breakCycle", breakCycle);
             if (breakCycle) break;
 
-            if (cbhX.data.call_once) {
-                this.unregisterCallbackHandler(name, cbhX.id);
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "unregistered call_once", oCbInfo);
-            }
-
         } // end cycle
 
-        // recheck for default cb passed after cycling
-        if (!defCbChecked) {
+        // run the default callback if no handler ran it yet, unless the chain was stopped
+        // (stop_replication stops everything after it, the default callback included)
+        if (!defCbChecked && !breakCycle) {
             executeDefaultCb();
         }
 
@@ -5018,6 +5018,124 @@ export class LGraph {
     }
 
     /**
+     * Checks that the link table and the slot references agree, and optionally repairs them.
+     * The link table (`graph.links`) is the record of a connection; a slot reference is valid
+     * only when the link it names connects that exact node and slot. Checks:
+     * - a link whose origin/target node or slot does not exist (removed)
+     * - a link the target input does not point back to (removed: the input belongs to another link)
+     * - a valid link missing from its origin output's `links` (added back)
+     * - an input `link` / output `links` entry naming a missing or mismatched link (cleared)
+     * - a link `parentId` naming a missing reroute (cleared)
+     * Applies only to this graph (not to nested subgraphs). Repairs bypass history and callbacks.
+     * @param {object} [options]
+     * @param {boolean} [options.repair=false] fix the problems found
+     * @returns {{ok: boolean, repaired: boolean, issues: Array<{kind: string, link_id?: (number|string), node_id?: (number|string), slot?: number}>}}
+     */
+    validateLinks({
+        repair = false
+    } = {}) {
+        const issues = [];
+        const nodeOf = (id) => this.getNodeById(id);
+        const remove = new Set();
+        for (const key of Object.keys(this.links)) {
+            const link = this.links[key];
+            if (!link) {
+                issues.push({
+                    kind: "empty-link-entry",
+                    link_id: key
+                });
+                remove.add(key);
+                continue;
+            }
+            const origin = nodeOf(link.origin_id);
+            const target = nodeOf(link.target_id);
+            const output = origin?.outputs?.[link.origin_slot];
+            const input = target?.inputs?.[link.target_slot];
+            if (!origin || !target || !output || !input) {
+                issues.push({
+                    kind: "dangling-link",
+                    link_id: link.id,
+                    node_id: !origin ? link.origin_id : link.target_id
+                });
+                remove.add(key);
+                continue;
+            }
+            if (input.link != link.id) {
+                issues.push({
+                    kind: "link-not-referenced-by-input",
+                    link_id: link.id,
+                    node_id: target.id,
+                    slot: link.target_slot
+                });
+                remove.add(key);
+                continue;
+            }
+            if (!output.links?.some((id) => id == link.id)) {
+                issues.push({
+                    kind: "link-missing-from-output",
+                    link_id: link.id,
+                    node_id: origin.id,
+                    slot: link.origin_slot
+                });
+                if (repair)(output.links ??= []).push(link.id);
+            }
+            if (link.parentId !== undefined && this.reroutes && !this.reroutes.has(link.parentId)) {
+                issues.push({
+                    kind: "missing-reroute",
+                    link_id: link.id
+                });
+                if (repair) delete link.parentId;
+            }
+        }
+        if (repair) {
+            for (const key of remove) delete this.links[key];
+        }
+        // links are keyed by id; anything scheduled for removal no longer counts as valid
+        const valid = (id) => {
+            const link = this.links[id];
+            return link && link.id == id && !remove.has(String(id)) ? link : null;
+        };
+        for (const node of this._nodes ?? []) {
+            node.inputs?.forEach((input, slot) => {
+                if (input.link == null) return;
+                const link = valid(input.link);
+                if (!link || link.target_id != node.id || link.target_slot != slot) {
+                    issues.push({
+                        kind: "input-references-bad-link",
+                        link_id: input.link,
+                        node_id: node.id,
+                        slot
+                    });
+                    if (repair) input.link = null;
+                }
+            });
+            node.outputs?.forEach((output, slot) => {
+                if (!output.links) return;
+                const kept = output.links.filter((id) => {
+                    const link = valid(id);
+                    const ok = !!link && link.origin_id == node.id && link.origin_slot == slot;
+                    if (!ok) issues.push({
+                        kind: "output-references-bad-link",
+                        link_id: id,
+                        node_id: node.id,
+                        slot
+                    });
+                    return ok;
+                });
+                if (repair && kept.length !== output.links.length) output.links = kept.length ? kept : null;
+            });
+        }
+        if (repair && issues.length) {
+            this.setDirtyCanvas?.(true, true);
+        }
+        return {
+            ok: issues.length === 0,
+            repaired: repair && issues.length > 0,
+            issues
+        };
+    }
+
+    /**
      * Adds a reroute to a link, as the point nearest the link's target.
      * @param {number[]} pos - graph-space position
      * @param {LLink} [link] - link to route through it
@@ -5841,9 +5959,8 @@ export class LGraphCanvas {
             this.startRendering();
         }
 
-        // event dispatcher, along direct (single) assignment of callbacks [ event entrypoint ]
-        this.callbackhandler_setup();
-
+        // (the CallbackHandler was created at the top of the constructor; creating it again here
+        // would drop every handler registered while constructing)
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct", {
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
@@ -5948,6 +6065,7 @@ export class LGraphCanvas {
 
         // remove the graph stack in case a subgraph was open
         this._graph_stack &&= null;
+        this._view_stack &&= null;
         this.setDirty(true, true);
     }
 
@@ -5958,7 +6076,7 @@ export class LGraphCanvas {
      * @return {LGraph} graph
      */
     getTopGraph() {
-        if (this._graph_stack.length)
+        if (this._graph_stack?.length)
             return this._graph_stack[0];
         return this.graph;
     }
@@ -5983,6 +6101,12 @@ export class LGraphCanvas {
         if (this.graph) {
             this._graph_stack ||= [];
             this._graph_stack.push(this.graph);
+            // remember the parent view, restored by closeSubgraph
+            this._view_stack ||= [];
+            this._view_stack[this._graph_stack.length - 1] = {
+                offset: [...this.ds.offset],
+                scale: this.ds.scale
+            };
         }
 
         var prev_graph = this.graph;
@@ -6013,6 +6137,8 @@ export class LGraphCanvas {
         var subgraph_node = this.graph._subgraph_node;
         var prev_graph = this.graph;
         var graph = this._graph_stack.pop();
+        var saved_view = this._view_stack?.[this._graph_stack.length];
+        if (this._view_stack) this._view_stack.length = this._graph_stack.length;
         this.selected_nodes = {};
         this.highlighted_links = {};
 
@@ -6022,13 +6148,16 @@ export class LGraphCanvas {
 
         graph.attachCanvas(this);
         this.setDirty(true, true);
-        if (subgraph_node) {
+        if (saved_view) {
+            // back to where the user was before opening the subgraph
+            this.ds.offset = [...saved_view.offset];
+            this.ds.scale = saved_view.scale;
+        } else if (subgraph_node) {
             this.centerOnNode(subgraph_node);
+        }
+        if (subgraph_node) {
             this.selectNodes([subgraph_node]);
         }
-        // when close sub graph back to offset [0, 0] scale 1
-        this.ds.offset = [0, 0]
-        this.ds.scale = 1
         this._emit("subgraph-closed", {
             graph,
             subgraph: prev_graph,
@@ -6066,10 +6195,13 @@ export class LGraphCanvas {
             return;
         }
 
-        if (!canvas && this.canvas) {
-            // maybe detach events from old_canvas
-            if (!skip_events) {
+        if (this.canvas) {
+            // listeners belong to the old element: detach them before switching (or detaching)
+            if (this._events_binded) {
                 this.unbindEvents();
+            }
+            if (this.canvas.data === this) {
+                delete this.canvas.data;
             }
         }
 
@@ -6081,9 +6213,12 @@ export class LGraphCanvas {
         }
 
         // this.canvas.tabindex = "1000";
-        canvas.className += " lgraphcanvas";
+        canvas.classList.add("lgraphcanvas");
         canvas.data = this;
-        canvas.tabindex = "1"; // to allow key events
+        // focusable, to receive key events (a <canvas> is not focusable by default)
+        if (!canvas.hasAttribute?.("tabindex")) {
+            canvas.tabIndex = 0;
+        }
 
         // bg canvas: used for non changing stuff
         this.bgcanvas = document.createElement("canvas");
@@ -6365,16 +6500,23 @@ export class LGraphCanvas {
         } // already rendering
 
         this.is_rendering = true;
+        // each start gets its own loop token, so a stop followed by a quick restart
+        // cannot leave the previous animation-frame chain running alongside the new one
+        const loop = this._render_loop = {};
         renderFrame.call(this);
 
         function renderFrame() {
+            if (this._render_loop !== loop || !this.is_rendering) {
+                return;
+            }
             if (!this.pause_rendering) {
                 this.draw();
             }
 
             var window = this.getCanvasWindow();
-            if (this.is_rendering) {
-                window.requestAnimationFrame(renderFrame.bind(this));
+            if (this.is_rendering && this._render_loop === loop) {
+                this._render_frame_window = window;
+                this._render_frame_id = window.requestAnimationFrame(renderFrame.bind(this));
             }
         }
     }
@@ -6386,6 +6528,12 @@ export class LGraphCanvas {
      */
     stopRendering() {
         this.is_rendering = false;
+        this._render_loop = null;
+        if (this._render_frame_id != null) {
+            this._render_frame_window?.cancelAnimationFrame?.(this._render_frame_id);
+            this._render_frame_id = null;
+            this._render_frame_window = null;
+        }
         /*
     if(this.rendering_timer_id)
     {
@@ -6393,6 +6541,40 @@ export class LGraphCanvas {
         this.rendering_timer_id = null;
     }
     */
+    }
+
+    /**
+     * Releases everything this canvas holds: stops the render loop, closes panels and the
+     * search box, detaches the graph and unbinds all DOM listeners. The instance must not be
+     * used afterwards. Safe to call more than once.
+     * @method dispose
+     */
+    dispose() {
+        if (this._disposed) {
+            return;
+        }
+        this.stopRendering();
+        if (this.canvas && typeof document !== "undefined") {
+            this.closePanels?.();
+            this.search_box?.close?.();
+        }
+        this._emit("disposed", {
+            canvas: this
+        });
+        if (this.graph) {
+            this.setGraph(null, true);
+        }
+        this.setCanvas(null);
+        this._graph_stack = null;
+        this._view_stack = null;
+        this.bgcanvas = null;
+        this.bgctx = null;
+        this.ctx = null;
+        this.visible_nodes = [];
+        this._disposed = true;
+        if (LGraphCanvas.active_canvas === this) {
+            LGraphCanvas.active_canvas = null;
+        }
     }
 
     /* LiteGraphCanvas input */
@@ -13129,6 +13311,11 @@ export class LGraphCanvas {
 
         dialog.close = function() {
             that.search_box = null;
+            // pending helper refresh must not run against a closed dialog
+            if (timeout) {
+                clearTimeout(timeout);
+                timeout = null;
+            }
             this.blur();
             canvas.focus();
             root_document.body.style.overflow = "";
@@ -13231,7 +13418,7 @@ export class LGraphCanvas {
                     }
                 } else {
                     if (timeout) {
-                        clearInterval(timeout);
+                        clearTimeout(timeout);
                     }
                     timeout = setTimeout(refreshHelper, 250);
                     return;
@@ -13361,115 +13548,119 @@ export class LGraphCanvas {
                     }
 
                     graphcanvas.graph.beforeChange();
-                    var node = LiteGraph.createNode(name);
+                    // every exit below (failure, early return, exception) must close the change
+                    try {
+                        var node = LiteGraph.createNode(name);
 
-                    if (!node) {
-                        LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "failed creating the node", node);
-                        dialog.close();
-                        return false;
-                    }
-
-                    node.pos = graphcanvas.convertEventToCanvasOffset(event);
-                    graphcanvas.graph.add(node, false, {
-                        doProcessChange: false
-                    });
-
-                    if (extra && extra.data) {
-                        if (extra.data.properties) {
-                            for (let i in extra.data.properties) {
-                                node.addProperty(i, extra.data.properties[i]);
-                            }
-                        }
-                        if (extra.data.inputs) {
-                            node.inputs = [];
-                            for (let i in extra.data.inputs) {
-                                node.addOutput(
-                                    extra.data.inputs[i][0],
-                                    extra.data.inputs[i][1],
-                                );
-                            }
-                        }
-                        if (extra.data.outputs) {
-                            node.outputs = [];
-                            for (let i in extra.data.outputs) {
-                                node.addOutput(
-                                    extra.data.outputs[i][0],
-                                    extra.data.outputs[i][1],
-                                );
-                            }
-                        }
-                        if (extra.data.title) {
-                            node.title = extra.data.title;
-                        }
-                        if (extra.data.json) {
-                            node.configure(extra.data.json);
+                        if (!node) {
+                            LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "failed creating the node", node);
+                            dialog.close();
+                            return false;
                         }
 
-                    }
+                        node.pos = graphcanvas.convertEventToCanvasOffset(event);
+                        graphcanvas.graph.add(node, false, {
+                            doProcessChange: false
+                        });
 
-                    let iS;
-
-                    // join node after inserting
-                    if (options.node_from) {
-                        iS = false;
-                        switch (typeof options.slot_from) {
-                            case "string":
-                                iS = options.node_from.findOutputSlot(options.slot_from);
-                                break;
-                            case "object":
-                                if (options.slot_from.name || options.slot_from.name === "") {
-                                    iS = options.node_from.findOutputSlot(options.slot_from.name);
-                                } else {
-                                    iS = -1;
+                        if (extra && extra.data) {
+                            if (extra.data.properties) {
+                                for (let i in extra.data.properties) {
+                                    node.addProperty(i, extra.data.properties[i]);
                                 }
-                                if (iS == -1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
-                                LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "slotindexfromobject search", "iS", iS, "ofFromOut", options.node_from.outputs, options.slot_from);
-                                break;
-                            case "number":
-                                iS = options.slot_from;
-                                break;
-                            default:
-                                iS = 0; // try with first if no name set
-                        }
-                        if (typeof options.node_from.outputs[iS] !== "undefined") {
-                            if (iS !== false && iS > -1) {
-                                options.node_from.connectByType(iS, node, options.node_from.outputs[iS].type);
                             }
-                        } else {
-                            LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "cant find slot node_from to join using from slot type", "iS", iS, "ofFromOut", options.node_from.outputs, options.slot_from);
-                        }
-                    }
-                    if (options.node_to) {
-                        iS = false;
-                        switch (typeof options.slot_from) {
-                            case "string":
-                                iS = options.node_to.findInputSlot(options.slot_from);
-                                break;
-                            case "object":
-                                if (options.slot_from.name) {
-                                    iS = options.node_to.findInputSlot(options.slot_from.name);
-                                } else {
-                                    iS = -1;
+                            if (extra.data.inputs) {
+                                node.inputs = [];
+                                for (let i in extra.data.inputs) {
+                                    node.addOutput(
+                                        extra.data.inputs[i][0],
+                                        extra.data.inputs[i][1],
+                                    );
                                 }
-                                if (iS == -1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
-                                break;
-                            case "number":
-                                iS = options.slot_from;
-                                break;
-                            default:
-                                iS = 0; // try with first if no name set
-                        }
-                        if (typeof options.node_to.inputs[iS] !== "undefined") {
-                            if (iS !== false && iS > -1) {
-                                // try connection
-                                options.node_to.connectByTypeOutput(iS, node, options.node_to.inputs[iS].type);
                             }
-                        } else {
-                            LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "cant find slot node_to to join using from slot type", options.slot_from, options.node_to.inputs);
-                        }
-                    }
+                            if (extra.data.outputs) {
+                                node.outputs = [];
+                                for (let i in extra.data.outputs) {
+                                    node.addOutput(
+                                        extra.data.outputs[i][0],
+                                        extra.data.outputs[i][1],
+                                    );
+                                }
+                            }
+                            if (extra.data.title) {
+                                node.title = extra.data.title;
+                            }
+                            if (extra.data.json) {
+                                node.configure(extra.data.json);
+                            }
 
-                    graphcanvas.graph.afterChange();
+                        }
+
+                        let iS;
+
+                        // join node after inserting
+                        if (options.node_from) {
+                            iS = false;
+                            switch (typeof options.slot_from) {
+                                case "string":
+                                    iS = options.node_from.findOutputSlot(options.slot_from);
+                                    break;
+                                case "object":
+                                    if (options.slot_from.name || options.slot_from.name === "") {
+                                        iS = options.node_from.findOutputSlot(options.slot_from.name);
+                                    } else {
+                                        iS = -1;
+                                    }
+                                    if (iS == -1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
+                                    LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "slotindexfromobject search", "iS", iS, "ofFromOut", options.node_from.outputs, options.slot_from);
+                                    break;
+                                case "number":
+                                    iS = options.slot_from;
+                                    break;
+                                default:
+                                    iS = 0; // try with first if no name set
+                            }
+                            if (typeof options.node_from.outputs[iS] !== "undefined") {
+                                if (iS !== false && iS > -1) {
+                                    options.node_from.connectByType(iS, node, options.node_from.outputs[iS].type);
+                                }
+                            } else {
+                                LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "cant find slot node_from to join using from slot type", "iS", iS, "ofFromOut", options.node_from.outputs, options.slot_from);
+                            }
+                        }
+                        if (options.node_to) {
+                            iS = false;
+                            switch (typeof options.slot_from) {
+                                case "string":
+                                    iS = options.node_to.findInputSlot(options.slot_from);
+                                    break;
+                                case "object":
+                                    if (options.slot_from.name) {
+                                        iS = options.node_to.findInputSlot(options.slot_from.name);
+                                    } else {
+                                        iS = -1;
+                                    }
+                                    if (iS == -1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
+                                    break;
+                                case "number":
+                                    iS = options.slot_from;
+                                    break;
+                                default:
+                                    iS = 0; // try with first if no name set
+                            }
+                            if (typeof options.node_to.inputs[iS] !== "undefined") {
+                                if (iS !== false && iS > -1) {
+                                    // try connection
+                                    options.node_to.connectByTypeOutput(iS, node, options.node_to.inputs[iS].type);
+                                }
+                            } else {
+                                LiteGraph.log_warn("lgraphcanvas", "showSearchBox", "select", "cant find slot node_to to join using from slot type", options.slot_from, options.node_to.inputs);
+                            }
+                        }
+
+                    } finally {
+                        graphcanvas.graph.afterChange();
+                    }
                 }
             }
 
@@ -15619,15 +15810,26 @@ export class LGraphGroup {
         var group_bounding = new Float32Array(4);
 
         this._groups = groups.filter((group) => {
+            if (group === this) return false; // a group is not its own child (move() would shift it twice)
             group.getBounding(group_bounding);
             return LiteGraph.isBoundingInsideRectangle(group_bounding, ...this._bounding)
             // return LiteGraph.overlapBounding(this._bounding, group_bounding, -LGraphGroup.opts.inclusion_distance);
         });
     }
 
-    getBounding = function() {
-        LiteGraph.LGraphNode.prototype.getBounding.call(this, ...arguments);
-    };
+    /**
+     * The group's rectangle [x, y, width, height]. A group's title is drawn inside its bounding
+     * (unlike a node's, which sits above `pos`), so the node implementation does not apply.
+     * @param {Float32Array|number[]} [out]
+     * @returns {Float32Array|number[]} out
+     */
+    getBounding(out = new Float32Array(4)) {
+        out[0] = this._bounding[0];
+        out[1] = this._bounding[1];
+        out[2] = this._bounding[2];
+        out[3] = this._bounding[3];
+        return out;
+    }
     isPointInside = LiteGraph.LGraphNode.prototype.isPointInside;
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }
@@ -20012,6 +20214,12 @@ export class LibraryManager {
         this.loading_promises = {};
         this.fs = null;
         this.path = null;
+        /**
+         * Allow `server.remote` URLs to be fetched and evaluated in Node.js.
+         * Off by default: `vm` is not a security boundary, so remote code runs with full process rights.
+         * @type {boolean}
+         */
+        this.allowServerRemoteCode = false;
 
         // Dynamically import Node.js modules (avoid errors in browsers)
         this.ready = isBrowser() ? Promise.resolve() : this.importNodeModules();
@@ -20264,7 +20472,15 @@ export class LibraryManager {
         });
     }
 
+    /**
+     * Fetch and evaluate a remote CommonJS script in Node.js.
+     * The `vm` context is NOT a sandbox (code can escape it), so this is refused unless
+     * `allowServerRemoteCode` was enabled explicitly for trusted sources.
+     */
     async loadServerRemoteScript(url) {
+        if (!this.allowServerRemoteCode) {
+            throw new Error(`Refusing to evaluate remote server code from ${url}; set LibraryManager.allowServerRemoteCode = true for trusted sources`);
+        }
         if (!this.fetch || !this.vm) throw new Error("Node.js modules 'fetch' and 'vm' are required.");
 
         console.log(`Fetching remote script: ${url}`);
@@ -20370,9 +20586,24 @@ export class LibraryManager {
     }
 
     /**
+     * True for an npm package spec this manager will pass to npm: a (scoped) package name,
+     * optionally followed by `@version-or-range`. Paths, URLs, git specs and flags are refused.
+     * @param {string} spec
+     * @returns {boolean}
+     */
+    static isSafePackageSpec(spec) {
+        return typeof spec === "string" &&
+            /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[a-zA-Z0-9.^~*_-]+)?$/.test(spec) &&
+            spec.length <= 214;
+    }
+
+    /**
      * Attempt to install NPM packages required for a library.
      * This method is only supported in Node.js or Bun environments.
+     * Runs without a shell: the command and every package spec are separate arguments, and
+     * package specs must pass {@link LibraryManager.isSafePackageSpec}.
      * @param {string} libKey The key of the library.
+     * @param {string|string[]} [command] Program and leading arguments, e.g. "npm install" or ["pnpm", "add"].
      * @returns {Promise<string>} The stdout from the npm install command.
      */
     async npmInstall(libKey, command = "npm install") {
@@ -20396,10 +20627,21 @@ export class LibraryManager {
             console.error("Failed to import child_process:", e);
             return;
         }
-        const packages = library.npmPackages.join(" ");
-        const cmd = command + ` ${packages}`;
+        const packages = library.npmPackages.filter((name) => !name.startsWith("node:"));
+        const unsafe = packages.filter((name) => !LibraryManager.isSafePackageSpec(name));
+        if (unsafe.length) {
+            throw new Error(`Refusing to install unsafe package spec(s) for ${libKey}: ${unsafe.join(", ")}`);
+        }
+        const argv = (Array.isArray(command) ? command : String(command).trim().split(/\s+/)).filter(Boolean);
+        if (!argv.length) throw new Error("npmInstall needs a command, e.g. \"npm install\"");
+        const [program, ...programArgs] = argv;
+        // npm is a .cmd script on Windows, which execFile can only start through a shell; the
+        // arguments were validated above, so no shell metacharacters can reach it.
+        const useShell = typeof process !== "undefined" && process.platform === "win32";
         return new Promise((resolve, reject) => {
-            child_process.exec(cmd, (error, stdout, stderr) => {
+            child_process.execFile(program, [...programArgs, ...packages], {
+                shell: useShell
+            }, (error, stdout) => {
                 if (error) {
                     console.error(`Error installing npm packages for ${libKey}:`, error);
                     reject(error);
@@ -20412,18 +20654,31 @@ export class LibraryManager {
     }
 
     /**
-     * Wait until all registered libraries have been loaded.
-     * @returns {Promise<void>} Resolves when all libraries are in the "loaded" state.
+     * Wait until no library is loading any more.
+     * Rejects when a library ended in the "error" state, or when the timeout elapses first.
+     * @param {{timeout?: number}} [options] timeout in milliseconds; 0 waits without a limit.
+     * @returns {Promise<void>}
      */
-    async waitAllLibrariesLoaded() {
-        return new Promise((resolve) => {
-            const checkInterval = setInterval(() => {
-                if (this.areAllLibrariesLoaded()) {
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
+    async waitAllLibrariesLoaded({
+        timeout = 30000
+    } = {}) {
+        const settle = (async () => {
+            while (Object.keys(this.loading_promises).length) {
+                await Promise.allSettled(Object.values(this.loading_promises));
+            }
+            const failed = Object.keys(this.libraries_state).filter((key) => this.libraries_state[key] === "error");
+            if (failed.length) throw new Error(`Libraries failed to load: ${failed.join(", ")}`);
+        })();
+        if (!timeout) return settle;
+        let timer;
+        const expired = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Libraries still loading after ${timeout}ms: ${this.libraries_to_load.join(", ")}`)), timeout);
         });
+        try {
+            await Promise.race([settle, expired]);
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     /**
@@ -46672,7 +46927,7 @@ export class Editor {
         close_button.className = "corner-button";
         close_button.innerHTML = "&#10060;";
         close_button.addEventListener("click", (_event) => {
-            graphcanvas.setGraph(null);
+            graphcanvas.dispose(); // stops its render loop and unbinds its listeners
             miniwindow.parentNode.removeChild(miniwindow);
         });
         miniwindow.appendChild(close_button);
@@ -46697,10 +46952,11 @@ export class Editor {
 
         // toggle test
         if (this.graphcanvas2) {
-            this.graphcanvas2.unbindEvents();
-            this.graphcanvas2.setGraph(null, true);
-            this.graphcanvas2.viewport = null;
+            // both canvases share one element: dispose the second (render loop + listeners),
+            // then hand the element back to the main canvas
+            this.graphcanvas2.dispose();
             this.graphcanvas2 = null;
+            canvas.data = this.graphcanvas;
 
             // this.graphcanvas.unbindEvents();
             // this.graphcanvas.setGraph(null, false);
