@@ -1689,6 +1689,8 @@ export declare class LGraphCanvas {
     openSubgraph(graph: LGraph): void;
     /** closes a subgraph contained inside a node */
     closeSubgraph(): void;
+    /** inserts a blueprint file (a definition or a document) as a copy; opens a file input unless a File is given */
+    pickBlueprintFile(pos?: ArrayLike<number>, file?: Blob | { text(): Promise<string> } | null): Promise<LGraphNode | null>;
     /** leaves open subgraphs until `level` is shown (0: the root graph); each one left commits its edits */
     closeSubgraphTo(level: number): void;
     /** the path of open subgraphs, root first */
