@@ -184,3 +184,6 @@ class LGSocketIO {
 }
 
 LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("network/", ["network"]);

@@ -1,76 +1,54 @@
 /**
  * EXAMPLE EXTENSION TO AUTOCONNECT SELECTED NODES TO ANOTHER (SINGLE) NODE
- * press a than click on a node
+ * press "a", then click on the target node: every selected node is auto-connected to it
+ * (one undo step). Command `litegraph.autoconnect`, key "a".
  */
 
 import { LiteGraph } from "../litegraph.js";
 
-export let registerExtension_autoconnect = function(graphcanvas){
-    // enable only if debugging CallbackHandler itself
-    // graphcanvas.cb_handler.debug = true;
+// canvas -> pending call_once handler id, so a second "a" or disposing the extension disarms it
+const pending = new Map();
 
-    let ext = "autoconnect";
-    let debug = false;
-    
-    graphcanvas.registerCallbackHandler("onKeyDown",function(oCbInfo, keyEvent){
-        // oCbInfo is first passed parameter and contains infos about the event execution chain 
-        
-        // skip from second event on
-        if(keyEvent.repeat){
-            return;
-        }
-
-        if(debug) console.info(ext, "*** onKeyDown handler ***", ...arguments);
-        switch(keyEvent.keyCode){
-            case 65: { // a
-            
-                // skip if shift o ctrl
-                if(keyEvent.shiftKey || keyEvent.ctrlKey){
-                    if(debug) console.debug(ext, "skip shift or ctlr", ...arguments);
-                    break;
-                }
-
-                // check selected nodes
-                let nSel = Object.keys(graphcanvas.selected_nodes).length;
-                var aNodesFrom = [];
-                if(nSel){
-                    for(let iO in graphcanvas.selected_nodes){
-                        // graphcanvas.graph.autoConnectNodes(node_from, node_to);
-                        aNodesFrom.push(graphcanvas.selected_nodes[iO]);
-                    }
-                }
-                
-                graphcanvas.registerCallbackHandler("onMouseDown",function(md_oCbInfo, e){
-                    if(debug) console.info(ext, "*** onMouseDown handler ***", ...arguments);
-
-                    let node_to = graphcanvas.graph.getNodeOnPos( e.canvasX, e.canvasY, graphcanvas.visible_nodes, 5 );
-
-                    if(node_to){
-                        if(debug) console.info(ext, "### dbg: clicked on DEST node, autoconnect", node_to, aNodesFrom);
-                        for(let node_from of aNodesFrom){
-                            if(debug) console.info(ext, "### dbg: AUTOCONNECT", node_from, node_to);
-                            graphcanvas.graph.autoConnectNodes(node_from, node_to);
-                        }
-                    }else{
-                        if(debug) console.info(ext, "### dbg: not clicked on a node", node_to);
-                    }
-
-                },{ call_once: true }); // register to call only once
-
-            break;
-            }
-            default:
-                if(debug) console.debug(ext, "### dbg: ignore key", keyEvent.keyCode);
-            break;
-        }
-    });
-
+function disarm(graphcanvas) {
+    const id = pending.get(graphcanvas);
+    if (id === undefined) return;
+    pending.delete(graphcanvas);
+    graphcanvas.unregisterCallbackHandler("onMouseDown", id);
 }
 
-if(typeof(graphcanvas)!=="undefined"){
-    registerExtension_autoconnect(graphcanvas);
+export const autoconnectExtension = {
+    name: "litegraph.autoconnect",
+    commands: [{
+        id: "litegraph.autoconnect",
+        label: "Auto-connect selection to the next clicked node",
+        category: "edit",
+        when: (ctx) => !!ctx.canvas?.graph && ctx.selectedNodes?.length > 0,
+        run(ctx) {
+            const graphcanvas = ctx.canvas;
+            const sources = [...ctx.selectedNodes];
+            disarm(graphcanvas);
+            const id = graphcanvas.registerCallbackHandler("onMouseDown", (info, e) => {
+                pending.delete(graphcanvas);
+                const graph = graphcanvas.graph;
+                const target = graph?.getNodeOnPos(e.canvasX, e.canvasY, graphcanvas.visible_nodes, 5);
+                if (!target) return;
+                graph.transact("autoconnect", () => {
+                    for (const source of sources) graph.autoConnectNodes(source, target);
+                });
+            }, { call_once: true });
+            pending.set(graphcanvas, id);
+        },
+    }],
+    keybindings: [{ combo: "a", commandId: "litegraph.autoconnect" }],
+    setup(ctx) {
+        ctx.addDisposer(() => { for (const canvas of [...pending.keys()]) disarm(canvas); });
+    },
+};
+
+/** Registers the extension once (kept for code that called it per canvas). */
+export function registerExtension_autoconnect(graphcanvas) {
+    if (!LiteGraph.extensions?.has(autoconnectExtension.name)) LiteGraph.registerExtension(autoconnectExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
 }
 
-LiteGraph.registerCallbackHandler("on_lgraphcanvas_construct",function(oCbInfo, graphcanvas){
-    registerExtension_autoconnect(graphcanvas);
-});
+registerExtension_autoconnect();

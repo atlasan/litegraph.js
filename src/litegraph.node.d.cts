@@ -1,8 +1,8 @@
 // The Node full bundle also exports the optional browser editor and extensions.
 export * from './litegraph.full.cjs';
-import { LGraph, LGraphCanvas } from './litegraph.cjs';
+import { LGraph, LGraphCanvas, ExtensionDefinition } from './litegraph.cjs';
 export declare class Editor {
-    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean });
+    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean });
     root: HTMLDivElement;
     canvas: HTMLCanvasElement;
     graph: LGraph;
@@ -16,9 +16,14 @@ export declare class Editor {
     exitFullscreen(): void;
     isFullscreen(): boolean;
 }
-export declare function registerExtension_autoconnect(canvas: LGraphCanvas): void;
-export declare function registerExtension_keyhelper(canvas: LGraphCanvas): void;
-export declare function registerExtension_renamer(canvas: LGraphCanvas): void;
+/** Registers the built-in extension once; a canvas argument is attached to the extension registry. */
+export declare function registerExtension_autoconnect(canvas?: LGraphCanvas): void;
+export declare function registerExtension_keyhelper(canvas?: LGraphCanvas): void;
+export declare function registerExtension_renamer(canvas?: LGraphCanvas): void;
+/** Extension definitions, for re-registering after LiteGraph.extensions.unregister(name). */
+export declare const autoconnectExtension: ExtensionDefinition;
+export declare const keyboardHelperExtension: ExtensionDefinition;
+export declare const renamerExtension: ExtensionDefinition;
 
 /** Optional ComfyUI workflow interoperability (schema 0.4 and 1). */
 export declare const ComfyInterop: {

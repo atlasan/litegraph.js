@@ -1521,3 +1521,6 @@ class LGAudioDestination {
     }
 }
 LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);

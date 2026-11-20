@@ -707,3 +707,6 @@ export class HtmlElementStyle {
     }
 }
 LiteGraph.registerNodeType("html/apply_element_css", HtmlElementStyle);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("html/", ["browser", "dom"]);

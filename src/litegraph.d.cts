@@ -38,6 +38,8 @@ export interface INodeSlot {
 
 export interface INodeInputSlot extends INodeSlot {
     link: LLink["id"] | null;
+    /** set on an input attached to a widget (see LGraphNode.addWidgetInput) */
+    widget?: { name: string };
 }
 export interface INodeOutputSlot extends INodeSlot {
     links: LLink["id"][] | null;
@@ -337,6 +339,26 @@ export interface LiteGraphAPI extends CallbackHost {
     getParameterNames(func: Function): string[];
     initialize(): void;
     LibraryManager: LibraryManager;
+    commands: CommandRegistry;
+    keybindings: KeybindingRegistry;
+    settings: SettingsRegistry;
+    extensions: ExtensionRegistry;
+    menus: MenuRegistry;
+    /** widget type name -> class (see registerWidgetType) */
+    widget_types: Record<string, typeof BaseWidget>;
+    registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
+    registerExtension(def: ExtensionDefinition): () => void;
+    setupPlatform(): void;
+    persistPlatformState(storage?: SettingsStorage): void;
+    node_definitions: Record<string, Readonly<NodeDefinition>>;
+    describeNodeType(type: string, base: Function): Readonly<NodeDefinition>;
+    getNodeDefinition(type: string): Readonly<NodeDefinition> | null;
+    listNodeDefinitions(filter?: { category?: string; capability?: string; includeDeprecated?: boolean; includeHidden?: boolean; supportedOnly?: boolean }): Readonly<NodeDefinition>[];
+    declareCapabilities(selector: string | string[] | ((type: string) => boolean), capabilities: string[]): void;
+    getRuntimeCapabilities(): Set<string>;
+    getMissingCapabilities(type: string, runtime?: Set<string>): string[];
+    isNodeTypeSupported(type: string, runtime?: Set<string>): boolean;
+    getNodeSearchText(type: string): string;
     LGraphNode: typeof LGraphNode;
     LGraphCanvas: typeof LGraphCanvas;
     LGraphGroup: typeof LGraphGroup;
@@ -636,6 +658,11 @@ export declare class LGraph {
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     /** Destroys a link */
     removeLink(link_id: GraphId): void;
+    validateLinks(options?: { repair?: boolean }): {
+        ok: boolean;
+        repaired: boolean;
+        issues: Array<{ kind: string; link_id?: GraphId; node_id?: GraphId; slot?: number }>;
+    };
     /** Creates a Object containing all the info about this graph, it can be serialized */
     serialize<T extends serializedLGraph>(): T;
     /**
@@ -928,6 +955,15 @@ export declare class LGraphNode {
     ): T;
 
     addCustomWidget<T extends IWidget>(customWidget: T): T;
+    /** true for an input attached to a widget (`input.widget = {name}`) */
+    static isWidgetInputSlot(slot: unknown): boolean;
+    getWidgetFromSlot(slot: INodeInputSlot): IWidget | null;
+    getSlotFromWidget(widget: IWidget): INodeInputSlot | null;
+    isWidgetLinked(widget: IWidget): boolean;
+    /** adds an input on the widget's row; while linked the widget is disabled and the link drives it */
+    addWidgetInput(widgetOrName: IWidget | string, type?: string): INodeInputSlot | null;
+    /** the linked input's data when connected, else the widget value */
+    getWidgetValue(name: string): any;
 
     /**
      * returns the bounding of the object, used for rendering purposes
@@ -1204,6 +1240,14 @@ export interface LGraphEventMap {
     changed: { action: string; revision: number };
     "reroute-added": { reroute: Reroute; link: LLink | null };
     "reroute-removed": { reroute: Reroute };
+    "link-connected": { link: LLink; origin: LGraphNode; originSlot: number; target: LGraphNode; targetSlot: number };
+    "link-removed": { link: LLink; origin: LGraphNode | null; target: LGraphNode | null };
+    "node-property-changed": { node: LGraphNode; name: string; value: unknown; previous: unknown };
+    "widget-changed": { node: LGraphNode; widget: IWidget; value: unknown; previous: unknown };
+    /** after each runStep iteration (only dispatched when someone listens) */
+    "execution-step": { iteration: number };
+    /** execution stopped on an error */
+    "node-error": { error: unknown; node: LGraphNode | null };
 }
 
 export interface LGraphCanvasEventMap {
@@ -1214,6 +1258,8 @@ export interface LGraphCanvasEventMap {
     };
     "subgraph-opened": { graph: LGraph; parent: LGraph | null };
     "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
+    "selection-changed": { nodes: LGraphNode[]; items?: Array<LGraphNode | LGraphGroup | Reroute> };
+    disposed: { canvas: LGraphCanvas };
 }
 
 /** A point links are routed through; chains via parentId towards the origin. */
@@ -1264,8 +1310,20 @@ export declare class CanvasPointer {
     reset(): void;
     down(e: { clientX: number; clientY: number; button?: number; pointerId?: number }, now?: number): { isDoubleClick: boolean };
     move(e: { clientX: number; clientY: number }): boolean;
-    up(e?: { clientX: number; clientY: number }, now?: number): { isClick: boolean; dragged: boolean; duration: number };
+    up(e?: { clientX: number; clientY: number }, now?: number): { isClick: boolean; dragged: boolean; duration: number; handled: boolean };
     cancel(): void;
+    static HANDLERS: string[];
+    /** true when the current gesture has handlers: the pointer owns it */
+    readonly hasHandlers: boolean;
+    clearHandlers(): void;
+    /** per-gesture handlers, assigned after down() and cleared when the gesture ends */
+    onClick: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDoubleClick: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDragStart: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDrag: ((e: any, pointer: CanvasPointer) => void) | null;
+    onDragEnd: ((e: any, pointer: CanvasPointer) => void) | null;
+    /** runs at the end of every gesture, including cancel (e is null then) */
+    finally: ((e: any, pointer: CanvasPointer) => void) | null;
 }
 
 export declare class DragAndScale {
@@ -1538,6 +1596,8 @@ export declare class LGraphCanvas {
     startRendering(): void;
     /** stops rendering the content of the canvas (to save resources) */
     stopRendering(): void;
+    /** Stops rendering, detaches the graph and unbinds listeners; the canvas is unusable afterwards. */
+    dispose(): void;
 
     processMouseDown(e: MouseEvent): boolean | undefined;
     processMouseMove(e: MouseEvent): boolean | undefined;
@@ -1575,6 +1635,17 @@ export declare class LGraphCanvas {
     deselectAllNodes(): void;
     /** deletes all nodes in the current selection from the graph */
     deleteSelectedNodes(): void;
+    /** everything selected: nodes, groups and reroutes */
+    readonly selectedItems: Array<LGraphNode | LGraphGroup | Reroute>;
+    isItemSelected(item: LGraphNode | LGraphGroup | Reroute): boolean;
+    selectItem(item: LGraphNode | LGraphGroup | Reroute, add?: boolean): void;
+    deselectItem(item: LGraphNode | LGraphGroup | Reroute): void;
+    /** moves the selection (group children are carried once), one undo step */
+    moveSelected(dx: number, dy: number): void;
+    /** deletes selected nodes, groups and reroutes, one undo step */
+    deleteSelected(): void;
+    /** true for a graph node (registered classes need not extend LGraphNode) */
+    static isNodeItem(item: unknown): boolean;
 
     /** centers the camera on a given node */
     centerOnNode(node: LGraphNode): void;
@@ -1768,6 +1839,19 @@ export interface LibraryRegistration {
     defaultExport?: boolean | string;
     browser?: { local?: string | string[]; remote?: string | string[]; target?: string };
     server?: { npm?: string | string[]; remote?: string | string[]; target?: string };
+    description?: string;
+    /** false when nodes cannot work at all without it (default true) */
+    optional?: boolean;
+}
+export interface LibraryManifestEntry {
+    key: string;
+    version: string;
+    globalObject: string;
+    description: string;
+    optional: boolean;
+    browser: { local: string[]; remote: string[] };
+    server: { npm: string[]; remote: string[] };
+    state: LibraryState;
 }
 export type LibraryState = 'not_loaded' | 'loading' | 'loaded' | 'error';
 export declare class LibraryManager {
@@ -1781,14 +1865,19 @@ export declare class LibraryManager {
     waitForLib<T = any>(key: string, timeout?: number): Promise<T>;
     getLibraryState(key: string): LibraryState | false;
     areAllLibrariesLoaded(): boolean;
-    waitAllLibrariesLoaded(): Promise<void>;
+    waitAllLibrariesLoaded(options?: { timeout?: number }): Promise<void>;
+    /** Allow `server.remote` scripts to be evaluated in Node.js (vm is not a sandbox). Default false. */
+    allowServerRemoteCode: boolean;
+    static isSafePackageSpec(spec: string): boolean;
     loadAllLibraries(): Promise<void>;
     unloadLibrary(key: string): void;
     unloadAllLibraries(): void;
     getRegisteredLibraries(): string[];
+    describeLibraries(): LibraryManifestEntry[];
+    probeLibraries(keys?: string[]): Promise<Array<{ key: string; available: boolean | null; missing: string[]; error?: string }>>;
     loadScript(url: string, globalObject?: string, defaultExport?: boolean | string): Promise<any>;
     loadCSS(url: string): Promise<Event>;
-    npmInstall(key: string, command?: string): Promise<string>;
+    npmInstall(key: string, command?: string | string[]): Promise<string>;
 }
 export declare class Subgraph extends LGraphNode {
     subgraph: LGraph;
@@ -1814,3 +1903,212 @@ export declare function isBrowser(): boolean;
 export declare function isNode(): string | false | undefined;
 export declare function isBun(): boolean;
 export declare function getRuntime(): 'browser' | 'node' | 'bun' | 'unknown';
+
+export interface CommandContext {
+    canvas?: LGraphCanvas | null;
+    graph?: LGraph | null;
+    selectedNodes?: LGraphNode[];
+    event?: Event;
+    [key: string]: any;
+}
+export interface CommandDefinition {
+    id: string;
+    run(ctx: CommandContext): any;
+    label?: string | ((ctx: CommandContext) => string);
+    category?: string;
+    /** whether the command applies to the context; a disabled command does not run */
+    when?(ctx: CommandContext): boolean;
+    /** run inside graph.transact(): one undo entry */
+    mutatesGraph?: boolean;
+    [key: string]: any;
+}
+export declare class CommandRegistry {
+    constructor();
+    register(command: CommandDefinition): () => void;
+    get(id: string): Readonly<CommandDefinition> | null;
+    has(id: string): boolean;
+    list(filter?: { category?: string }): Readonly<CommandDefinition>[];
+    contextFor(canvas: LGraphCanvas | null | undefined, extra?: object): CommandContext;
+    isEnabled(id: string, ctx?: CommandContext): boolean;
+    execute(id: string, ctx?: CommandContext): { executed: boolean; result?: any };
+}
+export interface KeybindingDefinition {
+    /** e.g. "ctrl+shift+k", "f2", "arrowright"; "mod" is ctrl (meta on macOS) */
+    combo: string;
+    commandId: string;
+    allowRepeat?: boolean;
+}
+export declare class KeybindingRegistry {
+    static MODIFIERS: string[];
+    static normalize(combo: string): string;
+    static fromEvent(event: KeyboardEvent): string | null;
+    static isTextEntry(event: Event): boolean;
+    constructor(commands: CommandRegistry);
+    commands: CommandRegistry;
+    add(binding: KeybindingDefinition): () => void;
+    setUserBinding(combo: string, commandId: string | null): void;
+    clearUserBinding(combo: string): void;
+    unsetDefault(combo: string, commandId: string): void;
+    exportUserLayer(): { bindings: Record<string, string | null>; unset: string[] };
+    importUserLayer(data: { bindings?: Record<string, string | null>; unset?: string[] }): void;
+    resolve(combo: string): Array<{ combo: string; commandId: string; allowRepeat: boolean }>;
+    combosFor(commandId: string): string[];
+    /** called after the user layer changes, with exportUserLayer() */
+    onUserLayerChange: ((layer: { bindings: Record<string, string | null>; unset: string[] }) => void) | null;
+    handleKeyDown(event: KeyboardEvent, ctx?: CommandContext): boolean;
+}
+export interface SettingsStorage {
+    load(): Record<string, any> | null | undefined;
+    save(values: Record<string, any>): void;
+}
+export interface SettingDefinition<T = any> {
+    id: string;
+    default?: T | (() => T);
+    type?: 'boolean' | 'number' | 'text' | 'combo' | 'color' | string;
+    name?: string;
+    tooltip?: string;
+    category?: string[];
+    options?: Array<T | { value: T; text?: string }>;
+    migrate?(stored: any): T;
+    onChange?(value: T, previous: T | undefined): void;
+    /** mirror the value onto an existing property, e.g. a LiteGraph flag */
+    bind?: { target: object; key: string };
+    [key: string]: any;
+}
+export declare class SettingsRegistry {
+    static localStorageAdapter(key?: string): SettingsStorage;
+    constructor(storage?: SettingsStorage | null);
+    setStorage(storage: SettingsStorage | null): void;
+    define<T = any>(def: SettingDefinition<T>): () => void;
+    has(id: string): boolean;
+    getDefinition(id: string): SettingDefinition | null;
+    list(prefix?: string): SettingDefinition[];
+    get<T = any>(id: string): T | undefined;
+    set<T = any>(id: string, value: T): boolean;
+    reset(id: string): boolean;
+}
+export interface ExtensionCanvasContext {
+    on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+}
+export interface ExtensionContext {
+    name: string;
+    host: object;
+    commands: { register(command: CommandDefinition): () => void };
+    keybindings: { add(binding: KeybindingDefinition): () => void };
+    settings: { define(def: SettingDefinition): () => void; get(id: string): any; set(id: string, value: any): boolean };
+    on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+    onTarget(target: CallbackHost, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+    onCanvas(fn: (canvas: LGraphCanvas, ctx: ExtensionCanvasContext) => void | (() => void)): void;
+    menus: { register(location: MenuLocation, provider: MenuProvider): () => void };
+    onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
+    addDisposer(dispose: () => void): () => void;
+}
+export interface ExtensionDefinition {
+    name: string;
+    version?: string;
+    requires?: string[];
+    commands?: CommandDefinition[];
+    keybindings?: KeybindingDefinition[];
+    settings?: SettingDefinition[];
+    menus?: Partial<Record<MenuLocation, MenuProvider>>;
+    setup?(ctx: ExtensionContext): void | (() => void);
+    [key: string]: any;
+}
+export declare class ExtensionRegistry {
+    constructor(host: object);
+    host: object;
+    disabled: Set<string>;
+    readonly canvases: LGraphCanvas[];
+    attachCanvas(canvas: LGraphCanvas): void;
+    has(name: string): boolean;
+    list(): string[];
+    get(name: string): ExtensionDefinition | null;
+    register(def: ExtensionDefinition): () => void;
+    unregister(name: string): boolean;
+}
+
+export interface NodeSlotDefinition {
+    name: string;
+    type?: string | number;
+    tooltip?: string;
+    optional?: boolean;
+    [key: string]: any;
+}
+/** Metadata of a registered node type (see LiteGraph.getNodeDefinition); a class may provide it as `static def`. */
+export interface NodeDefinition {
+    type: string;
+    title: string;
+    description: string;
+    category: string;
+    search_aliases: readonly string[];
+    /** what the type needs from its runtime: "browser", "node", "webgl", "audio", "midi", "dom", "network", "sys", or custom */
+    capabilities: readonly string[];
+    deprecated: boolean;
+    experimental: boolean;
+    hidden: boolean;
+    source: string | null;
+    inputs: readonly Readonly<NodeSlotDefinition>[] | null;
+    outputs: readonly Readonly<NodeSlotDefinition>[] | null;
+}
+
+export type MenuLocation = 'canvas' | 'node';
+/** A ContextMenu item, `{command: id}` (runs a registered command), or null for a separator. */
+export type MenuItem = { command: string; content?: string; [key: string]: any } | { content: string; callback?: (...args: any[]) => any; [key: string]: any } | null;
+export type MenuProvider = (ctx: CommandContext & { node?: LGraphNode }) => MenuItem[] | null | undefined;
+export declare class MenuRegistry {
+    static LOCATIONS: MenuLocation[];
+    constructor(commands: CommandRegistry);
+    commands: CommandRegistry;
+    register(location: MenuLocation, provider: MenuProvider): () => void;
+    collect(location: MenuLocation, ctx?: object): MenuItem[];
+    contribute<T extends any[]>(location: MenuLocation, ctx: object, options: T): T;
+}
+
+/** Context passed to BaseWidget.draw. */
+export interface WidgetDrawEnv {
+    canvas: LGraphCanvas;
+    show_text: boolean;
+    show_label: boolean;
+    active: boolean;
+    margin: number;
+    colors: { outline: string; background: string; text: string; secondary: string };
+}
+/** Context passed to BaseWidget.onPointer. */
+export interface WidgetPointerEnv {
+    canvas: LGraphCanvas;
+    node: LGraphNode;
+    x: number;
+    y: number;
+    pos: Vector2;
+    widget_width: number;
+    old_value: any;
+    ref_window: Window;
+    /** applies a new value: widget value, onWidgetChanged, history, widget-changed event, property, callback */
+    changed(widget: IWidget, value: any, old_value?: any): void;
+}
+/** Canvas widget base class; one subclass per widget type (see LiteGraph.registerWidgetType). */
+export declare class BaseWidget<TValue = any, TOptions = any> {
+    type: string;
+    name: string | null;
+    value: TValue;
+    options: TOptions;
+    constructor(init?: Partial<IWidget<TValue, TOptions>> & Record<string, any>);
+    [key: string]: any;
+    draw(ctx: CanvasRenderingContext2D, node: LGraphNode, widget_width: number, y: number, H: number, env: WidgetDrawEnv): void;
+    onPointer(event: PointerEvent, env: WidgetPointerEnv): void;
+    static drawPill(ctx: CanvasRenderingContext2D, widget_width: number, y: number, H: number, env: WidgetDrawEnv): void;
+    static clampToOptions(value: number, options: { min?: number; max?: number }): number;
+}
+export declare class ButtonWidget extends BaseWidget {}
+export declare class ToggleWidget extends BaseWidget<boolean> {}
+export declare class SliderWidget extends BaseWidget<number> {}
+export declare class NumberWidget extends BaseWidget<number> {}
+export declare class ComboWidget extends BaseWidget {
+    resolveValues(node: LGraphNode): any[] | Record<string, any>;
+}
+export declare class TextWidget extends BaseWidget<string> {}
+export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
+/** The object whose draw/onPointer applies to a widget (its class, or its type's class for plain objects), or null. */
+export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;
+/** Arithmetic for number entry (+ - * / % **, parentheses, pi, e); NaN for anything else. Nothing is executed. */
+export declare function evaluateMathExpression(text: string): number;

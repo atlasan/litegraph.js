@@ -1595,3 +1595,6 @@ class LGMIDIKeys {
     ];
 }
 LiteGraph.registerNodeType("midi/keys", LGMIDIKeys);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("midi/", ["browser", "midi"]);

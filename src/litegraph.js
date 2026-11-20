@@ -9,6 +9,12 @@ import { ContextMenu } from "./contextmenu.js";
 import { CallbackHandler } from "./callbackhandler.js";
 import { getGlobalObject, setGlobalVariable, getGlobalVariable, isBrowser, isNode, isBun, getRuntime } from './global.js';
 import { LibraryManager } from "./librarymanager.js";
+import { CommandRegistry } from "./commands.js";
+import { KeybindingRegistry } from "./keybindings.js";
+import { SettingsRegistry } from "./settings.js";
+import { ExtensionRegistry } from "./extensionregistry.js";
+import { MenuRegistry } from "./menus.js";
+import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 
 /**
  * @class LiteGraph
@@ -142,6 +148,8 @@ export class LiteGraphClass {
     Globals = {}; // used to store vars between graphs
 
     searchbox_extras = {}; // used to add extra features to the search box
+    node_definitions = {}; // metadata per registered type, readable without creating a node (see getNodeDefinition)
+    capability_rules = []; // [{match, capabilities}] from declareCapabilities, also applied to later registrations
     auto_sort_node_types = false; // [true!] If set to true, will automatically sort node types / categories in the context menus
 
     node_box_coloured_when_on = false; // [true!] this make the nodes box (top left circle) coloured when triggered (execute/action), visual feedback
@@ -260,6 +268,8 @@ export class LiteGraphClass {
         this.CallbackHandler = CallbackHandler;
         this.LibraryManager ??= new LibraryManager();
 
+        this.setupPlatform();
+
         // base inclusion
         this.includeBasicNodes();
     }
@@ -282,15 +292,185 @@ export class LiteGraphClass {
 
     registerCallbackHandler(){
         this.callbackhandler_setup();
-        this.cb_handler.registerCallbackHandler(...arguments);
+        return this.cb_handler.registerCallbackHandler(...arguments);
     }
     unregisterCallbackHandler(){
         this.callbackhandler_setup();
-        this.cb_handler.unregisterCallbackHandler(...arguments);
+        return this.cb_handler.unregisterCallbackHandler(...arguments);
     }
     processCallbackHandlers(){
         this.callbackhandler_setup();
-        this.cb_handler.processCallbackHandlers(...arguments);
+        return this.cb_handler.processCallbackHandlers(...arguments);
+    }
+
+    /**
+     * Builds the metadata of a node type without creating a node.
+     * Sources, in order: an optional `static def = {...}` on the class, then the classic static
+     * fields (`title`, `desc`/`description`, `search_aliases`, `capabilities`, `deprecated`,
+     * `experimental`, `skip_list`), then capability rules from {@link declareCapabilities}.
+     * `def.inputs` / `def.outputs` describe the slots when the class declares them (otherwise null:
+     * slots are only known after construction).
+     * @param {string} type
+     * @param {Function} base_class
+     * @returns {Readonly<object>} definition
+     */
+    describeNodeType(type, base_class) {
+        const own = (base_class.def && typeof base_class.def === "object") ? base_class.def : {};
+        const list = (value) => Array.isArray(value) ? [...value] : (value ? [value] : []);
+        const capabilities = new Set([...list(own.capabilities), ...list(base_class.capabilities)]);
+        for (const rule of this.capability_rules) {
+            if (rule.match(type)) rule.capabilities.forEach((capability) => capabilities.add(capability));
+        }
+        const slots = (value) => Array.isArray(value) ? value.map((slot) => Object.freeze({ ...slot })) : null;
+        return Object.freeze({
+            type,
+            title: own.display_name ?? own.title ?? base_class.title ?? type,
+            description: own.description ?? base_class.desc ?? base_class.description ?? "",
+            category: own.category ?? base_class.category ?? "",
+            search_aliases: Object.freeze([...list(own.search_aliases), ...list(base_class.search_aliases)]),
+            capabilities: Object.freeze([...capabilities]),
+            deprecated: !!(own.deprecated ?? base_class.deprecated),
+            experimental: !!(own.experimental ?? base_class.experimental),
+            hidden: !!(own.hidden ?? base_class.skip_list),
+            source: own.source ?? base_class.source ?? null,
+            inputs: slots(own.inputs),
+            outputs: slots(own.outputs),
+        });
+    }
+
+    /** @returns {Readonly<object>|null} the metadata of a registered node type */
+    getNodeDefinition(type) {
+        return this.node_definitions[type] ?? null;
+    }
+
+    /**
+     * Lists node definitions.
+     * @param {{category?: string, capability?: string, includeDeprecated?: boolean, includeHidden?: boolean, supportedOnly?: boolean}} [filter]
+     *   category matches the category and its subcategories; supportedOnly drops types this runtime cannot run
+     * @returns {Readonly<object>[]}
+     */
+    listNodeDefinitions({ category, capability, includeDeprecated = true, includeHidden = true, supportedOnly = false } = {}) {
+        return Object.values(this.node_definitions).filter((def) =>
+            (category === undefined || def.category === category || def.category.startsWith(category + "/"))
+            && (capability === undefined || def.capabilities.includes(capability))
+            && (includeDeprecated || !def.deprecated)
+            && (includeHidden || !def.hidden)
+            && (!supportedOnly || this.isNodeTypeSupported(def.type)));
+    }
+
+    /**
+     * Declares what node types need from their runtime ("browser", "node", "webgl", "audio", "midi",
+     * "dom", "network", "sys", or any custom name). Applies to registered types and to types
+     * registered later with a matching name.
+     * @param {string|string[]|((type: string) => boolean)} selector - exact type, a prefix ending in
+     *   "/" or "::", a list of those, or a predicate
+     * @param {string[]} capabilities
+     */
+    declareCapabilities(selector, capabilities) {
+        const toMatcher = (entry) => typeof entry === "function" ? entry
+            : (entry.endsWith("/") || entry.endsWith("::")) ? (type) => type.startsWith(entry)
+            : (type) => type === entry;
+        const matchers = (Array.isArray(selector) ? selector : [selector]).map(toMatcher);
+        const rule = { match: (type) => matchers.some((match) => match(type)), capabilities: [...capabilities] };
+        this.capability_rules.push(rule);
+        for (const type of Object.keys(this.registered_node_types)) {
+            if (rule.match(type)) this.node_definitions[type] = this.describeNodeType(type, this.registered_node_types[type]);
+        }
+    }
+
+    /** The capabilities this runtime provides (computed on each call: environments can change). */
+    getRuntimeCapabilities() {
+        const has = new Set(["network"]);
+        if (isNode() || isBun()) { has.add("node"); has.add("sys"); }
+        if (isBrowser()) has.add("browser");
+        if (typeof document !== "undefined" && document?.createElement) has.add("dom");
+        if (typeof WebGLRenderingContext !== "undefined" || typeof WebGL2RenderingContext !== "undefined") has.add("webgl");
+        if (typeof AudioContext !== "undefined" || typeof globalThis.webkitAudioContext !== "undefined") has.add("audio");
+        if (typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function") has.add("midi");
+        return has;
+    }
+
+    /** Known capabilities a type needs that this runtime lacks (custom names are not checked). */
+    getMissingCapabilities(type, runtime = this.getRuntimeCapabilities()) {
+        const known = ["browser", "node", "sys", "dom", "webgl", "audio", "midi", "network"];
+        return (this.getNodeDefinition(type)?.capabilities ?? []).filter((capability) => known.includes(capability) && !runtime.has(capability));
+    }
+
+    /** @returns {boolean} true when the type is registered and this runtime has what it needs */
+    isNodeTypeSupported(type, runtime) {
+        return !!this.registered_node_types[type] && this.getMissingCapabilities(type, runtime).length === 0;
+    }
+
+    /**
+     * Lower-case text the search box matches against: type, title, aliases and description.
+     * @returns {string}
+     */
+    getNodeSearchText(type) {
+        const def = this.node_definitions[type];
+        if (!def) return String(type).toLowerCase();
+        return [type, def.title, ...def.search_aliases, def.description].filter(Boolean).join(" \n").toLowerCase();
+    }
+
+    /**
+     * Registers an extension (see ExtensionRegistry): commands, key bindings, settings and hooks
+     * that are all removed again by the returned disposer.
+     * @param {object} def
+     * @returns {() => void} disposer
+     */
+    registerExtension(def) {
+        this.setupPlatform();
+        return this.extensions.register(def);
+    }
+
+    /**
+     * Registers (or replaces) the class implementing a canvas widget type.
+     * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
+     * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
+     */
+    registerWidgetType(type, widgetClass) {
+        this.setupPlatform();
+        if (typeof type !== "string" || !type) throw new TypeError("widget type must be a non-empty string");
+        if (typeof widgetClass !== "function" || !(widgetClass.prototype instanceof BaseWidget)) {
+            throw new TypeError(`widget type ${type}: class must extend BaseWidget`);
+        }
+        this.widget_types[type.toLowerCase()] = widgetClass;
+    }
+
+    /**
+     * Persists settings and the user key-binding layer through a storage adapter
+     * (default: localStorage under "litegraph.settings"). The Editor calls this unless created
+     * with `{ skip_persistence: true }`; embedders can call it with their own adapter.
+     * Calling it again only switches the storage.
+     * @param {{load(): object, save(values: object): void}} [storage]
+     */
+    persistPlatformState(storage = SettingsRegistry.localStorageAdapter()) {
+        this.setupPlatform();
+        this.settings.setStorage(storage);
+        const id = "LiteGraph.Keybindings.UserLayer";
+        if (!this.settings.has(id)) {
+            this.settings.define({
+                id,
+                type: "json",
+                name: "Key bindings changed by the user",
+                default: () => ({ bindings: {}, unset: [] }),
+                onChange: (value) => this.keybindings.importUserLayer(value),
+            });
+            this.keybindings.onUserLayerChange = (layer) => this.settings.set(id, layer);
+        }
+    }
+
+    /**
+     * Creates the platform registries once: shared operations (commands), key bindings,
+     * settings and extensions. Called by initialize(); safe to call earlier.
+     */
+    setupPlatform() {
+        this.callbackhandler_setup();
+        this.commands ??= new CommandRegistry();
+        this.keybindings ??= new KeybindingRegistry(this.commands);
+        this.settings ??= new SettingsRegistry();
+        this.menus ??= new MenuRegistry(this.commands);
+        this.widget_types ??= defaultWidgetTypes();
+        this.extensions ??= new ExtensionRegistry(this);
     }
 
     // set logging debug_level
@@ -450,6 +630,7 @@ export class LiteGraphClass {
         if (classname) {
             this.Nodes[classname] = base_class;
         }
+        this.node_definitions[type] = this.describeNodeType(type, base_class);
 
         this.processCallbackHandlers("onNodeTypeRegistered",{
             def_cb: this.onNodeTypeRegistered
@@ -502,6 +683,7 @@ export class LiteGraphClass {
             throw new Error("node type not found to unregister: " + type);
         }
         delete this.registered_node_types[base_class.type];
+        delete this.node_definitions[base_class.type];
         // Nodes is keyed by class name (base_class.constructor is always Function)
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
@@ -676,6 +858,7 @@ export class LiteGraphClass {
      */
     clearRegisteredTypes() {
         this.registered_node_types = {};
+        this.node_definitions = {};
         this.node_types_by_file_extension = {};
         this.Nodes = {};
         this.searchbox_extras = {};

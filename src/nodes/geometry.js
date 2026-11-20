@@ -1958,3 +1958,6 @@ function registerWebGLGeometryNodes() {
 }
 registerWebGLGeometryNodes();
 globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, { once: true });
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("geometry/", ["browser", "webgl"]);

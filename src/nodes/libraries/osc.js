@@ -110,3 +110,6 @@ class OSCClientNode {
 
 // Register for LiteGraph
 LiteGraph.registerNodeType("browser/network/osc_client", OSCClientNode);
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities("browser/", ["browser", "network"]);

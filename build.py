@@ -53,6 +53,11 @@ lib_js_files = [
     "./src/litegraph.js",
     "./src/callbackhandler.js",
     "./src/eventtarget.js",
+    "./src/commands.js",
+    "./src/keybindings.js",
+    "./src/settings.js",
+    "./src/menus.js",
+    "./src/extensionregistry.js",
     "./src/contextmenu.js",
     "./src/curveeditor.js",
     "./src/dragandscale.js",
@@ -66,6 +71,7 @@ lib_js_files = [
     "./src/llink.js",
     "./src/subgraph.js",
     "./src/librarymanager.js",
+    "./src/widgets.js",
     "./src/init_litegraph.js",
 ]
 

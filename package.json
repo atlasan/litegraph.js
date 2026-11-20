@@ -8,7 +8,7 @@
     "private": false,
     "scripts": {
         "build": "python3 build.py",
-        "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs -r --verbose --debug",
+        "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs/api -r --verbose --debug",
         "editor": "nodemon editor.js",
         "graphrunner": "nodemon --exec node headless/graphrunner/server/index.js",
         "start": "concurrently \"npm run editor\" \"npm run graphrunner\"",
@@ -118,5 +118,14 @@
                 "default": "./build_node/litegraph.core.cjs"
             }
         }
+    },
+    "jest": {
+        "testPathIgnorePatterns": [
+            "/node_modules/",
+            "<rootDir>/.claude/"
+        ],
+        "modulePathIgnorePatterns": [
+            "<rootDir>/.claude/"
+        ]
     }
 }

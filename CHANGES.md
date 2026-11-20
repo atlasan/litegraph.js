@@ -1,6 +1,50 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 1, platform layer
+
+## Added
+
+* Widget classes (`src/widgets.js`):
+  * `BaseWidget` with Button, Toggle, Slider, Number, Combo and Text widgets; `LiteGraph.registerWidgetType` adds custom types.
+  * `addWidget` returns class instances. Plain-object widgets and custom `draw`/`mouse` widgets keep working.
+* Widget inputs:
+  * `node.addWidgetInput(widget)`, or `addWidget(..., {socket: true})`, puts the input on the widget's row. While it is linked the widget is disabled, and `node.getWidgetValue(name)` returns the link's value.
+  * Dropping a link anywhere on the row connects it.
+* Unified selection:
+  * `canvas.selectedItems` covers nodes, groups and reroutes.
+  * `selectItem`, `deselectItem` and `isItemSelected` manage it; `moveSelected` and `deleteSelected` are one undo step each.
+  * Clicking a group title or a reroute selects it. Rectangle selection, Delete and the keyboard moves include groups and reroutes.
+* `CanvasPointer` gesture handlers (`onClick`, `onDoubleClick`, `onDragStart`, `onDrag`, `onDragEnd`, `finally`). Reroute dragging uses them.
+* `LiteGraph.menus`: canvas and node context-menu contributions. Extensions get `menus` and `ctx.onEvent`.
+* `LiteGraph.persistPlatformState(storage)`: settings and user key bindings survive reloads. The Editor turns it on unless `skip_persistence` is set.
+* `LibraryManager.describeLibraries()` and `probeLibraries()`.
+* Typed events: `link-connected`, `link-removed`, `node-property-changed`, `widget-changed`, `execution-step`, `node-error` and `selection-changed`.
+
+* `LiteGraph.commands` (CommandRegistry): named operations with `when()`. A command marked `mutatesGraph` runs in `graph.transact()`, so it is one undo step.
+* `LiteGraph.keybindings` (KeybindingRegistry): default, user and unset layers. Text entry is ignored. `LGraphCanvas.processKey` runs bound combos first.
+* `LiteGraph.settings` (SettingsRegistry): declared settings with defaults, migrations, `onChange`, binding onto existing flags, and a storage adapter (`SettingsRegistry.localStorageAdapter`).
+* `LiteGraph.registerExtension(def)` / `LiteGraph.extensions`: everything an extension registers (commands, bindings, settings, hooks) is removed by the returned disposer. It also has a disabled list, `requires`, and per-canvas hooks through `onCanvas`.
+* Node definitions:
+  * `LiteGraph.getNodeDefinition(type)` / `listNodeDefinitions(filter)`, built from an optional `static def` plus the classic statics. They are readable without creating a node.
+  * `LiteGraph.declareCapabilities(selector, caps)`, `getRuntimeCapabilities`, `getMissingCapabilities`, `isNodeTypeSupported`. Every node family declares what it needs: webgl, audio, midi, dom, node, sys or network.
+
+## Changed
+
+* The renamer, autoconnect and keyboard_helper extensions are built on commands and key bindings. A keyboard move or a rename is one undo step, and autoconnect switches itself off after one click. The `registerExtension_*` helpers remain.
+* The search box matches titles, aliases and descriptions as well as the type.
+
+## Fixes
+
+* Number entry no longer runs `eval()` on the typed text. A regex was supposed to guard it, but it let `1;alert(1)` through. A small arithmetic parser replaces it.
+* Text widgets reported their old value as the new one, and toggles reported no previous value. Both now report the right values.
+* `SettingsRegistry.setStorage` now reports changed values to `onChange`.
+* A widget gesture (click, or a drag until pointer up) is one undo step, instead of one full-graph snapshot per value change.
+* Inserting a node from the search box can be undone, also when nothing gets connected.
+* Dragging a group by whole units is recorded in history.
+* The canvas receiving key events becomes `LGraphCanvas.active_canvas`, and `prompt()` uses its own canvas. F2 and Shift+→ no longer fail before the first pointer input.
+* Runner (found in the Wave 0 review): script nodes are disabled unless `RUNNER_ALLOW_SYS=1`, `geometry/eval` is refused, and the Host check accepts IPv6 `HOST` and default-port origins.
+
 # Unreleased (0.10.x): Wave 0, safety and correctness
 
 ## Security

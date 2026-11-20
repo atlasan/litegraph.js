@@ -1,309 +1,85 @@
-> Development update (2026-10-30): see [current setup and validation](docs/development/README.md) and [history, upstream, and fork investigation](docs/development/2026-10-30-study.md).
+# litegraph.js (atlasan fork)
 
-# EXPERIMENTS WITH litegraph.js
+A node-graph library for the browser and Node.js: draw, edit and run graphs of nodes, in the spirit of Unreal Blueprints. This is an unofficial fork of [jagenjo/litegraph.js](https://github.com/jagenjo/litegraph.js). It focuses on general-purpose execution, a modern platform layer and a secured headless runner.
 
-A fork of the ecceptional litegraph.js library. This is unofficial and unsupported.
+![Node graph](imgs/node_graph_example.png)
 
--- 2025 --
-
-Having been await for a time, had few time to make things progress. Anyway the interest is here.
-Let's get in touch.
-
-
--- 2024 --
-
-Recent works regards moving LG to a new step. Actual state should be almost compatible but many things have been touched.
-Thanks to @daniel-lewis-ab for separate the library into classes, ES6 conversion and code refactoring. He's actually trying better ways to organize things in a new modern form. https://github.com/litegraph-tsx/
-Meanwhile I've been working in many aspect, one of them is allowing to register multiple structured callbacks with priority level maintaining compatibility with previous method. There are few working extensions making use of this method that while needs improvements already shows improving potential in expanding possibilities and expanding modularization.
-There has been the first effort in gathering people using and interested in improving LiteGraph.
-
-MODS
-
-- CallbacksHandlers for all previous callbacks (eg. onNodeMoved, oonDblClick, ..)
-  - register multiple callbacks
-  - use alongside previous direct callback set
-  - specify execution priority
-  - can break execution chain or prevent default callback
-  - specify result priority
-
-- Debugging improved
-  - better messages
-  - internal logging funcion
-  - use levels
-
-- Better search (fuzzy)
-
-- ContexMenu filter and keyboard navigation
-
-- Unserialize (configure) graph will try to fix nodes slots differences and restore links
-  - this can happend node code changes and importing a previously created .json
-  - will look for matching slot name, than for type
-
-- Groups improvement
-  - create group for selected nodes
-  - allow moving groups inside groups
-  - wrap title
-  - select inner nodes
-
-- Extensions
-  - autoconnnect: select nodes, press 'a', click on destination node
-  - keyboard helper:
-    - RightArrow+(Shift/Ctlr) will open add node / search node and connect to the newly placed
-    - Arrows will move selected nodes
-    - Tab (+Shift) and Cntrl+ArrowUp/Down tries to allow nodes selection navigation (WIP)
-    - 'F' focus on selected node 
-  - renamer: select a node o hover a group, press 'f2', specify title
-
-- Input link movable (WIP)
-  - will work for multiple too, but drawing only one while dragging
-  - does not yet open add and search panel, need drop precisely on slot
-
-
-+ fixes and experiments
-
-
-
--- 2022 --
-
-Here there are pushed a couple experiments, nothing serious, take it for what is it. Don't use it at others risk.
-
-MODS
-
-- auto connect
-  - drag into node
-  - auto select first available slot by type
-  - drag from IN to OUT)
-  - drag to create a new node
-  
-- [use with SHIFT when releasing connection to SEARCH!], or double click anywhere
-
-- filter nodes in search by types (filtering/proposing current type, or generic types, and 'wrong' types)
-
-- ContrlZ, ControlY and history basics
-
-- added "on request" mode: executed when an action or a trigger is executed
-
-- BIG MOD:
-  - ancestors calculation and execution: every node exeution check if his ancestors are "updated" (action lines are not considered)
-  - every action generate an ID that is stored by each node executed by it (and every frame is an action too)
-  - some event node creates new "IDs" when needed (when we want a behaviour that updates future nodes ancestors)
-
-
-- generic fixes
-
-- script node fix (code widget)
-
-- fix auto create oin-trigger slot
-
-- dialogs hide on mouseleave fix
-
-- "boxcolor" color on execute and action, applied to all nodes (like the lovely timer node does)
-
-- close node property panel with Esc
-
-- edit title, color and mode in node property panel
-
-- allow multiline in textarea by shift-enter
-
-- new logic nodes (and, or, not), new generic compare node (num, string, obj)
-
-- basics of Html, cdnLibraries, openCv, and test nodes
-
-
-
------------------------------------------
-Original README.md
------------------------------------------
-
-# [litegraph.js](https://github.com/jagenjo/litegraph.js)
-
-A library in Javascript to create graphs in the browser similar to Unreal Blueprints. Nodes can be programmed easily and it includes an editor to construct and tests the graphs.
-
-It can be integrated easily in any existing web applications and graphs can be run without the need of the editor.
-
-Try it in the [demo site](https://tamats.com/projects/litegraph/editor).
-
-![Node Graph](imgs/node_graph_example.png "WebGLStudio")
-
-## Features
-- Renders on Canvas2D (zoom in/out and panning, easy to render complex interfaces, can be used inside a WebGLTexture)
-- Easy to use editor (searchbox, keyboard shortcuts, multiple selection, context menu, ...)
-- Optimized to support hundreds of nodes per graph (on editor but also on execution)
-- Customizable theme (colors, shapes, background)
-- Callbacks to personalize every action/drawing/event of nodes
-- Subgraphs (nodes that contain graphs themselves)
-- Live mode system (hides the graph but calls nodes to render whatever they want, useful to create UIs)
-- Graphs can be executed in NodeJS
-- Highly customizable nodes (color, shape, slots vertical or horizontal, widgets, custom rendering)
-- Easy to integrate in any JS application (one single file, no dependencies)
-- Typescript support
-
-## Nodes provided
-Although it is easy to create new node types, LiteGraph comes with some default nodes that could be useful for many cases:
-- Interface (Widgets)
-- Math (trigonometry, math operations)
-- Audio (AudioAPI and MIDI)
-- 3D Graphics (Postprocessing in WebGL)
-- Input (read Gamepad)
-
-## Installation
-
-You can install it using npm 
-```
-npm install litegraph.js
-```
-
-Or downloading the ```build/litegraph.js``` and ```css/litegraph.css``` version from this repository.
-
-## First project ##
-
-```html
-<html>
-<head>
-	<link rel="stylesheet" type="text/css" href="litegraph.css">
-	<script type="text/javascript" src="litegraph.js"></script>
-</head>
-<body style='width:100%; height:100%'>
-<canvas id='mycanvas' width='1024' height='720' style='border: 1px solid'></canvas>
-<script>
-var graph = new LGraph();
-
-var canvas = new LGraphCanvas("#mycanvas", graph);
-
-var node_const = LiteGraph.createNode("basic/const");
-node_const.pos = [200,200];
-graph.add(node_const);
-node_const.setValue(4.5);
-
-var node_watch = LiteGraph.createNode("basic/watch");
-node_watch.pos = [700,200];
-graph.add(node_watch);
-
-node_const.connect(0, node_watch, 0 );
-
-graph.start()
-</script>
-</body>
-</html>
-```
-
-## How to code a new Node type
-
-Here is an example of how to build a node that sums two inputs:
-
-```javascript
-//node constructor class
-function MyAddNode()
-{
-  this.addInput("A","number");
-  this.addInput("B","number");
-  this.addOutput("A+B","number");
-  this.properties = { precision: 1 };
-}
-
-//name to show
-MyAddNode.title = "Sum";
-
-//function to call when the node is executed
-MyAddNode.prototype.onExecute = function()
-{
-  var A = this.getInputData(0);
-  if( A === undefined )
-    A = 0;
-  var B = this.getInputData(1);
-  if( B === undefined )
-    B = 0;
-  this.setOutputData( 0, A + B );
-}
-
-//register in the system
-LiteGraph.registerNodeType("basic/sum", MyAddNode );
-
-```
-
-or you can wrap an existing function:
+## Quick start
 
 ```js
-function sum(a,b)
-{
-   return a+b;
-}
+import { LiteGraph, LGraph, LGraphCanvas } from "@litegraph/litegraph";
 
-LiteGraph.wrapFunctionAsNode("math/sum",sum, ["Number","Number"],"Number");
+const graph = new LGraph();
+new LGraphCanvas("#canvas", graph);          // omit in Node.js
+const a = LiteGraph.createNode("basic/const");
+const b = LiteGraph.createNode("basic/watch");
+graph.add(a); graph.add(b);
+a.connect(0, b, 0);
+graph.start();
 ```
 
-## Server side
+The package has three entries:
+- `@litegraph/litegraph`: classes and the node catalog
+- `/core`: classes only
+- `/node`: adds Node-only nodes
 
-It also works server-side using NodeJS although some nodes do not work in server (audio, graphics, input, etc).
+Each entry works with ESM and CommonJS. For the browser, load `build/litegraph.js` and `css/litegraph.css`.
 
-```js
-var LiteGraph = require("./litegraph.js").LiteGraph;
+To run locally:
 
-var graph = new LiteGraph.LGraph();
-
-var node_time = LiteGraph.createNode("basic/time");
-graph.add(node_time);
-
-var node_console = LiteGraph.createNode("basic/console");
-node_console.mode = LiteGraph.ALWAYS;
-graph.add(node_console);
-
-node_time.connect( 0, node_console, 1 );
-
-graph.start()
-```
-
-
-## Projects using it
-
-### [comfyUI](https://github.com/comfyanonymous/ComfyUI)
-![screenshot](https://github.com/comfyanonymous/ComfyUI/blob/6efe561c2a7321501b1b27f47039c7616dda1860/comfyui_screenshot.png)
-
-### [webglstudio.org](http://webglstudio.org)
-
-![WebGLStudio](imgs/webglstudio.gif "WebGLStudio")
-
-### [MOI Elephant](http://moiscript.weebly.com/elephant-systegraveme-nodal.html)
-
-![MOI Elephant](imgs/elephant.gif "MOI Elephant")
-
-### Mynodes
-
-![MyNodes](imgs/mynodes.png "MyNodes")
-
-## Utils
------
-
-It includes several commands in the utils folder to generate doc, check errors and build minifyed version.
-
-
-## Demo
------
-The demo includes some examples of graphs. In order to try them you can visit [demo site](http://tamats.com/projects/litegraph/editor) or install it on your local computer, to do so you need `git`, `node` and `npm`. Given those dependencies are installed, run the following commands to try it out:
 ```sh
-$ git clone https://github.com/jagenjo/litegraph.js.git
-$ cd litegraph.js
-$ npm install
-$ node utils/server.js
-Example app listening on port 80!
+npm ci --ignore-scripts
+npm run editor        # http://127.0.0.1:8000/editor/editor_build.html
+npm run graphrunner   # http://127.0.0.1:3000/
 ```
-Open your browser and point it to http://localhost:8000/. You can select a demo from the dropdown at the top of the page.
 
-## Feedback
---------
+## What this fork adds
 
-You can write any feedback to javi.agenjo@gmail.com
+- **Execution:**
+  - ON_REQUEST mode, which pulls ancestors on demand.
+  - Deferred actions and event-cycle guards.
+  - Node readiness with async dependency loading.
+  - Awaitable start, stop and cleanup.
+- **Platform:**
+  - Registries for commands, key bindings, settings and menus.
+  - `registerExtension`, which disposes everything an extension added.
+  - Typed events.
+  - Node definitions with capabilities.
+  - A library manifest.
+- **Editor:**
+  - Widget classes and widget inputs.
+  - Unified selection of nodes, groups and reroutes.
+  - Reroutes, transactional undo, and pointer gestures.
+  - Callback handlers that accept several prioritised handlers per hook.
+- **Runner:**
+  - `headless/graphrunner` runs each graph in its own worker.
+  - It checks Origin and Host, refuses dangerous node types, and keeps scripts locked unless explicitly allowed.
+- **Interop:** ComfyUI workflow JSON import and export (`src/extensions/comfy_interop.js`).
+- **Quality gate:** `npm run check` runs lint, 12 builds, strict type consumers, about 430 tests, and a package check.
 
-## Contributors
+## Documentation
 
-- atlasan
-- kriffe
-- rappestad
-- InventivetalentDev
-- NateScarlet
-- coderofsalvation
-- ilyabesk
-- gausszhou
+| For | Read |
+|---|---|
+| Using the library | [Guide](docs/guide.md), [callbacks](docs/callbacks.md), [API](docs/api/index.html) (generated) |
+| Developing it | [Development](docs/development.md), [AGENTS.md](AGENTS.md), [CHANGES.md](CHANGES.md) |
+| Where it is going | [Roadmap](agents/plans/roadmap.md), [ideas](agents/ideas/README.md) |
+| How it works and what we learned | [Codebase map](agents/memories/codebase/README.md), [research](agents/memories/README.md), [audits](agents/audits/README.md) |
 
+## History
 
+| Period | What happened |
+|---|---|
+| **2022** | Experiments on top of upstream: autoconnect, type-filtered search, Ctrl+Z/Y history, ON_REQUEST mode with ancestor execution, logic and compare nodes |
+| **2024** | Class and ES6 refactor, thanks to @daniel-lewis-ab (now [litegraph-tsx](https://github.com/litegraph-tsx/)). Prioritised callback handlers, better debug logging, fuzzy search, keyboard-navigable menus, slot repair on `configure`, nested groups, first extensions |
+| **2026** | Stabilization and validation, then the roadmap waves: safety and the runner lockdown (Wave 0), and the platform layer (Wave 1). See the [roadmap](agents/plans/roadmap.md) |
 
+## Credits
+
+The original library and editor are by **Javi Agenjo** ([jagenjo](https://github.com/jagenjo/litegraph.js)).
+
+Contributors include atlasan, kriffe, rappestad, InventivetalentDev, NateScarlet, coderofsalvation, ilyabesk, gausszhou and daniel-lewis-ab.
+
+Projects built on litegraph include [ComfyUI](https://github.com/comfyanonymous/ComfyUI), WebGLStudio, MOI Elephant and MyNodes; there are [many more](agents/ideas/landscape/litegraph-census.md).
+
+MIT licensed; see [LICENSE](LICENSE).

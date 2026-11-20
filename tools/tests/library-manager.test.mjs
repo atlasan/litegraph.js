@@ -151,3 +151,25 @@ test('waitAllLibrariesLoaded settles on success, rejects on failure and on timeo
     manager.loadLibrary('bad').catch(() => {});
     await assert.rejects(manager.waitAllLibrariesLoaded({ timeout: 30 }), /still loading after 30ms: bad/);
 });
+
+test('describeLibraries lists the manifest; probeLibraries reports missing npm packages without loading', async () => {
+    const manager = new LibraryManager();
+    manager.registerLibrary({ key: 'path-lib', version: '1', globalObject: '__probePath', description: 'node path', server: { npm: 'node:path' }, browser: { remote: 'https://example.invalid/p.js' } });
+    manager.registerLibrary({ key: 'gone', optional: false, server: { npm: 'litegraph-missing-probe-dependency' } });
+    manager.registerLibrary({ key: 'browser-only', browser: { local: 'x.js' } });
+    const manifest = manager.describeLibraries();
+    assert.deepEqual(manifest.find((entry) => entry.key === 'path-lib'), {
+        key: 'path-lib', version: '1', globalObject: '__probePath', description: 'node path', optional: true,
+        browser: { local: [], remote: ['https://example.invalid/p.js'] }, server: { npm: ['node:path'], remote: [] }, state: 'not_loaded',
+    });
+    assert.equal(manifest.find((entry) => entry.key === 'gone').optional, false);
+    const probe = await manager.probeLibraries();
+    const byKey = Object.fromEntries(probe.map((entry) => [entry.key, entry]));
+    assert.equal(byKey['path-lib'].available, true);
+    assert.deepEqual(byKey.gone.missing, ['litegraph-missing-probe-dependency']);
+    assert.equal(byKey.gone.available, false);
+    assert.equal(byKey['browser-only'].available, null);
+    assert.equal(manager.getLibraryState('path-lib'), 'not_loaded', 'probing does not load');
+    assert.equal(globalThis.__probePath, undefined);
+    assert.equal((await manager.probeLibraries(['nope']))[0].error, 'not registered');
+});

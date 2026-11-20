@@ -2094,3 +2094,6 @@ registerShaderNode("math/remap", LGraphShaderRemap);
 LiteGraph.registerNodeType("texture/shaderGraph", LGraphShaderGraph);
 
 LGraphTexture.guardRegisteredWebGLNodes();
+
+// what these node types need from the runtime (see LiteGraph.declareCapabilities)
+LiteGraph.declareCapabilities(["shader::", "texture/"], ["browser", "webgl"]);
