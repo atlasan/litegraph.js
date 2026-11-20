@@ -188,6 +188,19 @@ graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0
 
 **Subgraphs:** `graph.convertToSubgraph(nodes)` turns nodes into a subgraph node. It creates one input per outside source and one output per inside source, and event links become event ports. `graph.unpackSubgraph(node)` reverses it. Both are one undo step, and both are in the node menu ("Convert to subgraph", "Unpack subgraph").
 
+**Subgraph definitions:** every subgraph node uses a *definition* (`node.properties.subgraph_id`), kept in the root graph's registry `graph.subgraphs`. Copies of a subgraph node in one document share their definition:
+- Edit one (open it, change it, leave it) and the others follow, as one undo step; outer links stay, matched by slot id.
+- "Make unique" in the node menu gives a node its own definition.
+- Pasting content whose definition id is already known but whose content differs creates a new definition instead of replacing the known one.
+
+| Setting or flag | Default | Effect |
+|---|---|---|
+| `LiteGraph.subgraph_format` | `"inline"` | `"inline"`: instances keep their inner graph, plus a `definitions.subgraphs` registry (older readers keep working). `"definitions"`: the ComfyUI form, where instances reference definitions (`graph.serialize({format})` chooses per call) |
+| `LiteGraph.subgraph_max_depth` | 32 | Nesting limit when loading definitions, and the call depth of function nodes |
+| `LiteGraph.Subgraph.PasteLinked` | on | Pasted or duplicated subgraph nodes share their definition; off: each gets a copy |
+
+**Function nodes:** `graph/function` calls a definition of the document. Pick it in the node's `function` combo; `call` (action input or button) pushes the inputs, runs it once, pulls the outputs and fires `done`. Each function node keeps its own state between calls. A function cannot call a definition it is inside of.
+
 **Groups:** `group.resizeTo(items)` and `group.fitToContents()` change a group's size; `group.setNodesMode(mode)` sets the mode of every node inside. The group menu offers "Fit to contents" and "Mode for all nodes".
 
 **Clipboard and fragments:** `canvas.serializeSelection()` returns a fragment: nodes, their links, reroute chains and the selected groups. `canvas.insertFragment(fragment, pos)` inserts it with fresh ids as one undo step, so snippets and templates use the same path as paste.

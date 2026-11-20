@@ -28,7 +28,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
-| 3 | Subgraph v2 and components | **Planned**: [plan](2026-11-20-wave3-subgraph-system.md) accepted (3a format, registry, linked instances, function node, runner; 3b authoring; 3c components); 3a next |
+| 3 | Subgraph v2 and components | **In progress**: [plan](2026-11-20-wave3-subgraph-system.md); **3a done** on `LG/wave3_subgraphs` ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md)) except the ComfyUI schema probe and the default flip; 3b next |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
 
@@ -110,7 +110,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 - RenderLink classes, and split title drawing with icons (H2).
 - Carrying reroutes across a subgraph boundary on conversion and unpack.
 
-## Wave 3: subgraph v2 and components (planned)
+## Wave 3: subgraph v2 and components (in progress)
 
 ADR 0001 (D2): option B chosen 2026-11-20; it is accepted when 3a meets its criteria. Plan: [Wave 3: subgraph system](2026-11-20-wave3-subgraph-system.md) (accepted; decisions W3-1–W3-6 taken).
 

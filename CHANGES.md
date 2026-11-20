@@ -1,6 +1,28 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 3a, subgraph definitions
+
+## Added
+
+* Subgraph definitions in the ComfyUI form: `definitions.subgraphs`, interface links through `-10`/`-20`, stable slot ids. `SubgraphDefs` converts documents (pure JSON).
+* `graph.subgraphs` (the definition registry), `graph.rootGraph`, `graph.serialize({format})`, `LiteGraph.subgraph_format` (`"inline"` by default for now) and `LiteGraph.subgraph_max_depth`.
+* Linked subgraph instances: `commitDefinition` (leaving a subgraph on the canvas commits it), `refreshFromDefinition`, `makeUnique` ("Make unique" in the node menu), the setting `LiteGraph.Subgraph.PasteLinked`, and the graph events `subgraph-definition-changed` / `subgraph-forked`.
+* `graph/function` rebuilt: it calls a definition (`call` / `done`), keeps its own state and passes events through. Older documents migrate.
+
+## Changed
+
+* ComfyUI export writes subgraphs as definitions and maps modes inside them. Documents written by this runtime are no longer detected as ComfyUI workflows.
+* The runner's node policy checks every subgraph definition, used or not.
+
+## Fixed
+
+* Opening a subgraph in `editor_build.html` threw (`attachCanvas` refused the editor's canvas).
+
+## Removed
+
+* `input.hard_coded_value` / `output.hard_coded_output`, only used by the old function node.
+
 # Unreleased (0.10.x): Wave 2b, links and pointer
 
 ## Added
