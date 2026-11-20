@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Wave 2 complete and in `master`
+> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Wave 4 accepted
 
 This is the single place for the current status of planned work.
 
@@ -29,7 +29,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
 | 3 | Subgraph v2 and components | **Done**: 3a definitions, function node, interop ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [probe](../executions/2026-11-20-wave3a-schema-probe.md)); 3b authoring ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)); 3c components, blueprints, SA port ([record](../executions/2026-11-20-wave3c-components.md)); merged into `LG/dev` and `master` ([PR #10](https://github.com/atlasan/litegraph.js/pull/10)). See the [plan](2026-11-20-wave3-subgraph-system.md). |
-| 4 | Ecosystem and workspace features | Proposed |
+| 4 | Ecosystem and workspace features | **Accepted**, parts 4a–4e; see the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | Proposed |
 
 ## Wave 0: safety and correctness (done)
@@ -120,15 +120,17 @@ ADR 0001 (D2): option B, accepted 2026-11-20 after 3a. Plan: [Wave 3: subgraph s
 - SA's 14 subgraph test files ported as acceptance cases.
 - Blueprints: insert as a copy; linked instances only as an explicit later choice.
 
-## Wave 4: ecosystem and workspace (proposed)
+## Wave 4: ecosystem and workspace (accepted)
 
-- **Pack manifest** (`id`, `version`, `requires.litegraph`, nodes, extensions, libraries, templates, locales), provenance stamping, a missing-nodes report on load, and **replacement mappings as data**.
-- **Link style resolver** (spotlight, dim by type, hidden or labelled links), link router plug-in, minimap with decoration layers (H1, H9).
-- **Auto-layout adapter:** dagre built in, ELK as an optional plugin; one transaction; can be scoped to the selection.
-- **Shared execution-state protocol** between the editor and the runner; node status and progress; error overlays.
-- **Node palette** with drag-to-canvas, favourites stored as a setting, and a preview drawn from the definition.
-- **Dirty flag** (modified vs saved) and draft autosave.
-- **Catalog cleanup:** one watch node, `jquery` → `html`, one network naming scheme, consistent category roots.
+Plan: [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md) (accepted; decisions W4-1–W4-7 taken).
+
+| Part | Items | Status |
+|---|---|---|
+| 4a | **Pack manifest** (`id`, `version`, `requires.litegraph`, nodes, extensions, libraries, templates, locales) and registry, builtin packs per family (D6), provenance stamping, a missing-nodes report on load, **replacement mappings as data** | Planned |
+| 4b | `graph-changed` / `viewport-changed` (H9), **dirty flag** and draft autosave, **shared execution-state protocol** between the editor and the runner, node status / progress / error overlays, split title drawing with icons (H2, carried over) | Planned |
+| 4c | RenderLink classes (carried over), **link style resolver** (spotlight, dim by type, hidden or labelled links), link router plug-in, **minimap** with decoration layers (H1, H9), DragAndScale listeners into `CanvasPointer` (carried over) | Planned |
+| 4d | **Auto-layout adapter** (dagre loaded on demand, ELK optional; one transaction; selection scope), **node palette** with drag-to-canvas, favourites and a preview | Planned |
+| 4e | **Catalog cleanup** (one watch node, `jquery` → `html`, one network naming scheme, category roots) through 4a mappings; reroutes across subgraph boundaries (carried over) | Planned |
 
 ## Wave 5: repository organization and packaging (proposed)
 
@@ -152,5 +154,5 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | D3 | Porting style for SA modules | Adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
 | D4 | Node metadata direction | Hybrid (`static def` today); add `defineNodeType` later |
 | D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
-| D6 | Large built-in node catalog | Keep it in core until the pack manifest exists, then split by family |
+| D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
 | D7 | Upgrading the remaining runtime dependencies with advisories | Upgrade to releases at least 2 weeks old, after a changelog review |
