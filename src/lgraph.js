@@ -2157,6 +2157,94 @@ export class LGraph {
         return node;
     }
 
+    /**
+     * Inserts a subgraph node for a definition (a blueprint), as one undo step.
+     * @param {object|string} definition - a definition, or the id of one in the root registry
+     * @param {{pos?: number[], linked?: boolean, definitions?: object[]}} [options]
+     *   linked: use that registry entry (instances share it); default: a copy with a new id.
+     *   definitions: nested definitions the definition uses (a copy keeps identical ones shared and
+     *   gives new ids to ones that differ from what this document has)
+     * @returns {object} the subgraph node
+     */
+    insertDefinition(definition, { pos = [0, 0], linked = false, definitions = [] } = {}) {
+        const root = this.rootGraph;
+        const byId = typeof definition === "string";
+        let node = null;
+        this.transact("insertSubgraph", () => {
+            let id;
+            if (linked) {
+                id = byId ? definition : definition?.id;
+                if (!root.subgraphs.has(id)) {
+                    if (byId) throw new Error(`insertDefinition: no definition ${id} in this document`);
+                    const found = SubgraphDefs.collectDefinitions({ definitions: { subgraphs: [definition, ...definitions] } });
+                    for (const [key, value] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, value);
+                }
+            } else {
+                const all = byId ? root.subgraphs : SubgraphDefs.collectDefinitions({ definitions: { subgraphs: [definition, ...definitions] } });
+                const sourceId = byId ? definition : definition?.id;
+                if (!all.has(sourceId)) throw new Error(`insertDefinition: unknown definition ${sourceId}`);
+                id = this._addDefinitionCopy(root, sourceId, all);
+            }
+            node = LiteGraph.createNode("graph/subgraph");
+            node.properties.subgraph_id = id;
+            node.subgraph.id = id;
+            node.pos = [pos[0], pos[1]];
+            this.add(node);
+            node.refreshFromDefinition();
+            node.title = root.subgraphs.get(id)?.name ?? node.title;
+        });
+        return node;
+    }
+
+    /** copies a definition and the nested ones it uses into the registry; returns the copy's id */
+    _addDefinitionCopy(root, sourceId, all) {
+        const used = [];
+        const walk = (id) => {
+            if (used.includes(id) || !all.has(id)) return;
+            used.push(id);
+            for (const next of SubgraphDefs.directDefinitionIds(all.get(id))) walk(next);
+        };
+        walk(sourceId);
+        const remap = new Map();
+        for (const id of used) {
+            const known = root.subgraphs.get(id);
+            const same = known && SubgraphDefs.canonical(known) === SubgraphDefs.canonical(all.get(id));
+            remap.set(id, id === sourceId || (known && !same) ? LiteGraph.uuidv4() : id);
+        }
+        for (const id of used) {
+            const target = remap.get(id);
+            if (root.subgraphs.has(target)) continue; // an identical one is shared
+            const copy = LiteGraph.cloneObject(all.get(id));
+            copy.id = target;
+            delete copy.definitions;
+            for (const node of copy.nodes ?? []) {
+                if (remap.has(node?.type)) node.type = remap.get(node.type);
+                if (node?.properties && remap.has(node.properties.subgraph_id)) node.properties.subgraph_id = remap.get(node.properties.subgraph_id);
+            }
+            root.subgraphs.set(target, copy);
+        }
+        return remap.get(sourceId);
+    }
+
+    /**
+     * Inserts a blueprint: a definition, or a document with definitions.subgraphs (the definition
+     * its first instance uses, else the first one). Always a copy.
+     * @param {object} json
+     * @param {{pos?: number[]}} [options]
+     */
+    insertBlueprint(json, options = {}) {
+        if (json && (Array.isArray(json.inputs) || json.inputNode) && Array.isArray(json.nodes)) {
+            return this.insertDefinition(json, { ...options, linked: false, definitions: json.definitions?.subgraphs ?? [] });
+        }
+        const list = json?.definitions?.subgraphs ?? [];
+        const ids = new Set(list.map((d) => d?.id));
+        const instance = (json?.nodes ?? []).find((n) => ids.has(n?.type) || ids.has(n?.properties?.subgraph_id));
+        const mainId = instance ? (ids.has(instance.type) ? instance.type : instance.properties.subgraph_id) : list[0]?.id;
+        const main = list.find((d) => d?.id === mainId);
+        if (!main) throw new Error("insertBlueprint: no subgraph definition in this document");
+        return this.insertDefinition(main, { ...options, linked: false, definitions: list.filter((d) => d !== main) });
+    }
+
     /** subgraph and function nodes (at any depth) that use a definition */
     findSubgraphInstances(id) {
         const found = [];

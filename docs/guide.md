@@ -206,6 +206,12 @@ graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0
 - **Commands:** the `subgraph_tools` extension adds `litegraph.subgraph.open`, `close`, `closeAll`, `convert`, `unpack`, `makeUnique` and `removeUnusedDefinitions`.
 - **Paths:** `node.getPath()` addresses a node from the root ("3:7:2"), and `graph.resolvePath(path)` finds it. `node-error` events carry the innermost failing node and its `path`.
 
+**Components and blueprints:**
+- **Components:** `LiteGraph.registerSubgraphType("my/blur", definition, {revision: 1})` makes a definition a node type: it shows in search and menus, and inserting it gives the document the definition.
+- **Saving:** documents save components as plain subgraph instances (`properties.component`), so a document opens where the component is not registered.
+- **Updates:** registering a higher revision shows an "update" badge on older instances. "Update from my/blur" (or `litegraph.subgraph.updateFromSource`) refreshes every linked instance as one undo step.
+- **Blueprints:** `graph.insertDefinition(definition)` inserts a copy with a new id; `{linked: true}` with a document definition id shares it instead. `graph.insertBlueprint(json)` takes a definition or a whole document with `definitions.subgraphs`. The canvas menu's "Insert subgraph" lists the document's definitions.
+
 **Function nodes:** `graph/function` calls a definition of the document. Pick it in the node's `function` combo; `call` (action input or button) pushes the inputs, runs it once, pulls the outputs and fires `done`. Each function node keeps its own state between calls. A function cannot call a definition it is inside of.
 
 **Groups:** `group.resizeTo(items)` and `group.fitToContents()` change a group's size; `group.setNodesMode(mode)` sets the mode of every node inside. The group menu offers "Fit to contents" and "Mode for all nodes".

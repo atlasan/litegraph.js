@@ -1,6 +1,18 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 3c, components and blueprints
+
+## Added
+
+* `LiteGraph.registerSubgraphType(type, definition, options)`: subgraph components as node types, with an "update" badge, `updateFromSource` and the command `litegraph.subgraph.updateFromSource` for newer registered revisions.
+* `graph.insertDefinition(definition | id, {pos, linked, definitions})` and `graph.insertBlueprint(json)`; "Insert subgraph" in the canvas menu.
+* 43 subgraph acceptance tests adapted from the MIT Comfy-Org/litegraph.js standalone.
+
+## Fixed
+
+* Loaded subgraph definitions with empty `linkIds` or without `version`, `name`, `widgets` or IO boxes are completed on load.
+
 # Unreleased (0.10.x): Wave 3b, subgraph authoring
 
 ## Added

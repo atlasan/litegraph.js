@@ -6525,6 +6525,29 @@ export class LGraphCanvas {
         }
     }
 
+    /** submenu: the document's subgraph definitions, inserted linked or as a copy */
+    static onMenuInsertSubgraph(value, options, event, prev_menu) {
+        const canvas = LGraphCanvas.active_canvas;
+        const graph = canvas?.graph;
+        if (!graph) return;
+        const entries = [];
+        for (const definition of graph.rootGraph.subgraphs.values()) {
+            const name = definition.name ?? "Subgraph";
+            entries.push({ content: name, id: definition.id, linked: true });
+            entries.push({ content: `${name} (copy)`, id: definition.id, linked: false });
+        }
+        const pos = [canvas.graph_mouse[0], canvas.graph_mouse[1]];
+        LiteGraph.ContextMenu(entries, {
+            event,
+            parentMenu: prev_menu,
+            callback: (entry) => {
+                const node = graph.insertDefinition(entry.id, { pos, linked: entry.linked });
+                canvas.selectNodes([node]);
+                canvas.setDirty(true, true);
+            },
+        });
+    }
+
     static onGroupAlign(value, options, event, prev_menu) {
         LiteGraph.ContextMenu(["Top", "Bottom", "Left", "Right"], {
             event: event,
@@ -9526,6 +9549,7 @@ export class LGraphCanvas {
                     callback: that.showSearchBox,
                 },
                 { content: "Add Group", callback: LGraphCanvas.onGroupAdd },
+                ...(that.graph?.rootGraph?.subgraphs?.size ? [{ content: "Insert subgraph", has_submenu: true, callback: LGraphCanvas.onMenuInsertSubgraph }] : []),
                 // { content: "Arrange", callback: that.graph.arrange },
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];

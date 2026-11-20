@@ -265,6 +265,7 @@ class LiteGraphClass {
     keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
     subgraph_format = "definitions"; // root serialize: "definitions" (ComfyUI form, instances reference definitions.subgraphs) or "inline" (instances keep their inner graph, for older readers)
     subgraph_max_depth = 32; // nesting limit for subgraph definitions (load) and calls
+    subgraph_components = new Map(); // registerSubgraphType: type -> {type, id, revision, definitions}
     snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
     two_fingers_opens_menu = false; // [true!] using pointer event isPrimary, when is not simulate right click
@@ -424,6 +425,38 @@ class LiteGraphClass {
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
     getNodeDefinition(type) {
         return this.node_definitions[type] ?? null;
+    }
+
+    /**
+     * Registers a subgraph definition as a node type (a component): it appears in search and menus
+     * like any node. Inserting one gives the document the definition; instances of it link to it.
+     * Documents save them as plain subgraph instances (properties.component = {type, revision}), so
+     * they load without the registration. Registering a higher revision offers "update" on
+     * instances made from an older one.
+     * @param {string} type - e.g. "my/blur"
+     * @param {object} definition - a subgraph definition (ComfyUI shape), with an id
+     * @param {{revision?: number, title?: string, description?: string, category?: string, source?: string, definitions?: object[]}} [options]
+     *   definitions: nested definitions it uses
+     * @returns {{type: string, id: string, revision: number, definitions: Map<string, object>}}
+     */
+    registerSubgraphType(type, definition, options = {}) {
+        if (typeof type !== "string" || !type) throw new TypeError("registerSubgraphType: type must be a non-empty string");
+        if (typeof definition?.id !== "string" || !definition.id) throw new TypeError(`registerSubgraphType ${type}: the definition needs an id`);
+        const definitions = SubgraphDefs.collectDefinitions({
+            definitions: {
+                subgraphs: [definition, ...(options.definitions ?? [])]
+            }
+        });
+        if (SubgraphDefs.findCycles(definitions).size) throw new Error(`registerSubgraphType ${type}: the definition contains itself`);
+        const entry = {
+            type,
+            id: definition.id,
+            revision: Number(options.revision ?? definition.revision ?? 0),
+            definitions
+        };
+        this.subgraph_components.set(type, entry);
+        this.registerNodeType(type, Subgraph.componentClass(entry, options));
+        return entry;
     }
 
     /**
@@ -640,6 +673,17 @@ class LiteGraphClass {
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? {
                 text: `#${node.id}`
             } : null);
+            this.settings.define({
+                id: "LiteGraph.Subgraph.UpdateBadge",
+                name: "Show an update badge on components with a newer registered revision",
+                default: true
+            });
+            this.nodeBadges.register((node) => (this.settings.get("LiteGraph.Subgraph.UpdateBadge") && node.hasSourceUpdate?.()) ?
+                {
+                    text: "update",
+                    fgColor: "#EFE",
+                    bgColor: "rgba(40,110,60,0.85)"
+                } : null);
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.SourceBadge")) return null;
                 const source = node.constructor?.source ?? this.getNodeDefinition?.(node.type)?.source;
@@ -6835,6 +6879,115 @@ class LGraph {
             graph = index < parts.length - 1 ? node.subgraph : null;
         }
         return node;
+    }
+
+    /**
+     * Inserts a subgraph node for a definition (a blueprint), as one undo step.
+     * @param {object|string} definition - a definition, or the id of one in the root registry
+     * @param {{pos?: number[], linked?: boolean, definitions?: object[]}} [options]
+     *   linked: use that registry entry (instances share it); default: a copy with a new id.
+     *   definitions: nested definitions the definition uses (a copy keeps identical ones shared and
+     *   gives new ids to ones that differ from what this document has)
+     * @returns {object} the subgraph node
+     */
+    insertDefinition(definition, {
+        pos = [0, 0],
+        linked = false,
+        definitions = []
+    } = {}) {
+        const root = this.rootGraph;
+        const byId = typeof definition === "string";
+        let node = null;
+        this.transact("insertSubgraph", () => {
+            let id;
+            if (linked) {
+                id = byId ? definition : definition?.id;
+                if (!root.subgraphs.has(id)) {
+                    if (byId) throw new Error(`insertDefinition: no definition ${id} in this document`);
+                    const found = SubgraphDefs.collectDefinitions({
+                        definitions: {
+                            subgraphs: [definition, ...definitions]
+                        }
+                    });
+                    for (const [key, value] of found)
+                        if (!root.subgraphs.has(key)) root.subgraphs.set(key, value);
+                }
+            } else {
+                const all = byId ? root.subgraphs : SubgraphDefs.collectDefinitions({
+                    definitions: {
+                        subgraphs: [definition, ...definitions]
+                    }
+                });
+                const sourceId = byId ? definition : definition?.id;
+                if (!all.has(sourceId)) throw new Error(`insertDefinition: unknown definition ${sourceId}`);
+                id = this._addDefinitionCopy(root, sourceId, all);
+            }
+            node = LiteGraph.createNode("graph/subgraph");
+            node.properties.subgraph_id = id;
+            node.subgraph.id = id;
+            node.pos = [pos[0], pos[1]];
+            this.add(node);
+            node.refreshFromDefinition();
+            node.title = root.subgraphs.get(id)?.name ?? node.title;
+        });
+        return node;
+    }
+
+    /** copies a definition and the nested ones it uses into the registry; returns the copy's id */
+    _addDefinitionCopy(root, sourceId, all) {
+        const used = [];
+        const walk = (id) => {
+            if (used.includes(id) || !all.has(id)) return;
+            used.push(id);
+            for (const next of SubgraphDefs.directDefinitionIds(all.get(id))) walk(next);
+        };
+        walk(sourceId);
+        const remap = new Map();
+        for (const id of used) {
+            const known = root.subgraphs.get(id);
+            const same = known && SubgraphDefs.canonical(known) === SubgraphDefs.canonical(all.get(id));
+            remap.set(id, id === sourceId || (known && !same) ? LiteGraph.uuidv4() : id);
+        }
+        for (const id of used) {
+            const target = remap.get(id);
+            if (root.subgraphs.has(target)) continue; // an identical one is shared
+            const copy = LiteGraph.cloneObject(all.get(id));
+            copy.id = target;
+            delete copy.definitions;
+            for (const node of copy.nodes ?? []) {
+                if (remap.has(node?.type)) node.type = remap.get(node.type);
+                if (node?.properties && remap.has(node.properties.subgraph_id)) node.properties.subgraph_id = remap.get(node.properties.subgraph_id);
+            }
+            root.subgraphs.set(target, copy);
+        }
+        return remap.get(sourceId);
+    }
+
+    /**
+     * Inserts a blueprint: a definition, or a document with definitions.subgraphs (the definition
+     * its first instance uses, else the first one). Always a copy.
+     * @param {object} json
+     * @param {{pos?: number[]}} [options]
+     */
+    insertBlueprint(json, options = {}) {
+        if (json && (Array.isArray(json.inputs) || json.inputNode) && Array.isArray(json.nodes)) {
+            return this.insertDefinition(json, {
+                ...options,
+                linked: false,
+                definitions: json.definitions?.subgraphs ?? []
+            });
+        }
+        const list = json?.definitions?.subgraphs ?? [];
+        const ids = new Set(list.map((d) => d?.id));
+        const instance = (json?.nodes ?? []).find((n) => ids.has(n?.type) || ids.has(n?.properties?.subgraph_id));
+        const mainId = instance ? (ids.has(instance.type) ? instance.type : instance.properties.subgraph_id) : list[0]?.id;
+        const main = list.find((d) => d?.id === mainId);
+        if (!main) throw new Error("insertBlueprint: no subgraph definition in this document");
+        return this.insertDefinition(main, {
+            ...options,
+            linked: false,
+            definitions: list.filter((d) => d !== main)
+        });
     }
 
     /** subgraph and function nodes (at any depth) that use a definition */
@@ -14091,6 +14244,40 @@ class LGraphCanvas {
         }
     }
 
+    /** submenu: the document's subgraph definitions, inserted linked or as a copy */
+    static onMenuInsertSubgraph(value, options, event, prev_menu) {
+        const canvas = LGraphCanvas.active_canvas;
+        const graph = canvas?.graph;
+        if (!graph) return;
+        const entries = [];
+        for (const definition of graph.rootGraph.subgraphs.values()) {
+            const name = definition.name ?? "Subgraph";
+            entries.push({
+                content: name,
+                id: definition.id,
+                linked: true
+            });
+            entries.push({
+                content: `${name} (copy)`,
+                id: definition.id,
+                linked: false
+            });
+        }
+        const pos = [canvas.graph_mouse[0], canvas.graph_mouse[1]];
+        LiteGraph.ContextMenu(entries, {
+            event,
+            parentMenu: prev_menu,
+            callback: (entry) => {
+                const node = graph.insertDefinition(entry.id, {
+                    pos,
+                    linked: entry.linked
+                });
+                canvas.selectNodes([node]);
+                canvas.setDirty(true, true);
+            },
+        });
+    }
+
     static onGroupAlign(value, options, event, prev_menu) {
         LiteGraph.ContextMenu(["Top", "Bottom", "Left", "Right"], {
             event: event,
@@ -17179,6 +17366,11 @@ class LGraphCanvas {
                     content: "Add Group",
                     callback: LGraphCanvas.onGroupAdd
                 },
+                ...(that.graph?.rootGraph?.subgraphs?.size ? [{
+                    content: "Insert subgraph",
+                    has_submenu: true,
+                    callback: LGraphCanvas.onMenuInsertSubgraph
+                }] : []),
                 // { content: "Arrange", callback: that.graph.arrange },
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
@@ -21924,22 +22116,31 @@ function normalizeDefinition(definition) {
             type: slot?.type ?? "*",
         }));
     }
-    for (const [key, id] of [
-            ["inputNode", IO_INPUT_NODE],
-            ["outputNode", IO_OUTPUT_NODE]
+    for (const [key, id, fallback] of [
+            ["inputNode", IO_INPUT_NODE, [-200, 0, 120, 60]],
+            ["outputNode", IO_OUTPUT_NODE, [600, 0, 120, 60]]
         ]) {
         const ioNode = isObject(out[key]) ? out[key] : {};
         const bounding = Array.isArray(ioNode.bounding) && ioNode.bounding.length === 4 ? ioNode.bounding :
             Array.isArray(ioNode.pos) ? [ioNode.pos[0], ioNode.pos[1], ioNode.size?.[0] ?? 140, ioNode.size?.[1] ?? 26] :
-            undefined;
+            fallback;
         out[key] = {
             ...ioNode,
             id,
-            ...(bounding ? {
-                bounding
-            } : {})
+            bounding
         };
     }
+    // linkIds the writer left out are taken from the -10 / -20 links
+    const links = out.links.filter(Boolean).map(linkObject);
+    out.inputs.forEach((slot, i) => {
+        if (!Array.isArray(slot.linkIds) || !slot.linkIds.length) slot.linkIds = links.filter((l) => l.origin_id === IO_INPUT_NODE && l.origin_slot === i).map((l) => l.id);
+    });
+    out.outputs.forEach((slot, j) => {
+        if (!Array.isArray(slot.linkIds) || !slot.linkIds.length) slot.linkIds = links.filter((l) => l.target_id === IO_OUTPUT_NODE && l.target_slot === j).map((l) => l.id);
+    });
+    out.version ??= 1;
+    if (typeof out.name !== "string" || !out.name) out.name = "Subgraph";
+    if (!Array.isArray(out.widgets)) out.widgets = [];
     return out;
 }
 
@@ -22808,6 +23009,109 @@ class Subgraph {
         return true;
     }
 
+    /**
+     * A component instance (properties.component = {type, revision}) takes the registered
+     * component's definition again: every instance of this node's definition is refreshed (one
+     * undo step). Local edits to that definition are replaced.
+     * @returns {boolean}
+     */
+    updateFromSource() {
+        const component = this.properties.component;
+        const entry = component && LiteGraph.subgraph_components?.get(component.type);
+        const root = this.graph?.rootGraph;
+        if (!entry || !root) return false;
+        const id = this.properties.subgraph_id;
+        const fresh = LiteGraph.createNode(component.type);
+        if (!fresh) return false;
+        const found = new Map();
+        const definition = SubgraphDefs.definitionOf(fresh.serialize(), found);
+        definition.id = id;
+        definition.revision = (root.subgraphs.get(id)?.revision ?? 0) + 1;
+        root.transact("updateSubgraphFromSource", () => {
+            for (const [key, nested] of found)
+                if (key !== entry.id) root.subgraphs.set(key, nested);
+            root.subgraphs.set(id, definition);
+            for (const node of root.findSubgraphInstances(id)) {
+                node.properties.component = {
+                    type: component.type,
+                    revision: entry.revision
+                };
+                node.refreshFromDefinition();
+            }
+            root.onGraphChanged({
+                action: "updateSubgraphFromSource"
+            });
+        });
+        return true;
+    }
+
+    /** true when the registered component is newer than the one this instance was made from */
+    hasSourceUpdate() {
+        const component = this.properties?.component;
+        const entry = component && LiteGraph.subgraph_components?.get(component.type);
+        return !!entry && entry.revision > (component.revision ?? 0);
+    }
+
+    /**
+     * The node class of a component (LiteGraph.registerSubgraphType): it builds its inner graph from
+     * the registered definition. Instances are saved as plain subgraph instances (with
+     * properties.component), so documents load where the component is not registered.
+     */
+    static componentClass(entry, meta = {}) {
+        const main = entry.definitions.get(entry.id);
+        const slots = (list) => (list ?? []).map((slot) => ({
+            name: slot.name,
+            type: slot.type === "*" ? "" : slot.type
+        }));
+        class SubgraphComponent extends Subgraph {
+            static title = meta.title ?? main.name ?? entry.type;
+            static desc = meta.description ?? main.description ?? "";
+            static def = {
+                display_name: meta.title ?? main.name ?? entry.type,
+                description: meta.description ?? main.description ?? "",
+                category: meta.category ?? main.category ?? "subgraphs",
+                source: meta.source ?? "subgraph",
+                inputs: slots(main.inputs),
+                outputs: slots(main.outputs),
+            };
+
+            constructor() {
+                super();
+                this.properties.subgraph_id = entry.id;
+                this.properties.component = {
+                    type: entry.type,
+                    revision: entry.revision
+                };
+                this.subgraph.configure(SubgraphDefs.materialize(main, entry.definitions));
+                this.subgraph.id = entry.id;
+                this.title = SubgraphComponent.title;
+                this.setSize(this.computeSize());
+            }
+
+            /** inserted: the document gets the component's definitions (instances link to them) */
+            onAdded(graph) {
+                if (graph && !graph.isConfiguring) {
+                    const root = graph.rootGraph;
+                    if (!root.subgraphs.has(entry.id)) {
+                        const found = new Map();
+                        SubgraphDefs.definitionOf(this.serialize(), found);
+                        for (const [key, definition] of found)
+                            if (!root.subgraphs.has(key)) root.subgraphs.set(key, definition);
+                        this._definition_revision = this.subgraph.revision;
+                    }
+                }
+                Subgraph.prototype.onAdded.call(this, graph);
+            }
+
+            serialize() {
+                const data = Subgraph.prototype.serialize.call(this);
+                data.type = "graph/subgraph"; // a plain instance in documents
+                return data;
+            }
+        }
+        return SubgraphComponent;
+    }
+
     /** this node gets its own copy of its definition (a new id); one undo step */
     makeUnique() {
         const root = this.graph?.rootGraph;
@@ -22825,7 +23129,16 @@ class Subgraph {
     getExtraMenuOptions(graphcanvas) {
         var that = this;
         const linked = this.graph?.rootGraph?.findSubgraphInstances(this.properties.subgraph_id).length ?? 0;
-        return [{
+        const update = this.hasSourceUpdate?.() ? [{
+            content: `Update from ${this.properties.component.type}`,
+            callback: () => {
+                that.updateFromSource();
+                graphcanvas.setDirty(true, true);
+            },
+        }] : [];
+        return [
+            ...update,
+            {
                 content: linked > 1 ? `Make unique (${linked - 1} linked)` : "Make unique",
                 disabled: linked < 2,
                 callback: () => {
@@ -51747,6 +52060,15 @@ const subgraphToolsExtension = {
             },
             run(ctx) {
                 return !!single(ctx).makeUnique();
+            },
+        },
+        {
+            id: "litegraph.subgraph.updateFromSource",
+            label: "Update component from its registered revision",
+            category: "subgraph",
+            when: (ctx) => !!single(ctx)?.hasSourceUpdate?.(),
+            run(ctx) {
+                return single(ctx).updateFromSource();
             },
         },
         {

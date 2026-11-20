@@ -643,6 +643,96 @@ export class Subgraph {
         return true;
     }
 
+    /**
+     * A component instance (properties.component = {type, revision}) takes the registered
+     * component's definition again: every instance of this node's definition is refreshed (one
+     * undo step). Local edits to that definition are replaced.
+     * @returns {boolean}
+     */
+    updateFromSource() {
+        const component = this.properties.component;
+        const entry = component && LiteGraph.subgraph_components?.get(component.type);
+        const root = this.graph?.rootGraph;
+        if (!entry || !root) return false;
+        const id = this.properties.subgraph_id;
+        const fresh = LiteGraph.createNode(component.type);
+        if (!fresh) return false;
+        const found = new Map();
+        const definition = SubgraphDefs.definitionOf(fresh.serialize(), found);
+        definition.id = id;
+        definition.revision = (root.subgraphs.get(id)?.revision ?? 0) + 1;
+        root.transact("updateSubgraphFromSource", () => {
+            for (const [key, nested] of found) if (key !== entry.id) root.subgraphs.set(key, nested);
+            root.subgraphs.set(id, definition);
+            for (const node of root.findSubgraphInstances(id)) {
+                node.properties.component = { type: component.type, revision: entry.revision };
+                node.refreshFromDefinition();
+            }
+            root.onGraphChanged({ action: "updateSubgraphFromSource" });
+        });
+        return true;
+    }
+
+    /** true when the registered component is newer than the one this instance was made from */
+    hasSourceUpdate() {
+        const component = this.properties?.component;
+        const entry = component && LiteGraph.subgraph_components?.get(component.type);
+        return !!entry && entry.revision > (component.revision ?? 0);
+    }
+
+    /**
+     * The node class of a component (LiteGraph.registerSubgraphType): it builds its inner graph from
+     * the registered definition. Instances are saved as plain subgraph instances (with
+     * properties.component), so documents load where the component is not registered.
+     */
+    static componentClass(entry, meta = {}) {
+        const main = entry.definitions.get(entry.id);
+        const slots = (list) => (list ?? []).map((slot) => ({ name: slot.name, type: slot.type === "*" ? "" : slot.type }));
+        class SubgraphComponent extends Subgraph {
+            static title = meta.title ?? main.name ?? entry.type;
+            static desc = meta.description ?? main.description ?? "";
+            static def = {
+                display_name: meta.title ?? main.name ?? entry.type,
+                description: meta.description ?? main.description ?? "",
+                category: meta.category ?? main.category ?? "subgraphs",
+                source: meta.source ?? "subgraph",
+                inputs: slots(main.inputs),
+                outputs: slots(main.outputs),
+            };
+
+            constructor() {
+                super();
+                this.properties.subgraph_id = entry.id;
+                this.properties.component = { type: entry.type, revision: entry.revision };
+                this.subgraph.configure(SubgraphDefs.materialize(main, entry.definitions));
+                this.subgraph.id = entry.id;
+                this.title = SubgraphComponent.title;
+                this.setSize(this.computeSize());
+            }
+
+            /** inserted: the document gets the component's definitions (instances link to them) */
+            onAdded(graph) {
+                if (graph && !graph.isConfiguring) {
+                    const root = graph.rootGraph;
+                    if (!root.subgraphs.has(entry.id)) {
+                        const found = new Map();
+                        SubgraphDefs.definitionOf(this.serialize(), found);
+                        for (const [key, definition] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, definition);
+                        this._definition_revision = this.subgraph.revision;
+                    }
+                }
+                Subgraph.prototype.onAdded.call(this, graph);
+            }
+
+            serialize() {
+                const data = Subgraph.prototype.serialize.call(this);
+                data.type = "graph/subgraph"; // a plain instance in documents
+                return data;
+            }
+        }
+        return SubgraphComponent;
+    }
+
     /** this node gets its own copy of its definition (a new id); one undo step */
     makeUnique() {
         const root = this.graph?.rootGraph;
@@ -658,7 +748,12 @@ export class Subgraph {
     getExtraMenuOptions(graphcanvas) {
         var that = this;
         const linked = this.graph?.rootGraph?.findSubgraphInstances(this.properties.subgraph_id).length ?? 0;
+        const update = this.hasSourceUpdate?.() ? [{
+            content: `Update from ${this.properties.component.type}`,
+            callback: () => { that.updateFromSource(); graphcanvas.setDirty(true, true); },
+        }] : [];
         return [
+            ...update,
             {
                 content: linked > 1 ? `Make unique (${linked - 1} linked)` : "Make unique",
                 disabled: linked < 2,
