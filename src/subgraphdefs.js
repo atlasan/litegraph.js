@@ -103,6 +103,14 @@ function boundsOf(nodes, fallback) {
     return [x0, y0, x1 - x0, y1 - y0];
 }
 
+/** a kept box when the first boundary node still sits at its corner (where materialize put it) */
+function keptBounds(box, ios) {
+    if (!Array.isArray(box) || box.length !== 4) return null;
+    if (!ios.length) return box;
+    const first = ios[0].pos ?? [];
+    return first[0] === box[0] && first[1] === box[1] ? box : null;
+}
+
 /** order of the boundary nodes: as the instance's slots list them, then by position */
 function orderIO(ios, slots) {
     const names = (slots ?? []).map((slot) => slot?.name);
@@ -173,6 +181,9 @@ function definitionOf(node, out = new Map()) {
     }
     const extra = { ...(meta.extra ?? {}) };
     extra.litegraph = { ...(extra.litegraph ?? {}), io };
+    // the boxes a loaded definition had: written back while the boundary nodes have not moved
+    const kept = extra.litegraph.io_bounds;
+    delete extra.litegraph.io_bounds;
     if (!Object.keys(io).length) delete extra.litegraph.io;
     if (!Object.keys(extra.litegraph).length) delete extra.litegraph;
 
@@ -182,8 +193,8 @@ function definitionOf(node, out = new Map()) {
         version: 1,
         name: typeof meta.name === "string" && meta.name ? meta.name : (node.title || "Subgraph"),
         state: { ...(inner.state ?? {}) },
-        inputNode: { id: IO_INPUT_NODE, bounding: boundsOf(orderedIn, [-200, 0, 120, 60]) },
-        outputNode: { id: IO_OUTPUT_NODE, bounding: boundsOf(orderedOut, [600, 0, 120, 60]) },
+        inputNode: { id: IO_INPUT_NODE, bounding: keptBounds(kept?.input, orderedIn) ?? boundsOf(orderedIn, [-200, 0, 120, 60]) },
+        outputNode: { id: IO_OUTPUT_NODE, bounding: keptBounds(kept?.output, orderedOut) ?? boundsOf(orderedOut, [600, 0, 120, 60]) },
         inputs,
         outputs,
         widgets: Array.isArray(meta.widgets) ? meta.widgets : [],
@@ -273,11 +284,10 @@ function materialize(definition, definitions, context = {}) {
     for (const [key, value] of Object.entries(definition)) {
         if (!COMPUTED.includes(key) && key !== "version") graph[key] = clone(value);
     }
-    // the layout of the boundary nodes lives on the nodes again
-    if (graph.extra?.litegraph?.io) {
-        delete graph.extra.litegraph.io;
-        if (!Object.keys(graph.extra.litegraph).length) delete graph.extra.litegraph;
-    }
+    // the layout of the boundary nodes lives on the nodes again; the boxes are kept for the way back
+    graph.extra = { ...(graph.extra ?? {}) };
+    graph.extra.litegraph = { ...(graph.extra.litegraph ?? {}), io_bounds: { input: inBox, output: outBox } };
+    delete graph.extra.litegraph.io;
     graph.nodes = nodes;
     graph.links = links.map(linkArray);
     // links of the definition keep their reroute parents as 0.4 link extensions

@@ -26,6 +26,7 @@ export const ComfyInterop = {
     /** heuristic: does this JSON look like a ComfyUI workflow? */
     isComfyWorkflow(json) {
         if (!json || typeof json !== "object" || !Array.isArray(json.nodes)) return false;
+        if (typeof json.litegraph_version === "string") return false; // written by this runtime (exportWorkflow drops it)
         if (json.version === 1 && json.state) return true;
         if (json.extra?.ds || json.models || json.definitions?.subgraphs) return true;
         return json.nodes.some((n) => n?.properties?.["Node name for S&R"] !== undefined || n?.cnr_id !== undefined);
@@ -87,18 +88,30 @@ export const ComfyInterop = {
     importWorkflow(graph, json, options = {}) {
         const data = LiteGraph.cloneObject(json);
         const placeholderTypes = [];
-        const bypassed = [];
-        for (const node of data.nodes ?? []) {
-            if (options.placeholders !== false && ComfyInterop.ensurePlaceholderType(node.type)) {
-                placeholderTypes.push(node.type);
+        const definitions = ComfyInterop._definitionsOf(data);
+        const definitionIds = new Set(definitions.map((definition) => definition.id));
+        // nodes of the root and of every subgraph definition: placeholders and modes
+        const importNodes = (holder) => {
+            const bypassedHere = [];
+            for (const node of holder.nodes ?? []) {
+                if (!node) continue;
+                if (options.placeholders !== false && !definitionIds.has(node.type) && ComfyInterop.ensurePlaceholderType(node.type)) {
+                    placeholderTypes.push(node.type);
+                }
+                if (typeof node.litegraph_mode === "number") {
+                    node.mode = node.litegraph_mode; // round-tripped LiteGraph mode (e.g. ON_REQUEST)
+                    delete node.litegraph_mode;
+                } else if (node.mode === ComfyInterop.COMFY_MODE.BYPASS) {
+                    node.mode = LiteGraph.NEVER;
+                    bypassedHere.push(node.id);
+                }
             }
-            if (typeof node.litegraph_mode === "number") {
-                node.mode = node.litegraph_mode; // round-tripped LiteGraph mode (e.g. ON_REQUEST)
-                delete node.litegraph_mode;
-            } else if (node.mode === ComfyInterop.COMFY_MODE.BYPASS) {
-                node.mode = LiteGraph.NEVER;
-                bypassed.push(node.id);
-            }
+            return bypassedHere;
+        };
+        const bypassed = importNodes(data);
+        for (const definition of definitions) {
+            const inner = importNodes(definition);
+            if (inner.length) definition.extra = { ...(definition.extra ?? {}), comfy_bypassed: inner };
         }
         // version 1 keeps a link's reroute parent on the link; LLink does not model it, so keep it
         // as a 0.4-style link extension that export converts back
@@ -116,6 +129,20 @@ export const ComfyInterop = {
         return { error: !!error, placeholderTypes, bypassed };
     },
 
+    /** subgraph definitions of a document, nested blocks included (the objects themselves) */
+    _definitionsOf(doc) {
+        const out = [];
+        const visit = (holder) => {
+            for (const definition of holder?.definitions?.subgraphs ?? []) {
+                if (!definition || typeof definition !== "object") continue;
+                out.push(definition);
+                visit(definition);
+            }
+        };
+        visit(doc);
+        return out;
+    },
+
     /** LiteGraph mode -> ComfyUI mode */
     toComfyMode(mode) {
         return mode === LiteGraph.ON_REQUEST ? ComfyInterop.COMFY_MODE.ALWAYS : mode;
@@ -130,26 +157,43 @@ export const ComfyInterop = {
     exportWorkflow(graph, options = {}) {
         const version = options.version ?? 0.4;
         if (version !== 0.4 && version !== 1) throw new Error(`Unsupported ComfyUI workflow version: ${version}`);
-        const data = LiteGraph.cloneObject(graph.serialize());
+        // subgraphs as ComfyUI definitions: instances reference definitions.subgraphs
+        const data = LiteGraph.cloneObject(graph.serialize({ format: "definitions" }));
+        delete data.litegraph_version; // marks documents written by this runtime (see isComfyWorkflow)
         const extra = data.extra = { ...(data.extra ?? {}) };
-        const bypassed = new Set(extra.comfy_bypassed ?? []);
-        delete extra.comfy_bypassed;
+        // modes of the root and of every definition
+        const exportNodes = (holder, holderExtra) => {
+            const bypassed = new Set(holderExtra?.comfy_bypassed ?? []);
+            if (holderExtra) delete holderExtra.comfy_bypassed;
+            (holder.nodes ?? []).forEach((node, index) => {
+                if (bypassed.has(node.id) && node.mode === LiteGraph.NEVER) {
+                    node.mode = ComfyInterop.COMFY_MODE.BYPASS;
+                } else if (node.mode === LiteGraph.ON_REQUEST) {
+                    node.mode = ComfyInterop.toComfyMode(node.mode);
+                    node.litegraph_mode = LiteGraph.ON_REQUEST;
+                }
+                node.mode ??= 0;
+                node.order ??= index;
+                node.flags ??= {};
+                node.properties ??= {};
+            });
+        };
+        exportNodes(data, extra);
+        const definitions = ComfyInterop._definitionsOf(data);
+        for (const definition of definitions) {
+            if (definition.extra) definition.extra = { ...definition.extra };
+            exportNodes(definition, definition.extra);
+            if (definition.extra && !Object.keys(definition.extra).length) delete definition.extra;
+        }
 
-        data.nodes.forEach((node, index) => {
-            if (bypassed.has(node.id) && node.mode === LiteGraph.NEVER) {
-                node.mode = ComfyInterop.COMFY_MODE.BYPASS;
-            } else if (node.mode === LiteGraph.ON_REQUEST) {
-                node.mode = ComfyInterop.toComfyMode(node.mode);
-                node.litegraph_mode = LiteGraph.ON_REQUEST;
-            }
-            node.mode ??= 0;
-            node.order ??= index;
-            node.flags ??= {};
-            node.properties ??= {};
-        });
-
+        const numeric = (id) => typeof id === "number";
         for (const link of data.links) {
-            if (typeof link[0] !== "number") {
+            if (!numeric(link[0])) {
+                throw new Error("ComfyUI workflows need numeric link ids; set LiteGraph.use_uuids = false");
+            }
+        }
+        for (const definition of definitions) {
+            if ((definition.links ?? []).some((link) => !numeric(Array.isArray(link) ? link[0] : link?.id))) {
                 throw new Error("ComfyUI workflows need numeric link ids; set LiteGraph.use_uuids = false");
             }
         }

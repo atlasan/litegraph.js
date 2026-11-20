@@ -171,3 +171,81 @@ test('uuid link ids are rejected with an explanation', () => {
     expect(() => ComfyInterop.exportWorkflow(graph)).toThrow(/numeric link ids/);
     graph.clear();
 });
+
+// A ComfyUI-shaped workflow with one subgraph definition (shape after ComfyUI's documented schema).
+function workflowWithSubgraph() {
+    const id = 'a7f1c2d3-0000-4000-8000-000000000001';
+    return {
+        id: '6c2b1d3e-2222-4222-8333-444455556666', revision: 0, last_node_id: 2, last_link_id: 1,
+        nodes: [
+            { id: 1, type: 'EmptyLatentImage', pos: [0, 0], size: [315, 106], flags: {}, order: 0, mode: 0,
+                outputs: [{ name: 'LATENT', type: 'LATENT', links: [1] }], properties: {}, widgets_values: [512, 512, 1] },
+            { id: 2, type: id, pos: [400, 0], size: [200, 46], flags: {}, order: 1, mode: 0,
+                inputs: [{ name: 'latent', type: 'LATENT', link: 1 }], outputs: [{ name: 'IMAGE', type: 'IMAGE', links: null }], properties: {}, widgets_values: [] },
+        ],
+        links: [[1, 1, 0, 2, 0, 'LATENT']],
+        groups: [], config: {}, extra: { ds: { scale: 1, offset: [0, 0] } }, version: 0.4,
+        definitions: { subgraphs: [{
+            id, version: 1, revision: 0, name: 'Decode and sharpen',
+            state: { lastNodeId: 6, lastLinkId: 7, lastGroupId: 0, lastRerouteId: 0 }, config: {},
+            inputNode: { id: -10, bounding: [-200, 100, 120, 60] }, outputNode: { id: -20, bounding: [700, 100, 120, 60] },
+            inputs: [{ id: 'in-latent-uuid', name: 'latent', type: 'LATENT', linkIds: [5] }],
+            outputs: [{ id: 'out-image-uuid', name: 'IMAGE', type: 'IMAGE', linkIds: [7] }],
+            widgets: [],
+            nodes: [
+                { id: 5, type: 'VAEDecode', pos: [0, 100], size: [210, 46], flags: {}, order: 0, mode: 0,
+                    inputs: [{ name: 'samples', type: 'LATENT', link: 5 }], outputs: [{ name: 'IMAGE', type: 'IMAGE', links: [6] }], properties: {} },
+                { id: 6, type: 'ImageSharpen', pos: [300, 100], size: [315, 106], flags: {}, order: 1, mode: 4,
+                    inputs: [{ name: 'image', type: 'IMAGE', link: 6 }], outputs: [{ name: 'IMAGE', type: 'IMAGE', links: [7] }], properties: {}, widgets_values: [1, 1, 0.5] },
+            ],
+            groups: [],
+            links: [
+                { id: 5, origin_id: -10, origin_slot: 0, target_id: 5, target_slot: 0, type: 'LATENT' },
+                { id: 6, origin_id: 5, origin_slot: 0, target_id: 6, target_slot: 0, type: 'IMAGE' },
+                { id: 7, origin_id: 6, origin_slot: 0, target_id: -20, target_slot: 0, type: 'IMAGE' },
+            ],
+            extra: {},
+        }] },
+    };
+}
+
+test('a ComfyUI subgraph imports as an instance; inner placeholders and modes; exports back', () => {
+    const graph = new LGraph();
+    const original = workflowWithSubgraph();
+    const result = ComfyInterop.importWorkflow(graph, original);
+    expect(result.error).toBe(false);
+    const definition = original.definitions.subgraphs[0];
+    expect(result.placeholderTypes).toEqual(expect.arrayContaining(['EmptyLatentImage', 'VAEDecode', 'ImageSharpen']));
+    expect(result.placeholderTypes).not.toContain(definition.id);
+    const instance = graph.getNodeById(2);
+    expect(instance.type).toBe('graph/subgraph');
+    expect(instance.properties.subgraph_id).toBe(definition.id);
+    const sharpen = instance.subgraph.getNodeById(6);
+    expect(sharpen.mode).toBe(LiteGraph.NEVER); // BYPASS inside the definition
+
+    const out = json(ComfyInterop.exportWorkflow(graph));
+    expect(out.litegraph_version).toBeUndefined();
+    expect(ComfyInterop.isComfyWorkflow(out)).toBe(true);
+    expect(out.nodes.find((n) => n.id === 2).type).toBe(definition.id);
+    const back = out.definitions.subgraphs[0];
+    expect(back.id).toBe(definition.id);
+    expect(back.inputs.map(({ id, name, type, linkIds }) => ({ id, name, type, linkIds }))).toEqual(definition.inputs);
+    expect(back.outputs.map(({ id, name, type, linkIds }) => ({ id, name, type, linkIds }))).toEqual(definition.outputs);
+    expect(back.inputNode).toEqual(definition.inputNode);
+    expect(back.outputNode).toEqual(definition.outputNode);
+    expect(back.links).toEqual(definition.links);
+    const strip = (nodes) => nodes.map(({ order: _order, ...node }) => node);
+    expect(strip(back.nodes)).toEqual(strip(definition.nodes));
+    expect(back.extra?.comfy_bypassed).toBeUndefined();
+    graph.clear();
+});
+
+test('our own documents with subgraphs are not taken for ComfyUI workflows', () => {
+    const graph = new LGraph();
+    const a = LiteGraph.createNode('interop/num'); graph.add(a);
+    graph.convertToSubgraph([a]);
+    const doc = graph.serialize();
+    expect(doc.definitions.subgraphs.length).toBe(1);
+    expect(ComfyInterop.isComfyWorkflow(doc)).toBe(false);
+    graph.clear();
+});
