@@ -351,10 +351,20 @@ class LiteGraphClass {
     }
 
     includeBasicNodes() {
-        this.registerNodeType("graph/subgraph", Subgraph);
-        this.registerNodeType("graph/input", GraphInput);
-        this.registerNodeType("graph/output", GraphOutput);
-        this.registerNodeType("graph/function", NodeFunction);
+        this.packs.open({
+            id: "litegraph/core",
+            version: this.VERSION,
+            title: "Subgraphs",
+            builtin: true
+        });
+        try {
+            this.registerNodeType("graph/subgraph", Subgraph);
+            this.registerNodeType("graph/input", GraphInput);
+            this.registerNodeType("graph/output", GraphOutput);
+            this.registerNodeType("graph/function", NodeFunction);
+        } finally {
+            this.packs.close("litegraph/core");
+        }
     }
 
     callbackhandler_setup() {
@@ -417,6 +427,7 @@ class LiteGraphClass {
             experimental: !!(own.experimental ?? base_class.experimental),
             hidden: !!(own.hidden ?? base_class.skip_list),
             source: own.source ?? base_class.source ?? null,
+            pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
         });
@@ -425,6 +436,26 @@ class LiteGraphClass {
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
     getNodeDefinition(type) {
         return this.node_definitions[type] ?? null;
+    }
+
+    /** Recomputes the stored metadata of a registered type (after its pack or capabilities changed). */
+    refreshNodeDefinition(type) {
+        const base_class = this.registered_node_types[type];
+        if (base_class) this.node_definitions[type] = this.describeNodeType(type, base_class);
+    }
+
+    /**
+     * Registers how to replace a node type by another, as data (see PackRegistry.registerReplacement).
+     * @returns {() => void} disposer
+     */
+    registerNodeReplacement(mapping) {
+        this.setupPlatform();
+        return this.packs.registerReplacement(mapping);
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a node type */
+    getNodeReplacement(type) {
+        return this.packs?.getReplacement(type) ?? null;
     }
 
     /**
@@ -693,6 +724,30 @@ class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        if (!this.packs) {
+            this.packs = new PackRegistry(this);
+            this.settings.define({
+                id: "LiteGraph.Packs.Stamp",
+                name: "Stamp the pack and its version on nodes of non-builtin packs",
+                default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Packs.AutoReplace",
+                name: "Apply automatic node replacements when loading",
+                default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Packs.AllowIncompatible",
+                name: "Register packs whose litegraph requirement does not match",
+                default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Packs.Disabled",
+                type: "json",
+                name: "Packs whose setup does not run",
+                default: () => []
+            });
+        }
     }
 
     // set logging debug_level
@@ -852,6 +907,7 @@ class LiteGraphClass {
         if (classname) {
             this.Nodes[classname] = base_class;
         }
+        this.packs?._onTypeRegistered(type);
         this.node_definitions[type] = this.describeNodeType(type, base_class);
 
         this.processCallbackHandlers("onNodeTypeRegistered", {
@@ -906,6 +962,7 @@ class LiteGraphClass {
         }
         delete this.registered_node_types[base_class.type];
         delete this.node_definitions[base_class.type];
+        this.packs?._onTypeUnregistered(base_class.type);
         // Nodes is keyed by class name (base_class.constructor is always Function)
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
@@ -1153,6 +1210,9 @@ class LiteGraphClass {
         node.pos ??= LiteGraph.DEFAULT_POSITION.concat();
         node.mode ??= LiteGraph.ALWAYS;
 
+        // provenance: nodes of non-builtin packs remember their pack (a loaded node keeps its stored stamp)
+        const stamp = this.packs?.stampFor(type);
+        if (stamp) Object.assign(node.properties, stamp);
 
         // extra options
         Object.assign(node, options);
@@ -6239,7 +6299,12 @@ class LGraph {
             if (snapshot) {
                 this._transaction = null;
                 const history = this.history;
-                this.configure(snapshot);
+                this._configureReason = "rollback";
+                try {
+                    this.configure(snapshot);
+                } finally {
+                    this._configureReason = null;
+                }
                 this.history = history;
             }
             throw error;
@@ -6343,6 +6408,245 @@ class LGraph {
             node.disconnectInput(link.target_slot); /* , optsIn */
             this.afterChange();
         }
+    }
+
+    /**
+     * Missing node types in this graph (and, with `deep`, in its subgraphs): one entry per type,
+     * with where the type comes from (the node's stored pack stamp, the pack index, or ComfyUI's
+     * `cnr_id` / `aux_id`) and a registered replacement.
+     * @param {{deep?: boolean}} [options] - deep (default true): include subgraphs
+     * @returns {Array<{type: string, count: number, available: boolean, nodes: Array<{id: *, path: string}>,
+     *   pack: {id: string, version: string|null, source: "stamp"|"index"|"comfy", installed?: boolean}|null,
+     *   replacement: {type: string, auto: boolean, available: boolean, reason?: string}|null}>}
+     */
+    getMissingNodes({
+        deep = true
+    } = {}) {
+        const byType = new Map();
+        const visit = (graph) => {
+            for (const node of graph._nodes) {
+                if (PackRegistry.isMissingNodePlaceholder(node)) {
+                    const stored = node.last_serialization;
+                    let entry = byType.get(stored.type);
+                    if (!entry) {
+                        const mapping = LiteGraph.getNodeReplacement?.(stored.type);
+                        entry = {
+                            type: stored.type,
+                            count: 0,
+                            available: !!LiteGraph.registered_node_types[stored.type],
+                            nodes: [],
+                            pack: LGraph._packHint(stored),
+                            replacement: mapping ? {
+                                type: mapping.new_type,
+                                auto: mapping.auto,
+                                available: !!LiteGraph.registered_node_types[mapping.new_type],
+                                ...(mapping.reason ? {
+                                    reason: mapping.reason
+                                } : {}),
+                            } : null,
+                        };
+                        byType.set(stored.type, entry);
+                    }
+                    entry.count++;
+                    entry.nodes.push({
+                        id: node.id,
+                        path: node.getPath?.() ?? String(node.id)
+                    });
+                }
+                if (deep && node.subgraph) visit(node.subgraph);
+            }
+        };
+        visit(this);
+        return [...byType.values()];
+    }
+
+    /** where a stored node says its type comes from */
+    static _packHint(stored) {
+        const properties = stored?.properties ?? {};
+        if (typeof properties.pack === "string" && properties.pack) {
+            return {
+                id: properties.pack,
+                version: properties.pack_ver ?? null,
+                source: "stamp"
+            };
+        }
+        const known = LiteGraph.packs?.findPackForType(stored?.type);
+        if (known) return {
+            id: known.id,
+            version: known.version,
+            source: "index",
+            installed: known.installed
+        };
+        const comfy = properties.cnr_id || properties.aux_id;
+        if (typeof comfy === "string" && comfy) return {
+            id: comfy,
+            version: properties.ver ?? null,
+            source: "comfy"
+        };
+        return null;
+    }
+
+    /** The mapping replaceNode would use for a node, or null. */
+    _replacementFor(node) {
+        const type = PackRegistry.storedNodeType(node);
+        const mapping = LiteGraph.getNodeReplacement?.(type);
+        if (mapping) return mapping;
+        // a placeholder whose type has been registered since loading is rebuilt as that type
+        if (PackRegistry.isMissingNodePlaceholder(node) && LiteGraph.registered_node_types[type]) return {
+            old_type: type,
+            new_type: type
+        };
+        return null;
+    }
+
+    /**
+     * Replaces a node by a node of another type, as one undo step: id, position, title, colours,
+     * mode and the mapped links, properties and widget values are kept. Links on slots the
+     * mapping cannot place are removed and listed in `dropped`.
+     * @param {object} node - a node of this graph (a missing-type placeholder or a live node)
+     * @param {object|string} [mapping] - a mapping (see LiteGraph.registerNodeReplacement), a type
+     *   name, or nothing for the registered mapping of the node's type
+     * @returns {{node: object, dropped: Array<{kind: string, slot: number, name: string, link: *}>}}
+     */
+    replaceNode(node, mapping) {
+        if (!node || node.graph !== this) throw new Error("replaceNode: the node is not in this graph");
+        const type = PackRegistry.storedNodeType(node);
+        const resolved = typeof mapping === "string" ? {
+            old_type: type,
+            new_type: mapping
+        } : (mapping ?? this._replacementFor(node));
+        if (!resolved) throw new Error(`replaceNode: no replacement is registered for ${type}`);
+        if (!LiteGraph.registered_node_types[resolved.new_type]) throw new Error(`replaceNode: node type ${resolved.new_type} is not registered`);
+        const result = this.transact(`Replace ${type}`, () => PackRegistry.replaceNodeInGraph(this, node, resolved), {
+            rollback: true
+        });
+        this._emit("node-replaced", {
+            node: result.node,
+            from: type,
+            to: resolved.new_type,
+            dropped: result.dropped
+        });
+        return result;
+    }
+
+    /**
+     * Replaces every node that has a usable replacement, as one undo step per graph: by default
+     * the missing-type placeholders whose replacement type (or own type) is registered.
+     * @param {{filter?: (node: object) => boolean, deep?: boolean}} [options]
+     *   filter: which nodes to replace (default: missing-type placeholders);
+     *   deep (default true): also inside subgraphs (each inner graph records its own step)
+     * @returns {{replaced: Array<{id: *, path: string, from: string, to: string, dropped: object[]}>,
+     *   skipped: Array<{id: *, path: string, type: string, reason: string}>}}
+     */
+    replaceNodes({
+        filter = PackRegistry.isMissingNodePlaceholder,
+        deep = true
+    } = {}) {
+        const replaced = [];
+        const skipped = [];
+        const candidates = this._nodes.filter((node) => filter(node));
+        const plans = [];
+        for (const node of candidates) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = this._replacementFor(node);
+            const path = node.getPath?.() ?? String(node.id);
+            if (!mapping) skipped.push({
+                id: node.id,
+                path,
+                type,
+                reason: "no replacement registered"
+            });
+            else if (!LiteGraph.registered_node_types[mapping.new_type]) skipped.push({
+                id: node.id,
+                path,
+                type,
+                reason: `${mapping.new_type} is not registered`
+            });
+            else plans.push({
+                node,
+                type,
+                mapping,
+                path
+            });
+        }
+        if (plans.length) {
+            this.transact("Replace nodes", () => {
+                for (const plan of plans) {
+                    const result = PackRegistry.replaceNodeInGraph(this, plan.node, plan.mapping);
+                    replaced.push({
+                        id: result.node.id,
+                        path: plan.path,
+                        from: plan.type,
+                        to: plan.mapping.new_type,
+                        dropped: result.dropped
+                    });
+                }
+            }, {
+                rollback: true
+            });
+        }
+        if (deep) {
+            for (const node of this._nodes) {
+                if (!node.subgraph) continue;
+                const inner = node.subgraph.replaceNodes({
+                    filter,
+                    deep
+                });
+                replaced.push(...inner.replaced);
+                skipped.push(...inner.skipped);
+            }
+        }
+        return {
+            replaced,
+            skipped
+        };
+    }
+
+    /** Applies `auto` replacement mappings while configuring (no undo step, no revision change). */
+    _applyAutoReplacements() {
+        const replaced = [];
+        const settings = LiteGraph.settings;
+        if (settings?.has?.("LiteGraph.Packs.AutoReplace") && !settings.get("LiteGraph.Packs.AutoReplace")) return replaced;
+        const plans = [];
+        for (const node of this._nodes) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = LiteGraph.getNodeReplacement?.(type);
+            if (mapping?.auto && LiteGraph.registered_node_types[mapping.new_type]) plans.push({
+                node,
+                type,
+                mapping
+            });
+        }
+        if (!plans.length) return replaced;
+        const outer = this._transaction;
+        if (!outer) this._transaction = {
+            depth: 1,
+            label: "configure",
+            changed: false
+        };
+        try {
+            for (const {
+                    node,
+                    type,
+                    mapping
+                }
+                of plans) {
+                try {
+                    const result = PackRegistry.replaceNodeInGraph(this, node, mapping);
+                    replaced.push({
+                        id: result.node.id,
+                        from: type,
+                        to: mapping.new_type,
+                        dropped: result.dropped
+                    });
+                } catch (error) {
+                    LiteGraph.log_warn("lgraph", "configure", "automatic replacement failed", type, error);
+                }
+            }
+        } finally {
+            if (!outer) this._transaction = null;
+        }
+        return replaced;
     }
 
     /**
@@ -7172,8 +7476,13 @@ class LGraph {
             nodes.forEach((n_info) => {
                 const node = this.getNodeById(n_info.id);
                 node?.configure(n_info);
+                // a placeholder shows its missing type (serialize keeps the stored title)
+                if (node?.has_errors && node.last_serialization === n_info && !n_info.title) node.title = n_info.type;
             });
         }
+
+        // replacement mappings marked auto (renamed types): applied while loading, without an undo step
+        const replaced = this._applyAutoReplacements();
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
         this.state = {
@@ -7220,8 +7529,16 @@ class LGraph {
         this.setDirtyCanvas(true, true);
         this._emit("configured", {
             data,
-            error
+            error,
+            replaced
         });
+        if (!this._subgraph_node && this._events?.has("missing-nodes")) {
+            const report = this.getMissingNodes();
+            if (report.length) this._emit("missing-nodes", {
+                report,
+                reason: this._configureReason ?? "load"
+            });
+        }
         return error;
     }
 
@@ -7455,7 +7772,12 @@ class LGraph {
 
         if (obH.actionHistory[opts.iVersion] && obH.actionHistory[opts.iVersion].graphSave) {
             var tmpHistory = JSON.stringify(this.history);
-            this.configure(obH.actionHistory[opts.iVersion].graphSave);
+            this._configureReason = "history";
+            try {
+                this.configure(obH.actionHistory[opts.iVersion].graphSave);
+            } finally {
+                this._configureReason = null;
+            }
             this.history = JSON.parse(tmpHistory);
             LiteGraph.log_debug("history loaded: " + opts.iVersion, obH.actionHistory[opts.iVersion].actionName); // debug history
             this.onGraphLoaded({
@@ -18622,7 +18944,7 @@ class LGraphNode {
                     o[key] = LiteGraph.cloneObject(placeholderSource[key]);
                 }
             }
-            if (o.title === undefined) delete o.title;
+            if (o.title === undefined || (!("title" in placeholderSource) && o.title === placeholderSource.type)) delete o.title;
             for (const key of ["inputs", "outputs", "properties"]) {
                 const v = o[key];
                 const empty = Array.isArray(v) ? !v.length : (v && typeof v === "object" && !Object.keys(v).length);
@@ -25278,9 +25600,667 @@ class NodeSearch {
     }
 }
 
+/**
+ * Node packs: a manifest (plain JSON) that names a group of node types, extensions and libraries,
+ * with a version and the litegraph range it needs. Manifests are data: nothing here fetches or
+ * evaluates code. A pack's code is whatever the page or the runner already imported; while it
+ * runs inside `register(manifest, setup)` (or between `open` and `close`), every node type it
+ * registers belongs to the pack.
+ *
+ * ```js
+ * LiteGraph.packs.register({ id: "acme-audio", version: "1.2.0", requires: { litegraph: ">=0.10" } }, () => {
+ *     LiteGraph.registerNodeType("acme/filter", Filter);
+ * });
+ * LiteGraph.getNodeDefinition("acme/filter").pack; // {id: "acme-audio", version: "1.2.0"}
+ * ```
+ *
+ * Settings: `LiteGraph.Packs.Stamp`, `LiteGraph.Packs.AutoReplace`,
+ * `LiteGraph.Packs.AllowIncompatible`, `LiteGraph.Packs.Disabled`.
+ *
+ * Design references (no code copied): ComfyUI-Manager's pack metadata and node-provenance
+ * fields, and the ComfyUI frontend's node replacement mappings.
+ */
+
+const PACK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._@/-]*$/;
+
+/** Splits "1.2.3-beta.1" into numeric parts and a pre-release tag. */
+function packParseVersion(version) {
+    const match = /^v?(\d+)(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(String(version ?? "").trim());
+    if (!match) return null;
+    const part = (value) => (value === undefined || /^[xX*]$/.test(value)) ? null : Number(value);
+    return {
+        parts: [Number(match[1]), part(match[2]), part(match[3])],
+        pre: match[4] ?? null
+    };
+}
+
+/**
+ * Compares two versions: negative, 0 or positive. A pre-release sorts before its release.
+ * @returns {number|NaN} NaN when either is not a version
+ */
+function compareVersions(a, b) {
+    const left = packParseVersion(a);
+    const right = packParseVersion(b);
+    if (!left || !right) return NaN;
+    for (let i = 0; i < 3; i++) {
+        const d = (left.parts[i] ?? 0) - (right.parts[i] ?? 0);
+        if (d) return d;
+    }
+    if (left.pre === right.pre) return 0;
+    if (left.pre === null) return 1;
+    if (right.pre === null) return -1;
+    return left.pre < right.pre ? -1 : 1;
+}
+
+/** Turns one comparator ("^1.2", "~1.2.3", ">=1", "1.x", "*") into [op, version] pairs. */
+function packExpandComparator(text) {
+    const match = /^(\^|~|>=|<=|>|<|=)?\s*(.+)$/.exec(text);
+    if (!match) return null;
+    const op = match[1] ?? "";
+    if (/^[xX*]$/.test(match[2])) return [];
+    const version = packParseVersion(match[2]);
+    if (!version) return null;
+    const [major, minor, patch] = version.parts;
+    const at = (...parts) => parts.map((p) => p ?? 0).join(".") + (version.pre && parts.length === 3 ? `-${version.pre}` : "");
+    if (op === "^") {
+        const upper = major > 0 || minor === null ? [major + 1, 0, 0] : (minor > 0 || patch === null ? [0, minor + 1, 0] : [0, 0, patch + 1]);
+        return [
+            [">=", at(major, minor, patch)],
+            ["<", `${upper.join(".")}-0`]
+        ];
+    }
+    if (op === "~") {
+        const upper = minor === null ? [major + 1, 0, 0] : [major, minor + 1, 0];
+        return [
+            [">=", at(major, minor, patch)],
+            ["<", `${upper.join(".")}-0`]
+        ];
+    }
+    if ((op === "" || op === "=") && (minor === null || patch === null)) {
+        // a partial version is a range: "1.2" means >=1.2.0 <1.3.0-0
+        const upper = minor === null ? [major + 1, 0, 0] : [major, minor + 1, 0];
+        return [
+            [">=", at(major, minor, patch)],
+            ["<", `${upper.join(".")}-0`]
+        ];
+    }
+    return [
+        [op || "=", at(major, minor, patch)]
+    ];
+}
+
+/**
+ * True when `version` satisfies `range`. Supports `*`, exact and partial versions (`1.2`, `1.x`),
+ * `>=` `>` `<=` `<` `=`, `^`, `~`, space-separated comparators (all must hold) and `||`.
+ * @param {string} version
+ * @param {string} range
+ * @returns {boolean}
+ */
+function satisfiesVersion(version, range) {
+    if (range === undefined || range === null || String(range).trim() === "") return true;
+    if (!packParseVersion(version)) return false;
+    return String(range).split("||").some((alternative) => {
+        const comparators = alternative.trim().replace(/(>=|<=|>|<|=|\^|~)\s+/g, "$1").split(/\s+/).filter(Boolean);
+        if (!comparators.length) return true;
+        return comparators.every((text) => {
+            const expanded = packExpandComparator(text);
+            if (!expanded) return false;
+            return expanded.every(([op, bound]) => {
+                const d = compareVersions(version, bound);
+                switch (op) {
+                    case ">=":
+                        return d >= 0;
+                    case ">":
+                        return d > 0;
+                    case "<=":
+                        return d <= 0;
+                    case "<":
+                        return d < 0;
+                    default:
+                        return d === 0;
+                }
+            });
+        });
+    });
+}
+
+const packStringList = (value) => Array.isArray(value) ? value.filter((v) => typeof v === "string" && v) : [];
+
+/**
+ * Checks a manifest and returns a frozen, normalized copy.
+ * @throws {TypeError} when `id` or `version` is missing or malformed
+ */
+function normalizePackManifest(manifest) {
+    if (!manifest || typeof manifest !== "object") throw new TypeError("pack manifest must be an object");
+    if (typeof manifest.id !== "string" || !PACK_ID_PATTERN.test(manifest.id)) throw new TypeError(`pack manifest: invalid id ${JSON.stringify(manifest.id)}`);
+    if (typeof manifest.version !== "string" || !packParseVersion(manifest.version)) {
+        throw new TypeError(`pack ${manifest.id}: invalid version ${JSON.stringify(manifest.version)}`);
+    }
+    const requires = (manifest.requires && typeof manifest.requires === "object") ? {
+        ...manifest.requires
+    } : {};
+    return Object.freeze({
+        ...manifest,
+        id: manifest.id,
+        version: manifest.version,
+        title: typeof manifest.title === "string" ? manifest.title : manifest.id,
+        description: typeof manifest.description === "string" ? manifest.description : "",
+        builtin: manifest.builtin === true,
+        requires: Object.freeze(requires),
+        nodes: Object.freeze(packStringList(manifest.nodes)),
+        extensions: Object.freeze(packStringList(manifest.extensions)),
+        libraries: Object.freeze(packStringList(manifest.libraries)),
+        templates: Object.freeze(Array.isArray(manifest.templates) ? [...manifest.templates] : []),
+        locales: Object.freeze(Array.isArray(manifest.locales) ? [...manifest.locales] : []),
+    });
+}
+
+/**
+ * The pack registry (`LiteGraph.packs`).
+ */
+class PackRegistry {
+
+    /** @param {object} host - the LiteGraph instance */
+    constructor(host) {
+        this.host = host;
+        /** @type {Map<string, {manifest: object, state: string, types: Set<string>, error?: string}>} */
+        this._packs = new Map();
+        /** @type {Map<string, string>} node type → pack id (installed packs) */
+        this._typeToPack = new Map();
+        /** @type {Map<string, object>} known, not installed packs (metadata only) */
+        this._indexed = new Map();
+        /** @type {string[]} packs whose registrations are being attributed (innermost last) */
+        this._open = [];
+        /** @type {Map<string, object>} old type → replacement mapping */
+        this._replacements = new Map();
+    }
+
+    _setting(id, fallback) {
+        const settings = this.host?.settings;
+        return settings?.has?.(id) ? settings.get(id) : fallback;
+    }
+
+    /** Refusal for a pack whose `requires.litegraph` does not match this runtime. */
+    _checkCompatible(manifest) {
+        const range = manifest.requires?.litegraph;
+        const version = this.host?.VERSION;
+        if (!range || satisfiesVersion(version, range)) return null;
+        return `pack ${manifest.id}@${manifest.version} requires litegraph ${range}, this is ${version}`;
+    }
+
+    /**
+     * Starts attributing node registrations to a pack (built-in node files use this; most code
+     * should use {@link register}). Pair it with {@link close}.
+     * @param {object} manifest
+     * @returns {object} the normalized manifest
+     */
+    open(manifest) {
+        const normalized = this._add(manifest);
+        this._open.push(normalized.id);
+        return normalized;
+    }
+
+    /** Stops attributing registrations to the pack opened last (or to `id`). */
+    close(id) {
+        const index = id === undefined ? this._open.length - 1 : this._open.lastIndexOf(id);
+        if (index >= 0) this._open.splice(index, 1);
+    }
+
+    /**
+     * Registers a pack. `setup(ctx)` runs at once (unless the pack is disabled); node types it
+     * registers belong to the pack, as do types listed in `manifest.nodes`.
+     * Refused (throws) when `requires.litegraph` does not match, unless the setting
+     * `LiteGraph.Packs.AllowIncompatible` is on.
+     * @param {object} manifest
+     * @param {(ctx: {manifest: object, registerNodeType: Function}) => *} [setup]
+     * @returns {() => void} disposer: unregisters the pack's node types and forgets the pack
+     */
+    register(manifest, setup) {
+        const normalized = this._add(manifest);
+        const entry = this._packs.get(normalized.id);
+        if (entry.state === "active" && typeof setup === "function") {
+            this._open.push(normalized.id);
+            try {
+                setup({
+                    manifest: normalized,
+                    registerNodeType: (type, cls) => this.host.registerNodeType(type, cls)
+                });
+            } finally {
+                this.close(normalized.id);
+            }
+        }
+        return () => this.unregister(normalized.id);
+    }
+
+    _add(manifest) {
+        const normalized = normalizePackManifest(manifest);
+        const previous = this._packs.get(normalized.id);
+        if (previous) {
+            // a newer registration of the same pack replaces the manifest and keeps its types
+            if (previous.manifest.version !== normalized.version) {
+                LiteGraph.log_debug?.("packs", "replacing", normalized.id, previous.manifest.version, "->", normalized.version);
+            }
+        }
+        const refusal = normalized.builtin ? null : this._checkCompatible(normalized);
+        if (refusal && !this._setting("LiteGraph.Packs.AllowIncompatible", false)) {
+            throw new Error(`${refusal}. Set LiteGraph.Packs.AllowIncompatible to register it anyway.`);
+        }
+        const disabled = !normalized.builtin && (this._setting("LiteGraph.Packs.Disabled", []) ?? []).includes(normalized.id);
+        const entry = {
+            manifest: normalized,
+            state: disabled ? "disabled" : (refusal ? "incompatible" : "active"),
+            types: previous?.types ?? new Set(),
+            ...(refusal ? {
+                error: refusal
+            } : {}),
+        };
+        this._packs.set(normalized.id, entry);
+        for (const type of normalized.nodes) {
+            if (this.host?.registered_node_types?.[type]) this._attribute(type, normalized.id);
+        }
+        return normalized;
+    }
+
+    /** Forgets a pack and unregisters the node types it owns. */
+    unregister(id) {
+        const entry = this._packs.get(id);
+        if (!entry) return false;
+        for (const type of [...entry.types]) {
+            if (this._typeToPack.get(type) === id && this.host?.registered_node_types?.[type]) {
+                this.host.unregisterNodeType(type);
+            }
+            this._typeToPack.delete(type);
+        }
+        this._packs.delete(id);
+        return true;
+    }
+
+    /** Called by registerNodeType: attributes the type to the open pack, or to a pack listing it. */
+    _onTypeRegistered(type) {
+        const open = this._open[this._open.length - 1];
+        if (open) return this._attribute(type, open, false);
+        for (const [id, entry] of this._packs) {
+            if (entry.manifest.nodes.includes(type)) return this._attribute(type, id, false);
+        }
+        return null;
+    }
+
+    /** Called by unregisterNodeType. */
+    _onTypeUnregistered(type) {
+        const id = this._typeToPack.get(type);
+        if (id) this._packs.get(id)?.types.delete(type);
+        this._typeToPack.delete(type);
+    }
+
+    _attribute(type, id, refresh = true) {
+        const previous = this._typeToPack.get(type);
+        if (previous && previous !== id) this._packs.get(previous)?.types.delete(type);
+        this._typeToPack.set(type, id);
+        this._packs.get(id)?.types.add(type);
+        if (refresh) this.host?.refreshNodeDefinition?.(type);
+        return id;
+    }
+
+    /**
+     * Adds known packs that are not installed (metadata only, nothing runs), so a missing type
+     * can name the pack that provides it.
+     * @param {object|object[]} manifests
+     * @returns {() => void} disposer
+     */
+    index(manifests) {
+        const ids = [];
+        for (const manifest of Array.isArray(manifests) ? manifests : [manifests]) {
+            const normalized = normalizePackManifest(manifest);
+            this._indexed.set(normalized.id, normalized);
+            ids.push(normalized.id);
+        }
+        return () => ids.forEach((id) => this._indexed.delete(id));
+    }
+
+    /** @returns {object|null} the manifest of an installed pack */
+    get(id) {
+        return this._packs.get(id)?.manifest ?? null;
+    }
+
+    /** @returns {object[]} manifests of installed packs, in registration order */
+    list() {
+        return [...this._packs.values()].map((entry) => entry.manifest);
+    }
+
+    /** @returns {{id: string, version: string, builtin: boolean}|null} the installed pack owning a type */
+    packOf(type) {
+        const id = this._typeToPack.get(type);
+        const manifest = id ? this._packs.get(id)?.manifest : null;
+        return manifest ? {
+            id: manifest.id,
+            version: manifest.version,
+            builtin: manifest.builtin
+        } : null;
+    }
+
+    /** @returns {string[]} the node types an installed pack owns */
+    typesOf(id) {
+        return [...(this._packs.get(id)?.types ?? [])];
+    }
+
+    /**
+     * Finds the pack that provides a type: an installed pack first (also a disabled one that
+     * lists the type), then the index.
+     * @returns {{id: string, version: string, installed: boolean, state?: string}|null}
+     */
+    findPackForType(type) {
+        const owner = this._typeToPack.get(type);
+        if (owner) {
+            const entry = this._packs.get(owner);
+            return {
+                id: owner,
+                version: entry.manifest.version,
+                installed: true,
+                state: entry.state
+            };
+        }
+        for (const [id, entry] of this._packs) {
+            if (entry.manifest.nodes.includes(type)) return {
+                id,
+                version: entry.manifest.version,
+                installed: true,
+                state: entry.state
+            };
+        }
+        for (const [id, manifest] of this._indexed) {
+            if (manifest.nodes.includes(type)) return {
+                id,
+                version: manifest.version,
+                installed: false
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Every known pack as plain data: installed ones with their state ("active", "disabled",
+     * "incompatible") and node types, then indexed ones (state "indexed").
+     */
+    describe() {
+        const installed = [...this._packs.values()].map((entry) => ({
+            ...entry.manifest,
+            state: entry.state,
+            types: [...entry.types].sort(),
+            ...(entry.error ? {
+                error: entry.error
+            } : {}),
+        }));
+        const indexed = [...this._indexed.values()]
+            .filter((manifest) => !this._packs.has(manifest.id))
+            .map((manifest) => ({
+                ...manifest,
+                state: "indexed",
+                types: [...manifest.nodes]
+            }));
+        return [...installed, ...indexed];
+    }
+
+    /**
+     * Provenance to stamp on a new node of `type`: `{pack, pack_ver}` for non-builtin packs when
+     * the setting `LiteGraph.Packs.Stamp` is on, otherwise null.
+     */
+    stampFor(type) {
+        if (!this._setting("LiteGraph.Packs.Stamp", true)) return null;
+        const pack = this.packOf(type);
+        return pack && !pack.builtin ? {
+            pack: pack.id,
+            pack_ver: pack.version
+        } : null;
+    }
+
+    // ---- replacement mappings ------------------------------------------------------------
+
+    /**
+     * Registers how to replace a node type by another, as data.
+     * @param {{old_type: string, new_type: string, inputs?: object, outputs?: object,
+     *   properties?: object, widgets?: object, set?: {properties?: object}, auto?: boolean,
+     *   reason?: string}} mapping
+     *   - inputs / outputs: old slot (name or index) → new slot (name or index), or null to drop.
+     *     Unlisted slots keep their name.
+     *   - properties: old name → new name, or null to drop. Unlisted properties keep their name
+     *     when the new type has them.
+     *   - widgets: old widget index → new widget index, or null to drop. Unlisted values keep
+     *     their position.
+     *   - set.properties: values written on the new node after the mapping.
+     *   - auto: replace on load, without asking (setting `LiteGraph.Packs.AutoReplace`).
+     * @returns {() => void} disposer
+     */
+    registerReplacement(mapping) {
+        if (!mapping || typeof mapping !== "object") throw new TypeError("node replacement must be an object");
+        const {
+            old_type,
+            new_type
+        } = mapping;
+        if (typeof old_type !== "string" || !old_type) throw new TypeError("node replacement: old_type must be a non-empty string");
+        if (typeof new_type !== "string" || !new_type) throw new TypeError(`node replacement ${old_type}: new_type must be a non-empty string`);
+        for (const key of ["inputs", "outputs", "properties", "widgets", "set"]) {
+            if (mapping[key] !== undefined && (mapping[key] === null || typeof mapping[key] !== "object" || Array.isArray(mapping[key]))) {
+                throw new TypeError(`node replacement ${old_type}: ${key} must be an object`);
+            }
+        }
+        const normalized = Object.freeze({
+            ...LiteGraph.cloneObject(mapping),
+            auto: mapping.auto === true
+        });
+        this._replacements.set(old_type, normalized);
+        return () => {
+            if (this._replacements.get(old_type) === normalized) this._replacements.delete(old_type);
+        };
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a type */
+    getReplacement(type) {
+        return this._replacements.get(type) ?? null;
+    }
+
+    /** @returns {object[]} every registered replacement mapping */
+    listReplacements() {
+        return [...this._replacements.values()];
+    }
+}
+
+// ---- node replacement on a graph -----------------------------------------------------------
+
+/** true for a placeholder made by configure for a type that was not registered */
+function isMissingNodePlaceholder(node) {
+    return !!(node && node.has_errors && node.last_serialization && node.constructor === LiteGraph.LGraphNode);
+}
+
+/** The stored type of a node (a placeholder keeps the missing type in last_serialization). */
+function storedNodeType(node) {
+    return isMissingNodePlaceholder(node) ? node.last_serialization.type : node.type;
+}
+
+function packResolveSlot(slots, key) {
+    if (key === null || key === undefined) return -1;
+    if (typeof key === "number" || /^\d+$/.test(String(key))) {
+        const index = Number(key);
+        return index < (slots?.length ?? 0) ? index : -1;
+    }
+    return slots?.findIndex((slot) => slot?.name === key) ?? -1;
+}
+
+/** Target index on the new node for old slot `index` (named `name`), per a mapping. */
+function packMapSlot(map, index, name, newSlots) {
+    if (map) {
+        if (Object.hasOwn(map, name)) return packResolveSlot(newSlots, map[name]);
+        if (Object.hasOwn(map, String(index))) return packResolveSlot(newSlots, map[String(index)]);
+    }
+    return packResolveSlot(newSlots, name);
+}
+
+/**
+ * Replaces `node` in its graph by a node of `mapping.new_type`, keeping its id, position, title,
+ * colours, mode and flags, and moving its links (with their ids and reroutes) onto the mapped
+ * slots. Links on slots the mapping cannot place are removed and listed in the result.
+ * The caller wraps this in a transaction.
+ * @returns {{node: object, dropped: Array<{kind: "input"|"output", slot: number, name: string, link: *}>}}
+ */
+function replaceNodeInGraph(graph, node, mapping) {
+    const newNode = LiteGraph.createNode(mapping.new_type);
+    if (!newNode) throw new Error(`replaceNode: node type ${mapping.new_type} is not registered`);
+    const placeholder = isMissingNodePlaceholder(node);
+    const stored = placeholder ? node.last_serialization : null;
+    const dropped = [];
+
+    // what to keep from the old node
+    const customTitle = placeholder ? stored.title : (node.title !== node.constructor.title ? node.title : undefined);
+    const oldProperties = {
+        ...(placeholder ? (stored.properties ?? {}) : {}),
+        ...(node.properties ?? {})
+    };
+    const oldWidgets = placeholder ?
+        (Array.isArray(stored.widgets_values) ? stored.widgets_values : []) :
+        (node.widgets ?? []).map((w) => w?.value);
+
+    newNode.pos = [node.pos[0], node.pos[1]];
+    if (customTitle !== undefined) newNode.title = customTitle;
+    for (const key of ["color", "bgcolor", "boxcolor"])
+        if (node[key]) newNode[key] = node[key];
+    newNode.mode = node.mode ?? newNode.mode;
+    if (node.flags) newNode.flags = {
+        ...newNode.flags,
+        ...LiteGraph.cloneObject(node.flags)
+    };
+
+    // properties: same name unless mapped; the new node's own provenance stamp wins
+    const propertyMap = mapping.properties ?? {};
+    for (const [key, value] of Object.entries(oldProperties)) {
+        if (key === "pack" || key === "pack_ver") continue;
+        const target = Object.hasOwn(propertyMap, key) ? propertyMap[key] : (key in (newNode.properties ?? {}) ? key : null);
+        if (target === null || target === undefined) continue;
+        newNode.properties[target] = LiteGraph.cloneObject(value);
+    }
+    Object.assign(newNode.properties, LiteGraph.cloneObject(mapping.set?.properties ?? {}));
+
+    // widgets: same position unless mapped
+    const widgetMap = mapping.widgets ?? {};
+    const widgetValues = [];
+    oldWidgets.forEach((value, index) => {
+        const target = Object.hasOwn(widgetMap, String(index)) ? widgetMap[String(index)] : index;
+        if (target === null || target === undefined) return;
+        widgetValues[Number(target)] = value;
+    });
+
+    // plan the links: [link id, new slot] per old slot; unplaceable links are disconnected first
+    const inputMoves = [];
+    (node.inputs ?? []).forEach((input, index) => {
+        if (input?.link === null || input?.link === undefined) return;
+        const target = packMapSlot(mapping.inputs, index, input.name, newNode.inputs);
+        if (target < 0 || inputMoves.some((move) => move.slot === target)) {
+            dropped.push({
+                kind: "input",
+                slot: index,
+                name: input.name,
+                link: input.link
+            });
+            node.disconnectInput(index, {
+                doProcessChange: false
+            });
+            return;
+        }
+        inputMoves.push({
+            link: input.link,
+            slot: target
+        });
+    });
+    const outputMoves = [];
+    (node.outputs ?? []).forEach((output, index) => {
+        if (!output?.links?.length) return;
+        const target = packMapSlot(mapping.outputs, index, output.name, newNode.outputs);
+        if (target < 0) {
+            for (const link of output.links) dropped.push({
+                kind: "output",
+                slot: index,
+                name: output.name,
+                link
+            });
+            node.disconnectOutput(index, false, {
+                doProcessChange: false
+            });
+            return;
+        }
+        outputMoves.push({
+            links: [...output.links],
+            slot: target
+        });
+    });
+
+    // detach the remaining links from the old node so removing it keeps them
+    (node.inputs ?? []).forEach((input) => {
+        if (input) input.link = null;
+    });
+    (node.outputs ?? []).forEach((output) => {
+        if (output) output.links = null;
+    });
+    const id = node.id;
+    graph.remove(node);
+
+    newNode.id = id;
+    graph.add(newNode, true, {
+        doCalcSize: true
+    });
+    if (newNode.id !== id) throw new Error(`replaceNode: could not keep node id ${id}`);
+
+    for (const move of inputMoves) {
+        const link = graph.links[move.link];
+        if (!link) continue;
+        link.target_slot = move.slot;
+        newNode.inputs[move.slot].link = link.id;
+    }
+    for (const move of outputMoves) {
+        const output = newNode.outputs[move.slot];
+        output.links ??= [];
+        for (const linkId of move.links) {
+            const link = graph.links[linkId];
+            if (!link) continue;
+            link.origin_slot = move.slot;
+            output.links.push(link.id);
+        }
+    }
+
+    newNode.configure({
+        properties: newNode.properties,
+        ...(widgetValues.length ? {
+            widgets_values: widgetValues
+        } : {}),
+        ...(customTitle !== undefined ? {
+            title: customTitle
+        } : {}),
+    });
+    graph.updateExecutionOrder();
+    graph.setDirtyCanvas(true, true);
+    return {
+        node: newNode,
+        dropped
+    };
+}
+
+// helpers shared with LGraph (statics keep the bundles' export list to PackRegistry)
+PackRegistry.compareVersions = compareVersions;
+PackRegistry.satisfiesVersion = satisfiesVersion;
+PackRegistry.normalizeManifest = normalizePackManifest;
+PackRegistry.isMissingNodePlaceholder = isMissingNodePlaceholder;
+PackRegistry.storedNodeType = storedNodeType;
+PackRegistry.replaceNodeInGraph = replaceNodeInGraph;
+
 // this needs to be called after all classes has been included, before registering nodes and creating canvas
 // will setup callback handlers and LiteGraph.CLASSES references ( eg. LitegGraph.LGraph, .. )
 LiteGraph.initialize();
+// built-in pack: node types registered below belong to "litegraph/basic" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/basic",
+    version: LiteGraph.VERSION,
+    title: "Basic",
+    builtin: true
+});
+
 class Time {
 
     static title = "Time";
@@ -26553,6 +27533,17 @@ class GenericCompare {
 }
 LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
 
+LiteGraph.packs.close("litegraph/basic");
+
+// built-in pack: node types registered below belong to "litegraph/events" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/events",
+    version: LiteGraph.VERSION,
+    title: "Events",
+    builtin: true
+});
+
 // Show value inside the debug console
 class LogEvent {
 
@@ -27244,6 +28235,18 @@ class EventSwitch {
     }
 }
 LiteGraph.registerNodeType("events/switch", EventSwitch);
+
+LiteGraph.packs.close("litegraph/events");
+
+// built-in pack: node types registered below belong to "litegraph/interface" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/interface",
+    version: LiteGraph.VERSION,
+    title: "Interface widgets",
+    builtin: true
+});
+
 class WidgetButton {
 
     static title = "Button";
@@ -28109,6 +29112,17 @@ class WidgetPanel {
 }
 LiteGraph.registerNodeType("widget/panel", WidgetPanel);
 
+LiteGraph.packs.close("litegraph/interface");
+
+// built-in pack: node types registered below belong to "litegraph/input" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/input",
+    version: LiteGraph.VERSION,
+    title: "Input devices",
+    builtin: true
+});
+
 class GamepadInput {
 
     static title = "Gamepad";
@@ -28488,6 +29502,17 @@ GamepadInput.UP = 4;
 GamepadInput.DOWN = 8;
 
 LiteGraph.registerNodeType("input/gamepad", GamepadInput);
+
+LiteGraph.packs.close("litegraph/input");
+
+// built-in pack: node types registered below belong to "litegraph/math" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/math",
+    version: LiteGraph.VERSION,
+    title: "Math",
+    builtin: true
+});
 
 // Converter
 class Converter {
@@ -29975,6 +31000,17 @@ class Math3DXYZWToVec4 {
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
+LiteGraph.packs.close("litegraph/math");
+
+// built-in pack: node types registered below belong to "litegraph/math3d" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/math3d",
+    version: LiteGraph.VERSION,
+    title: "Math 3D",
+    builtin: true
+});
+
 const MATH3D_DEG2RAD = Math.PI / 180;
 const MATH3D_RAD2DEG = 180 / Math.PI;
 
@@ -30635,6 +31671,17 @@ if (typeof(glMatrix) !== "undefined") {
     console.warn?.("No glmatrix found, some Math3D nodes may not work");
 }
 
+LiteGraph.packs.close("litegraph/math3d");
+
+// built-in pack: node types registered below belong to "litegraph/strings" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/strings",
+    version: LiteGraph.VERSION,
+    title: "Strings",
+    builtin: true
+});
+
 function toString(a) {
     if (a && a.constructor === Object) {
         try {
@@ -30775,6 +31822,17 @@ class StringToTable {
     }
 }
 LiteGraph.registerNodeType("string/toTable", StringToTable);
+
+LiteGraph.packs.close("litegraph/strings");
+
+// built-in pack: node types registered below belong to "litegraph/logic" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/logic",
+    version: LiteGraph.VERSION,
+    title: "Logic",
+    builtin: true
+});
 
 class Selector {
 
@@ -31193,6 +32251,18 @@ class logicWhile {
     }
 }
 LiteGraph.registerNodeType("logic/CycleWHILE", logicWhile);
+
+LiteGraph.packs.close("litegraph/logic");
+
+// built-in pack: node types registered below belong to "litegraph/graphics" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/graphics",
+    version: LiteGraph.VERSION,
+    title: "Graphics",
+    builtin: true
+});
+
 
 class GraphicsPlot {
 
@@ -32206,6 +33276,17 @@ LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("graphics/", ["browser", "dom"]);
+
+LiteGraph.packs.close("litegraph/graphics");
+
+// built-in pack: node types registered below belong to "litegraph/gltextures" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/gltextures",
+    version: LiteGraph.VERSION,
+    title: "WebGL textures",
+    builtin: true
+});
 
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";
@@ -38129,6 +39210,17 @@ LGraphTexture.guardRegisteredWebGLNodes();
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
 
+LiteGraph.packs.close("litegraph/gltextures");
+
+// built-in pack: node types registered below belong to "litegraph/glshaders" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/glshaders",
+    version: LiteGraph.VERSION,
+    title: "WebGL shaders",
+    builtin: true
+});
+
 var SHADERNODES_COLOR = "#345";
 
 var LGShaders = (LiteGraph.Shaders = {});
@@ -40256,6 +41348,17 @@ LGraphTexture.guardRegisteredWebGLNodes();
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities(["shader::", "texture/"], ["browser", "webgl"]);
 
+LiteGraph.packs.close("litegraph/glshaders");
+
+// built-in pack: node types registered below belong to "litegraph/geometry" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/geometry",
+    version: LiteGraph.VERSION,
+    title: "Geometry",
+    builtin: true
+});
+
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // var { GL } = require('../../editor/js/libs/litegl.js');
 
@@ -42250,6 +43353,17 @@ globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, {
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("geometry/", ["browser", "webgl"]);
 
+LiteGraph.packs.close("litegraph/geometry");
+
+// built-in pack: node types registered below belong to "litegraph/glfx" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/glfx",
+    version: LiteGraph.VERSION,
+    title: "WebGL effects",
+    builtin: true
+});
+
 // Works with Litegl.js to create WebGL nodes
 
 // Texture Lens
@@ -43056,6 +44170,17 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("fx/", ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/glfx");
+
+// built-in pack: node types registered below belong to "litegraph/midi" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/midi",
+    version: LiteGraph.VERSION,
+    title: "MIDI",
+    builtin: true
+});
 
 // TODO :: MIDI WORKS WITH ACTIONS SLOTS REVISE: (CANT ASSIGN MULTIPLE, WHEN IT SHOULD WITH THIS DATA TYPE, AND DATA SEEMS NOT PASSED BY (eg. MIDI Show using his input does not seems to work))
 
@@ -44735,6 +45860,17 @@ LiteGraph.registerNodeType("midi/keys", LGMIDIKeys);
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("midi/", ["browser", "midi"]);
 
+LiteGraph.packs.close("litegraph/midi");
+
+// built-in pack: node types registered below belong to "litegraph/audio" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/audio",
+    version: LiteGraph.VERSION,
+    title: "Audio",
+    builtin: true
+});
+
 class LGAudio {
 
     static audios_connected = {};
@@ -46277,6 +47413,17 @@ LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);
 
+LiteGraph.packs.close("litegraph/audio");
+
+// built-in pack: node types registered below belong to "litegraph/network" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/network",
+    version: LiteGraph.VERSION,
+    title: "Network",
+    builtin: true
+});
+
 class LGWebSocket {
     static title = "WS Client";
     static desc = "Connect to a WebSocket to send and receive data";
@@ -46850,6 +47997,17 @@ LiteGraph.registerNodeType("network/webrtc", WebRTCNode);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("network/", ["network"]);
+
+LiteGraph.packs.close("litegraph/network");
+
+// built-in pack: node types registered below belong to "litegraph/objects" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/objects",
+    version: LiteGraph.VERSION,
+    title: "Objects",
+    builtin: true
+});
 
 // EG METHOD
 
@@ -47815,6 +48973,16 @@ class ObjectEditorNode {
 
 LiteGraph.registerNodeType("objects/json_editor", ObjectEditorNode);
 
+LiteGraph.packs.close("litegraph/objects");
+
+// built-in pack: node types registered below belong to "litegraph/libraries" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/libraries",
+    version: LiteGraph.VERSION,
+    title: "Libraries",
+    builtin: true
+});
 
 // The library manager itself lives in src/librarymanager.js (LiteGraph.LibraryManager).
 
@@ -48161,6 +49329,17 @@ LiteGraph.registerNodeType("libraries/selector", CDNLibrarySelector);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("libraries/", ["network"]);
+
+LiteGraph.packs.close("litegraph/libraries");
+
+// built-in pack: node types registered below belong to "litegraph/html" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/html",
+    version: LiteGraph.VERSION,
+    title: "HTML",
+    builtin: true
+});
 
 /**
  * will extend a node class creating an html element for it available in this._el_cont, use this._html to set his content
@@ -50288,6 +51467,17 @@ LiteGraph.registerNodeType("html/apply_element_css", HtmlElementStyle);
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("html/", ["browser", "dom"]);
 
+LiteGraph.packs.close("litegraph/html");
+
+// built-in pack: node types registered below belong to "litegraph/watch" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/watch",
+    version: LiteGraph.VERSION,
+    title: "Watch",
+    builtin: true
+});
+
 class WatchValue {
 
     static fontSize = 16;
@@ -50649,6 +51839,18 @@ class WatchValue {
     }
 }
 LiteGraph.registerNodeType("watch/value", WatchValue);
+
+LiteGraph.packs.close("litegraph/watch");
+
+// built-in pack: node types registered below belong to "litegraph/meta" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/meta",
+    version: LiteGraph.VERSION,
+    title: "LiteGraph",
+    builtin: true
+});
+
 //LiteGraph library related nodes
 
 // --------------------------
@@ -50732,6 +51934,18 @@ class LGGraph {
     }
 }
 LiteGraph.registerNodeType("litegraph/graph", LGGraph);
+
+LiteGraph.packs.close("litegraph/meta");
+
+// built-in pack: node types registered below belong to "litegraph/socketio" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/socketio",
+    version: LiteGraph.VERSION,
+    title: "Socket.IO",
+    builtin: true
+});
+
 // src/nodes/libraries/socket.io.js
 
 // -- client&server libraries --
@@ -50941,6 +52155,17 @@ LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("network/", ["network"]);
 
+LiteGraph.packs.close("litegraph/socketio");
+
+// built-in pack: node types registered below belong to "litegraph/others" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({
+    id: "litegraph/others",
+    version: LiteGraph.VERSION,
+    title: "Others",
+    builtin: true
+});
+
 /* in types :: run in console :: var s=""; LiteGraph.slot_types_in.forEach(function(el){s+=el+"\n";}); console.log?.(s); */
 
 if (typeof LiteGraph.slot_types_default_in == "undefined")
@@ -51066,6 +52291,8 @@ LiteGraph.slot_types_default_out["image"] = ["graphics/frame", "graphics/drawIma
 // LiteGraph.slot_types_default_out["mat4"] = "geometry/transform";
 LiteGraph.slot_types_default_out["quat"] = ["math3d/rotate_vec3", "math3d/rotation"];
 LiteGraph.slot_types_default_out["table"] = "string/toTable";
+
+LiteGraph.packs.close("litegraph/others");
 exports.LiteGraphClass = LiteGraphClass;
 exports.CallbackHandler = CallbackHandler;
 exports.LGraphEvent = LGraphEvent;
@@ -51099,6 +52326,7 @@ exports.NumberWidget = NumberWidget;
 exports.ComboWidget = ComboWidget;
 exports.TextWidget = TextWidget;
 exports.NodeSearch = NodeSearch;
+exports.PackRegistry = PackRegistry;
 exports.LGraphTexture = LGraphTexture;
 exports.LGShaderContext = LGShaderContext;
 exports.DOMSelector = DOMSelector;
