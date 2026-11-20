@@ -236,7 +236,10 @@ export class LGraph {
      * @param {GraphCanvas} graph_canvas
      */
     attachCanvas(graphcanvas) {
-        if ( ! (graphcanvas instanceof LGraphCanvas) ) {
+        // another copy of the library (e.g. the editor page loads both the bundle and src/) still has a canvas
+        const isCanvas = graphcanvas instanceof LGraphCanvas || (LiteGraph.LGraphCanvas && graphcanvas instanceof LiteGraph.LGraphCanvas)
+            || (typeof graphcanvas?.setGraph === "function" && typeof graphcanvas?.draw === "function" && graphcanvas?.ds);
+        if (!isCanvas) {
             throw new Error("attachCanvas expects a LiteGraph.LGraphCanvas instance");
         }
         if (graphcanvas.graph && graphcanvas.graph != this) {
