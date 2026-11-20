@@ -141,6 +141,10 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 - **Documentation:** README, getting-started, architecture docs; generated API docs out of the authored tree.
 - **Applications:** move the editor, tester and runner apps into their own homes; one defaults module; one tester controller.
 
+## Pre-release 0.18.0-dev.1
+
+[Plan](2026-11-20-pre-release-0.18.0-dev.1.md) (accepted 2026-11-20): finish Waves 4 and 5, D7 and the loose ends, then tag `v0.18.0-dev.1` on `master` (tag only).
+
 ## Deferred (each needs its own proposal)
 
 Virtual/broadcast links, link routing as default, app mode / published parameters, graph tabs, remote pack registry, TypeScript migration, renderer change, async workflow scheduler.
