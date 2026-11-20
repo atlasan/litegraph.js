@@ -1,6 +1,6 @@
 # Wave 3: subgraph system
 
-> **Date** 2026-11-20 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `0443d77`
+> **Date** 2026-11-20 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `0443d77`
 
 **Outcome:** one lean subgraph system for litegraph.
 - A **definition** is a reusable graph with an interface.
@@ -362,6 +362,7 @@ These are corrections to §4, made while building; the [3a execution record](../
 
 ## History
 
+- 2026-11-20: 3c done: steps 10–12; Wave 3 complete ([record](../executions/2026-11-20-wave3c-components.md)).
 - 2026-11-20: 3b done: steps 6–9 ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)). The canvas commits on leave only after an edit, and promoted values never reach the definition.
 - 2026-11-20: schema probe passed (79/79, no content lost); `subgraph_format` defaults to `"definitions"`; ADR 0001 accepted ([record](../executions/2026-11-20-wave3a-schema-probe.md)).
 - 2026-11-20: 3a done except the schema probe and the default flip ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md)).

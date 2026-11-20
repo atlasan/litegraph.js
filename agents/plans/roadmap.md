@@ -28,7 +28,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
-| 3 | Subgraph v2 and components | **In progress**: [plan](2026-11-20-wave3-subgraph-system.md); **3a done** on `LG/wave3_subgraphs` ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [schema probe](../executions/2026-11-20-wave3a-schema-probe.md)): definitions are the default document form; ADR 0001 accepted. **3b done** on `LG/wave3b_authoring` ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)): breadcrumb, commands, interface editing, promoted widgets, path ids; 3c (components, blueprints, SA test port) next |
+| 3 | Subgraph v2 and components | **Done**: 3a definitions, function node, interop ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [probe](../executions/2026-11-20-wave3a-schema-probe.md)); 3b authoring ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)); 3c components, blueprints, SA port ([record](../executions/2026-11-20-wave3c-components.md)); merged into `LG/dev`, not yet in `master`. See the [plan](2026-11-20-wave3-subgraph-system.md). |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
 
@@ -110,7 +110,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 - RenderLink classes, and split title drawing with icons (H2).
 - Carrying reroutes across a subgraph boundary on conversion and unpack.
 
-## Wave 3: subgraph v2 and components (in progress)
+## Wave 3: subgraph v2 and components (done)
 
 ADR 0001 (D2): option B, accepted 2026-11-20 after 3a. Plan: [Wave 3: subgraph system](2026-11-20-wave3-subgraph-system.md) (accepted; decisions W3-1–W3-6 taken).
 
