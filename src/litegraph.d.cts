@@ -694,8 +694,12 @@ export declare class LGraph {
     subgraphs: Map<string, SubgraphDefinition>;
     /** the outermost graph */
     readonly rootGraph: LGraph;
-    /** adds the definitions of instances the root registry does not know yet */
-    registerSubgraphDefinitions(): void;
+    /** adds the definitions of instances the root registry does not know yet; sync: also take instances edited since their last sync */
+    registerSubgraphDefinitions(options?: { sync?: boolean }): void;
+    /** subgraph and function nodes, at any depth, that use a definition */
+    findSubgraphInstances(id: string): Subgraph[];
+    /** true while this graph or a graph containing it is being configured */
+    readonly isConfiguring: boolean;
     /**
      * Configure a graph from a JSON string
      * @param data configure a graph from a JSON string
@@ -1292,6 +1296,10 @@ export interface LGraphEventMap {
     "execution-step": { iteration: number };
     /** execution stopped on an error */
     "node-error": { error: unknown; node: LGraphNode | null };
+    /** a subgraph definition changed by a commit; linked instances were refreshed (root graph) */
+    "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
+    /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
+    "subgraph-forked": { node: LGraphNode; from: string; to: string; reason: string };
 }
 
 export interface LGraphCanvasEventMap {
@@ -1988,6 +1996,14 @@ export declare class Subgraph extends LGraphNode {
     buildFromNodes(nodes: LGraphNode[]): this;
     /** moves the contents back into the parent graph and removes this node; see LGraph.unpackSubgraph */
     unpack(): LGraphNode[];
+    /** the definition this node uses (root registry), or null */
+    getDefinition(): SubgraphDefinition | null;
+    /** makes the current inner graph the definition and refreshes the linked instances (one undo step) */
+    commitDefinition(): boolean;
+    /** rebuilds the inner graph from the definition; outer slots follow it by slot id */
+    refreshFromDefinition(): boolean;
+    /** gives this node its own copy of the definition; returns the new id */
+    makeUnique(): string | null;
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}

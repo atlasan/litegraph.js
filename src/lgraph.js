@@ -2110,17 +2110,24 @@ export class LGraph {
      * Adds the definitions of subgraph instances (at any depth) that the root registry does not
      * know yet, taken from their current inner graphs.
      */
-    registerSubgraphDefinitions() {
+    registerSubgraphDefinitions({ sync = false } = {}) {
         const root = this.rootGraph;
         const visit = (graph, depth) => {
             if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
             for (const node of graph._nodes) {
                 if (!node?.subgraph) continue;
                 const id = node.properties?.subgraph_id;
-                if (typeof id === "string" && id && !root.subgraphs.has(id)) {
-                    const found = new Map();
-                    SubgraphDefs.definitionOf(node.serialize(), found);
-                    for (const [key, definition] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, definition);
+                if (typeof id === "string" && id) {
+                    const known = root.subgraphs.has(id);
+                    const edited = known && sync && node._definition_revision !== undefined && node.subgraph.revision !== node._definition_revision;
+                    if (!known || edited) {
+                        const found = new Map();
+                        const definition = SubgraphDefs.definitionOf(node.serialize(), found);
+                        if (edited) definition.revision = (root.subgraphs.get(id).revision ?? 0) + 1;
+                        root.subgraphs.set(id, definition);
+                        for (const [key, nested] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, nested);
+                    }
+                    if (!known || edited || node._definition_revision === undefined) node._definition_revision = node.subgraph.revision;
                 }
                 visit(node.subgraph, depth + 1);
             }
@@ -2128,9 +2135,25 @@ export class LGraph {
         visit(this, 0);
     }
 
+    /** subgraph and function nodes (at any depth) that use a definition */
+    findSubgraphInstances(id) {
+        const found = [];
+        const visit = (graph, depth) => {
+            if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+            for (const node of graph._nodes) {
+                if (!node?.subgraph) continue;
+                if (node.properties?.subgraph_id === id) found.push(node);
+                visit(node.subgraph, depth + 1);
+            }
+        };
+        visit(this.rootGraph, 0);
+        return found;
+    }
+
     /** root serialize: the definition registry, and in "definitions" format references for instances */
     _serializeDefinitions(data, format) {
-        this.registerSubgraphDefinitions();
+        // instances edited without a commit (e.g. by code) bring their edit; siblings refresh only on commit
+        this.registerSubgraphDefinitions({ sync: true });
         if (format === "definitions") return SubgraphDefs.toDefinitions(data, { definitions: this.subgraphs });
         if (this.subgraphs.size) {
             data.definitions = { ...(data.definitions ?? {}), subgraphs: [...this.subgraphs.values()].map((definition) => LiteGraph.cloneObject(definition)) };
@@ -2164,6 +2187,23 @@ export class LGraph {
      * @param {Boolean} returns if there was any error parsing
      */
     configure(data, keep_old) {
+        this._configuring = (this._configuring ?? 0) + 1;
+        try {
+            return this._configure(data, keep_old);
+        } finally {
+            this._configuring--;
+        }
+    }
+
+    /** true while this graph, or a graph containing it, is being configured (loading) */
+    get isConfiguring() {
+        for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
+            if (graph._configuring) return true;
+        }
+        return false;
+    }
+
+    _configure(data, keep_old) {
         if (!data) {
             return;
         }

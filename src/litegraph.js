@@ -523,6 +523,7 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
             this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};

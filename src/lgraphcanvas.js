@@ -351,6 +351,8 @@ export class LGraphCanvas {
         }, graph, prev_graph, subgraph_node );
 
         graph.attachCanvas(this);
+        // the edits made inside become the definition; other linked instances follow (one undo step)
+        if (subgraph_node?.commitDefinition && subgraph_node.graph) subgraph_node.commitDefinition();
         this.setDirty(true, true);
         if (saved_view) {
             // back to where the user was before opening the subgraph
