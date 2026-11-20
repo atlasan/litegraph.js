@@ -696,6 +696,8 @@ export declare class LGraph {
     readonly rootGraph: LGraph;
     /** adds the definitions of instances the root registry does not know yet; sync: also take instances edited since their last sync */
     registerSubgraphDefinitions(options?: { sync?: boolean }): void;
+    /** the node at a path from the root graph ("3:7:2"), or null */
+    resolvePath(path: string): LGraphNode | null;
     /** subgraph and function nodes, at any depth, that use a definition */
     findSubgraphInstances(id: string): Subgraph[];
     /** true while this graph or a graph containing it is being configured */
@@ -833,6 +835,8 @@ export declare class LGraphNode {
     /** serialize and stringify */
     toString(): string;
     /** get the title string */
+    /** node ids from the root graph joined by ":" (e.g. "3:7:2" inside subgraphs) */
+    getPath(): string;
     getTitle(): string;
     /** sets the value of a property */
     setProperty(name: string, value: any): void;
@@ -1295,7 +1299,8 @@ export interface LGraphEventMap {
     /** after each runStep iteration (only dispatched when someone listens) */
     "execution-step": { iteration: number };
     /** execution stopped on an error */
-    "node-error": { error: unknown; node: LGraphNode | null };
+    /** node: the innermost failing node (also inside subgraphs); path: its LGraphNode.getPath() */
+    "node-error": { error: unknown; node: LGraphNode | null; path: string | null };
     /** a subgraph definition changed by a commit; linked instances were refreshed (root graph) */
     "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
     /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
@@ -2015,6 +2020,10 @@ export declare class Subgraph extends LGraphNode {
     exposeSlot(innerNode: LGraphNode, slotIndex: number, isOutput: boolean, pos?: ArrayLike<number>): LGraphNode | null;
     /** moves an interface slot up (-1) or down (+1); outer links follow */
     moveInterfaceSlot(isInput: boolean, name: string, delta: number): boolean;
+    /** promotes an inner widget: a new interface input feeds it, this node shows it */
+    promoteWidget(innerNode: LGraphNode, widgetName: string): boolean;
+    unpromoteWidget(innerNode: LGraphNode, widgetName: string): boolean;
+    isWidgetPromoted(innerNode: LGraphNode, widgetName: string): boolean;
     /** stored instance fields this runtime does not model (written back) */
     kept_fields: Record<string, unknown>;
 }

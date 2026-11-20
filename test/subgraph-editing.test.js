@@ -179,3 +179,30 @@ describe('interface editing', () => {
         expect(Array.from(ioNodes(node, 'graph/output')[0].pos)).toEqual([600, 50]);
     });
 });
+
+describe('path ids', () => {
+    test('getPath and resolvePath address nodes across levels', () => {
+        const { graph, node } = difference();
+        const innerSub = node.subgraph._nodes.find((n) => n.type === 'sge/sub');
+        const nested = node.subgraph.convertToSubgraph([innerSub]);
+        const deepest = nested.subgraph._nodes.find((n) => n.type === 'sge/sub');
+        expect(node.getPath()).toBe(String(node.id));
+        expect(deepest.getPath()).toBe(`${node.id}:${nested.id}:${deepest.id}`);
+        expect(graph.resolvePath(deepest.getPath())).toBe(deepest);
+        expect(nested.subgraph.resolvePath(deepest.getPath())).toBe(deepest); // always from the root
+        expect(graph.resolvePath(`${node.id}:999`)).toBeNull();
+        expect(graph.resolvePath('')).toBeNull();
+    });
+
+    test('an error inside a subgraph reaches the outer graph with the inner node and its path', () => {
+        const { graph, node } = difference();
+        const inner = node.subgraph._nodes.find((n) => n.type === 'sge/sub');
+        inner.onExecute = () => { throw new Error('boom'); };
+        const seen = [];
+        graph.events.on('node-error', (e) => seen.push(e.detail));
+        expect(() => graph.runStep(1, true)).toThrow('boom');
+        expect(seen).toHaveLength(1);
+        expect(seen[0].node).toBe(inner);
+        expect(seen[0].path).toBe(`${node.id}:${inner.id}`);
+    });
+});

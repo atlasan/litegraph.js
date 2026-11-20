@@ -352,7 +352,10 @@ export class LGraphCanvas {
 
         graph.attachCanvas(this);
         // the edits made inside become the definition; other linked instances follow (one undo step)
-        if (subgraph_node?.commitDefinition && subgraph_node.graph) subgraph_node.commitDefinition();
+        // (only after an edit: values that running nodes or promoted widgets wrote are not edits)
+        if (subgraph_node?.commitDefinition && subgraph_node.graph && subgraph_node.subgraph.revision !== subgraph_node._definition_revision) {
+            subgraph_node.commitDefinition();
+        }
         this.setDirty(true, true);
         if (saved_view) {
             // back to where the user was before opening the subgraph
@@ -8960,6 +8963,7 @@ export class LGraphCanvas {
             panel.content.innerHTML = ""; // clear
             panel.addHTML("<span class='node_type'>"+node.type+"</span>"+
                 "<span class='node_desc'>"+(node.constructor.desc || "")+"</span>"+
+                (node.graph?._subgraph_node ? "<span class='node_desc'>path "+String(node.getPath()).replace(/[<>&"']/g, "")+"</span>" : "")+
                 "<span class='separator'></span>");
 
             panel.addHTML("<h3>Properties</h3>");
@@ -9698,6 +9702,21 @@ export class LGraphCanvas {
             content: "Convert to subgraph",
             callback: LGraphCanvas.onMenuNodeToSubgraph,
         });
+        // inside a subgraph: show a widget on the subgraph node (promote), or stop showing it
+        const host = this.graph?._subgraph_node;
+        if (host?.promoteWidget && node.widgets?.length && node.type !== "graph/input" && node.type !== "graph/output") {
+            for (const widget of node.widgets) {
+                if (!widget?.name || widget.type === "button") continue;
+                const promoted = host.isWidgetPromoted(node, widget.name);
+                options.push({
+                    content: `${promoted ? "Unpromote" : "Promote"} widget "${widget.name}"`,
+                    callback: () => {
+                        if (promoted) host.unpromoteWidget(node, widget.name); else host.promoteWidget(node, widget.name);
+                        this.setDirty(true, true);
+                    },
+                });
+            }
+        }
         if (Object.keys(this.selected_nodes).length > 1) {
             options.push({
                 content: "Align Selected To",

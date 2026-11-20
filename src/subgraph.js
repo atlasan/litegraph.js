@@ -95,14 +95,8 @@ export class Subgraph {
             return;
         }
 
-        // send inputs to subgraph global inputs
-        if (this.inputs) {
-            for (let i = 0; i < this.inputs.length; i++) {
-                let input = this.inputs[i];
-                let value = this.getInputData(i);
-                this.subgraph.setInputData(input.name, value);
-            }
-        }
+        // send inputs to subgraph global inputs (a promoted widget gives the value of a free input)
+        this._pushInputs();
 
         // execute
         LiteGraph.log_verbose("subgraph","onExecute","subgraph runStep",this.subgraph);
@@ -316,6 +310,117 @@ export class Subgraph {
         this.removeOutput(slot);
     }
 
+    /** inputs into the inner graph; promoted widgets give the value of free inputs */
+    _pushInputs() {
+        this.inputs?.forEach((input, i) => {
+            if (input.type === LiteGraph.ACTION || input.type === LiteGraph.EVENT) return;
+            const promoted = this._promoted?.find((entry) => entry.name === input.name);
+            const value = promoted && input.link == null ? promoted.widget.value : this.getInputData(i);
+            this.subgraph.setInputData(input.name, value);
+            if (promoted) this._applyPromoted(promoted, value);
+        });
+    }
+
+    // --- promoted widgets: an interface input linked to an inner widget input shows that widget here ---
+
+    /** the promotions of the inner graph: interface inputs whose links reach an inner widget input */
+    _findPromotions() {
+        const inner = this.subgraph;
+        const found = [];
+        for (const io of inner._nodes.filter((node) => node.type === "graph/input")) {
+            for (const linkId of io.outputs?.[0]?.links ?? []) {
+                const link = inner.links[linkId];
+                const target = link && inner.getNodeById(link.target_id);
+                const slot = target?.inputs?.[link.target_slot];
+                const widget = slot ? target.getWidgetFromSlot?.(slot) : null;
+                if (widget) {
+                    found.push({ name: io.properties.name, io, node: target, innerWidget: widget, widgetIndex: target.widgets.indexOf(widget) });
+                    break; // the first widget input wins
+                }
+            }
+        }
+        const order = (this.inputs ?? []).map((input) => input.name);
+        return found.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+    }
+
+    /**
+     * Builds the promoted widgets of this instance. Values: `values` (stored widgets_values, in
+     * order), else the current promoted value, else the definition's default.
+     */
+    _syncPromotedWidgets(values) {
+        const previous = new Map((this._promoted ?? []).map((entry) => [entry.name, entry.widget.value]));
+        const definition = this.getDefinition?.();
+        this.widgets = (this.widgets ?? []).filter((widget) => !widget._promoted);
+        for (const input of this.inputs ?? []) if (input.widget && input._promoted_slot) { delete input.widget; delete input._promoted_slot; }
+        this._promoted = this._findPromotions().map((entry, index) => {
+            const stored = definition?.nodes?.find((node) => node.id === entry.node.id)?.widgets_values?.[entry.widgetIndex];
+            const fallback = stored !== undefined ? stored : entry.innerWidget.value;
+            const value = values && index < values.length ? values[index] : (previous.has(entry.name) ? previous.get(entry.name) : fallback);
+            const options = LiteGraph.cloneObject(entry.innerWidget.options ?? {});
+            delete options.property; delete options.socket;
+            const widget = this.addWidget(entry.innerWidget.type, entry.name, value, () => this._applyPromoted(promoted), options);
+            widget._promoted = true;
+            const promoted = { ...entry, widget, defaultValue: fallback };
+            const input = this.inputs?.find((slot) => slot.name === entry.name);
+            if (input && !input.widget) { input.widget = { name: entry.name }; input._promoted_slot = true; }
+            this._applyPromoted(promoted);
+            return promoted;
+        });
+        this.serialize_widgets = this._promoted.length > 0 || this.serialize_widgets === true;
+        this.setSize?.(this.computeSize());
+        return this._promoted;
+    }
+
+    /** writes a promoted value into the inner widget (and its property), as the canvas would */
+    _applyPromoted(promoted, value = promoted.widget.value) {
+        const { node, innerWidget } = promoted;
+        if (innerWidget.value === value) return;
+        const old = innerWidget.value;
+        innerWidget.value = value;
+        node.processCallbackHandlers?.("onWidgetChanged", { def_cb: node.onWidgetChanged }, innerWidget.name, value, old, innerWidget);
+        const property = innerWidget.options?.property;
+        if (property && node.properties?.[property] !== undefined) node.properties[property] = value;
+        innerWidget.callback?.(value, null, node, null, null, value);
+    }
+
+    /** true when an inner widget is promoted to this subgraph's interface */
+    isWidgetPromoted(innerNode, widgetName) {
+        return !!this._findPromotions().find((entry) => entry.node === innerNode && entry.innerWidget.name === widgetName);
+    }
+
+    /**
+     * Promotes an inner widget: its widget input is linked from a new interface input, and this node
+     * shows the widget. One undo step in the inner graph; linked instances follow on commit.
+     * @returns {boolean}
+     */
+    promoteWidget(innerNode, widgetName) {
+        const widget = innerNode?.widgets?.find((w) => w?.name === widgetName);
+        if (!widget || innerNode.graph !== this.subgraph || this.isWidgetPromoted(innerNode, widgetName)) return false;
+        let input = innerNode.getSlotFromWidget(widget);
+        if (input?.link != null) return false; // the widget is fed by another link
+        this.subgraph.transact("promoteWidget", () => {
+            input ??= innerNode.addWidgetInput(widget);
+            const io = this.exposeSlot(innerNode, innerNode.inputs.indexOf(input), false, [innerNode.pos[0] - 260, innerNode.pos[1]]);
+            io?.setProperty("value", widget.value);
+        });
+        this._syncPromotedWidgets();
+        return true;
+    }
+
+    /** removes a promotion: the interface input goes when it fed only this widget */
+    unpromoteWidget(innerNode, widgetName) {
+        const entry = this._findPromotions().find((e) => e.node === innerNode && e.innerWidget.name === widgetName);
+        if (!entry) return false;
+        this.subgraph.transact("unpromoteWidget", () => {
+            const slot = innerNode.getSlotFromWidget(entry.innerWidget);
+            if ((entry.io.outputs[0].links ?? []).length <= 1) this.subgraph.remove(entry.io);
+            else innerNode.disconnectInput(innerNode.inputs.indexOf(slot));
+            this._applyPromoted({ ...entry, widget: { value: entry.innerWidget.value } }); // keep what the widget shows
+        });
+        this._syncPromotedWidgets();
+        return true;
+    }
+
     /**
      * Instance fields this runtime does not model (e.g. ComfyUI's widgets_values of promoted
      * widgets) are kept and written back.
@@ -323,8 +428,14 @@ export class Subgraph {
     onConfigure(info) {
         this.kept_fields = {};
         for (const key of Object.keys(info ?? {})) {
-            if (!Subgraph.MODELLED_FIELDS.includes(key)) this.kept_fields[key] = LiteGraph.cloneObject(info[key]);
+            if (!Subgraph.MODELLED_FIELDS.includes(key) && key !== "widgets_values") this.kept_fields[key] = LiteGraph.cloneObject(info[key]);
         }
+        // stored values: this node's own widgets first, the promoted ones last
+        const promotions = this._findPromotions().length;
+        const stored = Array.isArray(info?.widgets_values) ? info.widgets_values : undefined;
+        const values = stored?.slice(Math.max(0, stored.length - promotions));
+        if (promotions) this._syncPromotedWidgets(values);
+        else if (stored) this.kept_fields.widgets_values = LiteGraph.cloneObject(stored); // nothing promoted here: keep them
     }
 
     onSerialize(data) {
@@ -392,6 +503,7 @@ export class Subgraph {
             return false;
         }
         definition.revision = (previous?.revision ?? 0) + 1;
+        this._syncPromotedWidgets();
         root.transact("editSubgraph", () => {
             root.subgraphs.set(id, definition);
             this._definition_revision = this.subgraph.revision;
@@ -429,6 +541,7 @@ export class Subgraph {
         }
         this._reconcileSlots(true, oldInputIds, definition.inputs ?? []);
         this._reconcileSlots(false, oldOutputIds, definition.outputs ?? []);
+        this._syncPromotedWidgets();
         this._definition_revision = this.subgraph.revision;
         this.setSize?.(this.computeSize());
         this.setDirtyCanvas?.(true, true);
@@ -578,6 +691,14 @@ export class Subgraph {
     serialize() {
         var data = LiteGraph.LGraphNode.prototype.serialize.call(this);
         data.subgraph = this.subgraph.serialize();
+        // promoted values belong to this instance (widgets_values); the inner widgets keep the defaults
+        for (const entry of this._promoted ?? []) {
+            const inner = data.subgraph.nodes?.find((node) => node.id === entry.node.id);
+            if (!inner) continue;
+            if (Array.isArray(inner.widgets_values) && entry.widgetIndex >= 0) inner.widgets_values[entry.widgetIndex] = LiteGraph.cloneObject(entry.defaultValue);
+            const property = entry.innerWidget.options?.property;
+            if (property && inner.properties && property in inner.properties) inner.properties[property] = LiteGraph.cloneObject(entry.defaultValue);
+        }
         return data;
     }
 
@@ -1316,10 +1437,7 @@ export class NodeFunction extends Subgraph {
         if (depth >= limit) throw new Error(`graph/function: call depth limit reached (LiteGraph.subgraph_max_depth = ${limit})`);
         NodeFunction._depth = depth + 1;
         try {
-            this.inputs?.forEach((input, i) => {
-                if (input.type === LiteGraph.ACTION || input.type === LiteGraph.EVENT) return;
-                this.subgraph.setInputData(input.name, this.getInputData(i));
-            });
+            this._pushInputs();
             this.subgraph.runStep(1);
             this.outputs?.forEach((output, i) => {
                 if (output.type === LiteGraph.EVENT || output.type === LiteGraph.ACTION) return;

@@ -177,8 +177,16 @@ test('leaving a subgraph on the canvas commits it to the linked instances', () =
         const canvas = new LGraphCanvas(el, graph, { skip_render: true });
         canvas.openSubgraph(first.subgraph);
         inner(first, 'sgl/mul').properties.k = 5;
+        first.subgraph.onGraphChanged({ action: 'edit' }); // an edit, as the canvas records one
         canvas.closeSubgraph();
         expect(canvas.graph).toBe(graph);
+        expect(inner(second, 'sgl/mul').properties.k).toBe(5);
+        // leaving without an edit commits nothing, even when values changed while running
+        const commit = jest.spyOn(first, 'commitDefinition');
+        canvas.openSubgraph(first.subgraph);
+        inner(first, 'sgl/mul').properties.k = 9;
+        canvas.closeSubgraph();
+        expect(commit).not.toHaveBeenCalled();
         expect(inner(second, 'sgl/mul').properties.k).toBe(5);
     } finally {
         dom.window.close(); delete globalThis.window; delete globalThis.document;
