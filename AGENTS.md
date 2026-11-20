@@ -6,6 +6,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
 
 | Need | Go to |
 |---|---|
+| Start: install, entries, first graph, apps | [docs/getting-started.md](docs/getting-started.md), [docs/architecture.md](docs/architecture.md) |
 | Use the library: guide, callbacks, generated API | [docs/](docs/guide.md) |
 | Setup, validation gate, package contracts | [docs/development.md](docs/development.md) |
 | The agent workspace: memories, plans, executions, audits, ideas | [agents/](agents/README.md) |
