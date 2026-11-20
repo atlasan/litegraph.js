@@ -32,9 +32,10 @@ class NodeProcessInfo {
     }
 }
 
-LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
+LiteGraph.registerNodeType("sys/processInfo", NodeProcessInfo);
+LiteGraph.registerNodeReplacement({ old_type: "server/process/NodeProcessInfo", new_type: "sys/processInfo", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
-LiteGraph.declareCapabilities("server/process/", ["node", "sys"]);
+LiteGraph.declareCapabilities("sys/processInfo", ["node", "sys"]);
 
 LiteGraph.packs.close("litegraph/nodejs-process");

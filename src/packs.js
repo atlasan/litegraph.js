@@ -511,9 +511,15 @@ function replaceNodeInGraph(graph, node, mapping) {
     const id = node.id;
     graph.remove(node);
 
+    const oldSize = node.size ? [node.size[0], node.size[1]] : null;
     newNode.id = id;
     graph.add(newNode, true, { doCalcSize: true });
     if (newNode.id !== id) throw new Error(`replaceNode: could not keep node id ${id}`);
+    // the node keeps the size it had, grown if the new type needs more room
+    if (oldSize && Number.isFinite(oldSize[0]) && Number.isFinite(oldSize[1])) {
+        newNode.size[0] = Math.max(oldSize[0], newNode.size[0]);
+        newNode.size[1] = Math.max(oldSize[1], newNode.size[1]);
+    }
 
     for (const move of inputMoves) {
         const link = graph.links[move.link];

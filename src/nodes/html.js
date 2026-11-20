@@ -103,6 +103,12 @@ export class DOMSelector {
     }
 }
 LiteGraph.registerNodeType("html/dom_selector", DOMSelector);
+// the jQuery nodes (never in a build) are folded into the html family; their selector maps here (offered, not automatic)
+LiteGraph.registerNodeReplacement({
+    old_type: "jquery/select", new_type: "html/dom_selector",
+    inputs: { selector: "selector" }, outputs: { elements: "result" }, properties: { selector: null },
+    reason: "the jQuery nodes were removed; html/dom_selector selects with a CSS selector",
+});
 
 export class HtmlNode {
 

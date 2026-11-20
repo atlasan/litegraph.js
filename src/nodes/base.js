@@ -685,15 +685,76 @@ LiteGraph.registerNodeType("basic/download", DownloadData);
 
 
 // Watch a value in the editor
+/**
+ * Watch: shows the value on its input. One node with three displays (property `display`):
+ * - "value": the value as the input's label (the classic watch);
+ * - "text": multiline text with font options (was `basic/watch_advanced`);
+ * - "tree": a JSON tree viewer (was `watch/value`, registered by watch.js as a display).
+ * The old types load as this one through automatic replacement mappings.
+ */
 class Watch {
 
     static title = "Watch";
     static desc = "Show value of input";
 
+    /** displays by name: {setup?(node), execute?(node), draw?(node, ctx, ...), mouseDown?(node, e, pos), menu?(node, canvas)} */
+    static displays = {
+        value: {
+            draw(node) {
+                node.inputs[0].label = Watch.toString(node.value);
+            },
+        },
+        text: {
+            setup(node) {
+                if (node.inputs[0]) node.inputs[0].label = "";
+                for (const [name, value, type] of [["font_family", "Arial", "string"], ["font_size", 14, "number"], ["clip", false, "toggle"]]) {
+                    if (!(name in node.properties)) node.addProperty(name, value, type);
+                }
+                node.value_last = undefined;
+                node.contlines = { lines: [], lines_tot: 0 };
+                node.changed = true;
+                // the text display's menu and resize handlers call these through `this`
+                for (const method of ["showFull", "fullWidth", "fullHeight", "copyContent", "onResize", "onResizeEnd"]) {
+                    if (typeof node[method] !== "function") node[method] = WatchAdvanced.prototype[method];
+                }
+            },
+            execute(node) {
+                WatchAdvanced.prototype.onExecute.call(node);
+            },
+            draw(node, ctx) {
+                WatchAdvanced.prototype.onDrawBackground.call(node, ctx);
+            },
+            menu(node, canvas) {
+                return WatchAdvanced.prototype.getExtraMenuOptions.call(node, canvas);
+            },
+        },
+    };
+
     constructor() {
         this.size = [60, 30];
         this.addInput("value", 0, { label: "" });
+        this.addProperty("display", "value", "enum", { values: ["value", "text", "tree"] });
         this.value = null;
+    }
+
+    /** the display in use (an unknown name, e.g. "tree" without watch.js, falls back to "value") */
+    getDisplay() {
+        return Watch.displays[this.properties?.display] ?? Watch.displays.value;
+    }
+
+    onPropertyChanged(name, value) {
+        if (name === "display") {
+            this.getDisplay().setup?.(this);
+            this.setDirtyCanvas?.(true, true);
+        } else if (this.properties?.display === "text") {
+            this.changed = true;
+        } else if (name === "clip_area") {
+            this.clip_area = value;
+        }
+    }
+
+    onConfigure() {
+        this.getDisplay().setup?.(this);
     }
 
     onConnectionsChange(connection, slot, connected, link_info) {
@@ -701,11 +762,18 @@ class Watch {
         if (connection != LiteGraph.INPUT) {
             return;
         }
+        if (this.properties?.display === "text") {
+            this.changed = true;
+            return;
+        }
         this.value = this.getInputData(0,true); // force update
     }
 
     onExecute() {
-        if (this.inputs[0]) {
+        const display = this.getDisplay();
+        if (display.execute) {
+            display.execute(this);
+        } else if (this.inputs[0]) {
             this.value = this.getInputData(0);
         }
     }
@@ -738,9 +806,16 @@ class Watch {
         }
     }
 
-    onDrawBackground() {
-        // show the current value
-        this.inputs[0].label = WatchAdvanced.toString(this.value);
+    onDrawBackground(ctx, canvas, element, pos) {
+        this.getDisplay().draw?.(this, ctx, canvas, element, pos);
+    }
+
+    onMouseDown(e, pos, canvas) {
+        return this.getDisplay().mouseDown?.(this, e, pos, canvas);
+    }
+
+    getExtraMenuOptions(canvas) {
+        return this.getDisplay().menu?.(this, canvas) ?? [];
     }
 }
 LiteGraph.registerNodeType("basic/watch", Watch);
@@ -957,7 +1032,13 @@ class WatchAdvanced{
         }
     }
 }
-LiteGraph.registerNodeType("basic/watch_advanced", WatchAdvanced);
+// basic/watch_advanced is now basic/watch with display "text" (catalog cleanup, Wave 4e)
+LiteGraph.registerNodeReplacement({
+    old_type: "basic/watch_advanced", new_type: "basic/watch", auto: true,
+    properties: { font_family: "font_family", font_size: "font_size", clip: "clip" },
+    set: { properties: { display: "text" } },
+    reason: "one watch node: basic/watch with display \"text\"",
+});
 
 
 // in case one type doesnt match other type but you want to connect them anyway

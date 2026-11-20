@@ -354,6 +354,47 @@ class WatchValue {
         }
     }
 }
-LiteGraph.registerNodeType("watch/value", WatchValue);
+// the JSON tree viewer is the "tree" display of basic/watch (catalog cleanup, Wave 4e)
+const WatchNode = LiteGraph.registered_node_types["basic/watch"];
+if (WatchNode?.displays) {
+    WatchNode.displays.tree = {
+        setup(node) {
+            if (node.inputs?.[0]) node.inputs[0].label = "";
+            node.state ??= {
+                scrollOffset: 0,
+                expandedNodes: new Set(),
+                hoverNodeId: null,
+                maxChildren: 6,
+                expandDepth: 2,
+                loadMoreNodes: new Set(),
+            };
+            node.clickRegions ??= [];
+            // the viewer's methods call each other through `this`
+            for (const method of ["render", "renderJSON", "handleClick", "expandUpToDepth", "updateInputData"]) {
+                if (typeof node[method] !== "function") node[method] = WatchValue.prototype[method];
+            }
+            if (!("clip_area" in node.properties)) node.addProperty("clip_area", true, "toggle");
+            node.clip_area = node.properties.clip_area;
+        },
+        execute(node) {
+            WatchValue.prototype.updateInputData.call(node);
+        },
+        draw(node, ctx, canvas, element, pos) {
+            if (!node.state) WatchNode.displays.tree.setup(node);
+            WatchValue.prototype.onDrawBackground.call(node, ctx, canvas, element, pos);
+        },
+        mouseDown(node, e, pos) {
+            if (!node.state) return;
+            WatchValue.prototype.handleClick.call(node, pos);
+        },
+    };
+}
+LiteGraph.registerNodeReplacement({
+    old_type: "watch/value", new_type: "basic/watch", auto: true,
+    inputs: { data: "value" },
+    properties: { clip_area: "clip_area" },
+    set: { properties: { display: "tree" } },
+    reason: "one watch node: basic/watch with display \"tree\"",
+});
 
 LiteGraph.packs.close("litegraph/watch");

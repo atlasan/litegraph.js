@@ -2,7 +2,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { format } from 'node:util';
-import { assertAllowedGraph, graphPolicyNotes, scriptsAllowed } from '../nodePolicy.js';
+import { assertAllowedGraph, graphPolicyNotes, scriptsAllowed, renamedType } from '../nodePolicy.js';
 
 const require = createRequire(import.meta.url);
 const { LiteGraph, LGraph } = require('../../../build_node/litegraph_nodejs.full.cjs');
@@ -24,7 +24,7 @@ async function configure(data) {
   // automatic replacement mappings (renamed types) change types while loading: check what loads
   const replacedType = (type) => {
     const mapping = LiteGraph.getNodeReplacement?.(type);
-    return mapping?.auto && LiteGraph.settings?.get('LiteGraph.Packs.AutoReplace') !== false ? mapping.new_type : null;
+    return mapping?.auto && LiteGraph.settings?.get('LiteGraph.Packs.AutoReplace') !== false ? mapping.new_type : renamedType(type);
   };
   assertAllowedGraph(data, (type) => Object.hasOwn(LiteGraph.registered_node_types, type), { replacedType });
   for (const note of graphPolicyNotes(data)) console.warn(note); // shown in the runner page log
