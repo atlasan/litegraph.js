@@ -251,6 +251,17 @@ describe('gestures on CanvasPointer (wave 2b)', () => {
         expect(canvas.selected_group).toBeNull();
     });
 
+    test('Ctrl-dragging a group title moves the group without its nodes; Ctrl on the body box-selects', () => {
+        const { canvas, graph, src } = setup();
+        const group = new LGraphGroup('G'); group.pos = [80, 40]; group.size = [220, 160]; graph.add(group);
+        drag(canvas, [[90, 60], [100, 70], [120, 90]], { ctrlKey: true });
+        expect(Array.from(group.pos)).toEqual([110, 70]);
+        expect(Array.from(src.pos)).toEqual([100, 100]); // the node stayed
+        drag(canvas, [[285, 190], [250, 160], [90, 90]], { ctrlKey: true }); // body of the moved group, outside the node
+        expect(Array.from(group.pos)).toEqual([110, 70]);
+        expect(canvas.selectedItems).toContain(src);
+    });
+
     test('clicking a group title selects the group and keeps it selected', () => {
         const { canvas, graph } = setup();
         const group = new LGraphGroup('G'); group.pos = [600, 400]; group.size = [200, 150]; graph.add(group);
