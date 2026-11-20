@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Wave 2 complete
+> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Wave 2 complete and in `master`
 
 This is the single place for the current status of planned work.
 
@@ -17,7 +17,7 @@ This is the single place for the current status of planned work.
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
-| `LG/dev` → `master` | [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1, `agents/` workspace, ideas) was merged into `master` on 2026-11-20 as `35c7e4f` after CI passed; `LG/dev` was fast-forwarded to the same commit. See the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
+| `LG/dev` → `master` | [PR #9](https://github.com/atlasan/litegraph.js/pull/9) (Wave 2) was merged into `master` on 2026-11-20 as `768f176` after CI passed; `LG/dev` was fast-forwarded to the same commit. Earlier: [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1, `agents/` workspace, ideas) as `35c7e4f`, see the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
 
 Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
 
@@ -27,7 +27,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 |---|---|---|
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
-| 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev`; not yet in `master`. See the [plan](2026-11-20-wave2-authoring-core.md). |
+| 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
 | 3 | Subgraph v2 and components | Proposed; needs the ADR 0001 decision |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
