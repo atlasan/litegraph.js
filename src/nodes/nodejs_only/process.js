@@ -1,3 +1,7 @@
+// built-in pack: node types registered below belong to "litegraph/nodejs-process" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/nodejs-process", version: LiteGraph.VERSION, title: "Node.js process", builtin: true });
+
 class NodeProcessInfo {
     constructor() {
         this.runtime = "node";
@@ -32,3 +36,5 @@ LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("server/process/", ["node", "sys"]);
+
+LiteGraph.packs.close("litegraph/nodejs-process");

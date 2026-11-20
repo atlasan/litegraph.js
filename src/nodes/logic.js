@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/logic" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/logic", version: LiteGraph.VERSION, title: "Logic", builtin: true });
+
 class Selector {
 
     static title = "Selector";
@@ -406,3 +410,5 @@ class logicWhile {
     }
 }
 LiteGraph.registerNodeType("logic/CycleWHILE", logicWhile);
+
+LiteGraph.packs.close("litegraph/logic");

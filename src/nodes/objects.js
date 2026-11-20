@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/objects" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/objects", version: LiteGraph.VERSION, title: "Objects", builtin: true });
+
 // EG METHOD
 
 // function mMETHOD(){
@@ -940,3 +944,4 @@ class ObjectEditorNode {
 
 LiteGraph.registerNodeType("objects/json_editor", ObjectEditorNode);
 
+LiteGraph.packs.close("litegraph/objects");

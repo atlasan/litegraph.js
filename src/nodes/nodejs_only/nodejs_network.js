@@ -1,3 +1,7 @@
+// built-in pack: node types registered below belong to "litegraph/nodejs-network" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/nodejs-network", version: LiteGraph.VERSION, title: "Node.js network", builtin: true });
+
 // -- server only libraries --
 LiteGraph.LibraryManager.registerLibrary({
     key: "http",
@@ -895,3 +899,5 @@ if (typeof LiteGraph !== "undefined") {
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities(["nodejs/", "server/network/"], ["node", "network"]);
+
+LiteGraph.packs.close("litegraph/nodejs-network");

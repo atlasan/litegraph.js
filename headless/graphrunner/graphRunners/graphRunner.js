@@ -21,7 +21,12 @@ async function configure(data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.nodes) || !Array.isArray(data.links)) {
     throw new Error('Workflow must contain nodes and links arrays');
   }
-  assertAllowedGraph(data, (type) => Object.hasOwn(LiteGraph.registered_node_types, type));
+  // automatic replacement mappings (renamed types) change types while loading: check what loads
+  const replacedType = (type) => {
+    const mapping = LiteGraph.getNodeReplacement?.(type);
+    return mapping?.auto && LiteGraph.settings?.get('LiteGraph.Packs.AutoReplace') !== false ? mapping.new_type : null;
+  };
+  assertAllowedGraph(data, (type) => Object.hasOwn(LiteGraph.registered_node_types, type), { replacedType });
   for (const note of graphPolicyNotes(data)) console.warn(note); // shown in the runner page log
   const candidate = new LGraph();
   // execution errors name the failing node by its path ("3:7:2" inside subgraphs)

@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/audio" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/audio", version: LiteGraph.VERSION, title: "Audio", builtin: true });
+
 class LGAudio {
 
     static audios_connected = {};
@@ -1524,3 +1528,5 @@ LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);
+
+LiteGraph.packs.close("litegraph/audio");

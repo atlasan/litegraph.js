@@ -54,6 +54,15 @@ test('runner node policy refuses dangerous types at any subgraph depth', () => {
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SCRIPTS: '1' }), true, 'scripts alone');
 });
 
+test('runner node policy checks the type an automatic replacement loads as', () => {
+  const graph = (nodes) => ({ nodes, links: [] });
+  const known = (type) => !type.startsWith('old/');
+  const replacedType = (type) => ({ 'old/log': 'sys/log', 'old/run': 'sys/runCommand' })[type] ?? null;
+  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'old/log' }]), known, { env: {} }), /Unknown node type: old\/log/, 'no mapping: unknown');
+  assert.doesNotThrow(() => assertAllowedGraph(graph([{ id: 1, type: 'old/log' }]), known, { env: {}, replacedType }));
+  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'old/run' }]), known, { env: {}, replacedType }), /not allowed in the runner: sys\/runCommand/, 'a renamed type cannot load a denied one');
+});
+
 test('runner node policy checks every subgraph definition, used or not', () => {
   const graph = (nodes) => ({ nodes, links: [] });
   const known = (type) => !type.startsWith('nope/');

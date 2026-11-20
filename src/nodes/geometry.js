@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/geometry" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/geometry", version: LiteGraph.VERSION, title: "Geometry", builtin: true });
+
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // import { GL } from "../../editor/js/libs/litegl.js";
 
@@ -1961,3 +1965,5 @@ globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, { once
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("geometry/", ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/geometry");

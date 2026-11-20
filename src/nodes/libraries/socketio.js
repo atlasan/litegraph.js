@@ -1,3 +1,7 @@
+// built-in pack: node types registered below belong to "litegraph/socketio" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/socketio", version: LiteGraph.VERSION, title: "Socket.IO", builtin: true });
+
 // src/nodes/libraries/socket.io.js
 
 // -- client&server libraries --
@@ -187,3 +191,5 @@ LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("network/", ["network"]);
+
+LiteGraph.packs.close("litegraph/socketio");

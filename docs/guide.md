@@ -278,6 +278,45 @@ LiteGraph.registerExtension({
 - **Mutating commands:** `mutatesGraph: true` on a command makes each run one undo step.
 - **Settings:** `ctx.settings.define({ id, default, bind })` declares a user setting. `LiteGraph.persistPlatformState()` keeps settings and user key bindings across reloads.
 
+## Packs and missing nodes
+
+A pack is a manifest (plain JSON) for a group of node types. The code is whatever you already imported; node types registered inside `setup` belong to the pack.
+
+```js
+const dispose = LiteGraph.packs.register(
+  { id: "acme-audio", version: "1.2.0", requires: { litegraph: ">=0.10" } },
+  () => LiteGraph.registerNodeType("acme/filter", Filter),
+);
+LiteGraph.getNodeDefinition("acme/filter").pack; // { id: "acme-audio", version: "1.2.0", builtin: false }
+LiteGraph.packs.index([{ id: "far", version: "3.0.0", nodes: ["far/thing"] }]); // known, not installed
+```
+
+- **Built-in packs:** every built-in node file is a builtin pack `litegraph/<family>` (`litegraph/math`, …).
+- **Provenance:** new nodes of non-builtin packs get `properties.pack` and `properties.pack_ver`; a loaded node keeps what it was saved with.
+- **Missing types:** a node of an unregistered type loads as a placeholder that saves back unchanged. `graph.getMissingNodes()` lists them by type, with the pack they come from (stamp, index, or ComfyUI's `cnr_id`) and a registered replacement. The root graph emits `missing-nodes {report, reason}` after loading, and the Editor shows the report.
+- **Replacements as data:**
+
+```js
+LiteGraph.registerNodeReplacement({
+  old_type: "acme/old", new_type: "acme/scale",
+  inputs: { x: "value" }, outputs: { y: "out" }, properties: { factor: "k" },
+  set: { properties: { mode: "log" } },
+  auto: false, // true: replaced while loading (our own renames)
+});
+graph.replaceNode(node);   // one undo step; keeps id, title, links and mapped values
+graph.replaceNodes();      // every placeholder that can be replaced or rebuilt
+```
+
+A linked slot the mapping cannot place is removed and listed in `dropped`. Commands: `litegraph.nodes.showMissing`, `litegraph.nodes.replaceMissing`, `litegraph.nodes.replace` (also in the node menu).
+
+| Setting | Default | Effect |
+|---|---|---|
+| `LiteGraph.Packs.Stamp` | true | Stamp nodes of non-builtin packs |
+| `LiteGraph.Packs.AutoReplace` | true | Apply `auto: true` replacements while loading |
+| `LiteGraph.Packs.AllowIncompatible` | false | Register a pack whose `requires.litegraph` does not match (refused otherwise, naming this setting) |
+| `LiteGraph.Packs.Disabled` | `[]` | Pack ids whose `setup` does not run |
+| `LiteGraph.Nodes.ShowMissingOnLoad` | true | The Editor opens the missing-nodes panel after a load |
+
 ## Saving and loading
 
 ```js

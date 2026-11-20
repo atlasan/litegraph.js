@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/basic" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/basic", version: LiteGraph.VERSION, title: "Basic", builtin: true });
+
 class Time {
 
     static title = "Time";
@@ -1242,3 +1246,5 @@ class GenericCompare {
     };
 }
 LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
+
+LiteGraph.packs.close("litegraph/basic");

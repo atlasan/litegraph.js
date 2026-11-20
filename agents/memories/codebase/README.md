@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-19 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 1
+> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4a
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -10,7 +10,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 |---|---|
 | `src/` | The library, as ES modules |
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
-| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
+| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
 | `editor/` | Demo editor. `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions |
 | `editor_tester/` | Browser tester that generates per-node scenarios |
@@ -38,6 +38,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js`, `subgraphdefs.js` | The graph model |
 | `lgraphcanvas.js` | Rendering and interaction, about 9.5k lines |
 | `librarymanager.js` | Optional library loading and manifest |
+| `packs.js` | `PackRegistry` (`LiteGraph.packs`): pack manifests, type attribution, index, version ranges, replacement mappings; `replaceNodeInGraph` (Wave 4a) |
 | `widgets.js` | `BaseWidget` and its subclasses; the safe arithmetic parser |
 | `init_litegraph.js` | Calls `LiteGraph.initialize()`; last in the build, so bundles initialize themselves |
 | `litegraph-editor.js` | `Editor` shell; included in full builds only |
@@ -73,6 +74,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Components and blueprints (3c):** `LiteGraph.registerSubgraphType` → `Subgraph.componentClass` (inner graph from the definition; instances serialize as `graph/subgraph` with `properties.component`); `LiteGraph.subgraph_components`; `updateFromSource` / `hasSourceUpdate` and an update badge provider. `LGraph.insertDefinition` (copy or linked; `_addDefinitionCopy` remaps nested ids) and `insertBlueprint`; canvas "Insert subgraph" (`LGraphCanvas.onMenuInsertSubgraph`).
   - **Paths:** `LGraphNode.getPath()` ("3:7:2"), `LGraph.resolvePath`; `doExecute` attaches the failing node to the error, and `node-error` carries `{node, path}`.
   - **Function node:** `graph/function` (`NodeFunction extends Subgraph`) calls a definition: `call` → inputs, one step, outputs → `done`; own copy per node; recursion refused, `NodeFunction._depth` limited by `LiteGraph.subgraph_max_depth`.
+  - **Missing types and replacement (Wave 4a):** a missing type loads as a plain `LGraphNode` placeholder (`has_errors`, `last_serialization`, title = type) that serializes back unchanged. `getMissingNodes({deep})`; root `configure` emits `missing-nodes {report, reason}` (`reason` "history" / "rollback" when undo or a failed transaction reloads). `replaceNode` / `replaceNodes` run `PackRegistry.replaceNodeInGraph` in a transaction: same id, link objects moved to mapped slots (ids and reroutes kept), unplaceable links removed and returned as `dropped`. `_applyAutoReplacements` runs `auto` mappings during configure inside a discarded transaction (no history, no revision).
   - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`): one undo step, rolled back on failure.
 
 ## Execution
@@ -102,6 +104,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `LiteGraph.registerExtension` | `{name, requires, setup(ctx)}`. `ctx` offers `commands`, `keybindings`, `settings`, `menus`, `on`, `onEvent`, `onTarget`, `onCanvas`, `addDisposer`. Disposal runs in reverse order |
 | Node definitions | `static def` merged with the classic statics. `getNodeDefinition`, `listNodeDefinitions`, `declareCapabilities`, `isNodeTypeSupported`, `getNodeSearchText` |
 | `LibraryManager` | `registerLibrary({key, version, globalObject, browser, server})`, `loadLibrary`, `waitForLib`. Manifest: `describeLibraries`, `probeLibraries`. Remote server code is off by default |
+| `LiteGraph.packs` (Wave 4a) | `register(manifest, setup)` attributes types registered in `setup` (and those in `manifest.nodes`) via `_onTypeRegistered`, called by `registerNodeType`; `open`/`close` do the same for built-in node files (`litegraph/<family>`, `builtin: true`); `index` (known, not installed); `packOf`, `findPackForType`, `describe`; `stampFor` (used by `createNode`); `registerReplacement` (`LiteGraph.registerNodeReplacement`). Settings `LiteGraph.Packs.*` |
 | Widgets | `LiteGraph.registerWidgetType(type, BaseWidget subclass)`. Built-in: button, toggle, slider, number, combo, text; aliases boolean, enum, string |
 
 ## Canvas
@@ -123,7 +126,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Workers:** each graph runs in a `worker_threads` worker (`graphManager.js`), which loads `build_node/litegraph_nodejs.full.cjs`.
 - **Security:**
   - `security.js` checks Origin and Host.
-  - `nodePolicy.js` refuses `sys/runCommand`, `sys/fileWrite`, `sys/fileDelete`, `sys/processControl`, `sys/serviceManager`, `libraries/load`, `libraries/register`, `libraries/search_CDN_lib` and `geometry/eval`, recursively up to depth 64.
+  - `nodePolicy.js` refuses `sys/runCommand`, `sys/fileWrite`, `sys/fileDelete`, `sys/processControl`, `sys/serviceManager`, `libraries/load`, `libraries/register`, `libraries/search_CDN_lib` and `geometry/eval`, recursively up to depth 64, plus the D1 families (see `describePolicy`). The type an `auto` replacement mapping loads as is checked too (`replacedType`, Wave 4a).
   - Scripts are off unless `RUNNER_ALLOW_SYS=1`.
 - **Protocol:** see [docs/development.md](../../../docs/development.md#graph-runner).
 

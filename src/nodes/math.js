@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/math" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/math", version: LiteGraph.VERSION, title: "Math", builtin: true });
+
 // Converter
 class Converter {
 
@@ -1424,3 +1428,5 @@ class Math3DXYZWToVec4 {
     }
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
+
+LiteGraph.packs.close("litegraph/math");

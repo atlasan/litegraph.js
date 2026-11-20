@@ -391,7 +391,7 @@ export class LGraphNode {
                     o[key] = LiteGraph.cloneObject(placeholderSource[key]);
                 }
             }
-            if (o.title === undefined) delete o.title;
+            if (o.title === undefined || (!("title" in placeholderSource) && o.title === placeholderSource.type)) delete o.title;
             for (const key of ["inputs", "outputs", "properties"]) {
                 const v = o[key];
                 const empty = Array.isArray(v) ? !v.length : (v && typeof v === "object" && !Object.keys(v).length);

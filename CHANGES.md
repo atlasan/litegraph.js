@@ -1,6 +1,21 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 4a, packs and missing nodes
+
+## Added
+
+* `LiteGraph.packs` (`PackRegistry`): pack manifests (`id`, `version`, `requires.litegraph`, `nodes`, `extensions`, `libraries`, …), attribution of node types registered in a pack's `setup`, an index of known packs that are not installed, version ranges, and the settings `LiteGraph.Packs.AllowIncompatible` and `LiteGraph.Packs.Disabled`. `getNodeDefinition(type).pack`.
+* Built-in node files declare builtin packs `litegraph/<family>`.
+* Provenance stamping: `properties.pack` / `properties.pack_ver` on new nodes of non-builtin packs (setting `LiteGraph.Packs.Stamp`).
+* `graph.getMissingNodes()` and the `missing-nodes` event; placeholders show their missing type as the title.
+* `LiteGraph.registerNodeReplacement(mapping)`, `graph.replaceNode(node, mapping)` and `graph.replaceNodes()` (one undo step); `auto` mappings apply while loading (setting `LiteGraph.Packs.AutoReplace`); `node-replaced` event.
+* The `node_packs` extension: the missing-nodes panel (opened by the Editor after a load), commands `litegraph.nodes.showMissing`, `litegraph.nodes.replaceMissing`, `litegraph.nodes.replace`, and "Replace with …" in the node menu.
+
+## Changed
+
+* The runner checks the type an automatic replacement loads as against its denylist (`assertAllowedGraph(..., {replacedType})`).
+
 # Unreleased (0.10.x): Wave 3c, components and blueprints
 
 ## Added

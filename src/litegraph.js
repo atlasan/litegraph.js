@@ -17,6 +17,7 @@ import { ExtensionRegistry } from "./extensionregistry.js";
 import { MenuRegistry } from "./menus.js";
 import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 import { NodeSearch } from "./nodesearch.js";
+import { PackRegistry } from "./packs.js";
 
 /**
  * @class LiteGraph
@@ -315,10 +316,15 @@ export class LiteGraphClass {
     }
 
     includeBasicNodes(){
-        this.registerNodeType("graph/subgraph", Subgraph);
-        this.registerNodeType("graph/input", GraphInput);
-        this.registerNodeType("graph/output", GraphOutput);
-        this.registerNodeType("graph/function", NodeFunction);
+        this.packs.open({ id: "litegraph/core", version: this.VERSION, title: "Subgraphs", builtin: true });
+        try {
+            this.registerNodeType("graph/subgraph", Subgraph);
+            this.registerNodeType("graph/input", GraphInput);
+            this.registerNodeType("graph/output", GraphOutput);
+            this.registerNodeType("graph/function", NodeFunction);
+        } finally {
+            this.packs.close("litegraph/core");
+        }
     }
 
     callbackhandler_setup(){
@@ -373,6 +379,7 @@ export class LiteGraphClass {
             experimental: !!(own.experimental ?? base_class.experimental),
             hidden: !!(own.hidden ?? base_class.skip_list),
             source: own.source ?? base_class.source ?? null,
+            pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
         });
@@ -381,6 +388,26 @@ export class LiteGraphClass {
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
     getNodeDefinition(type) {
         return this.node_definitions[type] ?? null;
+    }
+
+    /** Recomputes the stored metadata of a registered type (after its pack or capabilities changed). */
+    refreshNodeDefinition(type) {
+        const base_class = this.registered_node_types[type];
+        if (base_class) this.node_definitions[type] = this.describeNodeType(type, base_class);
+    }
+
+    /**
+     * Registers how to replace a node type by another, as data (see PackRegistry.registerReplacement).
+     * @returns {() => void} disposer
+     */
+    registerNodeReplacement(mapping) {
+        this.setupPlatform();
+        return this.packs.registerReplacement(mapping);
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a node type */
+    getNodeReplacement(type) {
+        return this.packs?.getReplacement(type) ?? null;
     }
 
     /**
@@ -567,6 +594,13 @@ export class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        if (!this.packs) {
+            this.packs = new PackRegistry(this);
+            this.settings.define({ id: "LiteGraph.Packs.Stamp", name: "Stamp the pack and its version on nodes of non-builtin packs", default: true });
+            this.settings.define({ id: "LiteGraph.Packs.AutoReplace", name: "Apply automatic node replacements when loading", default: true });
+            this.settings.define({ id: "LiteGraph.Packs.AllowIncompatible", name: "Register packs whose litegraph requirement does not match", default: false });
+            this.settings.define({ id: "LiteGraph.Packs.Disabled", type: "json", name: "Packs whose setup does not run", default: () => [] });
+        }
     }
 
     // set logging debug_level
@@ -726,6 +760,7 @@ export class LiteGraphClass {
         if (classname) {
             this.Nodes[classname] = base_class;
         }
+        this.packs?._onTypeRegistered(type);
         this.node_definitions[type] = this.describeNodeType(type, base_class);
 
         this.processCallbackHandlers("onNodeTypeRegistered",{
@@ -780,6 +815,7 @@ export class LiteGraphClass {
         }
         delete this.registered_node_types[base_class.type];
         delete this.node_definitions[base_class.type];
+        this.packs?._onTypeUnregistered(base_class.type);
         // Nodes is keyed by class name (base_class.constructor is always Function)
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
@@ -1025,6 +1061,9 @@ export class LiteGraphClass {
         node.pos ??= LiteGraph.DEFAULT_POSITION.concat();
         node.mode ??= LiteGraph.ALWAYS;
 
+        // provenance: nodes of non-builtin packs remember their pack (a loaded node keeps its stored stamp)
+        const stamp = this.packs?.stampFor(type);
+        if (stamp) Object.assign(node.properties, stamp);
 
         // extra options
         Object.assign(node, options);

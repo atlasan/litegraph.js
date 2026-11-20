@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/watch" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/watch", version: LiteGraph.VERSION, title: "Watch", builtin: true });
+
 class WatchValue {
 
     static fontSize = 16;
@@ -351,3 +355,5 @@ class WatchValue {
     }
 }
 LiteGraph.registerNodeType("watch/value", WatchValue);
+
+LiteGraph.packs.close("litegraph/watch");

@@ -3,6 +3,10 @@ import { GL } from "../../editor/js/libs/litegl.js";
 import { gl } from "../../editor/js/code.js";
 import { LGraphTexture } from "./gltextures.js";
 
+// built-in pack: node types registered below belong to "litegraph/glshaders" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/glshaders", version: LiteGraph.VERSION, title: "WebGL shaders", builtin: true });
+
 var SHADERNODES_COLOR = "#345";
 
 var LGShaders = (LiteGraph.Shaders = {});
@@ -2097,3 +2101,5 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities(["shader::", "texture/"], ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/glshaders");

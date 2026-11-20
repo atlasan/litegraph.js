@@ -42,6 +42,14 @@ export class Editor {
 
         graphcanvas.onDropItem = this.onDropItem.bind(this);
 
+        // a loaded document with missing node types: show what is missing and what can replace it
+        graph.events.on("missing-nodes", (event) => {
+            if (event.detail.reason !== "load") return; // not again on undo or redo
+            const id = "litegraph.nodes.showMissing";
+            if (LiteGraph.settings?.get("LiteGraph.Nodes.ShowMissingOnLoad") === false || !LiteGraph.commands?.get(id)) return;
+            LiteGraph.commands.execute(id, LiteGraph.commands.contextFor(graphcanvas));
+        });
+
         // add stuff
         // this.addToolsButton("loadsession_button","Load","imgs/icon-load.png", this.onLoadButton.bind(this), ".tools-left" );
         // this.addToolsButton("savesession_button","Save","imgs/icon-save.png", this.onSaveButton.bind(this), ".tools-left" );

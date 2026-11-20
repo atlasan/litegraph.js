@@ -3,6 +3,10 @@ import { GL, Shader } from "../../editor/js/libs/litegl.js";
 import { gl } from "../../editor/js/code.js";
 import { CurveEditor } from "../curveeditor.js";
 
+// built-in pack: node types registered below belong to "litegraph/gltextures" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/gltextures", version: LiteGraph.VERSION, title: "WebGL textures", builtin: true });
+
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";
 
@@ -5745,3 +5749,5 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/gltextures");

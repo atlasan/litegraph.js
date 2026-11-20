@@ -104,18 +104,23 @@ function eachNode(data, visitNode, maxDepth = 64) {
  * All refused types are reported together, with the setting that enables them.
  * @param {object} data serialized graph
  * @param {(type: string) => boolean} isRegistered
- * @param {{env?: object, maxDepth?: number}} [options]
+ * @param {{env?: object, maxDepth?: number, replacedType?: (type: string) => string|null}} [options]
+ *   replacedType: the type a node of `type` becomes while loading (an automatic replacement
+ *   mapping), or null. The resulting type must be registered and allowed as well.
  * @throws {Error} on an unknown node type, or listing every denied type
  */
-export function assertAllowedGraph(data, isRegistered, { env = process.env, maxDepth = 64 } = {}) {
+export function assertAllowedGraph(data, isRegistered, { env = process.env, maxDepth = 64, replacedType = () => null } = {}) {
   const denied = deniedTypes(env);
   const extraDenied = listOf(env.RUNNER_DENY_TYPES);
   const refused = new Map(); // type -> node paths
   eachNode(data, (node, where, definitionIds) => {
     const type = node?.type;
     if (typeof type === 'string' && definitionIds.has(type)) return; // an instance of a checked definition
-    if (typeof type !== 'string' || !isRegistered(type)) throw new Error(`Unknown node type: ${type} (node ${where})`);
-    if (isDenied(type, denied)) refused.set(type, [...(refused.get(type) ?? []), where]);
+    const loadsAs = typeof type === 'string' ? replacedType(type) : null;
+    if (typeof type !== 'string' || !(isRegistered(type) || (loadsAs && isRegistered(loadsAs)))) throw new Error(`Unknown node type: ${type} (node ${where})`);
+    for (const checked of loadsAs ? [type, loadsAs] : [type]) {
+      if (isDenied(checked, denied)) refused.set(checked, [...(refused.get(checked) ?? []), where]);
+    }
   }, maxDepth);
   if (!refused.size) return;
   const list = [...refused].map(([type, nodes]) => `${type} (node ${nodes.join(', ')})`).join('; ');

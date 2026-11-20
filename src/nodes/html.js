@@ -1,6 +1,10 @@
 
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/html" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/html", version: LiteGraph.VERSION, title: "HTML", builtin: true });
+
 /**
  * will extend a node class creating an html element for it available in this._el_cont, use this._html to set his content
  * @param {object} nodeX
@@ -710,3 +714,5 @@ LiteGraph.registerNodeType("html/apply_element_css", HtmlElementStyle);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("html/", ["browser", "dom"]);
+
+LiteGraph.packs.close("litegraph/html");

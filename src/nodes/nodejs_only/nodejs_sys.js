@@ -1,3 +1,7 @@
+// built-in pack: node types registered below belong to "litegraph/nodejs-sys" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/nodejs-sys", version: LiteGraph.VERSION, title: "Node.js system", builtin: true });
+
 /**
  * NodeJsSysHelper - shared helpers for the Node.js system nodes (libraries: LiteGraph.LibraryManager)
  */
@@ -1327,3 +1331,5 @@ LiteGraph.registerNodeType("sys/serviceList", SysUtil_ServiceListNode);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("sys/", ["node", "sys"]);
+
+LiteGraph.packs.close("litegraph/nodejs-sys");

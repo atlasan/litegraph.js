@@ -22,12 +22,16 @@ export declare function registerExtension_keyhelper(canvas?: LGraphCanvas): void
 export declare function registerExtension_renamer(canvas?: LGraphCanvas): void;
 export declare function registerExtension_quickConnect(canvas?: LGraphCanvas): void;
 export declare function registerExtension_subgraphTools(canvas?: LGraphCanvas): void;
+export declare function registerExtension_nodePacks(canvas?: LGraphCanvas): void;
 /** Extension definitions, for re-registering after LiteGraph.extensions.unregister(name). */
 export declare const autoconnectExtension: ExtensionDefinition;
 export declare const keyboardHelperExtension: ExtensionDefinition;
 export declare const renamerExtension: ExtensionDefinition;
 export declare const quickConnectExtension: ExtensionDefinition;
 export declare const subgraphToolsExtension: ExtensionDefinition;
+export declare const nodePacksExtension: ExtensionDefinition;
+/** Shows the missing-nodes report of a graph in a canvas panel; null without DOM or when nothing is missing. */
+export declare function showMissingNodesPanel(canvas: LGraphCanvas, graph?: LGraph, report?: object[]): HTMLElement | null;
 /** Connects nodes in order (each to the next through its first output with a compatible free input), one undo step; returns the links created. */
 export declare function chainNodes(graph: LGraph, nodes: LGraphNode[]): number;
 /** Ids of subgraph definitions in the root registry that no instance uses (directly or through another definition). */
