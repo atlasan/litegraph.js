@@ -46,6 +46,11 @@ export declare function registerExtension_renamer(canvas?: LGraphCanvas): void;
 export declare function registerExtension_quickConnect(canvas?: LGraphCanvas): void;
 export declare function registerExtension_subgraphTools(canvas?: LGraphCanvas): void;
 export declare function registerExtension_nodePacks(canvas?: LGraphCanvas): void;
+export declare function registerExtension_viewTools(canvas?: LGraphCanvas): void;
+/** true when a link style is in the setting LiteGraph.Canvas.LinkStyles */
+export declare function isLinkStyleActive(name: string): boolean;
+/** adds or removes a link style in the setting; returns whether it is now active */
+export declare function toggleLinkStyle(name: string, on?: boolean): boolean;
 /** Extension definitions, for re-registering after LiteGraph.extensions.unregister(name). */
 export declare const autoconnectExtension: ExtensionDefinition;
 export declare const keyboardHelperExtension: ExtensionDefinition;
@@ -53,6 +58,7 @@ export declare const renamerExtension: ExtensionDefinition;
 export declare const quickConnectExtension: ExtensionDefinition;
 export declare const subgraphToolsExtension: ExtensionDefinition;
 export declare const nodePacksExtension: ExtensionDefinition;
+export declare const viewToolsExtension: ExtensionDefinition;
 /** Shows the missing-nodes report of a graph in a canvas panel; null without DOM or when nothing is missing. */
 export declare function showMissingNodesPanel(canvas: LGraphCanvas, graph?: LGraph, report?: object[]): HTMLElement | null;
 /** Connects nodes in order (each to the next through its first output with a compatible free input), one undo step; returns the links created. */

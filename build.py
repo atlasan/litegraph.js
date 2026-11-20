@@ -76,6 +76,8 @@ lib_js_files = [
     "./src/nodesearch.js",
     "./src/packs.js",
     "./src/executionstate.js",
+    "./src/linkrender.js",
+    "./src/minimap.js",
     "./src/init_litegraph.js",
 ]
 
@@ -132,6 +134,7 @@ lib_extensions_files = [
     "./src/extensions/quick_connect.js",
     "./src/extensions/subgraph_tools.js",
     "./src/extensions/node_packs.js",
+    "./src/extensions/view_tools.js",
     "./src/extensions/comfy_interop.js",
 ]
 

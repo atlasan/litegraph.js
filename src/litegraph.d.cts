@@ -393,6 +393,11 @@ export interface LiteGraphAPI extends CallbackHost {
     GraphOutput: typeof GraphOutput;
     CallbackHandler: typeof CallbackHandler;
     ExecutionState: typeof ExecutionState;
+    RenderLink: typeof RenderLink;
+    /** link routers by name: "spline", "linear", "straight", and registered ones */
+    linkRouters: LinkRouterRegistry;
+    /** link style resolvers by name: "spotlight", "dim-by-type", "hidden", "labelled", and registered ones */
+    linkStyles: LinkStyleRegistry;
     use_uuids: boolean;
     use_deferred_actions: boolean;
     ensureNodeSingleExecution: boolean;
@@ -1487,6 +1492,8 @@ export declare class DragAndScale {
     element: HTMLElement | null;
     visible_area: Vector4;
     bindEvents(element: HTMLElement): void;
+    /** removes the listeners bindEvents added (LGraphCanvas never binds them) */
+    unbindEvents(): void;
     computeVisibleArea(): void;
     onMouse(e: MouseEvent): void;
     toCanvasContext(ctx: CanvasRenderingContext2D): void;
@@ -1857,15 +1864,17 @@ export declare class LGraphCanvas {
      * @param numSublines number of sublines (useful to represent vec3 or rgb)
      **/
     renderLink(
+        ctx: CanvasRenderingContext2D,
         a: Vector2,
         b: Vector2,
-        link: object,
-        skipBorder: boolean,
-        flow: boolean,
-        color?: string,
+        link: LLink | null,
+        skipBorder?: boolean,
+        flow?: boolean | number,
+        color?: string | null,
         startDir?: number,
         endDir?: number,
-        numSublines?: number
+        numSublines?: number,
+        options?: { style?: LinkStyle | null; source?: LLink | null }
     ): void;
 
     computeConnectionPoint(
@@ -1874,7 +1883,20 @@ export declare class LGraphCanvas {
         t: number,
         startDir?: number,
         endDir?: number
-    ): void;
+    ): [number, number];
+    /** link router name (LiteGraph.linkRouters); null: from links_render_mode */
+    link_router: string | null;
+    /** active link style names; null: the setting LiteGraph.Canvas.LinkStyles */
+    link_styles: string[] | null;
+    /** a slot type whose links stay bright with the "dim-by-type" style */
+    link_type_focus: string | number | null;
+    getLinkRouter(): LinkRouter | null;
+    getActiveLinkStyles(): string[];
+    resolveLinkStyle(renderLink: RenderLink): LinkStyle | null;
+    minimap?: MiniMap | null;
+    showMinimap(options?: MiniMapOptions): MiniMap | null;
+    hideMinimap(): void;
+    toggleMinimap(options?: MiniMapOptions): boolean;
 
     drawExecutionOrder(ctx: CanvasRenderingContext2D): void;
     /** draws the widgets stored inside a node */
@@ -2376,6 +2398,69 @@ export declare class ExecutionState {
     static apply(graph: LGraph, message: ExecutionStateMessage): LGraphNode | LGraph | null;
     static applyToNode(node: LGraphNode, message: ExecutionStateMessage): LGraphNode;
     static clear(graph: LGraph): void;
+}
+
+/** One drawn link segment (see LiteGraph.linkRouters, LiteGraph.linkStyles). */
+export declare class RenderLink {
+    constructor(options: { a: ArrayLike<number>; b: ArrayLike<number>; startDir?: number; endDir?: number; link?: LLink | null; color?: string | null; type?: string | number; kind?: 'link' | 'segment' | 'floating' | 'drag' });
+    a: ArrayLike<number>;
+    b: ArrayLike<number>;
+    startDir: number;
+    endDir: number;
+    link: LLink | null;
+    color: string | null;
+    type: string | number | undefined;
+    kind: 'link' | 'segment' | 'floating' | 'drag';
+    readonly length: number;
+}
+export interface LinkRouter {
+    /** adds the segment to the current path (moveTo first) */
+    path(ctx: CanvasRenderingContext2D, renderLink: RenderLink, offsety?: number): void;
+    /** the point at fraction t of the segment */
+    point(renderLink: RenderLink, t: number): [number, number];
+    /** corner points, for polyline routers */
+    polyline?(renderLink: RenderLink): ArrayLike<number>[];
+}
+export declare class LinkRouterRegistry {
+    static MODE_NAMES: Record<number, string>;
+    static nameForMode(mode: number): string | null;
+    register(name: string, router: LinkRouter): () => void;
+    get(name: string): LinkRouter | null;
+    list(): string[];
+    polyline(name: string, renderLink: RenderLink): ArrayLike<number>[] | null;
+}
+export interface LinkStyle { visible?: boolean; alpha?: number; color?: string; width?: number; dash?: number[]; label?: string }
+export interface LinkStyleContext { canvas: LGraphCanvas; selectedIds: Set<GraphId>; focusType: string | number | null; hiddenTypes: string[] }
+export type LinkStyleResolver = (renderLink: RenderLink, ctx: LinkStyleContext) => LinkStyle | null | undefined;
+export declare class LinkStyleRegistry {
+    register(name: string, resolver: LinkStyleResolver): () => void;
+    get(name: string): LinkStyleResolver | null;
+    list(): string[];
+    resolve(renderLink: RenderLink, ctx: LinkStyleContext, active: string[]): (LinkStyle & { visible: boolean; alpha: number }) | null;
+}
+export interface MiniMapOptions { width?: number; height?: number; margin?: number; container?: HTMLElement; layers?: string[] }
+export type MiniMapLayer = (ctx: CanvasRenderingContext2D, minimap: MiniMap) => void;
+/** A minimap of a canvas's open graph with decoration layers; redraws on events only. */
+export declare class MiniMap {
+    static DEFAULT_LAYERS: string[];
+    static LAYERS: Record<string, MiniMapLayer>;
+    constructor(canvas: LGraphCanvas, options?: MiniMapOptions);
+    canvas: LGraphCanvas;
+    element: HTMLCanvasElement | null;
+    width: number;
+    height: number;
+    redraws: number;
+    layers: { name: string; draw: MiniMapLayer }[];
+    addLayer(name: string, draw: MiniMapLayer): () => void;
+    requestDraw(): void;
+    draw(): void;
+    computeBounds(): [number, number, number, number];
+    toMap(point: ArrayLike<number>): [number, number];
+    toGraph(x: number, y: number): [number, number];
+    nodeRect(node: LGraphNode): [number, number, number, number];
+    centerOnMapPoint(x: number, y: number): void;
+    centerOn(x: number, y: number): void;
+    dispose(): void;
 }
 
 export type MenuLocation = 'canvas' | 'node';
