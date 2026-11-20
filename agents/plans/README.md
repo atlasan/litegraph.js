@@ -23,6 +23,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
+| 2026-11-20 | [Wave 2: authoring core](2026-11-20-wave2-authoring-core.md): subgraph convert/unpack, groups, clipboard, search (2a); links and pointer (2b) | accepted; in progress |
 | 2026-11-19 | [Feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md): idea catalog and wave proposal | accepted; the basis of the roadmap |
 | 2026-11-18 | [Repository review and roadmap](2026-11-18-repo-review-and-roadmap.md): bugs B1–B15, phase plan | superseded by the roadmap |
 | 2026-11-01 | [Workspace structure and memory](2026-11-01-workspace-structure-and-memory.md): repository and documentation model | accepted; `agents/` and `docs/` are done, app moves are Wave 5 |

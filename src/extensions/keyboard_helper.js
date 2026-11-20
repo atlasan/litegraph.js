@@ -126,6 +126,13 @@ export const keyboardHelperExtension = {
             },
         },
         {
+            id: "litegraph.selection.group",
+            label: "Group selected",
+            category: "selection",
+            when: (ctx) => hasAnySelection(ctx) && typeof ctx.canvas.groupSelected === "function",
+            run: (ctx) => ctx.canvas.groupSelected(),
+        },
+        {
             id: "litegraph.view.focus",
             label: "Center on selection",
             category: "view",
@@ -147,6 +154,7 @@ export const keyboardHelperExtension = {
         { combo: "tab", commandId: "litegraph.selection.nextConnected", allowRepeat: true },
         { combo: "shift+tab", commandId: "litegraph.selection.previousConnected", allowRepeat: true },
         { combo: "f", commandId: "litegraph.view.focus" },
+        { combo: "ctrl+g", commandId: "litegraph.selection.group" },
     ],
 };
 

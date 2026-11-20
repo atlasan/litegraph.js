@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-19 · **Kind** roadmap · **Status** living; Wave 1 complete
+> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Wave 2 complete
 
 This is the single place for the current status of planned work.
 
@@ -17,7 +17,7 @@ This is the single place for the current status of planned work.
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
-| `LG/dev` → `master` | [PR #8](https://github.com/atlasan/litegraph.js/pull/8) brings `master` level with `LG/dev` (Wave 1, `agents/` workspace, ideas), 2026-11-20. See the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
+| `LG/dev` → `master` | [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1, `agents/` workspace, ideas) was merged into `master` on 2026-11-20 as `35c7e4f` after CI passed; `LG/dev` was fast-forwarded to the same commit. See the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
 
 Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
 
@@ -26,8 +26,8 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Wave | Theme | Status |
 |---|---|---|
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
-| 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev`; to `master` with [PR #8](https://github.com/atlasan/litegraph.js/pull/8) |
-| 2 | Authoring core (standalone ports) | **Next** |
+| 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
+| 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev`; not yet in `master`. See the [plan](2026-11-20-wave2-authoring-core.md). |
 | 3 | Subgraph v2 and components | Proposed; needs the ADR 0001 decision |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
@@ -95,20 +95,20 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 - Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
 - Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events.
 
-## Wave 2: authoring core (next)
+## Wave 2: authoring core (done)
 
-Mostly ports from the MIT standalone; each item is M unless noted.
+**2a** ([execution record](../executions/2026-11-20-wave2a-authoring.md)): subgraph conversion and unpack (B2, B3), group fit / mode / group-selected, clipboard fragments with groups and reroutes plus `insertFragment`, and ranked search with `i:` `o:` `c:` `s:` and definition filters.
 
-- **Pointer migration** (carried over from Wave 1): node, group and link dragging on `CanvasPointer` handlers; DragAndScale listeners and the canvas pointer flags folded into it.
+**2b** ([execution record](../executions/2026-11-20-wave2b-links.md)):
+- link dragging: snap and highlight to a compatible slot, `link-drag-start` / `link-drag-end` events (H5), drag from a reroute or a link center, and the `quick_connect` extension (link-release actions, chain selection)
+- node, group and link drags as `CanvasPointer` gestures, with a multi-selection drag that works
+- floating reroutes (ComfyUI `floatingLinks` modelled); reroutes move with the selection
+- node badges (id, source, lifecycle), title buttons, the group header toggle
 
-- **Full `LinkConnector`** with RenderLink classes: shift-drag moves all links, drag from a reroute or link segment, snap and highlight to a compatible slot, `dropped-on-canvas` → search pre-filtered by type.
-- **Link-drag lifecycle hooks** (H5) and **quick-connect** candidates as an extension.
-- **Clipboard** with links, reroutes, groups and subgraphs; Ctrl+Shift+V; `canvas.insertFragment(data, pos)` (H6).
-- **Groups:** children tracking, nesting, `resizeTo` auto-fit, "group selected", header mode toggles, set mode for the whole group.
-- **Badges, title buttons and icons**, with split title drawing (H2); node source and lifecycle badges.
-- **Subgraph conversion and unpack** on the current inline model (B2/B3), one transaction each.
-- **Search:** `i:`/`o:`/`c:`/`s:` filters, ranking, definition-filter registry (deprecated, experimental).
-- **Reroutes:** floating reroutes, start a link from a reroute, multi-select.
+**Carried over** (to Wave 4, with the link style resolver):
+- Folding DragAndScale's own listeners and the canvas pointer flags into `CanvasPointer`.
+- RenderLink classes, and split title drawing with icons (H2).
+- Carrying reroutes across a subgraph boundary on conversion and unpack.
 
 ## Wave 3: subgraph v2 and components (proposed)
 

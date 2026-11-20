@@ -1293,6 +1293,30 @@ export class LGraphNode {
     }
 
     /**
+     * Adds a button to the title bar (right-aligned; not serialized). A click calls
+     * `button.onClick(node, canvas, e)`, then the node's `onTitleButtonClick(button, canvas, e)`.
+     * A button with the same name is replaced.
+     * @param {{name: string, text: string, tooltip?: string, fgColor?: string, bgColor?: string,
+     *   onClick?: (node: LGraphNode, canvas: object, e: Event) => void}} button
+     * @returns {object} the button
+     */
+    addTitleButton(button) {
+        if (!button || typeof button.name !== "string" || !button.name) throw new TypeError("a title button needs a name");
+        this.title_buttons = (this.title_buttons ?? []).filter((other) => other.name !== button.name);
+        this.title_buttons.push(button);
+        this.setDirtyCanvas?.(true, false);
+        return button;
+    }
+
+    /** @returns {boolean} true when a title button with that name was removed */
+    removeTitleButton(name) {
+        const before = this.title_buttons?.length ?? 0;
+        this.title_buttons = (this.title_buttons ?? []).filter((button) => button.name !== name);
+        this.setDirtyCanvas?.(true, false);
+        return this.title_buttons.length !== before;
+    }
+
+    /**
      * Add a new input or output slot to use in this node.
      * @param {string} name - Name of the slot.
      * @param {string} type - Type of the slot ("vec3", "number", etc). For a generic type, use 0.
@@ -2586,6 +2610,8 @@ export class LGraphNode {
             }
             if (input?.link === id) input.link = null;
             delete graph.links[id];
+            // its reroutes stay, attached to the other end (the one not being disconnected)
+            graph._keepFloatingLink?.(link, this === target ? "origin" : "target");
             notifications.push({ link, origin, target, output, input });
         }
         const errors = [];

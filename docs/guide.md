@@ -144,6 +144,38 @@ this.addWidget("number", "Size", 4, null, { min: 1, max: 64, step: 1, socket: tr
 
 **Link tooltips:** give the output value a `toToolTip()` method to replace `[Object]`.
 
+**Dragging links:**
+- Dropping a link on a node body connects it to the slot that is highlighted while you hover: a compatible free slot first. `LiteGraph.snap_link_to_slot = false` turns this off.
+- Shift-drag from an output moves all its links. Shift-drag from a linked input moves that link.
+- Dragging a link's center marker moves the link; clicking the marker opens the link menu.
+- Shift-drag from a reroute starts a new link routed through it.
+- The canvas emits `link-drag-start` and `link-drag-end` (`outcome`: `connected`, `rejected`, `dropped` or `cancelled`), and `link-dropped-on-empty`, which is cancelable.
+
+```js
+canvas.events.on("link-drag-end", (e) => console.log(e.detail.outcome, e.detail.link));
+```
+
+**Floating reroutes:** when a link that runs through reroutes is removed, its reroutes stay, attached to the end that remains. They are drawn dashed, saved as ComfyUI `floatingLinks`, and you can Shift-drag from them to connect again. Set `LiteGraph.keep_floating_reroutes = false` to drop them with the link.
+
+**Dragging nodes and reroutes:** pressing a selected node or reroute keeps the selection, so the drag moves all of it, selected reroutes included. A click without a drag selects just that item. Each drag is one undo step.
+
+**Badges and title buttons:**
+
+```js
+node.badges = [{ text: "v2" }];                                       // or functions of the node
+LiteGraph.nodeBadges.register((node) => node.mode === 2 ? { text: "muted" } : null);
+node.addTitleButton({ name: "run", text: "▶", onClick: (node, canvas) => node.trigger("run") });
+```
+
+Badges that would cover the title text are left out; buttons are always drawn.
+
+| Setting | Default | Shows |
+|---|---|---|
+| `LiteGraph.Node.IdBadge` | off | the node id |
+| `LiteGraph.Node.SourceBadge` | off | the node source, when it is not core |
+| `LiteGraph.Node.LifecycleBadge` | on | "deprecated" / "experimental" |
+| `LiteGraph.Group.HeaderToggle` | on | a toggle in group titles that mutes and unmutes the group's nodes |
+
 ## Editing, undo and selection
 
 **Undo:** wrap programmatic edits in a transaction so they undo as one step. Undo history is recorded when `LiteGraph.actionHistory_enabled` is set (the editor defaults set it).
@@ -152,7 +184,24 @@ this.addWidget("number", "Size", 4, null, { min: 1, max: 64, step: 1, socket: tr
 graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0); });
 ```
 
-**Selection:** `canvas.selectedItems` covers nodes, groups and reroutes. `selectItem`, `moveSelected` and `deleteSelected` are one undo step each.
+**Selection:** `canvas.selectedItems` covers nodes, groups and reroutes. `selectItem`, `moveSelected`, `deleteSelected` and `groupSelected` are one undo step each.
+
+**Subgraphs:** `graph.convertToSubgraph(nodes)` turns nodes into a subgraph node. It creates one input per outside source and one output per inside source, and event links become event ports. `graph.unpackSubgraph(node)` reverses it. Both are one undo step, and both are in the node menu ("Convert to subgraph", "Unpack subgraph").
+
+**Groups:** `group.resizeTo(items)` and `group.fitToContents()` change a group's size; `group.setNodesMode(mode)` sets the mode of every node inside. The group menu offers "Fit to contents" and "Mode for all nodes".
+
+**Clipboard and fragments:** `canvas.serializeSelection()` returns a fragment: nodes, their links, reroute chains and the selected groups. `canvas.insertFragment(fragment, pos)` inserts it with fresh ids as one undo step, so snippets and templates use the same path as paste.
+
+**Search:** every word must match, and results are ranked from best to weakest match: exact, prefix, whole word, alias, description. Filters can be added to the words:
+
+| Filter | Keeps nodes |
+|---|---|
+| `i:number` | with an input of that type |
+| `o:string` | with an output of that type |
+| `c:math` | in that category or a subcategory |
+| `s:core` | from that source |
+
+Deprecated nodes are hidden unless the setting `LiteGraph.Search.ShowDeprecated` is on. `LiteGraph.nodeSearch.registerFilter(...)` adds more filters, and `LiteGraph.nodeSearch.search(text)` runs the same search without the UI.
 
 **Default keys:**
 
@@ -176,6 +225,11 @@ With the bundled extensions (full builds, or `editor_build.html`), these keys ar
 | Shift+→ | Search and connect |
 | Tab / Shift+Tab | Walk connected nodes |
 | `f` | Focus the selection |
+| Ctrl+G | Group the selection |
+
+The `quick_connect` extension adds:
+- The settings `LiteGraph.LinkRelease.Action` and `LiteGraph.LinkRelease.ShiftAction` (`context-menu`, `search-box` or `none`). They choose what a link released on empty space opens, where `LiteGraph.release_link_on_empty_shows_menu` is on.
+- The command `litegraph.link.chainSelection`, which connects the selected nodes left to right.
 
 Users can rebind keys through `LiteGraph.keybindings`.
 

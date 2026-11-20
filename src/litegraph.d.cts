@@ -346,6 +346,17 @@ export interface LiteGraphAPI extends CallbackHost {
     menus: MenuRegistry;
     /** widget type name -> class (see registerWidgetType) */
     widget_types: Record<string, typeof BaseWidget>;
+    /** node search: parsing, ranking and definition filters */
+    nodeSearch: NodeSearch;
+    /** node badges drawn in title bars; providers return badges for a node (settings LiteGraph.Node.IdBadge, LiteGraph.Node.SourceBadge) */
+    nodeBadges: {
+        register(provider: (node: LGraphNode) => NodeBadge | NodeBadge[] | null | undefined): () => void;
+        collect(node: LGraphNode): NodeBadge[];
+    };
+    /** removing a routed link keeps its reroutes as a floating link (default true) */
+    keep_floating_reroutes: boolean;
+    /** a link dragged over a node body highlights, and a drop connects, the slot it would use (default true) */
+    snap_link_to_slot: boolean;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
@@ -443,6 +454,12 @@ export declare class LGraph {
     getRerouteChain(link: LLink): Reroute[];
     /** reroute id -> link ids, for reroutes in use */
     getRerouteLinkIds(): Map<number, GraphId[]>;
+    /** floating links: reroute chains attached to one end only (ComfyUI floatingLinks; origin or target is -1) */
+    floating_links: Map<number, FloatingLink>;
+    /** routes a link through a reroute chain; floating links whose reroutes it now uses are dropped */
+    routeLink(link: LLink, parentId: number | undefined): void;
+    getFloatingLinkEnd(floating: FloatingLink): { node: LGraphNode; slot: number; isOutput: boolean } | null;
+    getFloatingLinksThrough(rerouteId: number): FloatingLink[];
     /** start (or nest) a transaction: saved changes until the outermost commit make one history entry */
     beginTransaction(label?: string): number;
     /** end the innermost transaction; true when the outermost one ended with changes */
@@ -658,6 +675,10 @@ export declare class LGraph {
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     /** Destroys a link */
     removeLink(link_id: GraphId): void;
+    /** turns nodes into a subgraph node (one undo step; rolled back on failure) */
+    convertToSubgraph(nodes: LGraphNode[]): Subgraph | null;
+    /** replaces a subgraph node by its contents (one undo step) */
+    unpackSubgraph(node: Subgraph): LGraphNode[];
     validateLinks(options?: { repair?: boolean }): {
         ok: boolean;
         repaired: boolean;
@@ -899,6 +920,14 @@ export declare class LGraphNode {
     ): void;
     /** remove an existing output slot */
     removeOutput(slot: number): void;
+    /** badges drawn in the title bar: entries or functions of the node (not serialized) */
+    badges?: Array<NodeBadge | ((node: LGraphNode) => NodeBadge | NodeBadge[] | null)>;
+    /** buttons drawn in the title bar (not serialized) */
+    title_buttons?: NodeTitleButton[];
+    addTitleButton(button: NodeTitleButton): NodeTitleButton;
+    removeTitleButton(name: string): boolean;
+    onTitleButtonClick?(button: NodeTitleButton, canvas: LGraphCanvas, e: any): void;
+
     /**
      * add a new input slot to use in this node
      * @param name
@@ -1207,6 +1236,11 @@ export declare class LGraphGroup {
     recomputeInsideNodes(): void;
     isPointInside: LGraphNode["isPointInside"];
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
+    /** encloses items (nodes, groups, reroutes) with padding and room for the title */
+    resizeTo(items: Array<LGraphNode | LGraphGroup | Reroute>, padding?: number): boolean;
+    fitToContents(padding?: number): boolean;
+    /** sets the execution mode of every node inside; returns the nodes changed */
+    setNodesMode(mode: number): LGraphNode[];
 }
 
 /** An event delivered by LGraphEventTarget. */
@@ -1283,6 +1317,10 @@ export declare class LinkConnector {
     pos: Vector2 | Float32Array | null;
     movingInputs: Array<{ node: LGraphNode; slot: number }> | null;
     detached: Array<{ origin_id: GraphId; origin_slot: number; target_id: GraphId; target_slot: number; parentId?: number }> | null;
+    /** reroute the drag started from; a new link is routed through it */
+    reroute: Reroute | null;
+    /** receives "link-drag-start" and "link-drag-end" (set by the canvas, which re-emits them) */
+    onEvent: ((type: "link-drag-start" | "link-drag-end", detail: LinkDragDetail) => void) | null;
     readonly isConnecting: boolean;
     readonly isMoving: boolean;
     readonly type: string | number | undefined;
@@ -1291,9 +1329,41 @@ export declare class LinkConnector {
     startFromInput(node: LGraphNode, slot: number): this;
     moveInputLink(node: LGraphNode, slot: number): boolean;
     moveOutputLinks(node: LGraphNode, slot: number): boolean;
+    /** starts a new link from a reroute (the output feeding it, or the input a floating chain is attached to), routed through it; false when nothing uses it */
+    startFromReroute(reroute: Reroute, graph: LGraph): boolean;
+    /** where a link started from the reroute is anchored, and the route it takes; null when nothing uses the reroute */
+    static rerouteEnd(reroute: Reroute, graph: LGraph): { node: LGraphNode; slot: number; isOutput: boolean; parentId: number } | null;
+    /** the slot a drop on the node body would connect to (a free compatible slot first), or -1 */
+    findTargetSlot(target: LGraphNode): number;
     dropOnNode(target: LGraphNode, targetSlot?: number): unknown;
     dropOnEmpty(): { node: LGraphNode; slot: number; output: INodeOutputSlot | null; input: INodeInputSlot | null; type: string | number | undefined } | null;
     cancel(): null;
+}
+
+/** A reroute chain attached to one end: target_id/target_slot are -1 when attached to an output, origin_* when attached to an input. */
+export interface FloatingLink {
+    id: number;
+    origin_id: GraphId;
+    origin_slot: number;
+    target_id: GraphId;
+    target_slot: number;
+    type: string | number | undefined;
+    parentId: number;
+}
+
+/** Detail of the link-drag-start / link-drag-end events (link-drag-end adds outcome, link and target). */
+export interface LinkDragDetail {
+    node: LGraphNode;
+    slot: number;
+    output: INodeOutputSlot | null;
+    input: INodeInputSlot | null;
+    type: string | number | undefined;
+    moving: boolean;
+    reroute: Reroute | null;
+    outcome?: "connected" | "rejected" | "dropped" | "cancelled";
+    link?: unknown;
+    target?: LGraphNode;
+    canvas?: LGraphCanvas;
 }
 
 /** Tracks one pointer gesture: click vs drag tolerance and double-click detection. */
@@ -1618,7 +1688,7 @@ export declare class LGraphCanvas {
     processKey(e: KeyboardEvent): boolean | undefined;
 
     copyToClipboard(): void;
-    pasteFromClipboard(): void;
+    pasteFromClipboard(connectUnselected?: boolean): { nodes: LGraphNode[]; groups: LGraphGroup[] } | undefined;
     processDrop(e: DragEvent): void;
     checkDropItem(e: DragEvent): void;
     processNodeDblClicked(n: LGraphNode): void;
@@ -1644,6 +1714,13 @@ export declare class LGraphCanvas {
     moveSelected(dx: number, dy: number): void;
     /** deletes selected nodes, groups and reroutes, one undo step */
     deleteSelected(): void;
+    /** the selection as a portable fragment (nodes, links incl. incoming ones, reroute chains, groups) */
+    serializeSelection(): { litegraph_fragment: number; nodes: object[]; links: any[]; groups: object[] };
+    /** inserts a fragment with fresh ids at pos (graph coordinates), one undo step */
+    insertFragment(fragment: { nodes: object[]; links?: any[]; groups?: object[] }, pos?: ArrayLike<number>, options?: { select?: boolean; connectUnselected?: boolean }): { nodes: LGraphNode[]; groups: LGraphGroup[] };
+    /** wraps the selection in a new group, one undo step */
+    groupSelected(title?: string): LGraphGroup | null;
+    getGroupMenuOptions(group?: LGraphGroup): any[];
     /** true for a graph node (registered classes need not extend LGraphNode) */
     static isNodeItem(item: unknown): boolean;
 
@@ -1742,6 +1819,21 @@ export declare class LGraphCanvas {
     touchHandler(event: TouchEvent): void;
 
     showLinkMenu(link: LLink, e: any): false;
+    /** what a link released on empty space offers; true when something was shown */
+    /** badge and title-button rectangles in node space (right-aligned, buttons outermost) */
+    getNodeTitleDecorations(node: LGraphNode, ctx?: CanvasRenderingContext2D | null): { buttons: Array<{ button: NodeTitleButton; rect: number[] }>; badges: Array<{ badge: NodeBadge; rect: number[] }>; font: string };
+    drawNodeTitleDecorations(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number): void;
+    getNodeTitleButtonAt(node: LGraphNode, x: number, y: number): NodeTitleButton | null;
+    clickNodeTitleButton(node: LGraphNode, button: NodeTitleButton, e: any): void;
+    /** the group's header toggle rectangle [x, y, w, h] (setting LiteGraph.Group.HeaderToggle), or null */
+    getGroupToggleRect(group: LGraphGroup): number[] | null;
+    isGroupMuted(group: LGraphGroup): boolean;
+    /** mutes the group's nodes, or sets them back to ALWAYS when all are muted; one undo step; returns the mode set */
+    toggleGroupMuted(group: LGraphGroup): number;
+    drawGroupToggle(group: LGraphGroup, ctx: CanvasRenderingContext2D): void;
+    /** draws floating links, dashed and dimmed */
+    drawFloatingLinks(ctx: CanvasRenderingContext2D): void;
+    showLinkReleaseAction(action: "context-menu" | "search-box" | "none", dropped: { node: LGraphNode; output?: INodeOutputSlot | null; input?: INodeInputSlot | null }, e: any): boolean;
     prompt(
         title: string,
         value: any,
@@ -1882,6 +1974,10 @@ export declare class LibraryManager {
 export declare class Subgraph extends LGraphNode {
     subgraph: LGraph;
     enabled: boolean;
+    /** fills this (added, empty) node from nodes of its graph; see LGraph.convertToSubgraph */
+    buildFromNodes(nodes: LGraphNode[]): this;
+    /** moves the contents back into the parent graph and removes this node; see LGraph.unpackSubgraph */
+    unpack(): LGraphNode[];
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}
@@ -2112,3 +2208,36 @@ export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
 export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;
 /** Arithmetic for number entry (+ - * / % **, parentheses, pi, e); NaN for anything else. Nothing is executed. */
 export declare function evaluateMathExpression(text: string): number;
+
+export interface NodeBadge {
+    text: string;
+    fgColor?: string;
+    bgColor?: string;
+}
+
+export interface NodeTitleButton {
+    name: string;
+    text?: string;
+    tooltip?: string;
+    fgColor?: string;
+    bgColor?: string;
+    onClick?(node: LGraphNode, canvas: LGraphCanvas, e: any): void;
+}
+
+export interface NodeSearchQuery {
+    terms: string[];
+    filters: { i: string[]; o: string[]; c: string[]; s: string[] };
+}
+/** Node search without a DOM: `add i:number c:math s:core` (see src/nodesearch.js). */
+export declare class NodeSearch {
+    static FILTER_PREFIXES: string[];
+    constructor();
+    registerFilter(filter: { id: string; name?: string; predicate(def: NodeDefinition): boolean; enabled?(): boolean }): () => void;
+    listFilters(): Array<{ id: string; name: string }>;
+    passesFilters(def: NodeDefinition): boolean;
+    static parseQuery(text: string): NodeSearchQuery;
+    static matchesFilters(def: NodeDefinition, filters: NodeSearchQuery["filters"]): boolean;
+    /** -1 when a word does not match */
+    static score(def: NodeDefinition, query: Pick<NodeSearchQuery, "terms">): number;
+    search(text: string | NodeSearchQuery, options?: { types?: string[]; limit?: number; applyFilters?: boolean }): Array<{ type: string; score: number; def: NodeDefinition }>;
+}

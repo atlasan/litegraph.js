@@ -315,6 +315,14 @@ export class Subgraph {
                     graphcanvas.openSubgraph(that.subgraph);
                 },
             },
+            {
+                content: "Unpack subgraph",
+                callback: function () {
+                    const nodes = that.graph.unpackSubgraph(that);
+                    graphcanvas.selectNodes(nodes);
+                    graphcanvas.setDirty(true, true);
+                },
+            },
         ];
     }
 
@@ -424,75 +432,177 @@ export class Subgraph {
         return node;
     }
 
+    /**
+     * Fills this (empty, already added) subgraph node with copies of `nodes` and rewires the
+     * outside: one graph input per distinct outside source feeding the selection, one graph output
+     * per inside source feeding the outside. Internal links are kept; event links become event
+     * ports. The original nodes are removed from the parent graph.
+     * Use LGraph.convertToSubgraph(nodes) for the transactional, one-undo-step version.
+     * @param {Array<object>} nodes - nodes of this node's graph
+     * @returns {this}
+     */
     buildFromNodes(nodes) {
-        // clear all?
-        // TODO
+        const graph = this.graph;
+        if (!graph) throw new Error("buildFromNodes: add the subgraph node to a graph first");
+        const selected = nodes.filter((node) => node && node !== this && node.graph === graph);
+        if (!selected.length) return this;
+        const inner = this.subgraph;
+        const inSet = new Set(selected.map((node) => node.id));
+        const links = Object.values(graph.links).filter(Boolean);
+        const linkType = (link) => (link.type === LiteGraph.EVENT || link.type === LiteGraph.ACTION || link.type === -1) ? "event" : (link.type || "*");
 
-        // nodes that connect data between parent graph and subgraph
-
-        // mark inner nodes
-        var ids = {};
-        // TODO: these aren't currently used.  Examine and decide whether to excise.
-        //    var min_x = 0;
-        //    var max_x = 0;
-        for (let i = 0; i < nodes.length; ++i) {
-            ids[nodes[i].id] = nodes[i];
-            //      min_x = Math.min(node.pos[0], min_x);
-            //      max_x = Math.max(node.pos[0], min_x);
+        // 1. classify the links touching the selection
+        const internal = links.filter((link) => inSet.has(link.origin_id) && inSet.has(link.target_id));
+        const incoming = new Map(); // outside source -> {origin, slot, type, name, targets[]}
+        const outgoing = new Map(); // inside source -> {origin, slot, type, name, targets[]}
+        for (const link of links) {
+            const fromIn = inSet.has(link.origin_id), toIn = inSet.has(link.target_id);
+            if (!fromIn && toIn) {
+                const key = `${link.origin_id}:${link.origin_slot}`;
+                const target = graph.getNodeById(link.target_id);
+                const entry = incoming.get(key) ?? { origin: link.origin_id, slot: link.origin_slot, type: linkType(link), name: target?.inputs?.[link.target_slot]?.name || "in", targets: [] };
+                entry.targets.push({ node: link.target_id, slot: link.target_slot });
+                incoming.set(key, entry);
+            } else if (fromIn && !toIn) {
+                const key = `${link.origin_id}:${link.origin_slot}`;
+                const origin = graph.getNodeById(link.origin_id);
+                const entry = outgoing.get(key) ?? { origin: link.origin_id, slot: link.origin_slot, type: linkType(link), name: origin?.outputs?.[link.origin_slot]?.name || "out", targets: [] };
+                entry.targets.push({ node: link.target_id, slot: link.target_slot });
+                outgoing.set(key, entry);
+            }
         }
 
-        for (let i = 0; i < nodes.length; ++i) {
-            let node = nodes[i];
-            // check inputs
-            if (node.inputs)
-                for (let j = 0; j < node.inputs.length; ++j) {
-                    let input = node.inputs[j];
-                    if (!input || !input.link) continue;
-                    let link = node.graph.links[input.link];
-                    if (!link) continue;
-                    if (ids[link.origin_id]) continue;
-                    // this.addInput(input.name,link.type);
-                    this.subgraph.addInput(input.name, link.type);
-                    /*
-                    var input_node = LiteGraph.createNode("graph/input");
-                    this.subgraph.add( input_node );
-                    input_node.pos = [min_x - 200, last_input_y ];
-                    last_input_y += 100;
-                    */
-                }
-
-            // check outputs
-            if (node.outputs)
-                for (let j = 0; j < node.outputs.length; ++j) {
-                    let output = node.outputs[j];
-                    if (!output || !output.links || !output.links.length) continue;
-                    //    var is_external = false;
-                    for (let k = 0; k < output.links.length; ++k) {
-                        let link = node.graph.links[output.links[k]];
-                        if (!link) continue;
-                        if (ids[link.target_id]) continue;
-                        //        is_external = true;
-                        break;
-                    }
-                    // if (!is_external) continue;
-                    // this.addOutput(output.name,output.type);
-                    /*
-                    var output_node = LiteGraph.createNode("graph/output");
-                    this.subgraph.add( output_node );
-                    output_node.pos = [max_x + 50, last_output_y ];
-                    last_output_y += 100;
-                    */
-                }
+        // 2. copies of the nodes, without their links (ids are kept: the inner graph is empty)
+        const bounds = [Infinity, Infinity, -Infinity, -Infinity];
+        const copies = new Map();
+        for (const node of selected) {
+            bounds[0] = Math.min(bounds[0], node.pos[0]);
+            bounds[1] = Math.min(bounds[1], node.pos[1]);
+            bounds[2] = Math.max(bounds[2], node.pos[0] + (node.size?.[0] ?? 0));
+            bounds[3] = Math.max(bounds[3], node.pos[1] + (node.size?.[1] ?? 0));
+            const data = LiteGraph.cloneObject(node.serialize());
+            data.inputs?.forEach((input) => { input.link = null; });
+            data.outputs?.forEach((output) => { output.links = null; });
+            const copy = LiteGraph.createNode(data.type);
+            if (!copy) throw new Error(`buildFromNodes: cannot create a node of type ${data.type}`);
+            copy.configure(data);
+            copies.set(node.id, copy);
         }
 
-        // detect inputs and outputs
-        // split every connection in two data_connection nodes
-        // keep track of internal connections
-        // connect external connections
+        // 3. the originals leave the parent graph (their boundary links go with them)
+        for (const node of selected) graph.remove(node);
+        this.pos = [bounds[0], bounds[1]];
+        for (const copy of copies.values()) inner.add(copy);
+        for (const link of internal) {
+            copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+        }
 
-        // clone nodes inside subgraph and try to reconnect them
+        // 4. graph inputs and outputs, then the outside wiring
+        const unique = (name, taken) => {
+            let candidate = name, n = 2;
+            while (taken.has(candidate)) candidate = `${name}_${n++}`;
+            taken.add(candidate);
+            return candidate;
+        };
+        const inputNames = new Set(), outputNames = new Set();
+        let row = 0;
+        for (const entry of incoming.values()) {
+            const io = LiteGraph.createNode("graph/input");
+            inner.add(io);
+            io.pos = [bounds[0] - 260, bounds[1] + 100 * row++];
+            io.setProperty("type", entry.type);
+            const name = unique(entry.name, inputNames);
+            io.setProperty("name", name);
+            for (const target of entry.targets) io.connect(0, copies.get(target.node), target.slot);
+            const source = graph.getNodeById(entry.origin);
+            const slot = this.findInputSlot(name);
+            if (source && slot !== -1) source.connect(entry.slot, this, slot);
+        }
+        row = 0;
+        for (const entry of outgoing.values()) {
+            const io = LiteGraph.createNode("graph/output");
+            inner.add(io);
+            io.pos = [bounds[2] + 80, bounds[1] + 100 * row++];
+            io.setProperty("type", entry.type);
+            const name = unique(entry.name, outputNames);
+            io.setProperty("name", name);
+            copies.get(entry.origin).connect(entry.slot, io, 0);
+            const slot = this.findOutputSlot(name);
+            for (const target of entry.targets) {
+                const node = graph.getNodeById(target.node);
+                if (node && slot !== -1) this.connect(slot, node, target.slot);
+            }
+        }
+        this.setSize(this.computeSize());
+        return this;
+    }
 
-        // connect edge subgraph nodes to extarnal connections nodes
+    /**
+     * Moves the inner nodes back into the parent graph (with fresh ids) and reconnects them to what
+     * this node was connected to; links passing straight through the subgraph are bridged.
+     * This node is removed. Use LGraph.unpackSubgraph(node) for the one-undo-step version.
+     * @returns {Array<object>} the unpacked nodes
+     */
+    unpack() {
+        const graph = this.graph;
+        if (!graph) throw new Error("unpack: the subgraph node is not in a graph");
+        const inner = this.subgraph;
+        const isInput = (node) => node?.type === "graph/input";
+        const isOutput = (node) => node?.type === "graph/output";
+        const contents = inner._nodes.filter((node) => !isInput(node) && !isOutput(node));
+
+        // outside connections of this node, captured before it is removed
+        const outerSource = new Map(); // input name -> {node, slot}
+        this.inputs?.forEach((input) => {
+            const link = input.link != null ? graph.links[input.link] : null;
+            if (link) outerSource.set(input.name, { node: graph.getNodeById(link.origin_id), slot: link.origin_slot });
+        });
+        const outerTargets = new Map(); // output name -> [{node, slot}]
+        this.outputs?.forEach((output) => {
+            outerTargets.set(output.name, (output.links ?? []).map((id) => graph.links[id]).filter(Boolean)
+                .map((link) => ({ node: graph.getNodeById(link.target_id), slot: link.target_slot })));
+        });
+
+        // copies in the parent graph, laid out where the subgraph node was
+        const minX = Math.min(...contents.map((node) => node.pos[0]));
+        const minY = Math.min(...contents.map((node) => node.pos[1]));
+        const copies = new Map();
+        for (const node of contents) {
+            const data = LiteGraph.cloneObject(node.serialize());
+            data.inputs?.forEach((input) => { input.link = null; });
+            data.outputs?.forEach((output) => { output.links = null; });
+            const copy = LiteGraph.createNode(data.type);
+            if (!copy) throw new Error(`unpack: cannot create a node of type ${data.type}`);
+            copy.configure(data);
+            copy.id = -1; // a fresh id in the parent graph
+            copy.pos = [this.pos[0] + node.pos[0] - minX, this.pos[1] + node.pos[1] - minY];
+            copies.set(node.id, copy);
+        }
+
+        // what to connect, resolved through the graph inputs and outputs
+        const plan = [];
+        const sourceOf = (link) => {
+            const origin = inner.getNodeById(link.origin_id);
+            if (isInput(origin)) return outerSource.get(origin.properties.name) ?? null;
+            return copies.has(link.origin_id) ? { node: copies.get(link.origin_id), slot: link.origin_slot } : null;
+        };
+        for (const link of Object.values(inner.links).filter(Boolean)) {
+            const target = inner.getNodeById(link.target_id);
+            const source = sourceOf(link);
+            if (!source?.node) continue;
+            if (isOutput(target)) {
+                for (const outer of outerTargets.get(target.properties.name) ?? []) {
+                    if (outer.node) plan.push([source, outer]);
+                }
+            } else if (copies.has(link.target_id)) {
+                plan.push([source, { node: copies.get(link.target_id), slot: link.target_slot }]);
+            }
+        }
+
+        graph.remove(this);
+        for (const copy of copies.values()) graph.add(copy);
+        for (const [source, target] of plan) source.node.connect(source.slot, target.node, target.slot);
+        return [...copies.values()];
     }
 
     static title_color = "#334";

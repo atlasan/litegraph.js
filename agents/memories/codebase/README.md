@@ -10,7 +10,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 |---|---|
 | `src/` | The library, as ES modules |
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
-| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
+| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
 | `editor/` | Demo editor. `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions |
 | `editor_tester/` | Browser tester that generates per-node scenarios |
@@ -32,6 +32,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `callbackhandler.js` | Prioritised multi-handler hooks ([callbacks](../../../docs/callbacks.md)) |
 | `eventtarget.js` | `LGraphEventTarget`: typed events with `on` / `once` / `off` / `dispatch` |
 | `commands.js`, `keybindings.js`, `settings.js`, `menus.js`, `extensionregistry.js` | Wave 1 platform registries |
+| `nodesearch.js` | `NodeSearch` (`LiteGraph.nodeSearch`): query parsing (`i:` `o:` `c:` `s:`), ranking, definition filters; used by the search box |
 | `contextmenu.js`, `curveeditor.js` | DOM menus; curve widget helper |
 | `dragandscale.js`, `canvaspointer.js`, `linkconnector.js`, `reroute.js` | View transform, pointer gestures, link-drag state machine, reroutes |
 | `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js` | The graph model |
@@ -52,8 +53,9 @@ Listed in build order (`build.py` `lib_js_files`):
 ## Graph model
 
 - **LGraph**
-  - **Contents:** `_nodes`, `_groups`, `links` (an object keyed by id), `reroutes` (a Map), `state.last*Id`, `revision`.
-  - **Serialization:** `serialize()` writes `version: 0.4` and keeps unknown top-level fields. Reroutes go to `extra.reroutes`, in ComfyUI form.
+  - **Contents:** `_nodes`, `_groups`, `links` (an object keyed by id), `reroutes` (a Map), `floating_links` (a Map), `state.last*Id`, `revision`.
+  - **Serialization:** `serialize()` writes `version: 0.4` and keeps unknown top-level fields. Reroutes go to `extra.reroutes`, in ComfyUI form; floating links go to `floatingLinks`, and the reroutes only they use carry `floating: {slotType}`.
+  - **Floating links:** `LGraphNode._disconnectLinks` keeps a removed link's reroute chain on the remaining end (`_keepFloatingLink`); `routeLink(link, parentId)` re-attaches it. Conversion and unpack suspend this (`_withoutFloatingLinks`).
   - **Transactions:** `transact(label, fn, {rollback})` records one history entry. Undo history (`actionHistory*`) records only when `LiteGraph.actionHistory_enabled` is set; it is off in the core and on in the editor defaults.
   - **Repair:** `validateLinks({repair})` repairs dangling links and back-pointers, for the current graph only.
 - **LGraphNode**
@@ -61,11 +63,11 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Widgets:** `addWidget(type, name, value, cb, options)` returns a `BaseWidget`. `options.socket` / `addWidgetInput` create a widget input. `serialize_widgets` controls whether values are saved.
   - **Readiness:** `ready`, `initialization_state`, `libraries`, `requiredLibraries`, `onPostConstruct`.
 - **LLink:** serialized as a 6-element array; `parentId` points at the reroute chain.
-- **LGraphGroup:** a Float32Array bounding box; nested `_nodes` and `_groups`.
+- **LGraphGroup:** a Float32Array bounding box; nested `_nodes` and `_groups`; `resizeTo(items)`, `fitToContents()`, `setNodesMode(mode)`.
 - **Reroute:** `id`, `pos`, `parentId`. Its design is credited to Comfy-Org standalone (MIT).
 - **Subgraph:**
   - **Model:** inline. The node owns an `LGraph`, and `graph/input` / `graph/output` nodes map to the host's slots.
-  - **Conversion:** `buildFromNodes` is **unfinished**; it creates no nodes. Conversion is planned for Wave 2 and subgraph v2 for Wave 3 (ADR 0001).
+  - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`) work on the inline model: one undo step, rolled back on failure. Subgraph v2 is Wave 3 (ADR 0001).
 
 ## Execution
 
@@ -98,12 +100,12 @@ Listed in build order (`build.py` `lib_js_files`):
 
 ## Canvas
 
-- **Owned objects:** `ds` (DragAndScale), `pointer` (CanvasPointer), `linkConnector`. The `connecting_*` fields are accessors over `linkConnector`.
+- **Owned objects:** `ds` (DragAndScale), `pointer` (CanvasPointer), `linkConnector` (made by `_createLinkConnector`, which re-emits its `link-drag-start` / `link-drag-end`). The `connecting_*` fields are accessors over `linkConnector`.
 - **Input:** `processMouseDown`, `processMouseMove`, `processMouseUp`, `processMouseWheel` and `processKey`.
-- **Gestures:**
-  - Only the reroute drag uses `pointer.onDrag*` handlers so far (`_dragRerouteGesture`).
-  - Node, group and link drags move in Wave 2.
-- **Selection:** `selectedItems` covers nodes, groups and reroutes. Also `selectItem`, `moveSelected`, `deleteSelected`, and the event `selection-changed`.
+- **Gestures:** drags are `pointer` handlers set at pointer down: `_dragNodesGesture`, `_dragGroupGesture`, `_dragRerouteGesture`, `_linkDragGesture` (drop in `_dropLink`), `_linkCenterGesture`. While handlers are set, `processMouseMove` returns early; `processMouseUp` skips the empty-canvas deselect and node `onMouseUp` for a handled gesture. The legacy `node_dragged` / `connecting_*` move and up paths remain for code that sets those fields directly.
+- **Title decorations:** `getNodeTitleDecorations` lays out title buttons (`node.title_buttons`) and badges (`LiteGraph.nodeBadges.collect`); `drawNodeTitleDecorations` caches it on `node._title_decorations` for hit testing. Group header toggle: `getGroupToggleRect`, `toggleGroupMuted`.
+- **Selection:** `selectedItems` covers nodes, groups and reroutes. Also `selectItem`, `moveSelected`, `deleteSelected`, `groupSelected`, and the event `selection-changed`.
+- **Clipboard:** `serializeSelection()` produces a fragment (nodes, links, reroute chains, groups). `insertFragment(fragment, pos)` inserts one with fresh ids in one undo step; copy and paste use both.
 - **Drawing:**
   - `drawBackCanvas`: background, groups, links.
   - `drawFrontCanvas`: nodes, overlays, tooltips.
