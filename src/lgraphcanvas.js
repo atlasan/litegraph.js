@@ -5,6 +5,7 @@ import { ContextMenu } from "./contextmenu.js";
 import { CanvasPointer } from "./canvaspointer.js";
 import { LinkConnector } from "./linkconnector.js";
 import { widgetImplementation } from "./widgets.js";
+import { NodeSearch } from "./nodesearch.js";
 import { LGraphEventTarget } from "./eventtarget.js";
 
 /**
@@ -7680,6 +7681,8 @@ export class LGraphCanvas {
                 var c = 0;
                 str = str.toLowerCase();
                 var filter = graphcanvas.filter || graphcanvas.graph.filter;
+                const query = NodeSearch.parseQuery(str);
+                const scores = new Map(); // type -> ranking score, filled by inner_test_filter
 
                 let sIn, sOut;
 
@@ -7703,22 +7706,16 @@ export class LGraphCanvas {
                     if(filter && ctor.filter != filter )
                         return false;
 
-                    // type, title, aliases and description (see LiteGraph.getNodeSearchText)
-                    let str_node = LiteGraph.getNodeSearchText(type);
-                    let a_srch_parts = str.toLowerCase().split(" ");
-                    let passTextSearch = true;
-                    for(let i_srch of a_srch_parts){
-                        LiteGraph.log_verbose("search","check",i_srch,str_node); // verbose debug, make new higher level
-                        if(i_srch.trim() === "") continue;
-                        if(str_node.indexOf(i_srch) == -1){
-                            passTextSearch = false;
-                            LiteGraph.log_verbose("search","do not pass",i_srch,str_node); // verbose debug, make new higher level
-                            break;
-                        }
+                    // words, i:/o:/c:/s: filters and definition filters (see src/nodesearch.js)
+                    const def = LiteGraph.getNodeDefinition(type);
+                    if (def) {
+                        if (LiteGraph.nodeSearch && !LiteGraph.nodeSearch.passesFilters(def)) return false;
+                        if (!NodeSearch.matchesFilters(def, query.filters)) return false;
                     }
-
-                    if ((!options.show_all_if_empty || str) && !passTextSearch)
+                    const textScore = def && query.terms.length ? NodeSearch.score(def, query) : 0;
+                    if ((!options.show_all_if_empty || str) && textScore < 0)
                         return false;
+                    scores.set(type, textScore);
 
                     // filter by slot IN, OUT types
                     if(options.do_type_filter && !opts.skipFilter) {
@@ -7802,6 +7799,9 @@ export class LGraphCanvas {
                 if (Array.prototype.filter) { // filter supported
                     let keys = Object.keys( LiteGraph.registered_node_types ); // types
                     filtered = keys.filter( inner_test_filter );
+                    // best matches first (see NodeSearch.score), then alphabetical by title
+                    filtered.sort((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0)
+                        || String(LiteGraph.getNodeDefinition(a)?.title ?? a).localeCompare(String(LiteGraph.getNodeDefinition(b)?.title ?? b)));
                 } else {
                     filtered = [];
                     for (let i in LiteGraph.registered_node_types) {

@@ -346,6 +346,8 @@ export interface LiteGraphAPI extends CallbackHost {
     menus: MenuRegistry;
     /** widget type name -> class (see registerWidgetType) */
     widget_types: Record<string, typeof BaseWidget>;
+    /** node search: parsing, ranking and definition filters */
+    nodeSearch: NodeSearch;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
@@ -2132,3 +2134,21 @@ export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
 export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;
 /** Arithmetic for number entry (+ - * / % **, parentheses, pi, e); NaN for anything else. Nothing is executed. */
 export declare function evaluateMathExpression(text: string): number;
+
+export interface NodeSearchQuery {
+    terms: string[];
+    filters: { i: string[]; o: string[]; c: string[]; s: string[] };
+}
+/** Node search without a DOM: `add i:number c:math s:core` (see src/nodesearch.js). */
+export declare class NodeSearch {
+    static FILTER_PREFIXES: string[];
+    constructor();
+    registerFilter(filter: { id: string; name?: string; predicate(def: NodeDefinition): boolean; enabled?(): boolean }): () => void;
+    listFilters(): Array<{ id: string; name: string }>;
+    passesFilters(def: NodeDefinition): boolean;
+    static parseQuery(text: string): NodeSearchQuery;
+    static matchesFilters(def: NodeDefinition, filters: NodeSearchQuery["filters"]): boolean;
+    /** -1 when a word does not match */
+    static score(def: NodeDefinition, query: Pick<NodeSearchQuery, "terms">): number;
+    search(text: string | NodeSearchQuery, options?: { types?: string[]; limit?: number; applyFilters?: boolean }): Array<{ type: string; score: number; def: NodeDefinition }>;
+}

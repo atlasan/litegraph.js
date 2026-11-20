@@ -15,6 +15,7 @@ import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
 import { MenuRegistry } from "./menus.js";
 import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
+import { NodeSearch } from "./nodesearch.js";
 
 /**
  * @class LiteGraph
@@ -470,6 +471,14 @@ export class LiteGraphClass {
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
         this.widget_types ??= defaultWidgetTypes();
+        if (!this.nodeSearch) {
+            this.nodeSearch = new NodeSearch();
+            // definition filters: deprecated nodes are hidden unless a setting shows them
+            this.settings.define({ id: "LiteGraph.Search.ShowDeprecated", name: "Show deprecated nodes in search", default: false });
+            this.settings.define({ id: "LiteGraph.Search.ShowExperimental", name: "Show experimental nodes in search", default: true });
+            this.nodeSearch.registerFilter({ id: "core.deprecated", name: "Deprecated", predicate: (def) => !def.deprecated, enabled: () => !this.settings.get("LiteGraph.Search.ShowDeprecated") });
+            this.nodeSearch.registerFilter({ id: "core.experimental", name: "Experimental", predicate: (def) => !def.experimental, enabled: () => !this.settings.get("LiteGraph.Search.ShowExperimental") });
+        }
         this.extensions ??= new ExtensionRegistry(this);
     }
 
@@ -703,7 +712,9 @@ export class LiteGraphClass {
                 ? this.registered_node_types[type]
                 : type;
 
-        const class_type = base_class.constructor.type;
+        // a node instance knows its type through its class; a class (or a type string) carries it itself
+        // (it used to read base_class.constructor.type, which is Function.type: undefined for classes)
+        const class_type = typeof base_class === "function" ? base_class.type : base_class.constructor.type;
 
         let allTypes = [];
         if (typeof slot_type === "string") {
