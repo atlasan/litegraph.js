@@ -605,6 +605,31 @@ class LiteGraphClass {
                 name: "Show node source badges",
                 default: false
             });
+            this.settings.define({
+                id: "LiteGraph.Node.LifecycleBadge",
+                name: "Show deprecated and experimental badges",
+                default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Group.HeaderToggle",
+                name: "Show the mute toggle in group headers",
+                default: true
+            });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
+                const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
+                if (def.deprecated) return {
+                    text: "deprecated",
+                    fgColor: "#FDD",
+                    bgColor: "rgba(140,40,40,0.8)"
+                };
+                if (def.experimental) return {
+                    text: "experimental",
+                    fgColor: "#FFE",
+                    bgColor: "rgba(120,100,30,0.8)"
+                };
+                return null;
+            });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? {
                 text: `#${node.id}`
             } : null);
@@ -8476,8 +8501,12 @@ class LGraphCanvas {
                         this.pointer.onClick = () => this.selectItem(reroute, true);
                         this.pointer.onDragStart = () => this._startLinkDrag(() => this.linkConnector.startFromReroute(reroute, this.graph));
                     } else {
-                        this.selectItem(reroute, e.shiftKey || e.ctrlKey);
+                        // a press on a selected reroute keeps the selection, so a drag moves all of it;
+                        // a click then applies the usual selection change
+                        const keepSelection = !!reroute.selected;
+                        if (!keepSelection) this.selectItem(reroute, e.shiftKey || e.ctrlKey);
                         this._dragRerouteGesture(reroute);
+                        if (keepSelection) this.pointer.onClick = () => this.selectItem(reroute, e.shiftKey || e.ctrlKey);
                     }
                     skip_action = true;
                 }
@@ -8518,17 +8547,26 @@ class LGraphCanvas {
                             this.dragging_rectangle = null;
                         }
 
-                        // clicking the title band selects the group (shift/ctrl adds to the selection)
-                        const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
-                        if (e.canvasY < this.selected_group.pos[1] + title_height) {
-                            this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
-                        }
+                        const toggleRect = this.getGroupToggleRect(this.selected_group);
+                        if (toggleRect && LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, ...toggleRect)) {
+                            // the header toggle: a click mutes or unmutes the group's nodes
+                            const group = this.selected_group;
+                            this.selected_group = null;
+                            this.pointer.onClick = () => this.toggleGroupMuted(group);
+                            skip_action = true;
+                        } else {
+                            // clicking the title band selects the group (shift/ctrl adds to the selection)
+                            const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+                            if (e.canvasY < this.selected_group.pos[1] + title_height) {
+                                this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
+                            }
 
-                        var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
-                        this._dragGroupGesture(this.selected_group, dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15));
+                            var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
+                            this._dragGroupGesture(this.selected_group, dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15));
+                        }
                     }
 
-                    if (is_double_click && !this.read_only && this.allow_searchbox) {
+                    if (!skip_action && is_double_click && !this.read_only && this.allow_searchbox) {
                         LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "showing search box");
                         this.showSearchBox(e);
                         e.preventDefault();
@@ -10287,6 +10325,7 @@ class LGraphCanvas {
                     def_cb: n.onDrag
                 }, off);
             }
+            for (const reroute of this._movingReroutes()) reroute.move(off[0], off[1]); // selected reroutes come along
             this.dirty_canvas = true;
             this.dirty_bgcanvas = true;
         };
@@ -10302,6 +10341,10 @@ class LGraphCanvas {
                 n.pos[0] = Math.round(n.pos[0]);
                 n.pos[1] = Math.round(n.pos[1]);
                 if (graph.config.align_to_grid || this.align_to_grid) n.alignToGrid();
+            }
+            for (const reroute of this._movingReroutes()) {
+                reroute.pos[0] = Math.round(reroute.pos[0]);
+                reroute.pos[1] = Math.round(reroute.pos[1]);
             }
             // TAG callback graphrenderer event entrypoint
             this.processCallbackHandlers("onNodeMoved", {
@@ -10402,32 +10445,55 @@ class LGraphCanvas {
         });
     }
 
-    /** Pointer gesture for dragging a reroute (handlers on this.pointer; one undo step per drag). */
+    /** the reroutes a drag moves: the selected ones, plus `extra` */
+    _movingReroutes(extra = null) {
+        const reroutes = new Set();
+        for (const item of this._selected_items ?? []) {
+            if (this.graph?.reroutes?.get?.(item.id) === item) reroutes.add(item);
+        }
+        if (extra) reroutes.add(extra);
+        return reroutes;
+    }
+
+    /**
+     * Pointer gesture for dragging a reroute, with the other selected reroutes and nodes (handlers
+     * on this.pointer; one undo step per drag).
+     */
     _dragRerouteGesture(reroute) {
         const graph = this.graph;
         const pointer = this.pointer;
         let transactionOpen = false;
-        let last = null;
+        let last = [this.graph_mouse[0], this.graph_mouse[1]]; // from the press: no movement is lost to the drift tolerance
         this.dragging_reroute = reroute;
-        pointer.onDragStart = (e) => {
+        pointer.onDragStart = () => {
             graph.beginTransaction("rerouteMove");
             transactionOpen = true;
-            last = [e.canvasX, e.canvasY];
         };
         pointer.onDrag = (e) => {
             if (!last) return;
-            reroute.move(e.canvasX - last[0], e.canvasY - last[1]);
+            const dx = e.canvasX - last[0];
+            const dy = e.canvasY - last[1];
+            for (const item of this._movingReroutes(reroute)) item.move(dx, dy);
+            for (const node of Object.values(this.selected_nodes)) {
+                if (node.flags?.pinned) continue;
+                node.pos[0] += dx;
+                node.pos[1] += dy;
+            }
             last = [e.canvasX, e.canvasY];
             this.dirty_canvas = true;
             this.dirty_bgcanvas = true;
         };
         pointer.onDragEnd = () => {
-            reroute.pos[0] = Math.round(reroute.pos[0]);
-            reroute.pos[1] = Math.round(reroute.pos[1]);
-            if (graph.config.align_to_grid || this.align_to_grid) {
-                const grid = LiteGraph.CANVAS_GRID_SIZE;
-                reroute.pos[0] = grid * Math.round(reroute.pos[0] / grid);
-                reroute.pos[1] = grid * Math.round(reroute.pos[1] / grid);
+            const grid = graph.config.align_to_grid || this.align_to_grid ? LiteGraph.CANVAS_GRID_SIZE : 0;
+            for (const item of this._movingReroutes(reroute)) {
+                item.pos[0] = grid ? grid * Math.round(item.pos[0] / grid) : Math.round(item.pos[0]);
+                item.pos[1] = grid ? grid * Math.round(item.pos[1] / grid) : Math.round(item.pos[1]);
+            }
+            for (const node of Object.values(this.selected_nodes)) {
+                if (node.flags?.pinned) continue;
+                node.pos[0] = Math.round(node.pos[0]);
+                node.pos[1] = Math.round(node.pos[1]);
+                if (grid) node.alignToGrid();
             }
             graph.onGraphChanged({
                 action: "rerouteMove"
@@ -13415,8 +13481,55 @@ class LGraphCanvas {
             } else {
                 ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
             }
+            this.drawGroupToggle(group, ctx);
         }
 
+        ctx.restore();
+    }
+
+    /**
+     * The header toggle of a group (right end of its title band), in graph space, or null when
+     * LiteGraph.Group.HeaderToggle is off.
+     * @returns {number[]|null} [x, y, w, h]
+     */
+    getGroupToggleRect(group) {
+        if (!LiteGraph.settings?.get?.("LiteGraph.Group.HeaderToggle")) return null;
+        const title_height = (group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+        const side = Math.max(10, title_height - 10);
+        if (group.size[0] < side * 3) return null;
+        return [group.pos[0] + group.size[0] - side - 5, group.pos[1] + (title_height - side) / 2, side, side];
+    }
+
+    /** true when the group has nodes and all of them are muted (mode NEVER) */
+    isGroupMuted(group) {
+        group.recomputeInsideNodes();
+        const nodes = group._nodes ?? [];
+        return nodes.length > 0 && nodes.every((node) => node.mode === LiteGraph.NEVER);
+    }
+
+    /** Mutes the group's nodes (mode NEVER), or sets them back to ALWAYS when all are muted; one undo step. */
+    toggleGroupMuted(group) {
+        const mode = this.isGroupMuted(group) ? LiteGraph.ALWAYS : LiteGraph.NEVER;
+        this.graph.transact("groupMode", () => group.setNodesMode(mode));
+        this.setDirty(true, true);
+        return mode;
+    }
+
+    /** Draws a group's header toggle: filled while its nodes run, hollow when they are all muted. */
+    drawGroupToggle(group, ctx) {
+        const rect = this.getGroupToggleRect(group);
+        if (!rect) return;
+        const muted = (group._nodes ?? []).length > 0 && group._nodes.every((node) => node.mode === LiteGraph.NEVER);
+        const [x, y, w, h] = rect;
+        ctx.save();
+        ctx.globalAlpha = this.editor_alpha;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h / 2, w / 2 - 1, 0, Math.PI * 2);
+        if (muted) ctx.stroke();
+        else ctx.fill();
         ctx.restore();
     }
 
