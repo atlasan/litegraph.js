@@ -8,7 +8,7 @@ This wave makes the everyday authoring operations work properly: turning a selec
 
 - **Roadmap:** [Wave 2](roadmap.md#wave-2-authoring-core-next). Sources:
   - the feature harvest ([plan](2026-11-19-feature-harvest-and-priorities.md))
-  - the Comfy core harvest ([research](../memories/research/))
+  - the Comfy core harvest ([research](../memories/research/ecosystem-study/))
   - the open bugs B2 and B3 in the [fork inventory](../audits/2026-11-19-fork-inventory.md)
 - **Where the code lives:** see the [codebase map](../memories/codebase/README.md). `src/subgraph.js`, `src/lgraphgroup.js`, the clipboard and search code in `src/lgraphcanvas.js`, `src/linkconnector.js`, `src/canvaspointer.js`.
 - **Decisions:** D2 (the subgraph format, [ADR 0001](../memories/decisions/0001-subgraph-document-format.md)) stays open. This wave works on the current inline model, so its result informs D2. D3: code from the MIT standalone is adapted with attribution.
@@ -64,3 +64,4 @@ Each step: `npm run check`, a `feat:` commit and a `build:` commit. At the end o
 ## History
 
 - 2026-11-20: accepted with the start of Wave 2; step 1 implemented on `LG/wave2_authoring`.
+- 2026-11-20: steps 1–4 (part 2a) done; see the [execution record](../executions/2026-11-20-wave2a-authoring.md).

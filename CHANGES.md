@@ -1,6 +1,35 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 2a, authoring operations
+
+## Added
+
+* `LGraph.convertToSubgraph(nodes)` and `LGraph.unpackSubgraph(node)` (B2, B3):
+  * Conversion creates one input per outside source and one output per inside source. Event links become event ports, and internal links are kept.
+  * Unpack bridges links that pass straight through.
+  * Each is one undo step, and a failed conversion is rolled back.
+  * The node menu offers "Convert to subgraph" and "Unpack subgraph"; the canvas menu offers "Convert selection to subgraph".
+* Groups:
+  * `LGraphGroup.resizeTo(items, padding)`, `fitToContents()` and `setNodesMode(mode)`.
+  * The group menu offers "Fit to contents" and "Mode for all nodes".
+  * `canvas.groupSelected()` wraps the selection in a group; it is in the canvas menu and on Ctrl+G.
+* Clipboard fragments:
+  * `canvas.serializeSelection()` captures the nodes, their links, reroute chains and the selected groups.
+  * `canvas.insertFragment(fragment, pos, {select, connectUnselected})` inserts a fragment as one undo step, with fresh ids.
+  * Copy and paste keep groups and reroutes. Ctrl+Shift+V reconnects inputs from unselected nodes.
+* Node search (`LiteGraph.nodeSearch`, `src/nodesearch.js`):
+  * Results are ranked.
+  * Filters: `i:`, `o:`, `c:`, `s:`.
+  * A definition-filter registry. Deprecated nodes are hidden unless `LiteGraph.Search.ShowDeprecated` is on.
+
+## Fixes
+
+* `Subgraph.buildFromNodes` threw, and "Convert to subgraph" left an empty subgraph node behind.
+* Copying marked nodes with a `_relative_id` that was never cleared. A node left over from an earlier copy could then be treated as part of a later selection.
+* `registerNodeAndSlotType` stored `undefined` when it was given a class or a type string.
+* "Add Group" can now be undone.
+
 # Unreleased (0.10.x): Wave 1, platform layer
 
 ## Added

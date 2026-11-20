@@ -152,7 +152,24 @@ this.addWidget("number", "Size", 4, null, { min: 1, max: 64, step: 1, socket: tr
 graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0); });
 ```
 
-**Selection:** `canvas.selectedItems` covers nodes, groups and reroutes. `selectItem`, `moveSelected` and `deleteSelected` are one undo step each.
+**Selection:** `canvas.selectedItems` covers nodes, groups and reroutes. `selectItem`, `moveSelected`, `deleteSelected` and `groupSelected` are one undo step each.
+
+**Subgraphs:** `graph.convertToSubgraph(nodes)` turns nodes into a subgraph node. It creates one input per outside source and one output per inside source, and event links become event ports. `graph.unpackSubgraph(node)` reverses it. Both are one undo step, and both are in the node menu ("Convert to subgraph", "Unpack subgraph").
+
+**Groups:** `group.resizeTo(items)` and `group.fitToContents()` change a group's size; `group.setNodesMode(mode)` sets the mode of every node inside. The group menu offers "Fit to contents" and "Mode for all nodes".
+
+**Clipboard and fragments:** `canvas.serializeSelection()` returns a fragment: nodes, their links, reroute chains and the selected groups. `canvas.insertFragment(fragment, pos)` inserts it with fresh ids as one undo step, so snippets and templates use the same path as paste.
+
+**Search:** every word must match, and results are ranked from best to weakest match: exact, prefix, whole word, alias, description. Filters can be added to the words:
+
+| Filter | Keeps nodes |
+|---|---|
+| `i:number` | with an input of that type |
+| `o:string` | with an output of that type |
+| `c:math` | in that category or a subcategory |
+| `s:core` | from that source |
+
+Deprecated nodes are hidden unless the setting `LiteGraph.Search.ShowDeprecated` is on. `LiteGraph.nodeSearch.registerFilter(...)` adds more filters, and `LiteGraph.nodeSearch.search(text)` runs the same search without the UI.
 
 **Default keys:**
 
@@ -176,6 +193,7 @@ With the bundled extensions (full builds, or `editor_build.html`), these keys ar
 | Shift+→ | Search and connect |
 | Tab / Shift+Tab | Walk connected nodes |
 | `f` | Focus the selection |
+| Ctrl+G | Group the selection |
 
 Users can rebind keys through `LiteGraph.keybindings`.
 
