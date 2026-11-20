@@ -227,8 +227,14 @@ Corrections made while building; the [4a execution record](../executions/2026-11
 - **Draft key:** one key per editor (`litegraph.editor.draft`), since a fresh editor graph has a new id after a reload; the draft stores the document id.
 - **Runner messages:** the existing `console` messages stay; `execution_state` is added beside them.
 
+## Implementation notes (4c)
+
+- **RenderLink** is a plain description of one drawn segment; `renderLink` keeps its signature (plus an options argument), so extensions that call it keep working.
+- **DragAndScale:** the canvas never bound its listeners; the carry-over closes by moving panning onto a `CanvasPointer` gesture and making standalone `bindEvents` removable. Space-key panning keeps the flag path.
+
 ## History
 
+- 2026-11-20: 4c done: steps 11–14 ([record](../executions/2026-11-20-wave4c-links-view.md)).
 - 2026-11-20: 4b done: steps 6–10 ([record](../executions/2026-11-20-wave4b-workspace.md)).
 - 2026-11-20: 4a done: steps 1–5 ([record](../executions/2026-11-20-wave4a-packs.md)).
 - 2026-11-20: accepted; W4-1 to W4-7 decided as recommended (stamp `pack`/`pack_ver` on non-builtin nodes, replacements offered with `auto` for own renames, dagre loaded on demand, one v1 execution-state shape, autosave with a restore offer, builtin packs declared now and split in Wave 5, palette as core API plus editor panel).

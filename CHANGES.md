@@ -1,6 +1,20 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 4c, links and view
+
+## Added
+
+* `RenderLink`, link routers (`LiteGraph.linkRouters`, `canvas.link_router`; "spline", "linear", "straight" built in) and link styles (`LiteGraph.linkStyles`, setting `LiteGraph.Canvas.LinkStyles`: `spotlight`, `dim-by-type`, `hidden`, `labelled`; `LiteGraph.Canvas.HiddenLinkTypes`).
+* `MiniMap` (`canvas.showMinimap` / `hideMinimap` / `toggleMinimap`) with decoration layers, redrawn on events only.
+* The `view_tools` extension: `litegraph.canvas.toggleMinimap` (Alt+M, setting `LiteGraph.Canvas.Minimap`) and `litegraph.links.spotlight` / `dimByType` / `labels` / `hidden`, also in the canvas menu.
+* `DragAndScale.unbindEvents()`.
+
+## Changed
+
+* `renderLink` draws through the active router and styles; the three render modes draw the same paths as before. Hidden links are not hit-testable.
+* Panning the canvas is a `CanvasPointer` gesture.
+
 # Unreleased (0.10.x): Wave 4b, workspace state and execution
 
 ## Added
