@@ -472,6 +472,64 @@ export class Subgraph {
         if (isInput) this.inputs = next; else this.outputs = next;
     }
 
+    /**
+     * Makes an inner slot part of the interface: a graph/input (for an inner input) or graph/output
+     * (for an inner output) is added and linked; its name is the slot name, made unique. One undo
+     * step in the inner graph; leaving the subgraph commits it to the linked instances.
+     * @returns {object|null} the boundary node
+     */
+    exposeSlot(innerNode, slotIndex, isOutput, pos) {
+        const inner = this.subgraph;
+        const slot = isOutput ? innerNode?.outputs?.[slotIndex] : innerNode?.inputs?.[slotIndex];
+        if (!slot || innerNode.graph !== inner) return null;
+        const taken = isOutput ? inner.outputs : inner.inputs;
+        const base = slot.name || (isOutput ? "out" : "in");
+        let name = base, n = 2;
+        while (taken?.[name] || ["enabled", "call", "done"].includes(name)) name = `${base}_${n++}`;
+        const type = slot.type === LiteGraph.EVENT || slot.type === LiteGraph.ACTION ? "event" : (slot.type || "");
+        let io = null;
+        inner.transact("exposeSubgraphSlot", () => {
+            io = LiteGraph.createNode(isOutput ? "graph/output" : "graph/input");
+            io.pos = pos ? [pos[0], pos[1]] : [innerNode.pos[0] + (isOutput ? innerNode.size[0] + 80 : -260), innerNode.pos[1]];
+            inner.add(io);
+            io.setProperty("type", type);
+            io.setProperty("name", name);
+            if (isOutput) innerNode.connect(slotIndex, io, 0);
+            else io.connect(0, innerNode, slotIndex);
+        });
+        this.setSize?.(this.computeSize());
+        return io;
+    }
+
+    /**
+     * Moves an interface slot up (-1) or down (+1) among the interface slots of this node; outer
+     * links follow. Other linked instances follow by slot id when the definition is committed.
+     * @returns {boolean}
+     */
+    moveInterfaceSlot(isInput, name, delta) {
+        const list = isInput ? this.inputs : this.outputs;
+        if (!list || !this.graph) return false;
+        const names = new Set(this.subgraph._nodes.filter((n) => n.type === (isInput ? "graph/input" : "graph/output")).map((n) => n.properties.name));
+        const from = list.findIndex((slot) => slot.name === name);
+        if (from < 0 || !names.has(name)) return false;
+        let to = from + Math.sign(delta);
+        while (to >= 0 && to < list.length && !names.has(list[to].name)) to += Math.sign(delta);
+        if (to < 0 || to >= list.length) return false;
+        this.graph.transact("reorderSubgraphSlot", () => {
+            [list[from], list[to]] = [list[to], list[from]];
+            const links = this.graph.links;
+            for (const index of [from, to]) {
+                const slot = list[index];
+                if (isInput && slot.link != null && links[slot.link]) links[slot.link].target_slot = index;
+                if (!isInput) for (const id of slot.links ?? []) if (links[id]) links[id].origin_slot = index;
+            }
+            this.graph.onGraphChanged({ action: "reorderSubgraphSlot" });
+        });
+        this.subgraph.onGraphChanged({ action: "reorderInterface" }); // the definition changed: saved and committed
+        this.setDirtyCanvas?.(true, true);
+        return true;
+    }
+
     /** this node gets its own copy of its definition (a new id); one undo step */
     makeUnique() {
         const root = this.graph?.rootGraph;
@@ -898,9 +956,14 @@ export class GraphInput {
     }
 
     // this is executed AFTER the property has changed
-    onPropertyChanged(name, v) {
+    onPropertyChanged(name, v, previous) {
         if (name == "name") {
             if (v == "" || v == this.name_in_graph || v == "enabled") {
+                return false;
+            }
+            if (this.graph?.inputs?.[v]) { // interface names are unique: values are keyed by name
+                LiteGraph.log_warn("graph/input", "rename", `refused: the subgraph already has an input named "${v}"`);
+                if (this.name_widget) this.name_widget.value = previous ?? this.name_in_graph;
                 return false;
             }
             if (this.graph) {
@@ -953,6 +1016,16 @@ export class GraphInput {
         if (this.name_in_graph) {
             this.graph.removeInput(this.name_in_graph);
         }
+    }
+
+    /** inside a subgraph: move this slot in the interface */
+    getExtraMenuOptions() {
+        const host = this.graph?._subgraph_node;
+        if (!host?.moveInterfaceSlot) return [];
+        return [
+            { content: "Move up in the interface", callback: () => host.moveInterfaceSlot(true, this.properties.name, -1) },
+            { content: "Move down in the interface", callback: () => host.moveInterfaceSlot(true, this.properties.name, 1) },
+        ];
     }
 }
 
@@ -1029,9 +1102,14 @@ export class GraphOutput {
         this.size = [180, 60];
     }
 
-    onPropertyChanged(name, v) {
+    onPropertyChanged(name, v, previous) {
         if (name == "name") {
             if (v == "" || v == this.name_in_graph || v == "enabled") {
+                return false;
+            }
+            if (this.graph?.outputs?.[v]) { // interface names are unique: values are keyed by name
+                LiteGraph.log_warn("graph/output", "rename", `refused: the subgraph already has an output named "${v}"`);
+                if (this.name_widget) this.name_widget.value = previous ?? this.name_in_graph;
                 return false;
             }
             if (this.graph) {
@@ -1105,6 +1183,16 @@ export class GraphOutput {
         if (this.name_in_graph) {
             this.graph.removeOutput(this.name_in_graph);
         }
+    }
+
+    /** inside a subgraph: move this slot in the interface */
+    getExtraMenuOptions() {
+        const host = this.graph?._subgraph_node;
+        if (!host?.moveInterfaceSlot) return [];
+        return [
+            { content: "Move up in the interface", callback: () => host.moveInterfaceSlot(false, this.properties.name, -1) },
+            { content: "Move down in the interface", callback: () => host.moveInterfaceSlot(false, this.properties.name, 1) },
+        ];
     }
 
     getTitle() {

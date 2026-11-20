@@ -1655,6 +1655,13 @@ export declare class LGraphCanvas {
     openSubgraph(graph: LGraph): void;
     /** closes a subgraph contained inside a node */
     closeSubgraph(): void;
+    /** leaves open subgraphs until `level` is shown (0: the root graph); each one left commits its edits */
+    closeSubgraphTo(level: number): void;
+    /** the path of open subgraphs, root first */
+    getBreadcrumb(): Array<{ level: number; title: string }>;
+    drawBreadcrumb(ctx: CanvasRenderingContext2D, color?: string): void;
+    /** the breadcrumb level at a canvas-relative CSS position, or null */
+    getBreadcrumbAt(x: number, y: number): number | null;
     /** assigns a canvas */
     setCanvas(canvas: HTMLCanvasElement, skipEvents?: boolean): void;
     /** binds mouse, keyboard, touch and drag events to the canvas */
@@ -2004,6 +2011,12 @@ export declare class Subgraph extends LGraphNode {
     refreshFromDefinition(options?: { matchNames?: boolean }): boolean;
     /** gives this node its own copy of the definition; returns the new id */
     makeUnique(): string | null;
+    /** makes an inner slot part of the interface (adds and links a graph/input or graph/output); returns it */
+    exposeSlot(innerNode: LGraphNode, slotIndex: number, isOutput: boolean, pos?: ArrayLike<number>): LGraphNode | null;
+    /** moves an interface slot up (-1) or down (+1); outer links follow */
+    moveInterfaceSlot(isInput: boolean, name: string, delta: number): boolean;
+    /** stored instance fields this runtime does not model (written back) */
+    kept_fields: Record<string, unknown>;
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}

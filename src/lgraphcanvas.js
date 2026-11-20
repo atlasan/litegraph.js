@@ -368,6 +368,66 @@ export class LGraphCanvas {
     }
 
     /**
+     * Leaves open subgraphs until `level` is shown (0: the root graph). Each one left commits its edits.
+     * @param {number} level
+     */
+    closeSubgraphTo(level) {
+        while ((this._graph_stack?.length ?? 0) > Math.max(0, level)) this.closeSubgraph();
+    }
+
+    /** breadcrumb segments, root first: {title, level} */
+    getBreadcrumb() {
+        const stack = this._graph_stack ?? [];
+        if (!stack.length) return [];
+        const graphs = [...stack, this.graph];
+        return graphs.map((graph, level) => ({
+            level,
+            title: level === 0 ? (graph.extra?.title || "Root") : (graph._subgraph_node?.getTitle?.() ?? "Subgraph"),
+        }));
+    }
+
+    /**
+     * Draws the path of open subgraphs at the top (outer levels can be clicked) and keeps their
+     * rectangles for getBreadcrumbAt.
+     */
+    drawBreadcrumb(ctx, color = "#AAA") {
+        const segments = this.getBreadcrumb();
+        this._breadcrumb_rects = [];
+        if (!segments.length) return;
+        const separator = "  \u203A  ";
+        ctx.font = "24px Arial";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        const width = (text) => ctx.measureText?.(text)?.width ?? text.length * 12;
+        const parts = segments.map((segment) => ({ ...segment, w: width(segment.title) }));
+        const sep = width(separator);
+        const total = parts.reduce((sum, part) => sum + part.w, 0) + sep * (parts.length - 1);
+        let x = Math.max(10, (this.cssWidth ?? 0) * 0.5 - total * 0.5);
+        const y = 40;
+        parts.forEach((part, index) => {
+            const current = index === parts.length - 1;
+            ctx.fillStyle = current ? color : "#888";
+            ctx.fillText(part.title, x, y);
+            if (!current) this._breadcrumb_rects.push({ level: part.level, rect: [x - 4, y - 26, part.w + 8, 34] });
+            x += part.w;
+            if (!current) {
+                ctx.fillStyle = "#666";
+                ctx.fillText(separator, x, y);
+                x += sep;
+            }
+        });
+    }
+
+    /** @returns {number|null} the level of the breadcrumb segment at a canvas-relative CSS position */
+    getBreadcrumbAt(x, y) {
+        if (!this._graph_stack?.length) return null;
+        for (const { level, rect } of this._breadcrumb_rects ?? []) {
+            if (x >= rect[0] && x <= rect[0] + rect[2] && y >= rect[1] && y <= rect[1] + rect[3]) return level;
+        }
+        return null;
+    }
+
+    /**
      * returns the visually active graph (in case there are more in the stack)
      * @method getCurrentGraph
      * @return {LGraph} the active graph
@@ -865,6 +925,13 @@ export class LGraphCanvas {
         }
 
         if(!is_inside) {
+            return;
+        }
+
+        // breadcrumb: a click on an outer level leaves the subgraphs down to it
+        const crumb = this.getBreadcrumbAt(this.last_mouse_position[0], this.last_mouse_position[1]);
+        if (crumb !== null && (e.isPrimary === undefined || e.isPrimary)) {
+            this.closeSubgraphTo(crumb);
             return;
         }
 
@@ -4023,18 +4090,7 @@ export class LGraphCanvas {
             ctx.lineWidth = 10;
             ctx.strokeRect(1, 1, this.cssWidth - 2, this.cssHeight - 2);
             ctx.lineWidth = 1;
-            ctx.font = "40px Arial";
-            ctx.textAlign = "center";
-            ctx.fillStyle = subgraph_node.bgcolor || "#AAA";
-            let title = "";
-            this._graph_stack.slice(1).forEach((item, index) => {
-                title += `${item._subgraph_node.getTitle()} ${index < this._graph_stack.length - 2 ? ">> " : ""}`;
-            });
-            ctx.fillText(
-                title + subgraph_node.getTitle(),
-                this.cssWidth * 0.5,
-                40,
-            );
+            this.drawBreadcrumb(ctx, subgraph_node.bgcolor || "#AAA");
             ctx.restore();
         }
 
@@ -7364,6 +7420,14 @@ export class LGraphCanvas {
             options.push(null);
         }
 
+        // inside a subgraph: the slot can become part of the interface
+        const host = that.graph?._subgraph_node;
+        const exposeLabel = isFrom ? "Add subgraph output" : "Add subgraph input";
+        if (host?.exposeSlot && nodeX.type !== "graph/input" && nodeX.type !== "graph/output") {
+            options.push(exposeLabel);
+            options.push(null);
+        }
+
         // get defaults nodes for this slottype
         const fromSlotType = slotX.type === LiteGraph.EVENT ? "_event_" : slotX.type;
         const slotTypesDefault = isFrom ? LiteGraph.slot_types_default_out : LiteGraph.slot_types_default_in;
@@ -7392,6 +7456,11 @@ export class LGraphCanvas {
                         LGraphCanvas.onMenuAdd(null, null, e, menu, (node) => {
                             isFrom ? opts.nodeFrom.connectByType(iSlotConn, node, fromSlotType) : opts.nodeTo.connectByTypeOutput(iSlotConn, node, fromSlotType);
                         });
+                    },
+                    [exposeLabel]: () => {
+                        const pos = opts.e && Number.isFinite(opts.e.canvasX) ? [opts.e.canvasX, opts.e.canvasY] : undefined;
+                        host.exposeSlot(nodeX, iSlotConn, !!isFrom, pos);
+                        that.setDirty(true, true);
                     },
                     "Search": () => {
                         isFrom ? that.showSearchBox(e, {node_from: opts.nodeFrom, slot_from: slotX, type_filter_in: fromSlotType}) : that.showSearchBox(e, {node_to: opts.nodeTo, slot_from: slotX, type_filter_out: fromSlotType});
