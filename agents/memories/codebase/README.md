@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4c
+> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4d
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -40,6 +40,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `librarymanager.js` | Optional library loading and manifest |
 | `executionstate.js` | `ExecutionState` (`LiteGraph.ExecutionState`): the v1 execution-state messages (`create`, `isMessage`, `apply` by path, `applyToNode`, `clear`) (Wave 4b) |
 | `linkrender.js`, `minimap.js` | `RenderLink`, `LinkRouterRegistry` (`LiteGraph.linkRouters`), `LinkStyleRegistry` (`LiteGraph.linkStyles`); `MiniMap` (Wave 4c) |
+| `layout.js`, `palette.js` | `LayoutRegistry` (`LiteGraph.layout`: dagre via LibraryManager, layered, ELK adapter); `NodePalette` (`LiteGraph.palette`) (Wave 4d) |
 | `packs.js` | `PackRegistry` (`LiteGraph.packs`): pack manifests, type attribution, index, version ranges, replacement mappings; `replaceNodeInGraph` (Wave 4a) |
 | `widgets.js` | `BaseWidget` and its subclasses; the safe arithmetic parser |
 | `init_litegraph.js` | Calls `LiteGraph.initialize()`; last in the build, so bundles initialize themselves |
@@ -78,6 +79,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Function node:** `graph/function` (`NodeFunction extends Subgraph`) calls a definition: `call` → inputs, one step, outputs → `done`; own copy per node; recursion refused, `NodeFunction._depth` limited by `LiteGraph.subgraph_max_depth`.
   - **Change stream and saved state (Wave 4b):** `_emit` notes the kind of typed change events (`CHANGE_KINDS`); a recorded change (`onGraphChanged` with doSave, once per transaction) calls `_reportChange` → `graph-changed`, bubbled to the root with kind `subgraph`. Changes no history entry records are flushed once in a microtask (`_scheduleChangeFlush`) and set `_modifiedExtra`. Call sites that record and then emit use `_markChange(kind)` + `_emit(..., {recorded: true})`. `isModified` = revision ≠ `_savedRevision` or `_modifiedExtra`; configure (reason load) sets the saved revision.
   - **Execution state (Wave 4b):** `runStep` calls `reportExecutionState(node, "status", {status: "done"})` when a node's state is not already done; the catch reports `error` on the failing node; root `start()` reports `reset`. `node.execution_state` is runtime only. The canvas draws it in `drawNodeShape` (title-box colour, `drawNodeExecutionOverlay`); the title text goes through `drawNodeTitleText` (icon first).
+  - **Auto-layout (Wave 4d):** `autoLayout` builds a model (`LayoutRegistry.buildModel`: boxes with titles, links between nodes in scope), awaits the engine (loading its library first), then applies positions anchored at the old top-left in one `transact("autoLayout")`; reroutes move by the mean shift of their link's ends; groups wholly made of moved nodes are fitted. `LiteGraph.registerBuiltinLibraries()` (called by `initialize`) registers `dagre`.
   - **Missing types and replacement (Wave 4a):** a missing type loads as a plain `LGraphNode` placeholder (`has_errors`, `last_serialization`, title = type) that serializes back unchanged. `getMissingNodes({deep})`; root `configure` emits `missing-nodes {report, reason}` (`reason` "history" / "rollback" when undo or a failed transaction reloads). `replaceNode` / `replaceNodes` run `PackRegistry.replaceNodeInGraph` in a transaction: same id, link objects moved to mapped slots (ids and reroutes kept), unplaceable links removed and returned as `dropped`. `_applyAutoReplacements` runs `auto` mappings during configure inside a discarded transaction (no history, no revision).
   - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`): one undo step, rolled back on failure.
 
@@ -121,6 +123,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Clipboard:** `serializeSelection()` produces a fragment (nodes, links, reroute chains, groups). `insertFragment(fragment, pos)` inserts one with fresh ids in one undo step; copy and paste use both.
 - **Links (Wave 4c):** `renderLinkPath` resolves one style per link (`resolveLinkStyle`, context cached per frame) and passes it to each segment; `renderLink(ctx, a, b, link, …, num_sublines, {style, source})` builds a `RenderLink`, skips hidden links (not pushed to `visible_links`), and draws through `getLinkRouter()` (`link_router` name, else `links_render_mode`). `computeConnectionPoint` and `getLinkPolyline` use the router too.
 - **Minimap and pan (Wave 4c):** `showMinimap` creates a `MiniMap` in the canvas's parent element; `dispose` removes it. Panning is `_dragCanvasGesture` (left drag on empty canvas, middle drag); when another gesture already owns the pointer (a group) only the legacy flag is set. Space-key panning still uses `dragging_canvas`.
+- **Drop:** `processDrop` inserts a node for `LGraphCanvas.NODE_DRAG_MIME` data through `LiteGraph.palette.insert` before the file-drop handling (Wave 4d). The Editor's `NodePalettePanel` (in `litegraph-editor.js`) uses it.
 - **Drawing:**
   - `drawBackCanvas`: background, groups, links.
   - `drawFrontCanvas`: nodes, overlays, tooltips.

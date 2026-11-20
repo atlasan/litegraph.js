@@ -324,6 +324,20 @@ minimap.addLayer("bookmarks", (ctx, map) => { const [x, y] = map.toMap([0, 0]); 
 - **Minimap:** redraws on graph, viewport, selection and execution-state events (no timer); a click or drag centres the view; layers `selection` and `execution` are built in. Setting `LiteGraph.Canvas.Minimap` remembers it.
 - **Pointer:** panning (left drag on empty canvas, middle drag) is a `CanvasPointer` gesture; `DragAndScale` binds no listeners for a canvas, and `unbindEvents()` removes the ones a standalone `bindEvents` added.
 
+## Layout and the node palette
+
+```js
+await graph.autoLayout();                                   // every node, engine from LiteGraph.Layout.Engine ("dagre")
+await graph.autoLayout({ nodes: selected, engine: "layered", direction: "TB", spacing: { node: 40, rank: 80 } });
+LiteGraph.layout.register("elk", LiteGraph.layout.constructor.elkEngine(new ELK()));   // elkjs, optional
+```
+
+- **One undo step** per layout; a selection keeps its top-left corner; pinned nodes stay; reroutes between moved nodes follow; groups made only of moved nodes are fitted.
+- **dagre** (`@dagrejs/dagre` 3.1.3) is loaded on first use through the LibraryManager (browser: pinned CDN URL; Node: `npm install @dagrejs/dagre`). When it cannot load, the error says so and names the `layered` engine, which needs nothing.
+- **Command** `litegraph.layout.auto` ("Arrange all nodes" / "Arrange selected nodes" in the canvas menu).
+
+**Palette** (`LiteGraph.palette`): `groups({query, favoritesOnly})` (by pack, then category), `list`, `toggleFavorite` (setting `LiteGraph.Palette.Favorites`), `recent()` (`LiteGraph.Palette.Recent`), `preview(type)` and `insert(canvas, type, pos)` (one undo step). A DOM element dragged onto the canvas with the data type `LGraphCanvas.NODE_DRAG_MIME` (the value is a node type) inserts that node where it is dropped. The Editor's "Nodes" button opens a palette panel with search, favourites, recent types, previews on hover, and drag-to-canvas (setting `LiteGraph.Editor.Palette`).
+
 ## Packs and missing nodes
 
 A pack is a manifest (plain JSON) for a group of node types. The code is whatever you already imported; node types registered inside `setup` belong to the pack.

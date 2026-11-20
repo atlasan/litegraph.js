@@ -232,8 +232,15 @@ Corrections made while building; the [4a execution record](../executions/2026-11
 - **RenderLink** is a plain description of one drawn segment; `renderLink` keeps its signature (plus an options argument), so extensions that call it keep working.
 - **DragAndScale:** the canvas never bound its listeners; the carry-over closes by moving panning onto a `CanvasPointer` gesture and making standalone `bindEvents` removable. Space-key panning keeps the flag path.
 
+## Implementation notes (4d)
+
+- **dagre version:** `@dagrejs/dagre` 3.1.3 (the 4d risk note named 0.8.5 or the maintained fork; the fork's current release was chosen after reading its release notes).
+- **A `layered` engine** without dependencies was added, so layout works offline and the refusal for an unloadable dagre names a way out.
+- **Drop target:** the canvas itself accepts `LGraphCanvas.NODE_DRAG_MIME` drops, so any host's palette can drag nodes in, not only the Editor's.
+
 ## History
 
+- 2026-11-20: 4d done: steps 15–16 ([record](../executions/2026-11-20-wave4d-layout-palette.md)).
 - 2026-11-20: 4c done: steps 11–14 ([record](../executions/2026-11-20-wave4c-links-view.md)).
 - 2026-11-20: 4b done: steps 6–10 ([record](../executions/2026-11-20-wave4b-workspace.md)).
 - 2026-11-20: 4a done: steps 1–5 ([record](../executions/2026-11-20-wave4a-packs.md)).
