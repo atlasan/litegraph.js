@@ -221,8 +221,15 @@ Corrections made while building; the [4a execution record](../executions/2026-11
 - **`missing-nodes {reason}`:** undo, redo and transaction rollbacks reload the graph, so the event says why it fired; the Editor opens its panel only for `"load"`.
 - **A placeholder whose type is registered later** is rebuilt as that type by `replaceNode` / `replaceNodes` (identity mapping).
 
+## Implementation notes (4b)
+
+- **Code edits without a history entry** (`setProperty`, widget values set by code) are reported by `graph-changed` once per microtask and make the document modified; recorded changes report synchronously.
+- **Draft key:** one key per editor (`litegraph.editor.draft`), since a fresh editor graph has a new id after a reload; the draft stores the document id.
+- **Runner messages:** the existing `console` messages stay; `execution_state` is added beside them.
+
 ## History
 
+- 2026-11-20: 4b done: steps 6–10 ([record](../executions/2026-11-20-wave4b-workspace.md)).
 - 2026-11-20: 4a done: steps 1–5 ([record](../executions/2026-11-20-wave4a-packs.md)).
 - 2026-11-20: accepted; W4-1 to W4-7 decided as recommended (stamp `pack`/`pack_ver` on non-builtin nodes, replacements offered with `auto` for own renames, dagre loaded on demand, one v1 execution-state shape, autosave with a restore offer, builtin packs declared now and split in Wave 5, palette as core API plus editor panel).
 - 2026-11-20: proposed.

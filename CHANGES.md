@@ -1,6 +1,20 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 4b, workspace state and execution
+
+## Added
+
+* `graph-changed {kind, kinds, action, revision}` (one per recorded change, code edits coalesced; bubbles from subgraphs with kind `subgraph`) and the canvas event `viewport-changed`.
+* `graph.isModified`, `markSaved()`, `markModified()` and `modified-changed`; the Editor shows "• modified".
+* Draft autosave in the Editor (`DraftAutosave`, settings `LiteGraph.Editor.Autosave` / `AutosaveDelay`) with a restore offer after a reload.
+* The execution-state protocol `LiteGraph.ExecutionState` (v1), `graph.reportExecutionState`, `graph.applyExecutionState`, `node.reportProgress`, `node.setExecutionStatus`, the `execution-state` event; the runner broadcasts `execution_state`.
+* Canvas overlays for node status, progress and errors (setting `LiteGraph.Canvas.ExecutionOverlays`); node and definition `icon` drawn before the title (`drawNodeTitleText`).
+
+## Changed
+
+* A widget bound to a property writes the property before the change is recorded, so the history entry includes it.
+
 # Unreleased (0.10.x): Wave 4a, packs and missing nodes
 
 ## Added

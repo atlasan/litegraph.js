@@ -278,6 +278,30 @@ LiteGraph.registerExtension({
 - **Mutating commands:** `mutatesGraph: true` on a command makes each run one undo step.
 - **Settings:** `ctx.settings.define({ id, default, bind })` declares a user setting. `LiteGraph.persistPlatformState()` keeps settings and user key bindings across reloads.
 
+## Changes, saved state and execution state
+
+```js
+graph.events.on("graph-changed", (e) => e.detail.kinds);   // ["node-added"], ["link"], ["layout"], ...
+graph.events.on("modified-changed", (e) => e.detail.modified);
+graph.isModified;  graph.markSaved();  graph.markModified();
+canvas.events.on("viewport-changed", (e) => e.detail.scale);
+```
+
+- **`graph-changed`** fires once per recorded change (one per transaction). Edits from code that record no history entry (`setProperty`, a widget value set by code) are reported once, after the current step. A change inside a subgraph also reaches the root graph with kind `"subgraph"`. A load reports `kind: "configure"`.
+- **Modified:** a loaded document is clean; any change makes it modified; `markSaved()` cleans it, and undo back to the saved revision cleans it too. The Editor shows "• modified" and prefixes the page title.
+- **Draft autosave (Editor):** the modified document is written to `localStorage` (`litegraph.editor.draft`) 2 s after the last change; after a reload the Editor offers to restore it and never restores silently. Settings `LiteGraph.Editor.Autosave`, `LiteGraph.Editor.AutosaveDelay`; `DraftAutosave` is usable on its own.
+
+**Execution state** (`LiteGraph.ExecutionState`, protocol `v: 1`): one message shape for the page and the runner.
+
+```js
+{ v: 1, kind: "status" | "progress" | "error" | "reset", path: "3:7", status: "running", value: 2, max: 4, message, time }
+graph.events.on("execution-state", (e) => e.detail.message);  // root graph
+node.reportProgress(2, 4);  node.setExecutionStatus("running");  node.setExecutionStatus(null);
+graph.applyExecutionState(messageFromRunner);
+```
+
+`runStep` sends one `done` per node (not per step) and an `error` with the failing node's path; `start()` sends a `reset`. The runner broadcasts the same messages as `execution_state`. The canvas draws them: a coloured title box, an outline while running or failed, a progress bar, and the error text (setting `LiteGraph.Canvas.ExecutionOverlays`). A node or definition `icon` (a glyph or an image) is drawn before the title.
+
 ## Packs and missing nodes
 
 A pack is a manifest (plain JSON) for a group of node types. The code is whatever you already imported; node types registered inside `setup` belong to the pack.

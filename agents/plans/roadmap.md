@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Wave 4 in progress (4a in `LG/dev`)
+> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Wave 4 in progress (4a, 4b in `LG/dev`)
 
 This is the single place for the current status of planned work.
 
@@ -13,7 +13,7 @@ This is the single place for the current status of planned work.
 |---|---|
 | `master` | Released baseline. It changes only through reviewed PRs. |
 | `LG/dev` | **Progressive integration branch.** Every finished wave (or part of one) lands here first. Docs, plans and audits are kept current here. |
-| `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs` (merged into `LG/dev`). |
+| `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs`, `LG/wave4b_workspace` (merged into `LG/dev`). |
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
@@ -29,7 +29,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
 | 3 | Subgraph v2 and components | **Done**: 3a definitions, function node, interop ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [probe](../executions/2026-11-20-wave3a-schema-probe.md)); 3b authoring ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)); 3c components, blueprints, SA port ([record](../executions/2026-11-20-wave3c-components.md)); merged into `LG/dev` and `master` ([PR #10](https://github.com/atlasan/litegraph.js/pull/10)). See the [plan](2026-11-20-wave3-subgraph-system.md). |
-| 4 | Ecosystem and workspace features | **In progress**: 4a (packs and missing nodes) done on `LG/wave4a_packs` and merged into `LG/dev` ([record](../executions/2026-11-20-wave4a-packs.md)); 4b–4e planned. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
+| 4 | Ecosystem and workspace features | **In progress**: 4a (packs and missing nodes, [record](../executions/2026-11-20-wave4a-packs.md)) and 4b (workspace state and execution, [record](../executions/2026-11-20-wave4b-workspace.md)) merged into `LG/dev`; 4c–4e planned. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | Proposed |
 
 ## Wave 0: safety and correctness (done)
@@ -127,7 +127,7 @@ Plan: [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md)
 | Part | Items | Status |
 |---|---|---|
 | 4a | **Pack manifest** (`id`, `version`, `requires.litegraph`, nodes, extensions, libraries, templates, locales) and registry, builtin packs per family (D6), provenance stamping, a missing-nodes report on load, **replacement mappings as data** | **Done** on `LG/wave4a_packs`, merged into `LG/dev` ([record](../executions/2026-11-20-wave4a-packs.md)) |
-| 4b | `graph-changed` / `viewport-changed` (H9), **dirty flag** and draft autosave, **shared execution-state protocol** between the editor and the runner, node status / progress / error overlays, split title drawing with icons (H2, carried over) | Planned |
+| 4b | `graph-changed` / `viewport-changed` (H9), **dirty flag** and draft autosave, **shared execution-state protocol** between the editor and the runner, node status / progress / error overlays, split title drawing with icons (H2, carried over) | **Done** on `LG/wave4b_workspace`, merged into `LG/dev` ([record](../executions/2026-11-20-wave4b-workspace.md)) |
 | 4c | RenderLink classes (carried over), **link style resolver** (spotlight, dim by type, hidden or labelled links), link router plug-in, **minimap** with decoration layers (H1, H9), DragAndScale listeners into `CanvasPointer` (carried over) | Planned |
 | 4d | **Auto-layout adapter** (dagre loaded on demand, ELK optional; one transaction; selection scope), **node palette** with drag-to-canvas, favourites and a preview | Planned |
 | 4e | **Catalog cleanup** (one watch node, `jquery` → `html`, one network naming scheme, category roots) through 4a mappings; reroutes across subgraph boundaries (carried over) | Planned |
