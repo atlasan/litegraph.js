@@ -1,6 +1,6 @@
-# Wave 3: subgraph system (proposal)
+# Wave 3: subgraph system
 
-> **Date** 2026-11-20 · **Kind** plan · **Status** proposed · **Base** `LG/dev` @ `0443d77`
+> **Date** 2026-11-20 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `0443d77`
 
 **Outcome:** one lean subgraph system for litegraph.
 - A **definition** is a reusable graph with an interface.
@@ -330,7 +330,9 @@ These go into the [idea catalog](../ideas/catalog.md) when the plan is accepted:
 
 ## 12. Decisions
 
-| ID | Question | Recommendation |
+All six were decided by the user on 2026-11-20, as recommended.
+
+| ID | Question | Decision (2026-11-20) |
 |---|---|---|
 | W3-1 | Paste or duplicate a subgraph node inside one document: linked or a copy? | **Linked** (ComfyUI does this; it is what reuse means). Content from outside the document is always copied. `Make unique` forks. Setting `LiteGraph.Subgraph.PasteLinked` |
 | W3-2 | Runtime of linked uses | **One isolated copy per use** (subgraph node or function node); state persists per use |
@@ -350,4 +352,5 @@ These go into the [idea catalog](../ideas/catalog.md) when the plan is accepted:
 
 ## History
 
+- 2026-11-20: accepted; W3-1 to W3-6 decided as recommended (linked paste, stateful function node, IO nodes kept, propagation on leave, components in scope).
 - 2026-11-20: proposed after ADR 0001 option B was chosen. The user asked for a lean litegraph-native system built on the function-node idea, open to going beyond ComfyUI, and planned thoroughly before code.
