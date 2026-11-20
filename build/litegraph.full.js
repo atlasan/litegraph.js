@@ -617,6 +617,11 @@ export class LiteGraphClass {
                 name: "Show the mute toggle in group headers",
                 default: true
             });
+            this.settings.define({
+                id: "LiteGraph.Subgraph.PasteLinked",
+                name: "Pasted or duplicated subgraphs share their definition",
+                default: true
+            });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
@@ -6780,18 +6785,27 @@ export class LGraph {
      * Adds the definitions of subgraph instances (at any depth) that the root registry does not
      * know yet, taken from their current inner graphs.
      */
-    registerSubgraphDefinitions() {
+    registerSubgraphDefinitions({
+        sync = false
+    } = {}) {
         const root = this.rootGraph;
         const visit = (graph, depth) => {
             if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
             for (const node of graph._nodes) {
                 if (!node?.subgraph) continue;
                 const id = node.properties?.subgraph_id;
-                if (typeof id === "string" && id && !root.subgraphs.has(id)) {
-                    const found = new Map();
-                    SubgraphDefs.definitionOf(node.serialize(), found);
-                    for (const [key, definition] of found)
-                        if (!root.subgraphs.has(key)) root.subgraphs.set(key, definition);
+                if (typeof id === "string" && id) {
+                    const known = root.subgraphs.has(id);
+                    const edited = known && sync && node._definition_revision !== undefined && node.subgraph.revision !== node._definition_revision;
+                    if (!known || edited) {
+                        const found = new Map();
+                        const definition = SubgraphDefs.definitionOf(node.serialize(), found);
+                        if (edited) definition.revision = (root.subgraphs.get(id).revision ?? 0) + 1;
+                        root.subgraphs.set(id, definition);
+                        for (const [key, nested] of found)
+                            if (!root.subgraphs.has(key)) root.subgraphs.set(key, nested);
+                    }
+                    if (!known || edited || node._definition_revision === undefined) node._definition_revision = node.subgraph.revision;
                 }
                 visit(node.subgraph, depth + 1);
             }
@@ -6799,9 +6813,27 @@ export class LGraph {
         visit(this, 0);
     }
 
+    /** subgraph and function nodes (at any depth) that use a definition */
+    findSubgraphInstances(id) {
+        const found = [];
+        const visit = (graph, depth) => {
+            if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+            for (const node of graph._nodes) {
+                if (!node?.subgraph) continue;
+                if (node.properties?.subgraph_id === id) found.push(node);
+                visit(node.subgraph, depth + 1);
+            }
+        };
+        visit(this.rootGraph, 0);
+        return found;
+    }
+
     /** root serialize: the definition registry, and in "definitions" format references for instances */
     _serializeDefinitions(data, format) {
-        this.registerSubgraphDefinitions();
+        // instances edited without a commit (e.g. by code) bring their edit; siblings refresh only on commit
+        this.registerSubgraphDefinitions({
+            sync: true
+        });
         if (format === "definitions") return SubgraphDefs.toDefinitions(data, {
             definitions: this.subgraphs
         });
@@ -6850,6 +6882,23 @@ export class LGraph {
      * @param {Boolean} returns if there was any error parsing
      */
     configure(data, keep_old) {
+        this._configuring = (this._configuring ?? 0) + 1;
+        try {
+            return this._configure(data, keep_old);
+        } finally {
+            this._configuring--;
+        }
+    }
+
+    /** true while this graph, or a graph containing it, is being configured (loading) */
+    get isConfiguring() {
+        for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
+            if (graph._configuring) return true;
+        }
+        return false;
+    }
+
+    _configure(data, keep_old) {
         if (!data) {
             return;
         }
@@ -7651,6 +7700,8 @@ export class LGraphCanvas {
         }, graph, prev_graph, subgraph_node);
 
         graph.attachCanvas(this);
+        // the edits made inside become the definition; other linked instances follow (one undo step)
+        if (subgraph_node?.commitDefinition && subgraph_node.graph) subgraph_node.commitDefinition();
         this.setDirty(true, true);
         if (saved_view) {
             // back to where the user was before opening the subgraph
@@ -22138,6 +22189,7 @@ export class Subgraph {
     }
 
     onSubgraphNewInput(name, type) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findInputSlot(name);
         if (slot == -1) {
             // add input to the node
@@ -22146,6 +22198,7 @@ export class Subgraph {
     }
 
     onSubgraphRenamedInput(oldname, name) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findInputSlot(oldname);
         if (slot == -1) {
             return;
@@ -22155,6 +22208,7 @@ export class Subgraph {
     }
 
     onSubgraphTypeChangeInput(name, type) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findInputSlot(name);
         if (slot == -1) {
             return;
@@ -22164,6 +22218,7 @@ export class Subgraph {
     }
 
     onSubgraphRemovedInput(name) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findInputSlot(name);
         if (slot == -1) {
             return;
@@ -22173,6 +22228,7 @@ export class Subgraph {
 
     //* *** OUTPUTS ***********************************
     onSubgraphNewOutput(name, type) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findOutputSlot(name);
         if (slot == -1) {
             this.addOutput(name, type);
@@ -22180,6 +22236,7 @@ export class Subgraph {
     }
 
     onSubgraphRenamedOutput(oldname, name) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findOutputSlot(oldname);
         if (slot == -1) {
             return;
@@ -22189,6 +22246,7 @@ export class Subgraph {
     }
 
     onSubgraphTypeChangeOutput(name, type) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findOutputSlot(name);
         if (slot == -1) {
             return;
@@ -22198,6 +22256,7 @@ export class Subgraph {
     }
 
     onSubgraphRemovedOutput(name) {
+        if (this._refreshing) return; // refreshFromDefinition reconciles the slots itself
         var slot = this.findOutputSlot(name);
         if (slot == -1) {
             return;
@@ -22205,9 +22264,192 @@ export class Subgraph {
         this.removeOutput(slot);
     }
 
+    // --- definitions (see subgraphdefs.js and LGraph.subgraphs) ---
+
+    /** the definition this node uses, from the root graph's registry */
+    getDefinition() {
+        return this.graph?.rootGraph?.subgraphs.get(this.properties.subgraph_id) ?? null;
+    }
+
+    /**
+     * Inserted by paste, insert or clone (not while loading): the same id with the same content
+     * stays linked; the same id with different content (another document's edit) becomes a new
+     * definition, so it never silently replaces the one already here.
+     */
+    onAdded(graph) {
+        if (!graph || graph.isConfiguring) return;
+        const root = graph.rootGraph;
+        const id = this.properties.subgraph_id;
+        const known = root.subgraphs.get(id);
+        if (!known || !this.subgraph._nodes.length) return; // registered when saved, or on commit
+        const found = new Map();
+        const mine = SubgraphDefs.definitionOf(this.serialize(), found);
+        if (SubgraphDefs.canonical(mine) === SubgraphDefs.canonical(known)) {
+            this._definition_revision = this.subgraph.revision;
+            return;
+        }
+        this._assignNewDefinition(root, "forked on insert");
+    }
+
+    /** gives this node a new definition id, registered with its current content */
+    _assignNewDefinition(root, reason) {
+        const from = this.properties.subgraph_id;
+        this.properties.subgraph_id = LiteGraph.uuidv4();
+        this.subgraph.id = this.properties.subgraph_id;
+        const found = new Map();
+        const definition = SubgraphDefs.definitionOf(this.serialize(), found);
+        root.subgraphs.set(definition.id, definition);
+        for (const [key, nested] of found)
+            if (!root.subgraphs.has(key)) root.subgraphs.set(key, nested);
+        this._definition_revision = this.subgraph.revision;
+        root._emit?.("subgraph-forked", {
+            node: this,
+            from,
+            to: definition.id,
+            reason
+        });
+        return definition.id;
+    }
+
+    /**
+     * Makes this node's current inner graph its definition, and refreshes every other node linked to
+     * it (one undo step on the root graph). Called when the canvas leaves the subgraph.
+     * @returns {boolean} true when the definition changed
+     */
+    commitDefinition() {
+        const root = this.graph?.rootGraph;
+        if (!root) return false;
+        const id = this.properties.subgraph_id;
+        const found = new Map();
+        const definition = SubgraphDefs.definitionOf(this.serialize(), found);
+        const previous = root.subgraphs.get(id);
+        for (const [key, nested] of found)
+            if (key !== id && !root.subgraphs.has(key)) root.subgraphs.set(key, nested);
+        if (previous && SubgraphDefs.canonical(previous) === SubgraphDefs.canonical(definition)) {
+            this._definition_revision = this.subgraph.revision;
+            return false;
+        }
+        definition.revision = (previous?.revision ?? 0) + 1;
+        root.transact("editSubgraph", () => {
+            root.subgraphs.set(id, definition);
+            this._definition_revision = this.subgraph.revision;
+            for (const other of root.findSubgraphInstances(id)) {
+                if (other !== this) other.refreshFromDefinition();
+            }
+            root.onGraphChanged({
+                action: "editSubgraph"
+            });
+        });
+        root._emit?.("subgraph-definition-changed", {
+            id,
+            node: this,
+            revision: definition.revision
+        });
+        return true;
+    }
+
+    /**
+     * Rebuilds the inner graph from the registry definition. Outer slots follow the interface by
+     * slot id (then name), so outer links survive renames and reorders; slots that are not part of
+     * the interface (e.g. "enabled") stay after it. Inner nodes restart, as on load.
+     * @returns {boolean}
+     */
+    refreshFromDefinition() {
+        const root = this.graph?.rootGraph;
+        const definition = root?.subgraphs.get(this.properties.subgraph_id);
+        if (!definition) return false;
+        const data = SubgraphDefs.materialize(definition, root.subgraphs);
+        const ids = (type) => new Map(this.subgraph._nodes.filter((n) => n.type === type).map((n) => [n.properties.name, n.properties.slot_id]));
+        const oldInputIds = (this.inputs ?? []).map((slot) => ids("graph/input").get(slot.name) ?? null);
+        const oldOutputIds = (this.outputs ?? []).map((slot) => ids("graph/output").get(slot.name) ?? null);
+        this._refreshing = true;
+        try {
+            this.subgraph.configure(data);
+        } finally {
+            this._refreshing = false;
+        }
+        this._reconcileSlots(true, oldInputIds, definition.inputs ?? []);
+        this._reconcileSlots(false, oldOutputIds, definition.outputs ?? []);
+        this._definition_revision = this.subgraph.revision;
+        this.setSize?.(this.computeSize());
+        this.setDirtyCanvas?.(true, true);
+        return true;
+    }
+
+    /** outer slots in interface order (matched by slot id, then name); extras after; links remapped */
+    _reconcileSlots(isInput, oldIds, iface) {
+        const list = (isInput ? this.inputs : this.outputs) ?? [];
+        const used = new Set();
+        const plan = []; // [old index or -1, interface slot or null]
+        for (const slot of iface) {
+            let j = oldIds.findIndex((id, index) => id === slot.id && !used.has(index));
+            if (j < 0) j = list.findIndex((old, index) => !used.has(index) && oldIds[index] !== null && old.name === slot.name);
+            if (j >= 0) used.add(j);
+            plan.push([j, slot]);
+        }
+        list.forEach((old, j) => {
+            if (!used.has(j) && oldIds[j] === null) {
+                used.add(j);
+                plan.push([j, null]);
+            }
+        });
+        // slots that left the interface lose their links
+        for (let j = list.length - 1; j >= 0; j--) {
+            if (used.has(j)) continue;
+            if (isInput) this.disconnectInput(j);
+            else this.disconnectOutput(j);
+        }
+        const typeOf = (slot) => (typeof slot.litegraph_type === "number" ? slot.litegraph_type :
+            (slot.type === "event" ? LiteGraph.EVENT : (slot.type === "*" ? "" : slot.type)));
+        const next = plan.map(([j, slot]) => {
+            const kept = j >= 0 ? list[j] : (isInput ? {
+                link: null
+            } : {
+                links: null
+            });
+            if (slot) {
+                kept.name = slot.name;
+                kept.type = typeOf(slot);
+            }
+            return kept;
+        });
+        const links = this.graph?.links ?? {};
+        next.forEach((slot, index) => {
+            if (isInput && slot.link != null && links[slot.link]) links[slot.link].target_slot = index;
+            if (!isInput)
+                for (const id of slot.links ?? [])
+                    if (links[id]) links[id].origin_slot = index;
+        });
+        if (isInput) this.inputs = next;
+        else this.outputs = next;
+    }
+
+    /** this node gets its own copy of its definition (a new id); one undo step */
+    makeUnique() {
+        const root = this.graph?.rootGraph;
+        if (!root) return null;
+        let id = null;
+        root.transact("makeSubgraphUnique", () => {
+            id = this._assignNewDefinition(root, "make unique");
+            root.onGraphChanged({
+                action: "makeSubgraphUnique"
+            });
+        });
+        return id;
+    }
+
     getExtraMenuOptions(graphcanvas) {
         var that = this;
+        const linked = this.graph?.rootGraph?.findSubgraphInstances(this.properties.subgraph_id).length ?? 0;
         return [{
+                content: linked > 1 ? `Make unique (${linked - 1} linked)` : "Make unique",
+                disabled: linked < 2,
+                callback: () => {
+                    that.makeUnique();
+                    graphcanvas.setDirty(true, true);
+                },
+            },
+            {
                 content: "Open",
                 callback: function() {
                     graphcanvas.openSubgraph(that.subgraph);
@@ -22321,6 +22563,14 @@ export class Subgraph {
         }
 
         delete data["id"];
+        // linked by default (one definition); with LiteGraph.Subgraph.PasteLinked off, a copy
+        if (LiteGraph.settings?.get?.("LiteGraph.Subgraph.PasteLinked") === false) {
+            data.properties = {
+                ...data.properties,
+                subgraph_id: LiteGraph.uuidv4()
+            };
+            if (data.subgraph) data.subgraph.id = data.properties.subgraph_id;
+        }
         // keep the outer slots (order and any added by hand), just not their links;
         // the inner GraphInput/GraphOutput nodes match them by name
         data.inputs?.forEach((input) => {
