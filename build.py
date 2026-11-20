@@ -75,6 +75,7 @@ lib_js_files = [
     "./src/widgets.js",
     "./src/nodesearch.js",
     "./src/packs.js",
+    "./src/executionstate.js",
     "./src/init_litegraph.js",
 ]
 

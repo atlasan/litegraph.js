@@ -75,12 +75,14 @@ window.addEventListener("load", (event) => {
 		}else{
 			LiteGraph.log_info("Editor:","Clearing");
 			graph.clear();
+			graph.markSaved?.();
 		}
 	});
 
 	elem.querySelector("#save").addEventListener("click",function(){
 		console.log?.("saved");
 		localStorage.setItem( "graphdemo_save", JSON.stringify( graph.serialize() ) );
+		graph.markSaved?.();
 	});
 
 	elem.querySelector("#load").addEventListener("click",function(){
@@ -101,6 +103,7 @@ window.addEventListener("load", (event) => {
 		document.body.appendChild(element);
 		element.click();
 		document.body.removeChild(element);
+		graph.markSaved?.();
 		setTimeout( function(){ URL.revokeObjectURL( url ); }, 1000*60 ); //wait one minute to revoke url	
 	});
 

@@ -474,6 +474,27 @@ export class LGraphNode {
     }
 
     /**
+     * Reports this node's progress (execution-state protocol): drawn as a bar on the node and
+     * sent to listeners of the root graph's `execution-state` event (the runner forwards them).
+     * @param {number} value
+     * @param {number} [max=1]
+     * @param {string} [message]
+     */
+    reportProgress(value, max = 1, message) {
+        return this.graph?.reportExecutionState(this, "progress", { value, max, message }) ?? null;
+    }
+
+    /**
+     * Sets this node's execution status: "queued", "running", "done", "error" or "skipped"
+     * (null clears it). Long-running nodes use it to show work in progress.
+     */
+    setExecutionStatus(status, message) {
+        if (!this.graph) return null;
+        if (status === null || status === undefined) return this.graph.reportExecutionState(this, "reset");
+        return this.graph.reportExecutionState(this, status === "error" ? "error" : "status", { status, message });
+    }
+
+    /**
      * sets the value of a property
      * @method setProperty
      * @param {String} name
@@ -2552,11 +2573,12 @@ export class LGraphNode {
 
         }
 
+        this.graph._markChange?.("link");
         this.graph.onGraphChanged({action: "connect"});
         this.setDirtyCanvas(false, true);
         this.graph.afterChange();
         this.graph.connectionChange(this, link_info);
-        this.graph._emit?.("link-connected", { link: link_info, origin: this, originSlot: slot, target: target_node, targetSlot: target_slot });
+        this.graph._emit?.("link-connected", { link: link_info, origin: this, originSlot: slot, target: target_node, targetSlot: target_slot }, { recorded: true });
 
         return link_info;
     }
@@ -2622,8 +2644,10 @@ export class LGraphNode {
         const errors = [];
         const notify = (fn) => { try { fn(); } catch (error) { errors.push(error); } };
         for (const { link, origin, target, output, input } of notifications) {
-            notify(() => graph.onGraphChanged({ action, doSave: opts.doProcessChange ?? true }));
-            notify(() => graph._emit?.("link-removed", { link, origin: origin ?? null, target: target ?? null }));
+            const recorded = opts.doProcessChange ?? true;
+            if (recorded) graph._markChange?.("link");
+            notify(() => graph.onGraphChanged({ action, doSave: recorded }));
+            notify(() => graph._emit?.("link-removed", { link, origin: origin ?? null, target: target ?? null }, { recorded }));
             if (target) notify(() => target.processCallbackHandlers("onConnectionsChange", {
                 def_cb: target.onConnectionsChange,
             }, LiteGraph.INPUT, link.target_slot, false, link, input));

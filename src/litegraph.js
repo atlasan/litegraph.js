@@ -18,6 +18,7 @@ import { MenuRegistry } from "./menus.js";
 import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 import { NodeSearch } from "./nodesearch.js";
 import { PackRegistry } from "./packs.js";
+import { ExecutionState } from "./executionstate.js";
 
 /**
  * @class LiteGraph
@@ -307,6 +308,7 @@ export class LiteGraphClass {
         this.ContextMenuClass = ContextMenu;
         this.ContextMenu = function(){ return new ContextMenu(...arguments); };
         this.CallbackHandler = CallbackHandler;
+        this.ExecutionState = ExecutionState;
         this.LibraryManager ??= new LibraryManager();
 
         this.setupPlatform();
@@ -379,6 +381,7 @@ export class LiteGraphClass {
             experimental: !!(own.experimental ?? base_class.experimental),
             hidden: !!(own.hidden ?? base_class.skip_list),
             source: own.source ?? base_class.source ?? null,
+            icon: own.icon ?? base_class.icon ?? null,
             pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
@@ -594,6 +597,9 @@ export class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        if (!this.settings.has("LiteGraph.Canvas.ExecutionOverlays")) {
+            this.settings.define({ id: "LiteGraph.Canvas.ExecutionOverlays", name: "Show node status, progress and errors on the canvas", default: true });
+        }
         if (!this.packs) {
             this.packs = new PackRegistry(this);
             this.settings.define({ id: "LiteGraph.Packs.Stamp", name: "Stamp the pack and its version on nodes of non-builtin packs", default: true });

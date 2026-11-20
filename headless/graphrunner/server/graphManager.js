@@ -4,6 +4,7 @@ import { resolveWorkflow } from './config.js';
 const runners = new Map();
 let nextRequestId = 0;
 let consolePipeCallback = null;
+let executionStateCallback = null;
 let statusCallback = null;
 const timeoutMs = 10000;
 
@@ -65,6 +66,7 @@ export async function openGraph(file, logger) {
       worker.on('message', (message) => {
         if (runners.get(graphId) !== entry) return;
         if (message.event === 'console') consolePipeCallback?.(graphId, message.level, message.message);
+        if (message.event === 'execution-state') executionStateCallback?.(graphId, message.message);
         if (message.status && !entry.unloading) publish(entry, message.status);
         const pending = entry.pending.get(message.requestId);
         if (pending) {
@@ -136,4 +138,6 @@ export async function unloadAllGraphs(logger) {
   return Promise.all(getCurrentProcesses().map((id) => unloadGraph(id, logger)));
 }
 export function setConsolePipeCallback(callback) { consolePipeCallback = callback; }
+/** receives (graphId, message) for every execution-state message of a worker (protocol v1, see LiteGraph.ExecutionState) */
+export function setExecutionStateCallback(callback) { executionStateCallback = callback; }
 export function setStatusCallback(callback) { statusCallback = callback; }

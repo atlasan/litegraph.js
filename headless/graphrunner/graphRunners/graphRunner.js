@@ -34,6 +34,10 @@ async function configure(data) {
     const { node, path, error } = event.detail;
     console.error(`Node error at ${path ?? '?'}${node?.type ? ` (${node.type})` : ''}: ${error?.message ?? error}`);
   });
+  // node status, progress and errors in the shared execution-state shape (one message per change)
+  candidate.events.on('execution-state', (event) => {
+    parentPort.postMessage({ event: 'execution-state', message: event.detail.message });
+  });
   try {
     if (candidate.configure(data)) throw new Error('Workflow contains unsupported nodes');
     await candidate.whenReady();

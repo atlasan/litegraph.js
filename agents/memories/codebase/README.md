@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4a
+> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4b
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -38,6 +38,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js`, `subgraphdefs.js` | The graph model |
 | `lgraphcanvas.js` | Rendering and interaction, about 9.5k lines |
 | `librarymanager.js` | Optional library loading and manifest |
+| `executionstate.js` | `ExecutionState` (`LiteGraph.ExecutionState`): the v1 execution-state messages (`create`, `isMessage`, `apply` by path, `applyToNode`, `clear`) (Wave 4b) |
 | `packs.js` | `PackRegistry` (`LiteGraph.packs`): pack manifests, type attribution, index, version ranges, replacement mappings; `replaceNodeInGraph` (Wave 4a) |
 | `widgets.js` | `BaseWidget` and its subclasses; the safe arithmetic parser |
 | `init_litegraph.js` | Calls `LiteGraph.initialize()`; last in the build, so bundles initialize themselves |
@@ -74,6 +75,8 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Components and blueprints (3c):** `LiteGraph.registerSubgraphType` → `Subgraph.componentClass` (inner graph from the definition; instances serialize as `graph/subgraph` with `properties.component`); `LiteGraph.subgraph_components`; `updateFromSource` / `hasSourceUpdate` and an update badge provider. `LGraph.insertDefinition` (copy or linked; `_addDefinitionCopy` remaps nested ids) and `insertBlueprint`; canvas "Insert subgraph" (`LGraphCanvas.onMenuInsertSubgraph`).
   - **Paths:** `LGraphNode.getPath()` ("3:7:2"), `LGraph.resolvePath`; `doExecute` attaches the failing node to the error, and `node-error` carries `{node, path}`.
   - **Function node:** `graph/function` (`NodeFunction extends Subgraph`) calls a definition: `call` → inputs, one step, outputs → `done`; own copy per node; recursion refused, `NodeFunction._depth` limited by `LiteGraph.subgraph_max_depth`.
+  - **Change stream and saved state (Wave 4b):** `_emit` notes the kind of typed change events (`CHANGE_KINDS`); a recorded change (`onGraphChanged` with doSave, once per transaction) calls `_reportChange` → `graph-changed`, bubbled to the root with kind `subgraph`. Changes no history entry records are flushed once in a microtask (`_scheduleChangeFlush`) and set `_modifiedExtra`. Call sites that record and then emit use `_markChange(kind)` + `_emit(..., {recorded: true})`. `isModified` = revision ≠ `_savedRevision` or `_modifiedExtra`; configure (reason load) sets the saved revision.
+  - **Execution state (Wave 4b):** `runStep` calls `reportExecutionState(node, "status", {status: "done"})` when a node's state is not already done; the catch reports `error` on the failing node; root `start()` reports `reset`. `node.execution_state` is runtime only. The canvas draws it in `drawNodeShape` (title-box colour, `drawNodeExecutionOverlay`); the title text goes through `drawNodeTitleText` (icon first).
   - **Missing types and replacement (Wave 4a):** a missing type loads as a plain `LGraphNode` placeholder (`has_errors`, `last_serialization`, title = type) that serializes back unchanged. `getMissingNodes({deep})`; root `configure` emits `missing-nodes {report, reason}` (`reason` "history" / "rollback" when undo or a failed transaction reloads). `replaceNode` / `replaceNodes` run `PackRegistry.replaceNodeInGraph` in a transaction: same id, link objects moved to mapped slots (ids and reroutes kept), unplaceable links removed and returned as `dropped`. `_applyAutoReplacements` runs `auto` mappings during configure inside a discarded transaction (no history, no revision).
   - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`): one undo step, rolled back on failure.
 
@@ -128,7 +131,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - `security.js` checks Origin and Host.
   - `nodePolicy.js` refuses `sys/runCommand`, `sys/fileWrite`, `sys/fileDelete`, `sys/processControl`, `sys/serviceManager`, `libraries/load`, `libraries/register`, `libraries/search_CDN_lib` and `geometry/eval`, recursively up to depth 64, plus the D1 families (see `describePolicy`). The type an `auto` replacement mapping loads as is checked too (`replacedType`, Wave 4a).
   - Scripts are off unless `RUNNER_ALLOW_SYS=1`.
-- **Protocol:** see [docs/development.md](../../../docs/development.md#graph-runner).
+- **Protocol:** see [docs/development.md](../../../docs/development.md#graph-runner). Workers post `execution-state` messages; `graphManager.setExecutionStateCallback` → `wsHandler` broadcasts `execution_state {graphId, message}` (Wave 4b).
 
 ## Build and test
 
