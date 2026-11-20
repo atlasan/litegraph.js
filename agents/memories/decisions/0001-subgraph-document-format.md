@@ -1,6 +1,6 @@
 # 0001: Subgraph document format (inline vs ComfyUI-style definitions)
 
-> **Date** 2026-11-18 · **Kind** decision · **Status** proposed; decision D2 in the [roadmap](../../plans/roadmap.md)
+> **Date** 2026-11-18 · **Kind** decision · **Status** proposed, option B chosen 2026-11-20 (accepted when Wave 3a meets the criteria); decision D2 in the [roadmap](../../plans/roadmap.md)
 
 It is to be **accepted or rejected when subgraph authoring (roadmap Phase 4.3) starts**, together with the conversion work it depends on.
 
