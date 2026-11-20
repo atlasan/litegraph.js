@@ -249,3 +249,21 @@ test('our own documents with subgraphs are not taken for ComfyUI workflows', () 
     expect(ComfyInterop.isComfyWorkflow(doc)).toBe(false);
     graph.clear();
 });
+
+test('a ComfyUI instance keeps fields this runtime does not model, and wildcard types', () => {
+    const graph = new LGraph();
+    const original = workflowWithSubgraph();
+    const def = original.definitions.subgraphs[0];
+    def.inputs[0].type = '*';
+    original.nodes[1].inputs[0].type = '*';
+    original.nodes[1].widgets_values = ['kept text', 42];
+    original.nodes[1].showAdvanced = true;
+    ComfyInterop.importWorkflow(graph, original);
+    const out = json(ComfyInterop.exportWorkflow(graph));
+    const instance = out.nodes.find((n) => n.id === 2);
+    expect(instance.widgets_values).toEqual(['kept text', 42]);
+    expect(instance.showAdvanced).toBe(true);
+    expect(instance.inputs[0].type).toBe('*');
+    expect(out.definitions.subgraphs[0].inputs[0].type).toBe('*');
+    graph.clear();
+});

@@ -91,7 +91,7 @@ function interfaceSlot(io, fallbackName) {
 function runtimeType(slot) {
     if (typeof slot.litegraph_type === "number") return slot.litegraph_type;
     if (isEventType(slot.type)) return LiteGraph.EVENT;
-    return slot.type === "*" ? "" : slot.type;
+    return slot.type; // "*" is a wildcard here too
 }
 
 function boundsOf(nodes, fallback) {

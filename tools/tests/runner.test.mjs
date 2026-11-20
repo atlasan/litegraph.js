@@ -60,6 +60,34 @@ test('worker lifecycle, execution updates, validation, and unload', async () => 
   } finally { await manager.unloadAllGraphs(logger); }
 });
 
+test('a workflow with subgraph definitions opens, runs and syncs back in the definitions form', async () => {
+  const id = 'a7f1c2d3-0000-4000-8000-0000000000aa';
+  const doc = { ...workflow, nodes: [
+    { id: 1, type: 'basic/const', pos: [0, 0], size: [180, 30], flags: {}, mode: 0, properties: { value: 6 }, outputs: [{ name: 'value', type: 'number', links: [1] }] },
+    { id: 2, type: id, pos: [250, 0], size: [200, 46], flags: {}, mode: 0, properties: {}, inputs: [{ name: 'x', type: 'number', link: 1 }], outputs: [{ name: 'y', type: 'number', links: null }] },
+  ], links: [[1, 1, 0, 2, 0, 'number']], definitions: { subgraphs: [{
+    id, version: 1, name: 'Square', inputNode: { id: -10, bounding: [-200, 0, 120, 60] }, outputNode: { id: -20, bounding: [400, 0, 120, 60] },
+    inputs: [{ id: 'in-x', name: 'x', type: 'number', linkIds: [5, 6] }], outputs: [{ id: 'out-y', name: 'y', type: 'number', linkIds: [7] }],
+    nodes: [{ id: 3, type: 'math/operation', pos: [0, 0], size: [100, 60], flags: {}, mode: 0, properties: { A: 1, B: 1, OP: '*' },
+      inputs: [{ name: 'A', type: 'number,array,object', link: 5 }, { name: 'B', type: 'number', link: 6 }], outputs: [{ name: '=', type: 'number', links: [7] }] }],
+    links: [{ id: 5, origin_id: -10, origin_slot: 0, target_id: 3, target_slot: 0, type: 'number' }, { id: 6, origin_id: -10, origin_slot: 0, target_id: 3, target_slot: 1, type: 'number' },
+      { id: 7, origin_id: 3, origin_slot: 0, target_id: -20, target_slot: 0, type: 'number' }],
+  }] } };
+  fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'definitions.json'), JSON.stringify(doc));
+  try {
+    const opened = await manager.openGraph('definitions.json', logger);
+    assert.equal(opened.status, 'stopped', opened.error);
+    assert.equal((await manager.controlGraph('definitions.json', 'start', logger)).status, 'running');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.ok((await manager.controlGraph('definitions.json', 'status', logger)).iteration > 0);
+    const synced = (await manager.requestSync('definitions.json', logger)).serializedGraph;
+    assert.equal(synced.nodes.find((n) => n.id === 2).type, id);
+    assert.equal(synced.nodes.find((n) => n.id === 2).subgraph, undefined);
+    assert.deepEqual(synced.definitions.subgraphs.map((d) => d.id), [id]);
+    assert.equal(synced.definitions.subgraphs[0].nodes[0].properties.OP, '*');
+  } finally { await manager.unloadAllGraphs(logger); }
+});
+
 test('worker stop/update acknowledgments wait for bound ports to be released', { timeout: 10000 }, async () => {
   const reservation = net.createServer();
   reservation.listen(0, '127.0.0.1');

@@ -120,7 +120,7 @@ test('definitions format: a function keeps its type and loads its copy from the 
 
 test('an older document (func_subgraph_id: a subgraph node id) migrates to that node\'s definition', () => {
     const { graph, sub, src } = withAccumulator();
-    const old = graph.serialize();
+    const old = graph.serialize({ format: 'inline' });
     delete old.definitions;
     old.nodes.push({ id: 99, type: 'graph/function', pos: [0, 400], size: [200, 80], flags: {}, mode: 0,
         inputs: [{ name: 'x', type: 'number', link: null }], outputs: [{ name: 'total', type: 'number', links: null }],

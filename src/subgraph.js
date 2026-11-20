@@ -316,6 +316,23 @@ export class Subgraph {
         this.removeOutput(slot);
     }
 
+    /**
+     * Instance fields this runtime does not model (e.g. ComfyUI's widgets_values of promoted
+     * widgets) are kept and written back.
+     */
+    onConfigure(info) {
+        this.kept_fields = {};
+        for (const key of Object.keys(info ?? {})) {
+            if (!Subgraph.MODELLED_FIELDS.includes(key)) this.kept_fields[key] = LiteGraph.cloneObject(info[key]);
+        }
+    }
+
+    onSerialize(data) {
+        for (const [key, value] of Object.entries(this.kept_fields ?? {})) {
+            if (!(key in data)) data[key] = LiteGraph.cloneObject(value);
+        }
+    }
+
     // --- definitions (see subgraphdefs.js and LGraph.subgraphs) ---
 
     /** the definition this node uses, from the root graph's registry */
@@ -438,7 +455,7 @@ export class Subgraph {
             if (isInput) this.disconnectInput(j); else this.disconnectOutput(j);
         }
         const typeOf = (slot) => (typeof slot.litegraph_type === "number" ? slot.litegraph_type
-            : (slot.type === "event" ? LiteGraph.EVENT : (slot.type === "*" ? "" : slot.type)));
+            : (slot.type === "event" ? LiteGraph.EVENT : slot.type));
         const next = plan.map(([j, slot]) => {
             const kept = j >= 0 ? list[j] : (isInput ? { link: null } : { links: null });
             if (slot) {
@@ -781,6 +798,10 @@ export class Subgraph {
     }
 
     static title_color = "#334";
+
+    /** node fields the core serializer writes; other stored fields are kept (kept_fields) */
+    static MODELLED_FIELDS = ["id", "type", "pos", "size", "flags", "order", "mode", "inputs", "outputs",
+        "properties", "title", "color", "bgcolor", "boxcolor", "shape", "subgraph"];
 }
 
 
@@ -1173,6 +1194,7 @@ export class NodeFunction extends Subgraph {
     }
 
     onConfigure(info) {
+        Subgraph.prototype.onConfigure.call(this, info);
         // an older document: the definition of the subgraph node it pointed at
         const host = info?.properties?.func_subgraph_id;
         if (host !== undefined && host !== null && !info.properties.subgraph_id) this._migrate_host = host;
