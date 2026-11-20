@@ -28,7 +28,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
-| 3 | Subgraph v2 and components | **In progress**: [plan](2026-11-20-wave3-subgraph-system.md); **3a done** on `LG/wave3_subgraphs` ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md)) except the ComfyUI schema probe and the default flip; 3b next |
+| 3 | Subgraph v2 and components | **In progress**: [plan](2026-11-20-wave3-subgraph-system.md); **3a done** on `LG/wave3_subgraphs` ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [schema probe](../executions/2026-11-20-wave3a-schema-probe.md)): definitions are the default document form; ADR 0001 accepted; 3b next |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
 
@@ -112,7 +112,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 
 ## Wave 3: subgraph v2 and components (in progress)
 
-ADR 0001 (D2): option B chosen 2026-11-20; it is accepted when 3a meets its criteria. Plan: [Wave 3: subgraph system](2026-11-20-wave3-subgraph-system.md) (accepted; decisions W3-1–W3-6 taken).
+ADR 0001 (D2): option B, accepted 2026-11-20 after 3a. Plan: [Wave 3: subgraph system](2026-11-20-wave3-subgraph-system.md) (accepted; decisions W3-1–W3-6 taken).
 
 - Definitions (`definitions.subgraphs`), virtual IO nodes (`-10`/`-20`) and stable slot ids.
 - Promoted widgets with host-owned values; host-slot rebinding by id, then signature, then name.
@@ -148,7 +148,7 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | # | Question | Recommendation |
 |---|---|---|
 | D1 | Should the runner also deny host-reading `sys/*` nodes, `mysql/*`, network servers and outbound request nodes ([review finding 3](../audits/2026-11-19-wave0-pr5-review.md))? | **Decided (2026-11-19, [PR #6](https://github.com/atlasan/litegraph.js/pull/6) + [PR #7](https://github.com/atlasan/litegraph.js/pull/7)):** all of them are denied by default, grouped in families (`@commands`, `@file-write`, `@host-read`, `@servers`, `@outbound`, `@databases`, `@remote-code`) and re-allowed with `RUNNER_ALLOW_TYPES` (types, prefixes or `@family`). Principle: safe by default, with each restriction liftable by a named setting that its refusal message names. |
-| D2 | When should [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | **Decided 2026-11-20: option B**, with the litegraph runtime kept (see the [Wave 3 plan](2026-11-20-wave3-subgraph-system.md)); ADR accepted when 3a meets its criteria |
+| D2 | When should [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | **Decided 2026-11-20: option B**, with the litegraph runtime kept (see the [Wave 3 plan](2026-11-20-wave3-subgraph-system.md)); ADR **accepted** after the 3a schema probe |
 | D3 | Porting style for SA modules | Adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
 | D4 | Node metadata direction | Hybrid (`static def` today); add `defineNodeType` later |
 | D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
