@@ -22116,22 +22116,31 @@ function normalizeDefinition(definition) {
             type: slot?.type ?? "*",
         }));
     }
-    for (const [key, id] of [
-            ["inputNode", IO_INPUT_NODE],
-            ["outputNode", IO_OUTPUT_NODE]
+    for (const [key, id, fallback] of [
+            ["inputNode", IO_INPUT_NODE, [-200, 0, 120, 60]],
+            ["outputNode", IO_OUTPUT_NODE, [600, 0, 120, 60]]
         ]) {
         const ioNode = isObject(out[key]) ? out[key] : {};
         const bounding = Array.isArray(ioNode.bounding) && ioNode.bounding.length === 4 ? ioNode.bounding :
             Array.isArray(ioNode.pos) ? [ioNode.pos[0], ioNode.pos[1], ioNode.size?.[0] ?? 140, ioNode.size?.[1] ?? 26] :
-            undefined;
+            fallback;
         out[key] = {
             ...ioNode,
             id,
-            ...(bounding ? {
-                bounding
-            } : {})
+            bounding
         };
     }
+    // linkIds the writer left out are taken from the -10 / -20 links
+    const links = out.links.filter(Boolean).map(linkObject);
+    out.inputs.forEach((slot, i) => {
+        if (!Array.isArray(slot.linkIds) || !slot.linkIds.length) slot.linkIds = links.filter((l) => l.origin_id === IO_INPUT_NODE && l.origin_slot === i).map((l) => l.id);
+    });
+    out.outputs.forEach((slot, j) => {
+        if (!Array.isArray(slot.linkIds) || !slot.linkIds.length) slot.linkIds = links.filter((l) => l.target_id === IO_OUTPUT_NODE && l.target_slot === j).map((l) => l.id);
+    });
+    out.version ??= 1;
+    if (typeof out.name !== "string" || !out.name) out.name = "Subgraph";
+    if (!Array.isArray(out.widgets)) out.widgets = [];
     return out;
 }
 
