@@ -7968,8 +7968,7 @@ export class LGraphCanvas {
                     skip_action = true;
                     if (!block_drag_node) {
                         if (this.allow_dragnodes) {
-                            this.graph.beforeChange();
-                            this.node_dragged = node;
+                            this._dragNodesGesture(node);
                         }
                         if (!this.selected_nodes[node.id]) {
                             this.processNodeSelected(node, e);
@@ -8131,6 +8130,9 @@ export class LGraphCanvas {
                                 }
                             }
                         }
+
+                        // a link drag started on a slot is a pointer gesture
+                        if (this.linkConnector.isConnecting) this._linkDragGesture();
                     } // not resizing
                 }
 
@@ -8202,12 +8204,14 @@ export class LGraphCanvas {
                     }
 
                     if (!block_drag_node) {
+                        // a press on a selected node keeps the selection, so a drag moves all of it;
+                        // a click (no drag) then applies the usual selection change
+                        const keepSelection = this.allow_dragnodes && node.is_selected;
                         if (this.allow_dragnodes) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "started dragging", node);
-                            this.graph.beforeChange();
-                            this.node_dragged = node;
+                            this._dragNodesGesture(node, keepSelection ? e : null);
                         }
-                        this.processNodeSelected(node, e);
+                        if (!keepSelection) this.processNodeSelected(node, e);
                     } else {
                         /**
                          * Don't call the function if the block is already selected.
@@ -8283,11 +8287,7 @@ export class LGraphCanvas {
                         }
 
                         var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
-                        if (dist * this.ds.scale < this.options.groups_triangle_handler_size) {
-                            this.selected_group_resizing = true;
-                        } else {
-                            this.selected_group.recomputeInsideNodes();
-                        }
+                        this._dragGroupGesture(this.selected_group, dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15));
                     }
 
                     if (is_double_click && !this.read_only && this.allow_searchbox) {
@@ -8860,40 +8860,8 @@ export class LGraphCanvas {
                 }
                 this.dragging_rectangle = null;
             } else if (this.connecting_node) {
-                // dropping a dragged link (see LinkConnector)
-                this.dirty_canvas = true;
-                this.dirty_bgcanvas = true;
-
-                node = this.graph.getNodeOnPos(
-                    e.canvasX,
-                    e.canvasY,
-                    this.visible_nodes,
-                );
-
-                if (node) {
-                    // slot below the pointer, or -1 to pick the first compatible one
-                    const slot = this.connecting_output ?
-                        this.isOverNodeInput(node, e.canvasX, e.canvasY) :
-                        this.isOverNodeOutput(node, e.canvasX, e.canvasY);
-                    LiteGraph.log_debug("lgraphcanvas", "processMouseUp", "drop link on node", node, slot);
-                    this.linkConnector.dropOnNode(node, slot);
-                } else {
-                    const dropped = this.linkConnector.dropOnEmpty();
-                    const dropEvent = dropped && this._emit("link-dropped-on-empty", {
-                        ...dropped,
-                        canvasX: e.canvasX,
-                        canvasY: e.canvasY,
-                        event: e
-                    }, {
-                        cancelable: true
-                    });
-                    // add menu when releasing link in empty space (unless a listener handled it)
-                    if (dropped && !dropEvent?.defaultPrevented && LiteGraph.release_link_on_empty_shows_menu) {
-                        this.showLinkReleaseAction(e.shiftKey ? "search-box" : "context-menu", dropped, e);
-                    }
-                }
-                this.linkConnector.reset();
-                this.clearSlotHighlights();
+                // dropping a dragged link that was not started as a pointer gesture
+                this._dropLink(e);
             } else if (this.resizing_node) { // not dragging connection
                 this.dirty_canvas = true;
                 this.dirty_bgcanvas = true;
@@ -8951,7 +8919,7 @@ export class LGraphCanvas {
                 this.dirty_canvas = true;
                 this.dragging_canvas = false;
 
-                if (this.node_over) {
+                if (this.node_over && !gesture.handled) {
                     // TAG callback node event entrypoint
                     this.node_over.processCallbackHandlers("onMouseUp", {
                         def_cb: this.node_over.onMouseUp
@@ -9989,9 +9957,202 @@ export class LGraphCanvas {
         this.pointer.clearHandlers();
         this.clearSlotHighlights();
         if (start() === false) return false;
+        this._linkDragGesture();
         this.dirty_canvas = true;
         this.dirty_bgcanvas = true;
         return true;
+    }
+
+    /**
+     * Pointer gesture for the link being dragged on this.linkConnector: moving highlights the slot it
+     * would connect to, releasing drops it (see _dropLink). A press released without a drag cancels
+     * it, so moved links go back.
+     */
+    _linkDragGesture() {
+        const pointer = this.pointer;
+        pointer.onDrag = (e) => {
+            const node = this.graph?.getNodeOnPos(e.canvasX, e.canvasY, this.visible_nodes);
+            if (node) this._updateLinkDragHighlight(node, e.canvasX, e.canvasY);
+            else this.clearSlotHighlights();
+            this.dirty_canvas = true;
+        };
+        pointer.onDragEnd = (e) => this._dropLink(e);
+        pointer.finally = () => {
+            if (this.linkConnector?.isConnecting) this.linkConnector.cancel();
+            this.clearSlotHighlights();
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+    }
+
+    /**
+     * Drops the dragged link at the pointer: on the slot under it (or the one a drop on the node
+     * body picks), or on empty space (link-dropped-on-empty, then the release action).
+     */
+    _dropLink(e) {
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        const node = this.graph.getNodeOnPos(e.canvasX, e.canvasY, this.visible_nodes);
+        if (node) {
+            // slot below the pointer, or -1 to pick the first compatible one
+            const slot = this.connecting_output ?
+                this.isOverNodeInput(node, e.canvasX, e.canvasY) :
+                this.isOverNodeOutput(node, e.canvasX, e.canvasY);
+            LiteGraph.log_debug("lgraphcanvas", "_dropLink", "drop link on node", node, slot);
+            this.linkConnector.dropOnNode(node, slot);
+        } else {
+            const dropped = this.linkConnector.dropOnEmpty();
+            const dropEvent = dropped && this._emit("link-dropped-on-empty", {
+                ...dropped,
+                canvasX: e.canvasX,
+                canvasY: e.canvasY,
+                event: e
+            }, {
+                cancelable: true
+            });
+            // add menu when releasing link in empty space (unless a listener handled it)
+            if (dropped && !dropEvent?.defaultPrevented && LiteGraph.release_link_on_empty_shows_menu) {
+                this.showLinkReleaseAction(e.shiftKey ? "search-box" : "context-menu", dropped, e);
+            }
+        }
+        this.linkConnector.reset();
+        this.clearSlotHighlights();
+    }
+
+    /**
+     * Pointer gesture for dragging nodes by one of them: every selected, unpinned node moves; the
+     * drag is one undo step. A click on the collapse box (left of the title) collapses the node.
+     * `node_dragged` is set for the whole gesture, for code that reads it.
+     */
+    _dragNodesGesture(node, deferredSelect = null) {
+        const graph = this.graph;
+        const pointer = this.pointer;
+        let transactionOpen = false;
+        let ended = false;
+        let last = [this.graph_mouse[0], this.graph_mouse[1]]; // from the press: no movement is lost to the drift tolerance
+        this.node_dragged = node;
+        pointer.onDragStart = () => {
+            graph.beforeChange();
+            graph.beginTransaction("nodeDrag");
+            transactionOpen = true;
+        };
+        pointer.onDrag = (e) => {
+            const off = [e.canvasX - last[0], e.canvasY - last[1]];
+            last = [e.canvasX, e.canvasY];
+            if (this.live_mode) return;
+            for (const n of Object.values(this.selected_nodes)) {
+                if (n.flags?.pinned) continue; // pinned nodes keep their position
+                n.pos[0] += off[0];
+                n.pos[1] += off[1];
+                if (!n.is_selected) this.processNodeSelected(n, e);
+                n.processCallbackHandlers("onDrag", {
+                    def_cb: n.onDrag
+                }, off);
+            }
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        pointer.onClick = (e) => {
+            if (LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT)) {
+                node.collapse();
+                this.setDirty(true, true);
+            }
+        };
+        pointer.onDragEnd = () => {
+            for (const n of Object.values(this.selected_nodes)) {
+                if (n.flags?.pinned) continue;
+                n.pos[0] = Math.round(n.pos[0]);
+                n.pos[1] = Math.round(n.pos[1]);
+                if (graph.config.align_to_grid || this.align_to_grid) n.alignToGrid();
+            }
+            // TAG callback graphrenderer event entrypoint
+            this.processCallbackHandlers("onNodeMoved", {
+                def_cb: this.onNodeMoved
+            }, node, this.selected_nodes);
+            for (const n of Object.values(this.selected_nodes)) {
+                n.processCallbackHandlers("onMoved", {
+                    def_cb: n.onMoved
+                }, node, this.selected_nodes);
+            }
+            graph.onGraphChanged({
+                action: "nodeDrag",
+                doSave: true
+            });
+            graph.afterChange(node);
+            ended = true;
+        };
+        pointer.finally = (e) => {
+            if (deferredSelect && e && !transactionOpen && graph === this.graph) this.processNodeSelected(node, deferredSelect);
+            if (transactionOpen && !ended) graph.afterChange(node); // cancelled: the hooks stay paired
+            if (transactionOpen && graph.isInTransaction) graph.commitTransaction();
+            if (this.node_dragged === node) this.node_dragged = null;
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+    }
+
+    /**
+     * Pointer gesture for moving a group (with the nodes and groups inside it; Ctrl moves the group
+     * alone) or resizing it from its corner handle. One undo step per drag.
+     */
+    _dragGroupGesture(group, resizing) {
+        const graph = this.graph;
+        const pointer = this.pointer;
+        let transactionOpen = false;
+        let last = [this.graph_mouse[0], this.graph_mouse[1]];
+        this.selected_group = group;
+        this.selected_group_resizing = resizing;
+        if (!resizing) group.recomputeInsideNodes();
+        pointer.onDragStart = () => {
+            graph.beginTransaction(resizing ? "groupResize" : "groupMove");
+            transactionOpen = true;
+        };
+        pointer.onDrag = (e) => {
+            if (resizing) {
+                group.size = [e.canvasX - group.pos[0], e.canvasY - group.pos[1]];
+            } else {
+                const dx = e.canvasX - last[0];
+                const dy = e.canvasY - last[1];
+                group.move(dx, dy, e.ctrlKey);
+                if (dx || dy) this.processCallbackHandlers("onGroupMoving", {
+                    def_cb: this.onGroupMoving
+                }, group, dx, dy);
+            }
+            last = [e.canvasX, e.canvasY];
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        pointer.onDragEnd = (e) => {
+            group.move(Math.round(group.pos[0]) - group.pos[0], Math.round(group.pos[1]) - group.pos[1], e?.ctrlKey);
+            group.pos[0] = Math.round(group.pos[0]);
+            group.pos[1] = Math.round(group.pos[1]);
+            group.recomputeInsideNodes();
+            if (resizing) {
+                this.processCallbackHandlers("onGroupResized", {
+                    def_cb: this.onGroupResized
+                }, group);
+                graph.onGraphChanged({
+                    action: "groupResize",
+                    doSave: true
+                });
+            } else {
+                this.processCallbackHandlers("onGroupMoved", {
+                    def_cb: this.onGroupMoved
+                }, group);
+                graph.onGraphChanged({
+                    action: "groupMove",
+                    doSave: true
+                });
+            }
+            graph.afterChange();
+        };
+        pointer.finally = () => {
+            if (transactionOpen && graph.isInTransaction) graph.commitTransaction();
+            if (this.selected_group === group) this.selected_group = null;
+            this.selected_group_resizing = false;
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
     }
 
     /** Pointer gesture on a link's center marker: a click opens the link menu, a drag moves the link's target end. */
