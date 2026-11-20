@@ -1,6 +1,6 @@
 # Wave 4: ecosystem and workspace
 
-> **Date** 2026-11-20 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `b52d6e7`
+> **Date** 2026-11-20 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `b52d6e7`
 
 **Outcome:** litegraph becomes a workspace that third-party packs can target and that users can trust with their work.
 - **Packs:** node packs declare themselves with a manifest. Documents remember where each node came from, a missing type gives an actionable report, and renamed or deprecated types are replaced through mappings written as data.
@@ -238,8 +238,15 @@ Corrections made while building; the [4a execution record](../executions/2026-11
 - **A `layered` engine** without dependencies was added, so layout works offline and the refusal for an unloadable dagre names a way out.
 - **Drop target:** the canvas itself accepts `LGraphCanvas.NODE_DRAG_MIME` drops, so any host's palette can drag nodes in, not only the Editor's.
 
+## Implementation notes (4e)
+
+- **One watch node** keeps all three behaviours as displays of `basic/watch` instead of dropping two of them.
+- **Network names:** `network/server/*` for servers, `network/<protocol>` for clients, `sys/processInfo`. Old runner settings keep working through `nodePolicy.RENAMED_TYPES`; an old prefix such as `nodejs/network/` now covers every `network/server/*` type.
+- **jQuery:** the file was removed rather than folded, since it was never built and `html/*` covers its selector, CSS and events; only `jquery/select` has a mapping.
+
 ## History
 
+- 2026-11-21: 4e done: steps 17–18 ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)); Wave 4 complete.
 - 2026-11-20: 4d done: steps 15–16 ([record](../executions/2026-11-20-wave4d-layout-palette.md)).
 - 2026-11-20: 4c done: steps 11–14 ([record](../executions/2026-11-20-wave4c-links-view.md)).
 - 2026-11-20: 4b done: steps 6–10 ([record](../executions/2026-11-20-wave4b-workspace.md)).

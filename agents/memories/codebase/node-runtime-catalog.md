@@ -10,7 +10,7 @@ This is a family-level maintenance map, not a claim that every node has been exe
 
 In this Node 22 environment, main registers 248 types and the Node entry 266. The browser tester registers 256 standard types because it loads gl-matrix before the bundle. Eight Math3D registrations are conditional on `glMatrix`; some other Math3D constructors also require matrix/vector globals. Counts depend on initialization context and are not coverage totals or a stable API contract.
 
-`src/nodes/threejs.js` and `src/nodes/jquery.js` declare library requirements but are not in the standard build lists. Source-file existence does not establish packaged availability.
+`src/nodes/threejs.js` declares library requirements but is not in the standard build lists (`jquery.js` was removed in Wave 4e; `jquery/select` maps to `html/dom_selector`). Source-file existence does not establish packaged availability.
 
 ## Standard catalog
 
@@ -25,7 +25,7 @@ In this Node 22 environment, main registers 248 types and the Node entry 266. Th
 | `midi/*` ([midi](../../../src/nodes/midi.js)) | I/O requires Web MIDI/devices; file/player paths have parser/synth dependencies. Pure event transforms have narrower requirements. | Registration is not a device or playback test. |
 | `network/*` ([network](../../../src/nodes/network.js), [Socket.IO](../../../src/nodes/libraries/socketio.js)) | WebSocket, XMLHttpRequest/fetch, WebRTC, Socket.IO and endpoints; host API availability differs. | Named server-side loopback paths below are covered; external services and browser WebRTC remain unverified. |
 | `html/*` ([html](../../../src/nodes/html.js)) | DOM; overlay nodes also need an attached graph canvas. | HTML/JSON overlay disposal, reinsertion, visibility and scaling have fixtures/browser evidence. Other DOM actions need node-specific checks. |
-| `objects/*`, `libraries/*`, `watch/*`, `litegraph/*` ([objects](../../../src/nodes/objects.js), [libraries](../../../src/nodes/libraries.js), [watch](../../../src/nodes/watch.js), [introspection](../../../src/nodes/litegraph_nodes.js)) | Supplied objects, namespaces, host graph/editor state and dynamic libraries; some paths invoke arbitrary callbacks or manipulate DOM. | Library readiness has tests. Arbitrary supplied objects/modules are not covered. |
+| `objects/*`, `libraries/*`, `litegraph/*`, and the `tree` display of `basic/watch` ([objects](../../../src/nodes/objects.js), [libraries](../../../src/nodes/libraries.js), [watch](../../../src/nodes/watch.js), [introspection](../../../src/nodes/litegraph_nodes.js)) | Supplied objects, namespaces, host graph/editor state and dynamic libraries; some paths invoke arbitrary callbacks or manipulate DOM. | Library readiness has tests. Arbitrary supplied objects/modules are not covered. |
 
 ## Node-only additions
 
@@ -40,10 +40,10 @@ Source: [network nodes](../../../src/nodes/nodejs_only/nodejs_network.js), [proc
 | `sys/fileRead`, `sys/fileWrite`, `sys/fileDelete`, `sys/fileExists`, `sys/fileList` | `fs` | File-read uses a disposable fixture. That does not establish coverage of all mutations. |
 | `sys/log` | `fs`, `chalk` | File/log behavior needs focused fixtures. |
 | `sys/serviceManager`, `sys/serviceList` | Windows: `node-windows`; Linux: `node-linux-systemd` | Platform selection precedes dependency loading; binding follows readiness. Controlled adapters verify ordering/failure without controlling services. `node-linux-systemd` is registered but absent from package dependencies. Unsupported platforms reject readiness; macOS is not a supported systemd adapter target. Live adapter APIs/actions remain unverified. |
-| `server/network/websocketserver` | `ws` | Loopback connections, stop/restart, cleanup and immediate port reuse after worker acknowledgment pass. |
-| `nodejs/network/SocketIO_server` | `socket.io` | Distinct client/server constructor registration covered; broader behavior remains unverified. |
-| `nodejs/network/osc_bridge`, `nodejs/network/OSC_server` | `osc-js`; bridge also declares `ws` | Constructor/BridgePlugin availability covered; OSC traffic remains unverified. |
-| `nodejs/network/UDP_server` | `dgram` | Loopback reception, configured host binding and socket cleanup covered. |
+| `network/server/websocket` (was `server/network/websocketserver`) | `ws` | Loopback connections, stop/restart, cleanup and immediate port reuse after worker acknowledgment pass. |
+| `network/server/socketio` (was `nodejs/network/SocketIO_server`) | `socket.io` | Distinct client/server constructor registration covered; broader behavior remains unverified. |
+| `network/server/osc_bridge`, `network/server/osc` (were `nodejs/network/osc_bridge`, `nodejs/network/OSC_server`) | `osc-js`; bridge also declares `ws` | Constructor/BridgePlugin availability covered; OSC traffic remains unverified. |
+| `network/server/udp` (was `nodejs/network/UDP_server`) | `dgram` | Loopback reception, configured host binding and socket cleanup covered. |
 
 ## Readiness interpretation
 

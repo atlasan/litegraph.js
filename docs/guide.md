@@ -338,6 +338,22 @@ LiteGraph.layout.register("elk", LiteGraph.layout.constructor.elkEngine(new ELK(
 
 **Palette** (`LiteGraph.palette`): `groups({query, favoritesOnly})` (by pack, then category), `list`, `toggleFavorite` (setting `LiteGraph.Palette.Favorites`), `recent()` (`LiteGraph.Palette.Recent`), `preview(type)` and `insert(canvas, type, pos)` (one undo step). A DOM element dragged onto the canvas with the data type `LGraphCanvas.NODE_DRAG_MIME` (the value is a node type) inserts that node where it is dropped. The Editor's "Nodes" button opens a palette panel with search, favourites, recent types, previews on hover, and drag-to-canvas (setting `LiteGraph.Editor.Palette`).
 
+## Renamed node types
+
+The catalog cleanup (0.18) renamed some types. Documents with the old names load as the new ones (automatic replacement mappings, setting `LiteGraph.Packs.AutoReplace`), and runner settings still accept the old names.
+
+| Old | New |
+|---|---|
+| `basic/watch_advanced` | `basic/watch` with `display: "text"` |
+| `watch/value` | `basic/watch` with `display: "tree"` |
+| `server/network/websocketserver` | `network/server/websocket` |
+| `nodejs/network/SocketIO_server`, `…/OSC_server`, `…/UDP_server`, `…/osc_bridge` | `network/server/socketio`, `…/osc`, `…/udp`, `…/osc_bridge` |
+| `network/SocketIO` | `network/socketio` |
+| `server/process/NodeProcessInfo` | `sys/processInfo` |
+| `jquery/*` (never built; the file was removed) | `jquery/select` is offered as `html/dom_selector` |
+
+Converting nodes to a subgraph keeps reroutes: points inside the selection move into the subgraph, the others stay on the outside links; unpacking joins them again.
+
 ## Packs and missing nodes
 
 A pack is a manifest (plain JSON) for a group of node types. The code is whatever you already imported; node types registered inside `setup` belong to the pack.
