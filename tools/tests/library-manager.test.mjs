@@ -104,7 +104,29 @@ test('npm install specs are validated and never reach a shell', async () => {
     for (const spec of bad) assert.equal(LibraryManager.isSafePackageSpec(spec), false, spec);
     const manager = new LibraryManager();
     manager.registerLibrary({ key: 'evil', server: { npm: 'ws; touch /tmp/pwned' } });
-    await assert.rejects(manager.npmInstall('evil'), /unsafe package spec/);
+    await assert.rejects(manager.npmInstall('evil'), /unsafe package spec.*allowAnyPackageSpec/);
+});
+
+test('allowAnyPackageSpec opts in to git/URL/path specs but never to flags or shell syntax', async () => {
+    for (const spec of ['git+https://x/y.git', 'https://x/y.tgz', '../local', 'pkg@1 || 2'.replace(/ /g, '')]) {
+        assert.equal(LibraryManager.isPassableArgument(spec), true, spec);
+    }
+    for (const spec of ['--registry=http://evil', '-g', 'a b', 'x\ny', '']) {
+        assert.equal(LibraryManager.isPassableArgument(spec), false, spec);
+    }
+    assert.equal(LibraryManager.isPassableArgument('pkg@^1 & calc', true), false, 'cmd.exe metacharacters');
+    assert.equal(LibraryManager.isPassableArgument('git+https://x/y.git', true), true);
+
+    const manager = new LibraryManager();
+    await manager.ready;
+    manager.registerLibrary({ key: 'git', server: { npm: 'git+https://example.invalid/y.git' } });
+    manager.registerLibrary({ key: 'flag', server: { npm: '--registry=http://evil' } });
+    await assert.rejects(manager.npmInstall('git'), /unsafe package spec/);
+    manager.allowAnyPackageSpec = true;
+    await assert.rejects(manager.npmInstall('flag'), /flags and shell metacharacters are always refused/);
+    // a stand-in "npm" that prints its arguments: the spec arrives as one argument, untouched
+    const echo = [process.execPath, '-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))'];
+    assert.deepEqual(JSON.parse(await manager.npmInstall('git', echo)), ['git+https://example.invalid/y.git']);
 });
 
 test('remote server code is refused unless explicitly allowed', async () => {
