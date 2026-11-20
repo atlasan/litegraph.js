@@ -2,6 +2,8 @@ import { LiteGraph } from "../litegraph.js";
 
 /**
  * View commands: the minimap and the built-in link styles, also in the canvas menu.
+ * - `litegraph.layout.auto`: arranges the selection (two or more nodes) or every node with
+ *   graph.autoLayout, as one undo step.
  * - `litegraph.canvas.toggleMinimap` (Alt+M): shows or hides the minimap and remembers it in the
  *   setting `LiteGraph.Canvas.Minimap`, so new canvases follow it.
  * - `litegraph.links.spotlight`, `litegraph.links.dimByType`, `litegraph.links.labels`,
@@ -46,6 +48,25 @@ export const viewToolsExtension = {
                 return shown;
             },
         },
+        {
+            id: "litegraph.layout.auto",
+            label: (ctx) => ((ctx.selectedNodes?.length ?? 0) > 1 ? "Arrange selected nodes" : "Arrange all nodes"),
+            category: "view",
+            when: (ctx) => !!ctx.graph && ctx.graph._nodes.length > 1 && !ctx.canvas?.read_only,
+            /** one undo step; the engine is ctx.engine or the setting LiteGraph.Layout.Engine */
+            async run(ctx) {
+                const nodes = (ctx.selectedNodes?.length ?? 0) > 1 ? ctx.selectedNodes : undefined;
+                try {
+                    const result = await ctx.graph.autoLayout({ nodes, engine: ctx.engine });
+                    viewRedraw(ctx);
+                    return result;
+                } catch (error) {
+                    LiteGraph.log_error?.("layout", error?.message ?? error);
+                    console.error?.(error);
+                    return { error: error?.message ?? String(error) };
+                }
+            },
+        },
         ...VIEW_STYLE_COMMANDS.map(([style, id, label]) => ({
             id,
             label: () => `${isLinkStyleActive(style) ? "✓ " : ""}${label}`,
@@ -61,6 +82,7 @@ export const viewToolsExtension = {
     setup(ctx) {
         ctx.menus.register("canvas", () => [
             null,
+            { command: "litegraph.layout.auto" },
             { command: "litegraph.canvas.toggleMinimap" },
             ...VIEW_STYLE_COMMANDS.map(([, id]) => ({ command: id })),
         ]);

@@ -2,12 +2,15 @@
 export * from './litegraph.full.cjs';
 import { LGraph, LGraphNode, LGraphCanvas, ExtensionDefinition } from './litegraph.cjs';
 export declare class Editor {
-    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean; skip_autosave?: boolean; draft_storage?: DraftStorage });
+    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean; skip_autosave?: boolean; draft_storage?: DraftStorage; skip_palette?: boolean });
     autosave?: DraftAutosave;
     setupModifiedMarker(): void;
     setupAutosave(storage?: DraftStorage): void;
     offerDraftRestore(draft: Draft): HTMLDivElement;
     restoreDraft(draft: Draft): void;
+    palette_panel?: NodePalettePanel | null;
+    setupPalette(): void;
+    togglePalette(open?: boolean): boolean;
     root: HTMLDivElement;
     canvas: HTMLCanvasElement;
     graph: LGraph;
@@ -23,6 +26,16 @@ export declare class Editor {
 }
 export interface DraftStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
 export interface Draft { time: number; id: string; revision: number; doc: { nodes: object[]; [key: string]: unknown } }
+/** The Editor's node palette panel (drag to the canvas, favourites, recent, preview). */
+export declare class NodePalettePanel {
+    constructor(graphcanvas: LGraphCanvas, container: HTMLElement);
+    root: HTMLDivElement;
+    query: string;
+    favoritesOnly: boolean;
+    render(): void;
+    showPreview(type: string, anchor: HTMLElement): void;
+    dispose(): void;
+}
 /** Draft autosave: the modified document is written after each change (debounced); markSaved removes it. */
 export declare class DraftAutosave {
     static KEY: string;
