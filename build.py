@@ -69,6 +69,7 @@ lib_js_files = [
     "./src/lgraphgroup.js",
     "./src/lgraphnode.js",
     "./src/llink.js",
+    "./src/subgraphdefs.js",
     "./src/subgraph.js",
     "./src/librarymanager.js",
     "./src/widgets.js",
@@ -127,6 +128,7 @@ lib_extensions_files = [
     "./src/extensions/keyboard_helper.js",
     "./src/extensions/renamer.js",
     "./src/extensions/quick_connect.js",
+    "./src/extensions/subgraph_tools.js",
     "./src/extensions/comfy_interop.js",
 ]
 

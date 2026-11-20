@@ -4,6 +4,7 @@ import { LGraphNode } from "./lgraphnode.js";
 import { LGraphGroup } from "./lgraphgroup.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { Subgraph, GraphInput, GraphOutput, NodeFunction } from "./subgraph.js";
+import { SubgraphDefs } from "./subgraphdefs.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CallbackHandler } from "./callbackhandler.js";
@@ -228,6 +229,9 @@ export class LiteGraphClass {
     middle_click_slot_add_default_node = false; // [true!] allows to create and connect a ndoe clicking with the third button (wheel)
 
     keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
+    subgraph_format = "definitions"; // root serialize: "definitions" (ComfyUI form, instances reference definitions.subgraphs) or "inline" (instances keep their inner graph, for older readers)
+    subgraph_max_depth = 32; // nesting limit for subgraph definitions (load) and calls
+    subgraph_components = new Map(); // registerSubgraphType: type -> {type, id, revision, definitions}
     snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
     two_fingers_opens_menu = false; // [true!] using pointer event isPrimary, when is not simulate right click
@@ -380,6 +384,29 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers a subgraph definition as a node type (a component): it appears in search and menus
+     * like any node. Inserting one gives the document the definition; instances of it link to it.
+     * Documents save them as plain subgraph instances (properties.component = {type, revision}), so
+     * they load without the registration. Registering a higher revision offers "update" on
+     * instances made from an older one.
+     * @param {string} type - e.g. "my/blur"
+     * @param {object} definition - a subgraph definition (ComfyUI shape), with an id
+     * @param {{revision?: number, title?: string, description?: string, category?: string, source?: string, definitions?: object[]}} [options]
+     *   definitions: nested definitions it uses
+     * @returns {{type: string, id: string, revision: number, definitions: Map<string, object>}}
+     */
+    registerSubgraphType(type, definition, options = {}) {
+        if (typeof type !== "string" || !type) throw new TypeError("registerSubgraphType: type must be a non-empty string");
+        if (typeof definition?.id !== "string" || !definition.id) throw new TypeError(`registerSubgraphType ${type}: the definition needs an id`);
+        const definitions = SubgraphDefs.collectDefinitions({ definitions: { subgraphs: [definition, ...(options.definitions ?? [])] } });
+        if (SubgraphDefs.findCycles(definitions).size) throw new Error(`registerSubgraphType ${type}: the definition contains itself`);
+        const entry = { type, id: definition.id, revision: Number(options.revision ?? definition.revision ?? 0), definitions };
+        this.subgraph_components.set(type, entry);
+        this.registerNodeType(type, Subgraph.componentClass(entry, options));
+        return entry;
+    }
+
+    /**
      * Lists node definitions.
      * @param {{category?: string, capability?: string, includeDeprecated?: boolean, includeHidden?: boolean, supportedOnly?: boolean}} [filter]
      *   category matches the category and its subcategories; supportedOnly drops types this runtime cannot run
@@ -521,6 +548,7 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
             this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
@@ -529,6 +557,9 @@ export class LiteGraphClass {
                 return null;
             });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? { text: `#${node.id}` } : null);
+            this.settings.define({ id: "LiteGraph.Subgraph.UpdateBadge", name: "Show an update badge on components with a newer registered revision", default: true });
+            this.nodeBadges.register((node) => (this.settings.get("LiteGraph.Subgraph.UpdateBadge") && node.hasSourceUpdate?.())
+                ? { text: "update", fgColor: "#EFE", bgColor: "rgba(40,110,60,0.85)" } : null);
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.SourceBadge")) return null;
                 const source = node.constructor?.source ?? this.getNodeDefinition?.(node.type)?.source;

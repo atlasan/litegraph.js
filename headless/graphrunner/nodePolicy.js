@@ -77,14 +77,22 @@ function isDenied(type, denied) {
 }
 
 function eachNode(data, visitNode, maxDepth = 64) {
+  // subgraph definitions (ComfyUI form): every one is checked, used or not
+  const definitionIds = new Set();
   const visit = (graph, depth, path) => {
     if (depth > maxDepth) throw new Error('Workflow subgraphs are nested too deeply');
     if (!graph || typeof graph !== 'object' || !Array.isArray(graph.nodes)) {
       if (depth === 0) throw new Error('Workflow must contain nodes and links arrays');
       throw new Error(`Subgraph ${path} must contain a nodes array`);
     }
+    for (const definition of graph.definitions?.subgraphs ?? []) {
+      if (definition && typeof definition.id === 'string') definitionIds.add(definition.id);
+    }
+    for (const definition of graph.definitions?.subgraphs ?? []) {
+      visit(definition, depth + 1, `definition ${definition?.id}`);
+    }
     for (const node of graph.nodes) {
-      visitNode(node, path ? `${path}/${node?.id}` : String(node?.id));
+      visitNode(node, path ? `${path}/${node?.id}` : String(node?.id), definitionIds);
       if (node?.subgraph !== undefined && node?.subgraph !== null) visit(node.subgraph, depth + 1, path ? `${path}/${node.id}` : String(node.id));
     }
   };
@@ -103,8 +111,9 @@ export function assertAllowedGraph(data, isRegistered, { env = process.env, maxD
   const denied = deniedTypes(env);
   const extraDenied = listOf(env.RUNNER_DENY_TYPES);
   const refused = new Map(); // type -> node paths
-  eachNode(data, (node, where) => {
+  eachNode(data, (node, where, definitionIds) => {
     const type = node?.type;
+    if (typeof type === 'string' && definitionIds.has(type)) return; // an instance of a checked definition
     if (typeof type !== 'string' || !isRegistered(type)) throw new Error(`Unknown node type: ${type} (node ${where})`);
     if (isDenied(type, denied)) refused.set(type, [...(refused.get(type) ?? []), where]);
   }, maxDepth);

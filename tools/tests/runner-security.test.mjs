@@ -54,6 +54,25 @@ test('runner node policy refuses dangerous types at any subgraph depth', () => {
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SCRIPTS: '1' }), true, 'scripts alone');
 });
 
+test('runner node policy checks every subgraph definition, used or not', () => {
+  const graph = (nodes) => ({ nodes, links: [] });
+  const known = (type) => !type.startsWith('nope/');
+  const def = (id, nodes) => ({ id, nodes, links: [], inputs: [], outputs: [] });
+  // an instance whose type is a definition id loads; its definition is checked
+  const clean = { ...graph([{ id: 1, type: 'aaaa-1' }]), definitions: { subgraphs: [def('aaaa-1', [{ id: 2, type: 'basic/const' }])] } };
+  assert.doesNotThrow(() => assertAllowedGraph(clean, known, { env: {} }));
+  // a denied node in an unused definition is refused
+  const unused = { ...graph([{ id: 1, type: 'basic/const' }]), definitions: { subgraphs: [def('bbbb-2', [{ id: 3, type: 'sys/runCommand' }])] } };
+  assert.throws(() => assertAllowedGraph(unused, known, { env: {} }), /sys\/runCommand \(node definition bbbb-2\/3\)/);
+  // behind a function node and a nested definition
+  const nested = { ...graph([{ id: 1, type: 'graph/function', properties: { subgraph_id: 'cccc-3' } }]), definitions: { subgraphs: [
+    def('cccc-3', [{ id: 4, type: 'dddd-4' }]),
+    { ...def('dddd-4', [{ id: 5, type: 'basic/const' }]), definitions: { subgraphs: [def('eeee-5', [{ id: 6, type: 'sys/fileRead' }])] } },
+  ] } };
+  assert.throws(() => assertAllowedGraph(nested, known, { env: {} }), /sys\/fileRead/);
+  assert.doesNotThrow(() => assertAllowedGraph(nested, known, { env: { RUNNER_ALLOW_SYS: '1' } }));
+});
+
 test('every refusal names the setting that allows it', () => {
   const known = () => true;
   const graph = (nodes) => ({ nodes, links: [] });

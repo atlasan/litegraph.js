@@ -458,6 +458,17 @@ export class LGraphNode {
      * @method getTitle
      */
 
+    /**
+     * The node's address from the root graph: node ids joined by ":", outermost first
+     * (e.g. "3:7:2" is node 2 inside subgraph node 7 inside subgraph node 3).
+     * @returns {string}
+     */
+    getPath() {
+        const ids = [];
+        for (let node = this; node; node = node.graph?._subgraph_node) ids.unshift(node.id);
+        return ids.join(":");
+    }
+
     getTitle() {
         return this.title ?? this.constructor.title;
     }
@@ -599,11 +610,6 @@ export class LGraphNode {
 
         let ob_input = this.inputs[slot];
 
-        // hard coded input force returning that value, used in subgraph as functions to drive calling multiple times the same node
-        if(typeof(ob_input.hard_coded_value)!="undefined"){
-            console.debug("HARD_CODED_INPUT", this, ob_input, ob_input.hard_coded_value);
-            return ob_input.hard_coded_value;
-        }
 
         let link_id = ob_input.link;
         let link = this.graph?.links[link_id];
@@ -985,6 +991,10 @@ export class LGraphNode {
         } catch (error) {
             this.exec_version = previousExecution;
             graph.nodes_executedAction[this.id] = previousAction;
+            // the innermost failing node names itself; outer graphs (subgraphs) report it and its path
+            if (error && typeof error === "object" && !error.node) {
+                try { error.node = this; } catch { /* a frozen error keeps its fields */ }
+            }
             throw error;
         } finally {
             // A callback may remove this node or clear its graph.
@@ -1076,7 +1086,6 @@ export class LGraphNode {
             return;
         }
         var output = null;
-        // drive event for subgraph as functions (similarly to hard_coded_value)
         if(slot === null) {
             LiteGraph.log_error("lgraphnode", "triggerSlot","wrong slot",slot);
             return;
@@ -1096,10 +1105,6 @@ export class LGraphNode {
             return;
         }else{
             LiteGraph.log_debug("lgraphNODE", "triggerSlot", output, slot, param);
-        }
-        if(typeof(output.hard_coded_output)!="undefined"){
-            LiteGraph.log_debug("HARD_CODED_OUTPUT", this, output, output.hard_coded_output);
-            output = output.hard_coded_output;
         }
 
         var links = output.links;

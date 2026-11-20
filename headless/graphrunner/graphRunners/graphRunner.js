@@ -24,6 +24,11 @@ async function configure(data) {
   assertAllowedGraph(data, (type) => Object.hasOwn(LiteGraph.registered_node_types, type));
   for (const note of graphPolicyNotes(data)) console.warn(note); // shown in the runner page log
   const candidate = new LGraph();
+  // execution errors name the failing node by its path ("3:7:2" inside subgraphs)
+  candidate.events.on('node-error', (event) => {
+    const { node, path, error } = event.detail;
+    console.error(`Node error at ${path ?? '?'}${node?.type ? ` (${node.type})` : ''}: ${error?.message ?? error}`);
+  });
   try {
     if (candidate.configure(data)) throw new Error('Workflow contains unsupported nodes');
     await candidate.whenReady();

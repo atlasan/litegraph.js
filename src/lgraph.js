@@ -4,6 +4,7 @@ import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
 import { LGraphEventTarget } from "./eventtarget.js";
+import { SubgraphDefs } from "./subgraphdefs.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -117,6 +118,8 @@ export class LGraph {
         this.status = LGraph.STATUS_STOPPED;
 
         this.state = LGraph.createState(); // also resets last_node_id / last_link_id
+        /** subgraph definitions by id (meaningful on the root graph; see rootGraph) */
+        this.subgraphs = new Map();
 
         // drop document fields kept from a previous configure
         for (const key in this._foreign_fields ?? {}) delete this[key];
@@ -233,7 +236,10 @@ export class LGraph {
      * @param {GraphCanvas} graph_canvas
      */
     attachCanvas(graphcanvas) {
-        if ( ! (graphcanvas instanceof LGraphCanvas) ) {
+        // another copy of the library (e.g. the editor page loads both the bundle and src/) still has a canvas
+        const isCanvas = graphcanvas instanceof LGraphCanvas || (LiteGraph.LGraphCanvas && graphcanvas instanceof LiteGraph.LGraphCanvas)
+            || (typeof graphcanvas?.setGraph === "function" && typeof graphcanvas?.draw === "function" && graphcanvas?.ds);
+        if (!isCanvas) {
             throw new Error("attachCanvas expects a LiteGraph.LGraphCanvas instance");
         }
         if (graphcanvas.graph && graphcanvas.graph != this) {
@@ -501,7 +507,9 @@ export class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
-            this._emit("node-error", { error, node: error?.node ?? this.nodes_executing?.at?.(-1) ?? null });
+            // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
+            const failing = typeof error?.node?.getPath === "function" ? error.node : null;
+            this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
@@ -1592,7 +1600,7 @@ export class LGraph {
      * @returns {*} fn's result
      */
     transact(label, fn, options = {}) {
-        const snapshot = options.rollback && !this._transaction ? this.serialize() : null;
+        const snapshot = options.rollback && !this._transaction ? this.serialize({ format: "inline" }) : null;
         this.beginTransaction(label);
         try {
             return fn();
@@ -2027,7 +2035,13 @@ export class LGraph {
      * @method serialize
      * @return {Object} value of the node
      */
-    serialize() {
+    /**
+     * @param {{format?: "inline"|"definitions"}} [options] - subgraph format of a root graph
+     *   (default LiteGraph.subgraph_format). Both write the definition registry to
+     *   definitions.subgraphs; "inline" also keeps each instance's inner graph, "definitions"
+     *   replaces instances by references (ComfyUI form). Nested graphs always serialize inline.
+     */
+    serialize(options = {}) {
         const nodesInfo = this._nodes.map((node) => node.serialize());
         // TODO ensure and remove
         // var nodesInfo = [];
@@ -2080,12 +2094,180 @@ export class LGraph {
         if (this.floating_links?.size || this._floating_links_field) {
             data.floatingLinks = [...this.floating_links.values()].map((floating) => ({ ...floating }));
         }
+        if (!this._subgraph_node) data = this._serializeDefinitions(data, options.format ?? LiteGraph.subgraph_format);
         this.processCallbackHandlers("onSerialize",{
             def_cb: this.onSerialize
         }, data);
         
         LiteGraph.log_verbose("lgraph","serialize",data);
 
+        return data;
+    }
+
+    /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
+    get rootGraph() {
+        let graph = this;
+        while (graph._subgraph_node?.graph) graph = graph._subgraph_node.graph;
+        return graph;
+    }
+
+    /**
+     * Adds the definitions of subgraph instances (at any depth) that the root registry does not
+     * know yet, taken from their current inner graphs.
+     */
+    registerSubgraphDefinitions({ sync = false } = {}) {
+        const root = this.rootGraph;
+        const visit = (graph, depth) => {
+            if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+            for (const node of graph._nodes) {
+                if (!node?.subgraph) continue;
+                const id = node.properties?.subgraph_id;
+                if (typeof id === "string" && id) {
+                    const known = root.subgraphs.has(id);
+                    const edited = known && sync && node._definition_revision !== undefined && node.subgraph.revision !== node._definition_revision;
+                    if (!known || edited) {
+                        const found = new Map();
+                        const definition = SubgraphDefs.definitionOf(node.serialize(), found);
+                        if (edited) definition.revision = (root.subgraphs.get(id).revision ?? 0) + 1;
+                        root.subgraphs.set(id, definition);
+                        for (const [key, nested] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, nested);
+                    }
+                    if (!known || edited || node._definition_revision === undefined) node._definition_revision = node.subgraph.revision;
+                }
+                visit(node.subgraph, depth + 1);
+            }
+        };
+        visit(this, 0);
+    }
+
+    /**
+     * The node at a path from the root graph (see LGraphNode.getPath), or null.
+     * @param {string} path - node ids joined by ":", e.g. "3:7:2"
+     */
+    resolvePath(path) {
+        const parts = String(path ?? "").split(":").filter((part) => part !== "");
+        let graph = this.rootGraph, node = null;
+        for (const [index, part] of parts.entries()) {
+            if (!graph) return null;
+            const id = /^-?\d+$/.test(part) ? Number(part) : part;
+            node = graph.getNodeById(id) ?? null;
+            if (!node) return null;
+            graph = index < parts.length - 1 ? node.subgraph : null;
+        }
+        return node;
+    }
+
+    /**
+     * Inserts a subgraph node for a definition (a blueprint), as one undo step.
+     * @param {object|string} definition - a definition, or the id of one in the root registry
+     * @param {{pos?: number[], linked?: boolean, definitions?: object[]}} [options]
+     *   linked: use that registry entry (instances share it); default: a copy with a new id.
+     *   definitions: nested definitions the definition uses (a copy keeps identical ones shared and
+     *   gives new ids to ones that differ from what this document has)
+     * @returns {object} the subgraph node
+     */
+    insertDefinition(definition, { pos = [0, 0], linked = false, definitions = [] } = {}) {
+        const root = this.rootGraph;
+        const byId = typeof definition === "string";
+        let node = null;
+        this.transact("insertSubgraph", () => {
+            let id;
+            if (linked) {
+                id = byId ? definition : definition?.id;
+                if (!root.subgraphs.has(id)) {
+                    if (byId) throw new Error(`insertDefinition: no definition ${id} in this document`);
+                    const found = SubgraphDefs.collectDefinitions({ definitions: { subgraphs: [definition, ...definitions] } });
+                    for (const [key, value] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, value);
+                }
+            } else {
+                const all = byId ? root.subgraphs : SubgraphDefs.collectDefinitions({ definitions: { subgraphs: [definition, ...definitions] } });
+                const sourceId = byId ? definition : definition?.id;
+                if (!all.has(sourceId)) throw new Error(`insertDefinition: unknown definition ${sourceId}`);
+                id = this._addDefinitionCopy(root, sourceId, all);
+            }
+            node = LiteGraph.createNode("graph/subgraph");
+            node.properties.subgraph_id = id;
+            node.subgraph.id = id;
+            node.pos = [pos[0], pos[1]];
+            this.add(node);
+            node.refreshFromDefinition();
+            node.title = root.subgraphs.get(id)?.name ?? node.title;
+        });
+        return node;
+    }
+
+    /** copies a definition and the nested ones it uses into the registry; returns the copy's id */
+    _addDefinitionCopy(root, sourceId, all) {
+        const used = [];
+        const walk = (id) => {
+            if (used.includes(id) || !all.has(id)) return;
+            used.push(id);
+            for (const next of SubgraphDefs.directDefinitionIds(all.get(id))) walk(next);
+        };
+        walk(sourceId);
+        const remap = new Map();
+        for (const id of used) {
+            const known = root.subgraphs.get(id);
+            const same = known && SubgraphDefs.canonical(known) === SubgraphDefs.canonical(all.get(id));
+            remap.set(id, id === sourceId || (known && !same) ? LiteGraph.uuidv4() : id);
+        }
+        for (const id of used) {
+            const target = remap.get(id);
+            if (root.subgraphs.has(target)) continue; // an identical one is shared
+            const copy = LiteGraph.cloneObject(all.get(id));
+            copy.id = target;
+            delete copy.definitions;
+            for (const node of copy.nodes ?? []) {
+                if (remap.has(node?.type)) node.type = remap.get(node.type);
+                if (node?.properties && remap.has(node.properties.subgraph_id)) node.properties.subgraph_id = remap.get(node.properties.subgraph_id);
+            }
+            root.subgraphs.set(target, copy);
+        }
+        return remap.get(sourceId);
+    }
+
+    /**
+     * Inserts a blueprint: a definition, or a document with definitions.subgraphs (the definition
+     * its first instance uses, else the first one). Always a copy.
+     * @param {object} json
+     * @param {{pos?: number[]}} [options]
+     */
+    insertBlueprint(json, options = {}) {
+        if (json && (Array.isArray(json.inputs) || json.inputNode) && Array.isArray(json.nodes)) {
+            return this.insertDefinition(json, { ...options, linked: false, definitions: json.definitions?.subgraphs ?? [] });
+        }
+        const list = json?.definitions?.subgraphs ?? [];
+        const ids = new Set(list.map((d) => d?.id));
+        const instance = (json?.nodes ?? []).find((n) => ids.has(n?.type) || ids.has(n?.properties?.subgraph_id));
+        const mainId = instance ? (ids.has(instance.type) ? instance.type : instance.properties.subgraph_id) : list[0]?.id;
+        const main = list.find((d) => d?.id === mainId);
+        if (!main) throw new Error("insertBlueprint: no subgraph definition in this document");
+        return this.insertDefinition(main, { ...options, linked: false, definitions: list.filter((d) => d !== main) });
+    }
+
+    /** subgraph and function nodes (at any depth) that use a definition */
+    findSubgraphInstances(id) {
+        const found = [];
+        const visit = (graph, depth) => {
+            if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+            for (const node of graph._nodes) {
+                if (!node?.subgraph) continue;
+                if (node.properties?.subgraph_id === id) found.push(node);
+                visit(node.subgraph, depth + 1);
+            }
+        };
+        visit(this.rootGraph, 0);
+        return found;
+    }
+
+    /** root serialize: the definition registry, and in "definitions" format references for instances */
+    _serializeDefinitions(data, format) {
+        // instances edited without a commit (e.g. by code) bring their edit; siblings refresh only on commit
+        this.registerSubgraphDefinitions({ sync: true });
+        if (format === "definitions") return SubgraphDefs.toDefinitions(data, { definitions: this.subgraphs });
+        if (this.subgraphs.size) {
+            data.definitions = { ...(data.definitions ?? {}), subgraphs: [...this.subgraphs.values()].map((definition) => LiteGraph.cloneObject(definition)) };
+        }
         return data;
     }
 
@@ -2115,6 +2297,23 @@ export class LGraph {
      * @param {Boolean} returns if there was any error parsing
      */
     configure(data, keep_old) {
+        this._configuring = (this._configuring ?? 0) + 1;
+        try {
+            return this._configure(data, keep_old);
+        } finally {
+            this._configuring--;
+        }
+    }
+
+    /** true while this graph, or a graph containing it, is being configured (loading) */
+    get isConfiguring() {
+        for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
+            if (graph._configuring) return true;
+        }
+        return false;
+    }
+
+    _configure(data, keep_old) {
         if (!data) {
             return;
         }
@@ -2125,6 +2324,18 @@ export class LGraph {
 
         if (!keep_old) {
             this.clear();
+        }
+
+        // subgraph definitions: instances that reference one get their inner graph; the root keeps the registry
+        let subgraphErrors = [];
+        if (Array.isArray(data.definitions?.subgraphs)) {
+            const inline = SubgraphDefs.toInline(data);
+            data = inline.doc;
+            subgraphErrors = inline.errors;
+            for (const issue of [...inline.errors, ...inline.warnings]) LiteGraph.log_warn("lgraph", "configure", "subgraph definition", issue);
+            if (!this._subgraph_node) {
+                for (const [id, definition] of inline.definitions) this.subgraphs.set(id, definition);
+            }
         }
 
         var nodes = data.nodes;
@@ -2154,7 +2365,7 @@ export class LGraph {
         // copy all stored fields
         this._foreign_fields = {};
         for (let i in data) {
-            if (["nodes", "groups", "id", "revision", "state", "reroutes", "floatingLinks"].includes(i)) continue; // handled explicitly
+            if (["nodes", "groups", "id", "revision", "state", "reroutes", "floatingLinks", "subgraphs", "rootGraph"].includes(i)) continue; // handled explicitly
             if (!LGraph.serialized_fields.includes(i) && !i.startsWith("_") && !(i in this)) {
                 // not part of this runtime's model (e.g. another editor's document state): keep it for serialize
                 this._foreign_fields[i] = LiteGraph.cloneObject(data[i]);
@@ -2210,6 +2421,8 @@ export class LGraph {
         }
 
         this.updateExecutionOrder();
+        if (!this._subgraph_node) this.registerSubgraphDefinitions();
+        if (subgraphErrors.length) error = true;
 
         this.extra = data.extra ?? {};
         this._configureReroutes(data);
@@ -2337,7 +2550,7 @@ export class LGraph {
             var oHistory = { actionName: opts.action };
             if(opts.doSaveGraph) {
                 // this seems a heavy method, but the alternative is way more complex: every action has to have its contrary
-                oHistory = Object.assign(oHistory, { graphSave: this.serialize() });
+                oHistory = Object.assign(oHistory, { graphSave: this.serialize({ format: "inline" }) });
                 LiteGraph.log_debug("LG_history","onGraphChanged SAVED",oHistory); // debug history
             }
 

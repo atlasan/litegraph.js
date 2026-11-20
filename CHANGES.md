@@ -1,6 +1,61 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 3c, components and blueprints
+
+## Added
+
+* `LiteGraph.registerSubgraphType(type, definition, options)`: subgraph components as node types, with an "update" badge, `updateFromSource` and the command `litegraph.subgraph.updateFromSource` for newer registered revisions.
+* `graph.insertDefinition(definition | id, {pos, linked, definitions})` and `graph.insertBlueprint(json)`; "Insert subgraph" in the canvas menu.
+* 43 subgraph acceptance tests adapted from the MIT Comfy-Org/litegraph.js standalone.
+
+## Fixed
+
+* Loaded subgraph definitions with empty `linkIds` or without `version`, `name`, `widgets` or IO boxes are completed on load.
+
+# Unreleased (0.10.x): Wave 3b, subgraph authoring
+
+## Added
+
+* A clickable subgraph breadcrumb (`closeSubgraphTo`, `getBreadcrumb`, `getBreadcrumbAt`).
+* The `subgraph_tools` extension: `litegraph.subgraph.open/close/closeAll/convert/unpack/makeUnique/removeUnusedDefinitions`.
+* Interface editing: "Add subgraph input/output" from a link release (`exposeSlot`), "Move up/down in the interface" (`moveInterfaceSlot`), and refusal of duplicate interface names.
+* Promoted widgets: `promoteWidget` / `unpromoteWidget` / `isWidgetPromoted` and the matching node menu entries. Values belong to each instance, and ComfyUI `widgets_values` load into them.
+* `node.getPath()`, `graph.resolvePath(path)`, and `path` in `node-error` events.
+
+## Changed
+
+* Leaving a subgraph on the canvas commits it only after an edit.
+
+## Fixed
+
+* `node-error` named no node (`node` was `false`); it now names the innermost failing node, also from inside subgraphs.
+* The subgraph path at the top of the canvas never showed.
+
+# Unreleased (0.10.x): Wave 3a, subgraph definitions
+
+## Added
+
+* Subgraph definitions in the ComfyUI form: `definitions.subgraphs`, interface links through `-10`/`-20`, stable slot ids. `SubgraphDefs` converts documents (pure JSON).
+* `graph.subgraphs` (the definition registry), `graph.rootGraph`, `graph.serialize({format})`, `LiteGraph.subgraph_format` and `LiteGraph.subgraph_max_depth`.
+* Linked subgraph instances: `commitDefinition` (leaving a subgraph on the canvas commits it), `refreshFromDefinition`, `makeUnique` ("Make unique" in the node menu), the setting `LiteGraph.Subgraph.PasteLinked`, and the graph events `subgraph-definition-changed` / `subgraph-forked`.
+* `graph/function` rebuilt: it calls a definition (`call` / `done`), keeps its own state and passes events through. Older documents migrate.
+
+## Changed
+
+* Documents are saved with subgraphs as definitions by default (`LiteGraph.subgraph_format = "definitions"`). Set it to `"inline"` for readers older than this release.
+* Subgraph instances keep stored fields they do not model, such as ComfyUI's `widgets_values`.
+* ComfyUI export writes subgraphs as definitions and maps modes inside them. Documents written by this runtime are no longer detected as ComfyUI workflows.
+* The runner's node policy checks every subgraph definition, used or not.
+
+## Fixed
+
+* Opening a subgraph in `editor_build.html` threw (`attachCanvas` refused the editor's canvas).
+
+## Removed
+
+* `input.hard_coded_value` / `output.hard_coded_output`, only used by the old function node.
+
 # Unreleased (0.10.x): Wave 2b, links and pointer
 
 ## Added

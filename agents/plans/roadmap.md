@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Wave 2 complete
+> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Wave 2 complete and in `master`
 
 This is the single place for the current status of planned work.
 
@@ -17,7 +17,7 @@ This is the single place for the current status of planned work.
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
-| `LG/dev` → `master` | [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1, `agents/` workspace, ideas) was merged into `master` on 2026-11-20 as `35c7e4f` after CI passed; `LG/dev` was fast-forwarded to the same commit. See the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
+| `LG/dev` → `master` | [PR #9](https://github.com/atlasan/litegraph.js/pull/9) (Wave 2) was merged into `master` on 2026-11-20 as `768f176` after CI passed; `LG/dev` was fast-forwarded to the same commit. Earlier: [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1, `agents/` workspace, ideas) as `35c7e4f`, see the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
 
 Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
 
@@ -27,8 +27,8 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 |---|---|---|
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
-| 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev`; not yet in `master`. See the [plan](2026-11-20-wave2-authoring-core.md). |
-| 3 | Subgraph v2 and components | Proposed; needs the ADR 0001 decision |
+| 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
+| 3 | Subgraph v2 and components | **Done**: 3a definitions, function node, interop ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [probe](../executions/2026-11-20-wave3a-schema-probe.md)); 3b authoring ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)); 3c components, blueprints, SA port ([record](../executions/2026-11-20-wave3c-components.md)); merged into `LG/dev`, not yet in `master`. See the [plan](2026-11-20-wave3-subgraph-system.md). |
 | 4 | Ecosystem and workspace features | Proposed |
 | 5 | Repository organization and packaging | Proposed |
 
@@ -110,9 +110,9 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 - RenderLink classes, and split title drawing with icons (H2).
 - Carrying reroutes across a subgraph boundary on conversion and unpack.
 
-## Wave 3: subgraph v2 and components (proposed)
+## Wave 3: subgraph v2 and components (done)
 
-Requires deciding [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) (D2).
+ADR 0001 (D2): option B, accepted 2026-11-20 after 3a. Plan: [Wave 3: subgraph system](2026-11-20-wave3-subgraph-system.md) (accepted; decisions W3-1–W3-6 taken).
 
 - Definitions (`definitions.subgraphs`), virtual IO nodes (`-10`/`-20`) and stable slot ids.
 - Promoted widgets with host-owned values; host-slot rebinding by id, then signature, then name.
@@ -148,7 +148,7 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | # | Question | Recommendation |
 |---|---|---|
 | D1 | Should the runner also deny host-reading `sys/*` nodes, `mysql/*`, network servers and outbound request nodes ([review finding 3](../audits/2026-11-19-wave0-pr5-review.md))? | **Decided (2026-11-19, [PR #6](https://github.com/atlasan/litegraph.js/pull/6) + [PR #7](https://github.com/atlasan/litegraph.js/pull/7)):** all of them are denied by default, grouped in families (`@commands`, `@file-write`, `@host-read`, `@servers`, `@outbound`, `@databases`, `@remote-code`) and re-allowed with `RUNNER_ALLOW_TYPES` (types, prefixes or `@family`). Principle: safe by default, with each restriction liftable by a named setting that its refusal message names. |
-| D2 | When should [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | Decide it after Wave 2 conversion and unpack work on the inline model |
+| D2 | When should [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | **Decided 2026-11-20: option B**, with the litegraph runtime kept (see the [Wave 3 plan](2026-11-20-wave3-subgraph-system.md)); ADR **accepted** after the 3a schema probe |
 | D3 | Porting style for SA modules | Adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
 | D4 | Node metadata direction | Hybrid (`static def` today); add `defineNodeType` later |
 | D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
