@@ -98,6 +98,13 @@ export const subgraphToolsExtension = {
             run(ctx) { return !!single(ctx).makeUnique(); },
         },
         {
+            id: "litegraph.subgraph.updateFromSource",
+            label: "Update component from its registered revision",
+            category: "subgraph",
+            when: (ctx) => !!single(ctx)?.hasSourceUpdate?.(),
+            run(ctx) { return single(ctx).updateFromSource(); },
+        },
+        {
             id: "litegraph.subgraph.removeUnusedDefinitions",
             label: "Remove unused subgraph definitions",
             category: "subgraph",

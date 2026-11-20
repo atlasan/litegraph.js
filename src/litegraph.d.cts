@@ -359,6 +359,10 @@ export interface LiteGraphAPI extends CallbackHost {
     subgraph_format: "inline" | "definitions";
     /** nesting limit for subgraph definitions (load) and calls */
     subgraph_max_depth: number;
+    /** registered components (registerSubgraphType) by node type */
+    subgraph_components: Map<string, SubgraphComponentEntry>;
+    /** registers a subgraph definition as a node type (a component); instances save as plain subgraph instances */
+    registerSubgraphType(type: string, definition: SubgraphDefinition, options?: { revision?: number; title?: string; description?: string; category?: string; source?: string; definitions?: SubgraphDefinition[] }): SubgraphComponentEntry;
     /** a link dragged over a node body highlights, and a drop connects, the slot it would use (default true) */
     snap_link_to_slot: boolean;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
@@ -696,6 +700,10 @@ export declare class LGraph {
     readonly rootGraph: LGraph;
     /** adds the definitions of instances the root registry does not know yet; sync: also take instances edited since their last sync */
     registerSubgraphDefinitions(options?: { sync?: boolean }): void;
+    /** inserts a subgraph node for a definition (or a registry id): a copy with a new id, or linked; one undo step */
+    insertDefinition(definition: SubgraphDefinition | string, options?: { pos?: ArrayLike<number>; linked?: boolean; definitions?: SubgraphDefinition[] }): Subgraph;
+    /** inserts a blueprint (a definition, or a document with definitions.subgraphs) as a copy */
+    insertBlueprint(json: object, options?: { pos?: ArrayLike<number> }): Subgraph;
     /** the node at a path from the root graph ("3:7:2"), or null */
     resolvePath(path: string): LGraphNode | null;
     /** subgraph and function nodes, at any depth, that use a definition */
@@ -2020,6 +2028,12 @@ export declare class Subgraph extends LGraphNode {
     exposeSlot(innerNode: LGraphNode, slotIndex: number, isOutput: boolean, pos?: ArrayLike<number>): LGraphNode | null;
     /** moves an interface slot up (-1) or down (+1); outer links follow */
     moveInterfaceSlot(isInput: boolean, name: string, delta: number): boolean;
+    /** a component instance takes its registered component's newer revision (all linked instances; one undo step) */
+    updateFromSource(): boolean;
+    /** true when the registered component is newer than this instance's */
+    hasSourceUpdate(): boolean;
+    /** the node class of a registered component */
+    static componentClass(entry: SubgraphComponentEntry, meta?: object): typeof Subgraph;
     /** promotes an inner widget: a new interface input feeds it, this node shows it */
     promoteWidget(innerNode: LGraphNode, widgetName: string): boolean;
     unpromoteWidget(innerNode: LGraphNode, widgetName: string): boolean;
@@ -2287,6 +2301,12 @@ export interface NodeSearchQuery {
     filters: { i: string[]; o: string[]; c: string[]; s: string[] };
 }
 /** Node search without a DOM: `add i:number c:math s:core` (see src/nodesearch.js). */
+export interface SubgraphComponentEntry {
+    type: string;
+    id: string;
+    revision: number;
+    definitions: Map<string, SubgraphDefinition>;
+}
 /** a subgraph definition (ComfyUI `definitions.subgraphs[]` entry) */
 export interface SubgraphDefinition {
     id: string;
