@@ -9078,7 +9078,11 @@ export class LGraphCanvas {
         // left button mouse / single finger
         if (e.which == 1 && !this.userInput_isNotPrimary) {
 
-            if (e.ctrlKey) {
+            // Ctrl: a box selection, except on a group's title band, where it moves the group
+            // without its nodes (the group drag reads Ctrl while moving)
+            const ctrlGroup = e.ctrlKey && !node ? this.graph.getGroupOnPos(e.canvasX, e.canvasY) : null;
+            const ctrlOnGroupTitle = ctrlGroup && e.canvasY < ctrlGroup.pos[1] + (ctrlGroup.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+            if (e.ctrlKey && !ctrlOnGroupTitle) {
                 LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "starting box selection");
                 this.dragging_rectangle = new Float32Array(4);
                 this.dragging_rectangle[0] = e.canvasX;
@@ -14871,12 +14875,16 @@ export class LGraphCanvas {
         }
     }
 
-    /** submenu: the document's subgraph definitions, inserted linked or as a copy */
+    /** submenu: a blueprint file, and the document's subgraph definitions (linked or as a copy) */
     static onMenuInsertSubgraph(value, options, event, prev_menu) {
         const canvas = LGraphCanvas.active_canvas;
         const graph = canvas?.graph;
         if (!graph) return;
-        const entries = [];
+        const entries = [{
+            content: "From file…",
+            file: true
+        }];
+        if (graph.rootGraph.subgraphs.size) entries.push(null);
         for (const definition of graph.rootGraph.subgraphs.values()) {
             const name = definition.name ?? "Subgraph";
             entries.push({
@@ -14895,6 +14903,10 @@ export class LGraphCanvas {
             event,
             parentMenu: prev_menu,
             callback: (entry) => {
+                if (entry?.file) {
+                    canvas.pickBlueprintFile(pos);
+                    return;
+                }
                 const node = graph.insertDefinition(entry.id, {
                     pos,
                     linked: entry.linked
@@ -14903,6 +14915,46 @@ export class LGraphCanvas {
                 canvas.setDirty(true, true);
             },
         });
+    }
+
+    /**
+     * Inserts a blueprint (a subgraph definition, or a document with definitions.subgraphs) from a
+     * JSON file as a copy at `pos`; a file input is opened unless a File is given.
+     * @param {number[]} [pos] - graph coordinates
+     * @param {File|Blob} [file]
+     * @returns {Promise<object|null>} the inserted node
+     */
+    async pickBlueprintFile(pos = this.graph_mouse, file = null) {
+        if (!file) {
+            const doc = this.canvas?.ownerDocument ?? globalThis.document;
+            if (!doc) return null;
+            file = await new Promise((resolve) => {
+                const input = doc.createElement("input");
+                input.type = "file";
+                input.accept = ".json,application/json";
+                input.addEventListener("change", () => resolve(input.files?.[0] ?? null), {
+                    once: true
+                });
+                input.click();
+            });
+            if (!file) return null;
+        }
+        let node = null;
+        try {
+            const json = JSON.parse(await file.text());
+            node = this.graph.insertBlueprint(json, {
+                pos: [pos[0], pos[1]]
+            });
+            this.selectNodes([node]);
+            this.setDirty(true, true);
+        } catch (error) {
+            LiteGraph.log_warn("lgraphcanvas", "pickBlueprintFile", `not a subgraph blueprint: ${error.message}`);
+            this._emit?.("blueprint-error", {
+                error,
+                file
+            });
+        }
+        return node;
     }
 
     static onGroupAlign(value, options, event, prev_menu) {
@@ -17993,11 +18045,11 @@ export class LGraphCanvas {
                     content: "Add Group",
                     callback: LGraphCanvas.onGroupAdd
                 },
-                ...(that.graph?.rootGraph?.subgraphs?.size ? [{
+                {
                     content: "Insert subgraph",
                     has_submenu: true,
                     callback: LGraphCanvas.onMenuInsertSubgraph
-                }] : []),
+                },
                 // { content: "Arrange", callback: that.graph.arrange },
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
