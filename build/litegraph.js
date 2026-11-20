@@ -13051,7 +13051,8 @@ export class LGraphCanvas {
 
     /**
      * Layout of a node's badges and title buttons, in node space: from the right end of the title
-     * bar (left of the subgraph button), buttons first, then badges.
+     * bar (left of the subgraph button), buttons first, then the badges that fit without covering
+     * the title text.
      * @param {LGraphNode} node
      * @param {CanvasRenderingContext2D} [ctx] - measures text; without it widths are estimated
      * @returns {{buttons: Array<{button: object, rect: number[]}>, badges: Array<{badge: object, rect: number[]}>}}
@@ -13084,10 +13085,28 @@ export class LGraphCanvas {
             button,
             rect: place(button.text ?? button.name)
         }));
-        const badges = (LiteGraph.nodeBadges?.collect(node) ?? []).map((badge) => ({
-            badge,
-            rect: place(badge.text)
-        }));
+        // badges only where they do not cover the title text
+        let titleEnd = title_height;
+        const title = String(node.getTitle?.() ?? node.title ?? "");
+        if (title) {
+            let width = 0;
+            if (ctx?.measureText) {
+                const previous = ctx.font;
+                ctx.font = this.title_text_font;
+                width = ctx.measureText(title)?.width ?? 0;
+                ctx.font = previous;
+            }
+            titleEnd += (typeof width === "number" && width > 0 ? width : title.length * LiteGraph.NODE_TEXT_SIZE * 0.6) + 6;
+        }
+        const badges = [];
+        for (const badge of LiteGraph.nodeBadges?.collect(node) ?? []) {
+            const rect = place(badge.text);
+            if (rect[0] < titleEnd) break;
+            badges.push({
+                badge,
+                rect
+            });
+        }
         return {
             buttons,
             badges,
