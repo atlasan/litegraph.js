@@ -9036,6 +9036,17 @@ export class LGraphCanvas {
             if (this.selectedItems.length) {
                 options.push({ content: "Group selected", callback: () => this.groupSelected() });
             }
+            const selected_nodes = Object.values(this.selected_nodes);
+            if (selected_nodes.length) {
+                options.push({
+                    content: "Convert selection to subgraph",
+                    callback: () => {
+                        const subgraph_node = this.graph.convertToSubgraph(selected_nodes);
+                        this.deselectAllNodes();
+                        if (subgraph_node) this.selectNodes([subgraph_node]);
+                    },
+                });
+            }
 
             if (Object.keys(this.selected_nodes).length > 1) {
                 options.push({
@@ -9191,13 +9202,11 @@ export class LGraphCanvas {
                 callback: LGraphCanvas.onMenuNodeClone,
             });
         }
-        /*
-        if(0) // @TODO: implement collpase to SubGraph
+        // the selection (or this node) becomes one subgraph node, one undo step
         options.push({
-            content: "To Subgraph",
-            callback: LGraphCanvas.onMenuNodeToSubgraph
+            content: "Convert to subgraph",
+            callback: LGraphCanvas.onMenuNodeToSubgraph,
         });
-        */
         if (Object.keys(this.selected_nodes).length > 1) {
             options.push({
                 content: "Align Selected To",
