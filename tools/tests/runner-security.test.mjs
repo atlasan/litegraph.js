@@ -50,6 +50,11 @@ test('runner node policy refuses dangerous types at any subgraph depth', () => {
   const oldNames = graph([{ id: 1, type: 'nodejs/network/OSC_server' }, { id: 2, type: 'server/network/websocketserver' }]);
   assert.throws(() => assertAllowedGraph(oldNames, known, { env: {} }), /network\/server\/osc \(node 1\); network\/server\/websocket \(node 2\)/);
   assert.doesNotThrow(() => assertAllowedGraph(oldNames, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/OSC_server, server/network/websocketserver' } }));
+  // an old prefix keeps its old meaning: nodejs/network/ never covered the WebSocket server
+  const pair = graph([{ id: 1, type: 'network/server/osc' }, { id: 2, type: 'network/server/websocket' }]);
+  assert.throws(() => assertAllowedGraph(pair, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/' } }), /network\/server\/websocket/);
+  assert.doesNotThrow(() => assertAllowedGraph(graph([{ id: 1, type: 'network/server/osc' }]), known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/' } }));
+  assert.doesNotThrow(() => assertAllowedGraph(pair, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/, server/network/' } }));
   assert.throws(() => assertAllowedGraph(oldNames, known, { env: { RUNNER_ALLOW_TYPES: 'network/server/', RUNNER_DENY_TYPES: 'server/network/websocketserver' } }), /refused by RUNNER_DENY_TYPES/);
   assert.throws(() => assertAllowedGraph(reader, known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead', RUNNER_DENY_TYPES: 'sys/' } }), /not allowed/, 'deny wins over allow');
   assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'sys/runCommand' }]), known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead' } }), /not allowed/, 'allow is per type');
