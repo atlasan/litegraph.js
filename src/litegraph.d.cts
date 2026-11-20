@@ -348,6 +348,15 @@ export interface LiteGraphAPI extends CallbackHost {
     widget_types: Record<string, typeof BaseWidget>;
     /** node search: parsing, ranking and definition filters */
     nodeSearch: NodeSearch;
+    /** node badges drawn in title bars; providers return badges for a node (settings LiteGraph.Node.IdBadge, LiteGraph.Node.SourceBadge) */
+    nodeBadges: {
+        register(provider: (node: LGraphNode) => NodeBadge | NodeBadge[] | null | undefined): () => void;
+        collect(node: LGraphNode): NodeBadge[];
+    };
+    /** removing a routed link keeps its reroutes as a floating link (default true) */
+    keep_floating_reroutes: boolean;
+    /** a link dragged over a node body highlights, and a drop connects, the slot it would use (default true) */
+    snap_link_to_slot: boolean;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
@@ -911,6 +920,14 @@ export declare class LGraphNode {
     ): void;
     /** remove an existing output slot */
     removeOutput(slot: number): void;
+    /** badges drawn in the title bar: entries or functions of the node (not serialized) */
+    badges?: Array<NodeBadge | ((node: LGraphNode) => NodeBadge | NodeBadge[] | null)>;
+    /** buttons drawn in the title bar (not serialized) */
+    title_buttons?: NodeTitleButton[];
+    addTitleButton(button: NodeTitleButton): NodeTitleButton;
+    removeTitleButton(name: string): boolean;
+    onTitleButtonClick?(button: NodeTitleButton, canvas: LGraphCanvas, e: any): void;
+
     /**
      * add a new input slot to use in this node
      * @param name
@@ -1803,6 +1820,11 @@ export declare class LGraphCanvas {
 
     showLinkMenu(link: LLink, e: any): false;
     /** what a link released on empty space offers; true when something was shown */
+    /** badge and title-button rectangles in node space (right-aligned, buttons outermost) */
+    getNodeTitleDecorations(node: LGraphNode, ctx?: CanvasRenderingContext2D | null): { buttons: Array<{ button: NodeTitleButton; rect: number[] }>; badges: Array<{ badge: NodeBadge; rect: number[] }>; font: string };
+    drawNodeTitleDecorations(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number): void;
+    getNodeTitleButtonAt(node: LGraphNode, x: number, y: number): NodeTitleButton | null;
+    clickNodeTitleButton(node: LGraphNode, button: NodeTitleButton, e: any): void;
     /** draws floating links, dashed and dimmed */
     drawFloatingLinks(ctx: CanvasRenderingContext2D): void;
     showLinkReleaseAction(action: "context-menu" | "search-box" | "none", dropped: { node: LGraphNode; output?: INodeOutputSlot | null; input?: INodeInputSlot | null }, e: any): boolean;
@@ -2180,6 +2202,21 @@ export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
 export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;
 /** Arithmetic for number entry (+ - * / % **, parentheses, pi, e); NaN for anything else. Nothing is executed. */
 export declare function evaluateMathExpression(text: string): number;
+
+export interface NodeBadge {
+    text: string;
+    fgColor?: string;
+    bgColor?: string;
+}
+
+export interface NodeTitleButton {
+    name: string;
+    text?: string;
+    tooltip?: string;
+    fgColor?: string;
+    bgColor?: string;
+    onClick?(node: LGraphNode, canvas: LGraphCanvas, e: any): void;
+}
 
 export interface NodeSearchQuery {
     terms: string[];

@@ -311,3 +311,52 @@ describe('floating reroutes on the canvas', () => {
         expect(graph.floating_links.size).toBe(0);
     });
 });
+
+describe('node badges and title buttons', () => {
+    test('badges come from the node and from providers; built-in id badge follows its setting', () => {
+        const { src } = setup();
+        src.badges = [{ text: 'mine' }, (node) => ({ text: `t:${node.type}` }), () => null];
+        const dispose = LiteGraph.nodeBadges.register(() => [{ text: 'p1' }, { text: '' }]);
+        try {
+            expect(LiteGraph.nodeBadges.collect(src).map((b) => b.text)).toEqual(['mine', 't:pg/src', 'p1']);
+            LiteGraph.settings.set('LiteGraph.Node.IdBadge', true);
+            expect(LiteGraph.nodeBadges.collect(src).map((b) => b.text)).toContain(`#${src.id}`);
+        } finally {
+            LiteGraph.settings.set('LiteGraph.Node.IdBadge', false);
+            dispose();
+        }
+        expect(LiteGraph.nodeBadges.collect(src).map((b) => b.text)).toEqual(['mine', 't:pg/src']);
+    });
+
+    test('a title button click runs it and does not drag the node; layout is right-aligned, buttons outermost', () => {
+        const { canvas, src } = setup();
+        const clicks = [];
+        src.addTitleButton({ name: 'run', text: '▶', onClick: (node) => clicks.push(['button', node]) });
+        src.onTitleButtonClick = (button) => clicks.push(['node', button.name]);
+        src.badges = [{ text: 'b' }];
+        const layout = canvas.getNodeTitleDecorations(src);
+        const [{ rect }] = layout.buttons;
+        expect(rect[0] + rect[2]).toBe(src.size[0] - 4);
+        expect(layout.badges[0].rect[0] + layout.badges[0].rect[2]).toBeLessThan(rect[0]);
+        const at = [src.pos[0] + rect[0] + rect[2] / 2, src.pos[1] + rect[1] + rect[3] / 2];
+        drag(canvas, [at, at]);
+        expect(clicks).toEqual([['button', src], ['node', 'run']]);
+        drag(canvas, [at, [at[0] + 30, at[1] + 30]]); // a drag on the button does nothing
+        expect(Array.from(src.pos)).toEqual([100, 100]);
+        expect(clicks).toHaveLength(2);
+        expect(src.removeTitleButton('run')).toBe(true);
+        expect(canvas.getNodeTitleButtonAt(src, rect[0] + 2, rect[1] + 2)).toBeNull();
+        expect(src.serialize().title_buttons).toBeUndefined();
+    });
+
+    test('drawing renders badges and buttons in the title bar', () => {
+        const { canvas, src } = setup();
+        src.addTitleButton({ name: 'x', text: 'x' });
+        src.badges = [{ text: 'v2' }];
+        const texts = [];
+        const ctx = { save() {}, restore() {}, beginPath() {}, roundRect() {}, fill() {}, measureText: (t) => ({ width: t.length * 6 }), fillText: (t) => texts.push(t) };
+        canvas.drawNodeTitleDecorations(src, ctx, LiteGraph.NODE_TITLE_HEIGHT);
+        expect(texts).toEqual(['v2', 'x']);
+        expect(src._title_decorations.buttons[0].rect[2]).toBe(16);
+    });
+});

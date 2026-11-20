@@ -1137,6 +1137,13 @@ export class LGraphCanvas {
                     var block_drag_node = false;
                     var pos = [e.canvasX - node.pos[0], e.canvasY - node.pos[1]];
 
+                    // title buttons: a click runs the button, the press does not drag the node
+                    const titleButton = !node.flags.collapsed && pos[1] < 0 ? this.getNodeTitleButtonAt(node, pos[0], pos[1]) : null;
+                    if (titleButton) {
+                        this.pointer.onClick = (ev) => this.clickNodeTitleButton(node, titleButton, ev);
+                        block_drag_node = true;
+                    }
+
                     // widgets: a whole widget gesture (click, or drag until pointer up) is one undo step
                     const widgetGraph = this.graph;
                     widgetGraph.beginTransaction("widgetChanged");
@@ -4933,6 +4940,9 @@ export class LGraphCanvas {
                 ctx.fill();
             }
 
+            // badges and title buttons (right-aligned)
+            if (!node.flags.collapsed && !low_quality) this.drawNodeTitleDecorations(node, ctx, title_height);
+
             // custom title render
             node.processCallbackHandlers("onDrawTitle",{
                 def_cb: node.onDrawTitle
@@ -5625,6 +5635,95 @@ export class LGraphCanvas {
             this._highlight_output = pos;
             this._highlight_output_slot = slots[slot];
         }
+    }
+
+    /**
+     * Layout of a node's badges and title buttons, in node space: from the right end of the title
+     * bar (left of the subgraph button), buttons first, then badges.
+     * @param {LGraphNode} node
+     * @param {CanvasRenderingContext2D} [ctx] - measures text; without it widths are estimated
+     * @returns {{buttons: Array<{button: object, rect: number[]}>, badges: Array<{badge: object, rect: number[]}>}}
+     */
+    getNodeTitleDecorations(node, ctx = null) {
+        const title_height = node.constructor.title_height ?? LiteGraph.NODE_TITLE_HEIGHT;
+        const fontSize = Math.max(8, Math.round(title_height * 0.45));
+        const font = `${fontSize}px Arial`;
+        const measure = (text) => {
+            if (ctx?.measureText) {
+                const previous = ctx.font;
+                ctx.font = font;
+                const width = ctx.measureText(text)?.width;
+                ctx.font = previous;
+                if (typeof width === "number" && width > 0) return width;
+            }
+            return String(text).length * fontSize * 0.6;
+        };
+        let right = node.size[0] - 4 - (node.subgraph && !node.skip_subgraph_button ? title_height : 0);
+        const h = title_height - 8;
+        const y = -title_height + 4;
+        const place = (text) => {
+            const w = Math.ceil(measure(String(text))) + 10;
+            right -= w;
+            const rect = [right, y, w, h];
+            right -= 4;
+            return rect;
+        };
+        const buttons = (node.title_buttons ?? []).map((button) => ({ button, rect: place(button.text ?? button.name) }));
+        const badges = (LiteGraph.nodeBadges?.collect(node) ?? []).map((badge) => ({ badge, rect: place(badge.text) }));
+        return { buttons, badges, font };
+    }
+
+    /** Draws a node's badges and title buttons (see getNodeTitleDecorations). */
+    drawNodeTitleDecorations(node, ctx, title_height) {
+        const layout = this.getNodeTitleDecorations(node, ctx);
+        node._title_decorations = layout; // used for hit testing until the next draw
+        if (!layout.buttons.length && !layout.badges.length) return;
+        ctx.save();
+        ctx.font = layout.font;
+        ctx.textAlign = "center";
+        const mouse = [this.graph_mouse[0] - node.pos[0], this.graph_mouse[1] - node.pos[1]];
+        const box = (rect, fill) => {
+            ctx.fillStyle = fill;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(rect[0], rect[1], rect[2], rect[3], [4]);
+            else ctx.rect(rect[0], rect[1], rect[2], rect[3]);
+            ctx.fill();
+        };
+        const label = (text, rect, color) => {
+            ctx.fillStyle = color;
+            ctx.fillText(String(text), rect[0] + rect[2] / 2, rect[1] + rect[3] / 2 + title_height * 0.15);
+        };
+        for (const { badge, rect } of layout.badges) {
+            box(rect, badge.bgColor ?? "rgba(0,0,0,0.35)");
+            label(badge.text, rect, badge.fgColor ?? "#CCC");
+        }
+        for (const { button, rect } of layout.buttons) {
+            const over = LiteGraph.isInsideRectangle(mouse[0], mouse[1], rect[0], rect[1], rect[2], rect[3]);
+            box(rect, over ? "#777" : button.bgColor ?? "#555");
+            label(button.text ?? button.name, rect, button.fgColor ?? "#EEE");
+        }
+        ctx.restore();
+    }
+
+    /** the title button at a node-space position, or null */
+    getNodeTitleButtonAt(node, x, y) {
+        if (!node.title_buttons?.length) return null;
+        const layout = node._title_decorations ?? this.getNodeTitleDecorations(node);
+        for (const { button, rect } of layout.buttons) {
+            if (node.title_buttons.includes(button) && LiteGraph.isInsideRectangle(x, y, rect[0], rect[1], rect[2], rect[3])) return button;
+        }
+        return null;
+    }
+
+    /** runs a title button: its onClick, then the node's onTitleButtonClick */
+    clickNodeTitleButton(node, button, e) {
+        try {
+            button.onClick?.(node, this, e);
+        } catch (error) {
+            LiteGraph.log_error("lgraphcanvas", "title button failed", button.name, error);
+        }
+        node.processCallbackHandlers("onTitleButtonClick", { def_cb: node.onTitleButtonClick }, button, this, e);
+        this.setDirty(true, true);
     }
 
     // the slot under the mouse while dragging a link; a new drag must not start with
