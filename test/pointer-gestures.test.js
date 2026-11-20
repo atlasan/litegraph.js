@@ -3,6 +3,7 @@ import { JSDOM } from 'jsdom';
 import { LiteGraph } from '../src/litegraph.js';
 import { LGraph } from '../src/lgraph.js';
 import { LGraphCanvas } from '../src/lgraphcanvas.js';
+import { LGraphGroup } from '../src/lgraphgroup.js';
 
 let dom;
 beforeAll(async () => {
@@ -37,7 +38,6 @@ function setup() {
     return { graph, canvas, src, dst };
 }
 
-let clock = 1000;
 function ev(x, y, extra = {}) {
     return { clientX: x, clientY: y, which: 1, button: 0, buttons: 1, isPrimary: true, pointerId: 1,
         shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
@@ -45,7 +45,7 @@ function ev(x, y, extra = {}) {
 }
 /** a press, moves along the points, release at the last one */
 function drag(canvas, points, extra = {}) {
-    clock += 1000; // never a double click
+    canvas.pointer.lastClick = null; // never a double click
     const [first, ...rest] = points;
     canvas.processMouseDown(ev(first[0], first[1], extra));
     for (const [x, y] of rest) canvas.processMouseMove(ev(x, y, extra));
@@ -76,7 +76,7 @@ describe('link dragging (wave 2b)', () => {
         const extra = LiteGraph.createNode('pg/dst'); extra.pos = [400, 300]; extra.size = [160, 60]; graph.add(extra);
         canvas.visible_nodes = graph._nodes.slice();
         const out = src.getConnectionPos(false, 0);
-        clock += 1000;
+        canvas.pointer.lastClick = null;
         canvas.processMouseDown(ev(out[0], out[1]));
         canvas.processMouseMove(ev(out[0] + 40, out[1]));
         canvas.processMouseMove(ev(480, 330)); // body of `extra`
@@ -188,5 +188,92 @@ describe('quick connect extension', () => {
         expect(graph.links[dst.inputs[1].link].origin_id).toBe(src.id);
         expect(graph.links[third.inputs[1].link].origin_id).toBe(dst.id);
         expect(quick.chainNodes(graph, [src])).toBe(0);
+    });
+});
+
+describe('gestures on CanvasPointer (wave 2b)', () => {
+    const history = (graph) => graph.history.actionHistoryVersions.length;
+    let historyWas;
+    beforeEach(() => { historyWas = LiteGraph.actionHistory_enabled; LiteGraph.actionHistory_enabled = true; });
+    afterEach(() => { LiteGraph.actionHistory_enabled = historyWas; });
+
+    test('dragging selected nodes moves them all (not pinned ones) as one undo step', () => {
+        const { canvas, graph, src, dst } = setup();
+        const pinned = LiteGraph.createNode('pg/src'); pinned.pos = [100, 400]; pinned.size = [160, 60]; graph.add(pinned);
+        pinned.flags.pinned = true;
+        canvas.visible_nodes = graph._nodes.slice();
+        graph.onGraphChanged({ action: 'seed', doSave: true }); // history has no empty baseline
+        canvas.selectNodes([src, dst, pinned]);
+        const before = history(graph);
+        const moved = [];
+        canvas.onNodeMoved = (node) => moved.push(node);
+        drag(canvas, [[480, 130], [490, 140], [520, 170]]); // a press on a selected node keeps the selection
+        expect(Array.from(src.pos)).toEqual([140, 140]);
+        expect(Array.from(dst.pos)).toEqual([440, 140]);
+        expect(Array.from(pinned.pos)).toEqual([100, 400]);
+        expect(moved).toEqual([dst]);
+        expect(history(graph) - before).toBe(1);
+        expect(canvas.node_dragged).toBeNull();
+        expect(Object.values(canvas.selected_nodes)).toHaveLength(3);
+        drag(canvas, [[480, 140], [480, 140]]); // a click on a selected node selects only it
+        expect(Object.values(canvas.selected_nodes)).toEqual([dst]);
+        graph.actionHistoryBack();
+        expect(Array.from(graph.getNodeById(src.id).pos)).toEqual([100, 100]);
+    });
+
+    test('a click on a node is not a move; a cancelled drag ends cleanly', () => {
+        const { canvas, graph, src } = setup();
+        graph.onGraphChanged({ action: 'seed', doSave: true });
+        const before = history(graph);
+        const moved = jest.fn();
+        canvas.onNodeMoved = moved;
+        drag(canvas, [[150, 130], [150, 130]]);
+        expect(moved).not.toHaveBeenCalled();
+        expect(history(graph)).toBe(before);
+        canvas.pointer.lastClick = null;
+        canvas.processMouseDown(ev(150, 130));
+        canvas.processMouseMove(ev(190, 150));
+        canvas.processPointerCancel({ isPrimary: true });
+        expect(graph.isInTransaction).toBe(false);
+        expect(canvas.node_dragged).toBeNull();
+        expect(Array.from(src.pos)).toEqual([140, 120]);
+    });
+
+    test('dragging a group moves its nodes as one undo step', () => {
+        const { canvas, graph, src } = setup();
+        const group = new LGraphGroup('G'); group.pos = [80, 40]; group.size = [220, 160]; graph.add(group);
+        graph.onGraphChanged({ action: 'seed', doSave: true });
+        const before = history(graph);
+        drag(canvas, [[90, 60], [100, 70], [120, 90]]);
+        expect(Array.from(group.pos)).toEqual([110, 70]);
+        expect(Array.from(src.pos)).toEqual([130, 130]);
+        expect(history(graph) - before).toBe(1);
+        expect(canvas.selected_group).toBeNull();
+    });
+
+    test('clicking a group title selects the group and keeps it selected', () => {
+        const { canvas, graph } = setup();
+        const group = new LGraphGroup('G'); group.pos = [600, 400]; group.size = [200, 150]; graph.add(group);
+        drag(canvas, [[620, 410], [620, 410]]);
+        expect(canvas.selectedItems).toContain(group);
+    });
+
+    test('resizing a group from its corner', () => {
+        const { canvas, graph } = setup();
+        const group = new LGraphGroup('G'); group.pos = [600, 400]; group.size = [200, 150]; graph.add(group);
+        drag(canvas, [[799, 549], [820, 570], [850, 600]]);
+        expect(Array.from(group.size)).toEqual([250, 200]);
+        expect(Array.from(group.pos)).toEqual([600, 400]);
+    });
+
+    test('a press on an output released without dragging creates no link', () => {
+        const { canvas, graph, src } = setup();
+        const ends = [];
+        canvas.events.on('link-drag-end', (event) => ends.push(event.detail.outcome));
+        const out = src.getConnectionPos(false, 0);
+        drag(canvas, [out, out]);
+        expect(Object.keys(graph.links)).toHaveLength(0);
+        expect(ends).toEqual(['cancelled']);
+        expect(canvas.linkConnector.isConnecting).toBe(false);
     });
 });
