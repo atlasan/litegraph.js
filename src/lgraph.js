@@ -5,6 +5,7 @@ import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
 import { LGraphEventTarget } from "./eventtarget.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
+import { PackRegistry } from "./packs.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -1608,7 +1609,12 @@ export class LGraph {
             if (snapshot) {
                 this._transaction = null;
                 const history = this.history;
-                this.configure(snapshot);
+                this._configureReason = "rollback";
+                try {
+                    this.configure(snapshot);
+                } finally {
+                    this._configureReason = null;
+                }
                 this.history = history;
             }
             throw error;
@@ -1709,6 +1715,162 @@ export class LGraph {
             node.disconnectInput(link.target_slot); /* , optsIn */
             this.afterChange();
         }
+    }
+
+    /**
+     * Missing node types in this graph (and, with `deep`, in its subgraphs): one entry per type,
+     * with where the type comes from (the node's stored pack stamp, the pack index, or ComfyUI's
+     * `cnr_id` / `aux_id`) and a registered replacement.
+     * @param {{deep?: boolean}} [options] - deep (default true): include subgraphs
+     * @returns {Array<{type: string, count: number, available: boolean, nodes: Array<{id: *, path: string}>,
+     *   pack: {id: string, version: string|null, source: "stamp"|"index"|"comfy", installed?: boolean}|null,
+     *   replacement: {type: string, auto: boolean, available: boolean, reason?: string}|null}>}
+     */
+    getMissingNodes({ deep = true } = {}) {
+        const byType = new Map();
+        const visit = (graph) => {
+            for (const node of graph._nodes) {
+                if (PackRegistry.isMissingNodePlaceholder(node)) {
+                    const stored = node.last_serialization;
+                    let entry = byType.get(stored.type);
+                    if (!entry) {
+                        const mapping = LiteGraph.getNodeReplacement?.(stored.type);
+                        entry = {
+                            type: stored.type,
+                            count: 0,
+                            available: !!LiteGraph.registered_node_types[stored.type],
+                            nodes: [],
+                            pack: LGraph._packHint(stored),
+                            replacement: mapping ? {
+                                type: mapping.new_type,
+                                auto: mapping.auto,
+                                available: !!LiteGraph.registered_node_types[mapping.new_type],
+                                ...(mapping.reason ? { reason: mapping.reason } : {}),
+                            } : null,
+                        };
+                        byType.set(stored.type, entry);
+                    }
+                    entry.count++;
+                    entry.nodes.push({ id: node.id, path: node.getPath?.() ?? String(node.id) });
+                }
+                if (deep && node.subgraph) visit(node.subgraph);
+            }
+        };
+        visit(this);
+        return [...byType.values()];
+    }
+
+    /** where a stored node says its type comes from */
+    static _packHint(stored) {
+        const properties = stored?.properties ?? {};
+        if (typeof properties.pack === "string" && properties.pack) {
+            return { id: properties.pack, version: properties.pack_ver ?? null, source: "stamp" };
+        }
+        const known = LiteGraph.packs?.findPackForType(stored?.type);
+        if (known) return { id: known.id, version: known.version, source: "index", installed: known.installed };
+        const comfy = properties.cnr_id || properties.aux_id;
+        if (typeof comfy === "string" && comfy) return { id: comfy, version: properties.ver ?? null, source: "comfy" };
+        return null;
+    }
+
+    /** The mapping replaceNode would use for a node, or null. */
+    _replacementFor(node) {
+        const type = PackRegistry.storedNodeType(node);
+        const mapping = LiteGraph.getNodeReplacement?.(type);
+        if (mapping) return mapping;
+        // a placeholder whose type has been registered since loading is rebuilt as that type
+        if (PackRegistry.isMissingNodePlaceholder(node) && LiteGraph.registered_node_types[type]) return { old_type: type, new_type: type };
+        return null;
+    }
+
+    /**
+     * Replaces a node by a node of another type, as one undo step: id, position, title, colours,
+     * mode and the mapped links, properties and widget values are kept. Links on slots the
+     * mapping cannot place are removed and listed in `dropped`.
+     * @param {object} node - a node of this graph (a missing-type placeholder or a live node)
+     * @param {object|string} [mapping] - a mapping (see LiteGraph.registerNodeReplacement), a type
+     *   name, or nothing for the registered mapping of the node's type
+     * @returns {{node: object, dropped: Array<{kind: string, slot: number, name: string, link: *}>}}
+     */
+    replaceNode(node, mapping) {
+        if (!node || node.graph !== this) throw new Error("replaceNode: the node is not in this graph");
+        const type = PackRegistry.storedNodeType(node);
+        const resolved = typeof mapping === "string" ? { old_type: type, new_type: mapping } : (mapping ?? this._replacementFor(node));
+        if (!resolved) throw new Error(`replaceNode: no replacement is registered for ${type}`);
+        if (!LiteGraph.registered_node_types[resolved.new_type]) throw new Error(`replaceNode: node type ${resolved.new_type} is not registered`);
+        const result = this.transact(`Replace ${type}`, () => PackRegistry.replaceNodeInGraph(this, node, resolved), { rollback: true });
+        this._emit("node-replaced", { node: result.node, from: type, to: resolved.new_type, dropped: result.dropped });
+        return result;
+    }
+
+    /**
+     * Replaces every node that has a usable replacement, as one undo step per graph: by default
+     * the missing-type placeholders whose replacement type (or own type) is registered.
+     * @param {{filter?: (node: object) => boolean, deep?: boolean}} [options]
+     *   filter: which nodes to replace (default: missing-type placeholders);
+     *   deep (default true): also inside subgraphs (each inner graph records its own step)
+     * @returns {{replaced: Array<{id: *, path: string, from: string, to: string, dropped: object[]}>,
+     *   skipped: Array<{id: *, path: string, type: string, reason: string}>}}
+     */
+    replaceNodes({ filter = PackRegistry.isMissingNodePlaceholder, deep = true } = {}) {
+        const replaced = [];
+        const skipped = [];
+        const candidates = this._nodes.filter((node) => filter(node));
+        const plans = [];
+        for (const node of candidates) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = this._replacementFor(node);
+            const path = node.getPath?.() ?? String(node.id);
+            if (!mapping) skipped.push({ id: node.id, path, type, reason: "no replacement registered" });
+            else if (!LiteGraph.registered_node_types[mapping.new_type]) skipped.push({ id: node.id, path, type, reason: `${mapping.new_type} is not registered` });
+            else plans.push({ node, type, mapping, path });
+        }
+        if (plans.length) {
+            this.transact("Replace nodes", () => {
+                for (const plan of plans) {
+                    const result = PackRegistry.replaceNodeInGraph(this, plan.node, plan.mapping);
+                    replaced.push({ id: result.node.id, path: plan.path, from: plan.type, to: plan.mapping.new_type, dropped: result.dropped });
+                }
+            }, { rollback: true });
+        }
+        if (deep) {
+            for (const node of this._nodes) {
+                if (!node.subgraph) continue;
+                const inner = node.subgraph.replaceNodes({ filter, deep });
+                replaced.push(...inner.replaced);
+                skipped.push(...inner.skipped);
+            }
+        }
+        return { replaced, skipped };
+    }
+
+    /** Applies `auto` replacement mappings while configuring (no undo step, no revision change). */
+    _applyAutoReplacements() {
+        const replaced = [];
+        const settings = LiteGraph.settings;
+        if (settings?.has?.("LiteGraph.Packs.AutoReplace") && !settings.get("LiteGraph.Packs.AutoReplace")) return replaced;
+        const plans = [];
+        for (const node of this._nodes) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = LiteGraph.getNodeReplacement?.(type);
+            if (mapping?.auto && LiteGraph.registered_node_types[mapping.new_type]) plans.push({ node, type, mapping });
+        }
+        if (!plans.length) return replaced;
+        const outer = this._transaction;
+        if (!outer) this._transaction = { depth: 1, label: "configure", changed: false };
+        try {
+            for (const { node, type, mapping } of plans) {
+                try {
+                    const result = PackRegistry.replaceNodeInGraph(this, node, mapping);
+                    replaced.push({ id: result.node.id, from: type, to: mapping.new_type, dropped: result.dropped });
+                } catch (error) {
+                    LiteGraph.log_warn("lgraph", "configure", "automatic replacement failed", type, error);
+                }
+            }
+        } finally {
+            if (!outer) this._transaction = null;
+        }
+        return replaced;
     }
 
     /**
@@ -2400,8 +2562,13 @@ export class LGraph {
             nodes.forEach((n_info) => {
                 const node = this.getNodeById(n_info.id);
                 node?.configure(n_info);
+                // a placeholder shows its missing type (serialize keeps the stored title)
+                if (node?.has_errors && node.last_serialization === n_info && !n_info.title) node.title = n_info.type;
             });
         }
+
+        // replacement mappings marked auto (renamed types): applied while loading, without an undo step
+        const replaced = this._applyAutoReplacements();
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
         this.state = {
@@ -2441,7 +2608,11 @@ export class LGraph {
             LiteGraph.log_debug("lgraph", "configure", "skip onGraphChanged when configure passing version too!"); // atlasan DEBUG REMOVE
         }
         this.setDirtyCanvas(true, true);
-        this._emit("configured", { data, error });
+        this._emit("configured", { data, error, replaced });
+        if (!this._subgraph_node && this._events?.has("missing-nodes")) {
+            const report = this.getMissingNodes();
+            if (report.length) this._emit("missing-nodes", { report, reason: this._configureReason ?? "load" });
+        }
         return error;
     }
 
@@ -2656,7 +2827,12 @@ export class LGraph {
 
         if(obH.actionHistory[opts.iVersion] && obH.actionHistory[opts.iVersion].graphSave) {
             var tmpHistory = JSON.stringify(this.history);
-            this.configure( obH.actionHistory[opts.iVersion].graphSave );
+            this._configureReason = "history";
+            try {
+                this.configure( obH.actionHistory[opts.iVersion].graphSave );
+            } finally {
+                this._configureReason = null;
+            }
             this.history = JSON.parse(tmpHistory);
             LiteGraph.log_debug("history loaded: "+opts.iVersion,obH.actionHistory[opts.iVersion].actionName); // debug history
             this.onGraphLoaded({ iVersion: opts.iVersion });

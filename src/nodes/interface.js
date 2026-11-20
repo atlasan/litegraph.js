@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/interface" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/interface", version: LiteGraph.VERSION, title: "Interface widgets", builtin: true });
+
 class WidgetButton {
 
     static title = "Button";
@@ -823,3 +827,5 @@ class WidgetPanel {
     widgets = [{ name: "update", text: "Update", type: "button" }];
 }
 LiteGraph.registerNodeType("widget/panel", WidgetPanel);
+
+LiteGraph.packs.close("litegraph/interface");

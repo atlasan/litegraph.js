@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/math3d" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/math3d", version: LiteGraph.VERSION, title: "Math 3D", builtin: true });
+
 const MATH3D_DEG2RAD = Math.PI / 180;
 const MATH3D_RAD2DEG = 180 / Math.PI;
 
@@ -635,3 +639,5 @@ if (typeof(glMatrix)!=="undefined") {
 } else if (LiteGraph.debug) {
     console.warn?.("No glmatrix found, some Math3D nodes may not work");
 }
+
+LiteGraph.packs.close("litegraph/math3d");

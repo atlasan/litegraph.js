@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/input" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/input", version: LiteGraph.VERSION, title: "Input devices", builtin: true });
+
 class GamepadInput {
 
     static title = "Gamepad";
@@ -376,3 +380,5 @@ GamepadInput.UP = 4;
 GamepadInput.DOWN = 8;
 
 LiteGraph.registerNodeType("input/gamepad", GamepadInput);
+
+LiteGraph.packs.close("litegraph/input");

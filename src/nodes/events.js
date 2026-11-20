@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/events" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/events", version: LiteGraph.VERSION, title: "Events", builtin: true });
+
 // Show value inside the debug console
 class LogEvent {
 
@@ -649,3 +653,5 @@ class EventSwitch {
     }
 }
 LiteGraph.registerNodeType("events/switch", EventSwitch);
+
+LiteGraph.packs.close("litegraph/events");

@@ -3,6 +3,10 @@ import { LGraphTexture } from "./gltextures.js";
 import { GL } from "../../editor/js/libs/litegl.js";
 import { gl } from "../../editor/js/code.js";
 
+// built-in pack: node types registered below belong to "litegraph/glfx" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/glfx", version: LiteGraph.VERSION, title: "WebGL effects", builtin: true });
+
 // Works with Litegl.js to create WebGL nodes
 
 // Texture Lens
@@ -803,3 +807,5 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("fx/", ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/glfx");

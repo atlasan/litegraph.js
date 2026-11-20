@@ -372,6 +372,13 @@ export interface LiteGraphAPI extends CallbackHost {
     node_definitions: Record<string, Readonly<NodeDefinition>>;
     describeNodeType(type: string, base: Function): Readonly<NodeDefinition>;
     getNodeDefinition(type: string): Readonly<NodeDefinition> | null;
+    /** recomputes the stored metadata of a registered type */
+    refreshNodeDefinition(type: string): void;
+    /** node packs: manifests, attribution of node types, provenance, replacement mappings */
+    packs: PackRegistry;
+    /** registers how to replace a node type by another, as data; returns a disposer */
+    registerNodeReplacement(mapping: NodeReplacementMapping): () => void;
+    getNodeReplacement(type: string): Readonly<NodeReplacementMapping> | null;
     listNodeDefinitions(filter?: { category?: string; capability?: string; includeDeprecated?: boolean; includeHidden?: boolean; supportedOnly?: boolean }): Readonly<NodeDefinition>[];
     declareCapabilities(selector: string | string[] | ((type: string) => boolean), capabilities: string[]): void;
     getRuntimeCapabilities(): Set<string>;
@@ -706,6 +713,15 @@ export declare class LGraph {
     insertBlueprint(json: object, options?: { pos?: ArrayLike<number> }): Subgraph;
     /** the node at a path from the root graph ("3:7:2"), or null */
     resolvePath(path: string): LGraphNode | null;
+    /** missing node types, one entry per type (deep: include subgraphs, default true) */
+    getMissingNodes(options?: { deep?: boolean }): MissingNodeReport[];
+    /** replaces a node (one undo step); mapping: a mapping, a type name, or the registered mapping */
+    replaceNode(node: LGraphNode, mapping?: NodeReplacementMapping | string): { node: LGraphNode; dropped: DroppedLink[] };
+    /** replaces every matching node with a usable replacement (default: missing-type placeholders), one undo step per graph */
+    replaceNodes(options?: { filter?: (node: LGraphNode) => boolean; deep?: boolean }): {
+        replaced: { id: GraphId; path: string; from: string; to: string; dropped: DroppedLink[] }[];
+        skipped: { id: GraphId; path: string; type: string; reason: string }[];
+    };
     /** subgraph and function nodes, at any depth, that use a definition */
     findSubgraphInstances(id: string): Subgraph[];
     /** true while this graph or a graph containing it is being configured */
@@ -1293,7 +1309,12 @@ export declare class LGraphEventTarget<TMap = Record<string, unknown>, TOwner = 
 export interface LGraphEventMap {
     /** before a document loads; mutate detail.data to migrate it, preventDefault() to cancel */
     configuring: { data: Record<string, unknown>; keep_old: boolean };
-    configured: { data: Record<string, unknown>; error: boolean };
+    /** replaced: nodes changed by automatic replacement mappings while loading */
+    configured: { data: Record<string, unknown>; error: boolean; replaced: { id: GraphId; from: string; to: string; dropped: DroppedLink[] }[] };
+    /** a document with missing node types loaded (root graph; only when someone listens) */
+    /** reason: "load", or "history" / "rollback" when undo, redo or a failed transaction reloads the graph */
+    "missing-nodes": { report: MissingNodeReport[]; reason: 'load' | 'history' | 'rollback' };
+    "node-replaced": { node: LGraphNode; from: string; to: string; dropped: DroppedLink[] };
     "node-added": { node: LGraphNode };
     "node-removed": { node: LGraphNode };
     /** a saved change (one per transaction) */
@@ -2215,8 +2236,85 @@ export interface NodeDefinition {
     experimental: boolean;
     hidden: boolean;
     source: string | null;
+    /** the installed pack that owns the type (see LiteGraph.packs) */
+    pack: Readonly<{ id: string; version: string; builtin: boolean }> | null;
     inputs: readonly Readonly<NodeSlotDefinition>[] | null;
     outputs: readonly Readonly<NodeSlotDefinition>[] | null;
+}
+
+/** A pack manifest: plain data, never code (see LiteGraph.packs). */
+export interface PackManifest {
+    id: string;
+    version: string;
+    title?: string;
+    description?: string;
+    /** true for the node families shipped with litegraph (never stamped, always compatible) */
+    builtin?: boolean;
+    /** e.g. { litegraph: ">=0.10.0" } */
+    requires?: { litegraph?: string; [name: string]: string | undefined };
+    nodes?: string[];
+    extensions?: string[];
+    libraries?: string[];
+    templates?: unknown[];
+    locales?: unknown[];
+    docs?: string;
+    repository?: string;
+    license?: string;
+    [key: string]: unknown;
+}
+export type PackState = 'active' | 'disabled' | 'incompatible' | 'indexed';
+export interface NodeReplacementMapping {
+    old_type: string;
+    new_type: string;
+    /** old slot (name or index) → new slot (name or index), or null to drop; unlisted slots keep their name */
+    inputs?: Record<string, string | number | null>;
+    outputs?: Record<string, string | number | null>;
+    /** old property → new property, or null to drop */
+    properties?: Record<string, string | null>;
+    /** old widget index → new widget index, or null to drop; unlisted values keep their position */
+    widgets?: Record<string, number | null>;
+    /** fixed values written on the new node */
+    set?: { properties?: Record<string, unknown> };
+    /** replace while loading, without asking (setting LiteGraph.Packs.AutoReplace) */
+    auto?: boolean;
+    reason?: string;
+}
+export interface DroppedLink { kind: 'input' | 'output'; slot: number; name: string; link: GraphId }
+export interface MissingNodeReport {
+    type: string;
+    count: number;
+    /** the type is registered now (the node can be rebuilt) */
+    available: boolean;
+    nodes: { id: GraphId; path: string }[];
+    pack: { id: string; version: string | null; source: 'stamp' | 'index' | 'comfy'; installed?: boolean } | null;
+    replacement: { type: string; auto: boolean; available: boolean; reason?: string } | null;
+}
+export declare class PackRegistry {
+    constructor(host: object);
+    static compareVersions(a: string, b: string): number;
+    static satisfiesVersion(version: string, range: string): boolean;
+    static normalizeManifest(manifest: PackManifest): Readonly<PackManifest>;
+    static isMissingNodePlaceholder(node: LGraphNode): boolean;
+    static storedNodeType(node: LGraphNode): string;
+    static replaceNodeInGraph(graph: LGraph, node: LGraphNode, mapping: NodeReplacementMapping): { node: LGraphNode; dropped: DroppedLink[] };
+    /** registers a pack; node types registered by setup belong to it; refused when incompatible unless LiteGraph.Packs.AllowIncompatible */
+    register(manifest: PackManifest, setup?: (ctx: { manifest: Readonly<PackManifest>; registerNodeType: (type: string, cls: Function) => void }) => unknown): () => void;
+    /** attributes registrations to a pack until close (built-in node files) */
+    open(manifest: PackManifest): Readonly<PackManifest>;
+    close(id?: string): void;
+    unregister(id: string): boolean;
+    /** known packs that are not installed (metadata only) */
+    index(manifests: PackManifest | PackManifest[]): () => void;
+    get(id: string): Readonly<PackManifest> | null;
+    list(): Readonly<PackManifest>[];
+    packOf(type: string): { id: string; version: string; builtin: boolean } | null;
+    typesOf(id: string): string[];
+    findPackForType(type: string): { id: string; version: string; installed: boolean; state?: PackState } | null;
+    describe(): (PackManifest & { state: PackState; types: string[]; error?: string })[];
+    stampFor(type: string): { pack: string; pack_ver: string } | null;
+    registerReplacement(mapping: NodeReplacementMapping): () => void;
+    getReplacement(type: string): Readonly<NodeReplacementMapping> | null;
+    listReplacements(): Readonly<NodeReplacementMapping>[];
 }
 
 export type MenuLocation = 'canvas' | 'node';

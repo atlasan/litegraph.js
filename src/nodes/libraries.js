@@ -1,6 +1,10 @@
 
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/libraries" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/libraries", version: LiteGraph.VERSION, title: "Libraries", builtin: true });
+
 // The library manager itself lives in src/librarymanager.js (LiteGraph.LibraryManager).
 
 // Utility function to format names
@@ -314,3 +318,5 @@ LiteGraph.registerNodeType("libraries/selector", CDNLibrarySelector);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("libraries/", ["network"]);
+
+LiteGraph.packs.close("litegraph/libraries");

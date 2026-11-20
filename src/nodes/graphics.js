@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/graphics" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/graphics", version: LiteGraph.VERSION, title: "Graphics", builtin: true });
+
 
 class GraphicsPlot {
 
@@ -945,3 +949,5 @@ LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("graphics/", ["browser", "dom"]);
+
+LiteGraph.packs.close("litegraph/graphics");
