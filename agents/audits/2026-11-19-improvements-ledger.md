@@ -1,10 +1,12 @@
 # Improvements ledger (2025 → 2026)
 
-Reviewed 2026-11-19. The 2025 automated analysis produced eight improvement wishlists, plus three recommendation documents in `analysis/`. This ledger records **what happened to each proposal**. The original texts are in git history (`git show 41d3de5:agents/improvements/`; the folder was removed after this ledger).
+> **Date** 2026-11-19 · **Kind** audit · **Status** final
+
+The 2025 automated analysis produced eight improvement wishlists, plus three recommendation documents in `analysis/`. This ledger records **what happened to each proposal**. The original texts are in git history (`git show 41d3de5:agents/improvements/`; the folder was removed after this ledger).
 
 **Statuses:**
 - **done:** in the code (the path is evidence).
-- **roadmap** or **harvest:** planned in the [roadmap](../plans/roadmap.md), or listed in the [harvest plan](../plans/261119_feature_harvest_and_priorities.md).
+- **roadmap** or **harvest:** planned in the [roadmap](../plans/roadmap.md), or listed in the [harvest plan](../plans/2026-11-19-feature-harvest-and-priorities.md).
 - **idea:** a row in the [ideas catalog](../ideas/catalog.md).
 - **dropped:** with a reason.
 

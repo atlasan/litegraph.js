@@ -1,6 +1,8 @@
 # LiteGraph ecosystem study and development directions
 
-Date: 2026-11-01. Status: first source-based research pass complete; comparative browser validation and implementation experiments remain pending. Implementation decisions remain proposals.
+> **Date** 2026-11-01 · **Kind** plan · **Status** done: findings in the [ecosystem study](../memories/research/ecosystem-study/README.md)
+
+Comparative browser validation and implementation experiments remain pending. Implementation decisions remain proposals.
 
 Study this fork, LiteGraph-TSX, ComfyUI's graph library and frontend, and representative custom-node UI extensions to identify useful capabilities, architectural tradeoffs, and a progressive development path. Preserve this fork's general-purpose browser and Node execution while evaluating stronger authoring and inspection experiences.
 
@@ -8,7 +10,7 @@ Study this fork, LiteGraph-TSX, ComfyUI's graph library and frontend, and repres
 
 - The separate baseline assessment owns current-library stabilization, tester and runner fixes, and their verification. This study consumes its published evidence without modifying its source files or declaring its work complete.
 - Three parallel research tracks cover LiteGraph-TSX, ComfyUI core/frontend, and custom-node UI patterns. The coordinating track compares local architecture and synthesizes findings.
-- Research outputs live in [the ecosystem study folder](../memories/research/ecosystem-study/README.md). This follows the proposed [workspace structure](261101_workspace_structure_and_memory.md) without performing that broader migration.
+- Research outputs live in [the ecosystem study folder](../memories/research/ecosystem-study/README.md). This follows the proposed [workspace structure](2026-11-01-workspace-structure-and-memory.md) without performing that broader migration.
 - No fork replacement, framework migration, package split, dependency installation, publication, or runtime feature implementation is part of this study.
 
 ## Questions to answer
@@ -61,10 +63,10 @@ These are hypotheses to rank after research, not accepted implementation commitm
 ## Research delivery
 
 - [Study index and synthesis](../memories/research/ecosystem-study/README.md)
-- [LiteGraph-TSX](../memories/research/ecosystem-study/litegraph-tsx.md)
-- [ComfyUI core and frontend](../memories/research/ecosystem-study/comfyui-core-frontend.md)
-- [ComfyUI custom-node UI patterns](../memories/research/ecosystem-study/comfyui-custom-node-ui.md)
-- [Local fit and experiment proposals](../memories/research/ecosystem-study/local-fit-and-experiments.md)
+- [LiteGraph-TSX](../memories/research/ecosystem-study/2026-11-01-litegraph-tsx.md)
+- [ComfyUI core and frontend](../memories/research/ecosystem-study/2026-11-01-comfyui-core-frontend.md)
+- [ComfyUI custom-node UI patterns](../memories/research/ecosystem-study/2026-11-01-comfyui-custom-node-ui.md)
+- [Local fit and experiment proposals](../memories/research/ecosystem-study/2026-11-01-local-fit-and-experiments.md)
 
 ## Research pass outcome
 

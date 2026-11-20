@@ -8,7 +8,7 @@ Without the adapter, problems run in both directions:
 - **Comfy into ours:** imports silently drop v1 state, reroutes, and subgraph definitions. Placeholder nodes ignore edits.
 - **Ours into Comfy:** exports fail validation. Comfy also drops every link because our `version` is not `0.4`.
 
-The full analysis is in [docs/development/ecosystem-study/comfyui-litegraph-relationship.md](../../agents/memories/research/ecosystem-study/comfyui-litegraph-relationship.md).
+The full analysis is in [ComfyUI LiteGraph relationship study](../../agents/memories/research/ecosystem-study/2026-11-18-comfyui-litegraph-relationship.md).
 
 ## Files
 

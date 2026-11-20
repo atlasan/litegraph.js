@@ -1,6 +1,8 @@
 # ComfyUI application layer: extensions, node library, packages, workspace
 
-Date: 2026-11-19. Status: **research report**. This was a design study only: nothing was copied or executed.
+> **Date** 2026-11-19 · **Kind** research · **Status** final
+
+This was a design study only: nothing was copied or executed.
 
 **Snapshots:**
 - ComfyUI_frontend `4f26f4d2` (GPL-3.0)
@@ -8,7 +10,7 @@ Date: 2026-11-19. Status: **research report**. This was a design study only: not
 - Comfy-Org/docs `bff417cc`
 - ComfyUI-Manager `5688993b`
 
-This report adds the concrete registry shapes and library/package/workspace mechanics to the [core frontend report](comfyui-core-frontend.md) §5. [I] marks an inference.
+This report adds the concrete registry shapes and library/package/workspace mechanics to the [core frontend report](2026-11-01-comfyui-core-frontend.md) §5. [I] marks an inference.
 
 **What was implemented here afterwards (Wave 1):** the extension registry, commands, keybindings and settings (§1–2), and node definitions with capabilities (§3, hybrid form). See the [roadmap](../../../plans/roadmap.md).
 

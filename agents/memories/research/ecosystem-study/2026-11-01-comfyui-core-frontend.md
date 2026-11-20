@@ -1,6 +1,8 @@
 # ComfyUI graph, frontend, and extension study
 
-Research date: 2026-11-01 (Europe/Madrid). Frontend source snapshot: [`834cce976e330fedaa7f85f5aab930d7b8a205e8`](https://github.com/Comfy-Org/ComfyUI_frontend/commit/834cce976e330fedaa7f85f5aab930d7b8a205e8), committed 2026-10-31. This is a source-and-document study, not a hands-on UX acceptance test. No ComfyUI code or custom nodes were executed. Test files establish intended contracts and useful regression cases; their presence does not establish a passing run.
+> **Date** 2026-11-01 · **Kind** research · **Status** final · **Base** ComfyUI_frontend `834cce9`
+
+Frontend source snapshot: [`834cce976e330fedaa7f85f5aab930d7b8a205e8`](https://github.com/Comfy-Org/ComfyUI_frontend/commit/834cce976e330fedaa7f85f5aab930d7b8a205e8), committed 2026-10-31. This is a source-and-document study, not a hands-on UX acceptance test. No ComfyUI code or custom nodes were executed. Test files establish intended contracts and useful regression cases; their presence does not establish a passing run.
 
 ## 1. The comparison target has changed
 

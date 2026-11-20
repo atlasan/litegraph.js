@@ -1,6 +1,8 @@
 # 3D libraries and standards
 
-Date: 2026-11-19. Status: **investigation**, living. Ideas `3D-01`–`3D-22`. The glTF interactivity design is in [card 3D-01](../cards/3D-01-gltf-khr-interactivity.md).
+> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+
+Ideas `3D-01`–`3D-22`. The glTF interactivity design is in [card 3D-01](../cards/3D-01-gltf-khr-interactivity.md).
 
 **Question:** which 3D libraries and standards have node or graph systems that litegraph can learn from, import, export or drive?
 

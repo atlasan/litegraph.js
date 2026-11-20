@@ -1,6 +1,8 @@
 # LiteGraph-TSX: architecture, lineage, and adoption study
 
-Research date: 2026-11-01. This report uses primary GitHub metadata, pinned source, roadmap, release notes, and issue discussions fetched during this study. It is a source assessment, not a successful build or browser acceptance claim. Local comparison point: `3b3957d7f87ad54cc282370e627c8d83993cec4d`.
+> **Date** 2026-11-01 · **Kind** research · **Status** final · **Base** litegraph.tsx `1220df17`
+
+This report uses primary GitHub metadata, pinned source, roadmap, release notes, and issue discussions fetched during this study. It is a source assessment, not a successful build or browser acceptance claim. Local comparison point: `3b3957d7f87ad54cc282370e627c8d83993cec4d`.
 
 ## Main conclusion
 

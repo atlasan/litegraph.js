@@ -1,10 +1,12 @@
-# Library, core, tools, and runner readiness
+# Readiness checklist: library, core, tools and runner
 
-Goal: have the full library, core, tester, and runner working well enough to use and develop confidently. A green focused suite is evidence for the paths it covers, not completion of this goal. Branch: `codex/litegraph-study-stabilization`, based on verified origin/master `f7f0c4a`.
+> **Date** 2026-11-01 · **Kind** execution · **Status** snapshot; open items continue in the [roadmap](../plans/roadmap.md) · **Base** `codex/litegraph-study-stabilization` @ `f7f0c4a`
+
+Goal: have the full library, core, tester, and runner working well enough to use and develop confidently. A green focused suite is evidence for the paths it covers, not completion of this goal.
 
 ## Verified foundation
 
-- Repository/history/upstream/fork investigation and branch rationale are recorded in [the study](../memories/research/2026-10-30-study.md).
+- Repository/history/upstream/fork investigation and branch rationale are recorded in [the study](../memories/research/2026-10-30-fork-investigation.md).
 - Twelve ESM/CommonJS artifacts build, parse, initialize, and package correctly; main/core/Node package entry points work. Strict ESM/CommonJS consumer fixtures compile against isolated published declarations and verify runtime export parity.
 - Registration preserves inherited overrides; connected execution, limits, ON_REQUEST ancestor refresh, deferred actions, event-cycle guards, repeated steps, exception recovery, and nested data/event serialization have fixtures.
 - Node dependencies and hooks initialize once; graph/worker/tester await readiness and report initialization failures.

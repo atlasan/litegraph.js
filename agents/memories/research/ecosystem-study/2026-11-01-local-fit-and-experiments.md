@@ -1,6 +1,8 @@
 # Local fit and progressive experiment proposals
 
-Date: 2026-11-01. Local source baseline: `3b3957d7f87ad54cc282370e627c8d83993cec4d`. This research runs alongside a separate baseline assessment whose uncommitted tester and runner work is outside this report. Proposed designs below are not implemented APIs.
+> **Date** 2026-11-01 · **Kind** research · **Status** final · **Base** `3b3957d`
+
+Local source baseline: `3b3957d7f87ad54cc282370e627c8d83993cec4d`. This research runs alongside a separate baseline assessment whose uncommitted tester and runner work is outside this report. Proposed designs below are not implemented APIs.
 
 The most promising direction is to strengthen LiteGraph as a general-purpose graph workspace: meaningful reusable components, efficient authoring, inspectable execution, and extensions that compose. ComfyUI provides concrete examples of a sophisticated authoring environment; LiteGraph-TSX provides a related modularization experiment. Neither should replace this fork's execution and lifecycle contracts without a separate compatibility investigation.
 
@@ -41,7 +43,7 @@ The runner already separates an executing worker graph from the editor preview. 
 
 ### Subgraph document structure and node identity
 
-The local representation stores a nested graph inside its node. ComfyUI's current implementation introduces more explicit definitions, interfaces, promoted controls, and application identity mapping; details are in the [ComfyUI report](comfyui-core-frontend.md).
+The local representation stores a nested graph inside its node. ComfyUI's current implementation introduces more explicit definitions, interfaces, promoted controls, and application identity mapping; details are in the [ComfyUI report](2026-11-01-comfyui-core-frontend.md).
 
 ComfyUI's developer documentation distinguishes local node IDs, execution paths, and UI locator IDs. That is a useful conceptual distinction, but its exact ID encoding is not automatically suitable for this runtime. A local inspector should resolve a structured graph path and node identity through one service, rather than letting every extension invent a string convention. [ComfyUI identity documentation](https://github.com/Comfy-Org/docs/blob/8d7322cf43d0db34a2de6f71e4a05e6c943073fb/custom-nodes/js/subgraphs.mdx)
 
@@ -113,7 +115,7 @@ Acceptance:
 
 Generalize the existing HTML overlay helper into a host contract: mount, update, resize, visibility, focus, and dispose. Keep the rendering technology behind that interface. Canvas drawing remains appropriate for lightweight graph elements; DOM widgets can supply rich controls. Framework adapters can follow actual consumer needs.
 
-Use one image comparer as the first reference. The [custom-node report](comfyui-custom-node-ui.md) identifies concrete examples of state separation, async request guards, and media cleanup.
+Use one image comparer as the first reference. The [custom-node report](2026-11-01-comfyui-custom-node-ui.md) identifies concrete examples of state separation, async request guards, and media cleanup.
 
 Acceptance:
 

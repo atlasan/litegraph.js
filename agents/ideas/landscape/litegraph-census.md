@@ -1,6 +1,8 @@
 # Census: what other projects build on litegraph
 
-Date: 2026-11-19. Status: **investigation**, living. Ideas `USE-01`–`USE-45`.
+> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+
+Ideas `USE-01`–`USE-45`.
 
 **Question:** who builds on litegraph (jagenjo's original, Comfy-Org's standalone, litegraph.ts, litegraph-tsx and other forks)? For which purpose, and what did they add on top?
 

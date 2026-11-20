@@ -1,6 +1,8 @@
 # Survey: UIs built on litegraph, and the behaviors worth generalizing
 
-Date: 2026-11-19. Status: **research report**. I read shallow clones of the source and did not run anything. This complements the [custom-node UI pattern catalog](comfyui-custom-node-ui.md), which covers rgthree, Custom-Scripts, KJNodes, VideoHelperSuite and Easy-Use. [I] marks an inference.
+> **Date** 2026-11-19 · **Kind** research · **Status** final
+
+I read shallow clones of the source and did not run anything. This complements the [custom-node UI pattern catalog](2026-11-01-comfyui-custom-node-ui.md), which covers rgthree, Custom-Scripts, KJNodes, VideoHelperSuite and Easy-Use. [I] marks an inference.
 
 "No license" means no license was found, so the repository is reference-only.
 

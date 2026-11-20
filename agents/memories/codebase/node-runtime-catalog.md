@@ -1,6 +1,8 @@
 # Built-in node runtime and dependency map
 
-Reviewed against local sources on 2026-11-01. This is a family-level maintenance map, not a claim that every node has been executed. Registration, construction, readiness, execution, and resource cleanup are separate checks.
+> **Updated** 2026-11-01 · **Kind** reference · **Status** living
+
+This is a family-level maintenance map, not a claim that every node has been executed. Registration, construction, readiness, execution, and resource cleanup are separate checks.
 
 ## Entry points
 

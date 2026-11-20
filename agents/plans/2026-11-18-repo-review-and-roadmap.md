@@ -1,6 +1,8 @@
 # LiteGraph.js: repository review and roadmap proposal
 
-Date: 2026-11-18. Branch `claude/litegraph-study-baseline` at `8a8d952` (same commit as `codex/litegraph-study-stabilization`). Status: **proposal**. Nothing in this document has been implemented. Evidence labels: **[V]** means verified by running it or reading the exact lines; **[I]** means inferred from code.
+> **Date** 2026-11-18 · **Kind** plan · **Status** superseded by the [roadmap](roadmap.md); its bugs are tracked in the [inventory audit](../audits/2026-11-19-fork-inventory.md) · **Base** `8a8d952`
+
+Written as a proposal on `claude/litegraph-study-baseline` (the same commit as `codex/litegraph-study-stabilization`). Evidence labels: **[V]** means verified by running it or reading the exact lines; **[I]** means inferred from code.
 
 ## 1. Where we are
 
@@ -191,7 +193,7 @@ Ordered by dependency. Each phase is one or more reviewable PRs. Sizes: S = unde
 4. **Widget host:** generalize the `nodes/html.js` lifecycle (persistent vs transient state, dispose, zoom-aware placement, focus styles).
 5. **Execution inspector:** observation records with a graph-revision identity, per-node last value, error and timing; worker-to-editor identity mapping for the runner.
 
-### Phase 5: Repository organization (M), per `261101_workspace_structure_and_memory.md`
+### Phase 5: Repository organization (M), per `2026-11-01-workspace-structure-and-memory.md`
 - Root `AGENTS.md`/`CONTRIBUTING.md`.
 - Move `agents/` into `docs/history/`.
 - Archive the 2024 JSDoc and generate into an ignored directory.
@@ -205,7 +207,7 @@ Ordered by dependency. Each phase is one or more reviewable PRs. Sizes: S = unde
 - Add per-node runtime capability metadata, which the readiness checklist already calls for.
 
 ### ComfyUI track (C0–C4)
-See [the ComfyUI LiteGraph relationship report](../memories/research/ecosystem-study/comfyui-litegraph-relationship.md#6-proposed-plan).
+See [the ComfyUI LiteGraph relationship report](../memories/research/ecosystem-study/2026-11-18-comfyui-litegraph-relationship.md#6-proposed-plan).
 
 **Status 2026-11-18, branch `LG/comfy_donor`:**
 - **C0–C3: implemented with tests.**
@@ -247,4 +249,4 @@ Remote deletion is outward-facing and needs explicit approval before it is done.
 - **Phase 0:** a WebSocket from a foreign Origin is rejected in a test; `sys/*` is unavailable in the runner by default; the branch is merged to `master`.
 - **Phase 1:** `no-undef` is on with zero errors; every B-item has a regression test or a browser check noted in `readiness.md`.
 - **Phase 3:** the core build has no canvas classes; paste of N nodes = 1 undo entry; consumer and type gates still pass.
-- **Phase 4:** each experiment meets the acceptance question in `261101_litegraph_ecosystem_study.md`.
+- **Phase 4:** each experiment meets the acceptance question in `2026-11-01-ecosystem-study-plan.md`.

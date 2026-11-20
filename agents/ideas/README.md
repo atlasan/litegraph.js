@@ -1,6 +1,8 @@
 # Ideas docspace
 
-Started 2026-11-19. **Living.** This is a database of feature and integration ideas for this fork. It is grouped by *purpose* (what people build with node graphs) and informed by how other projects use litegraph and its neighbours.
+> **Started** 2026-11-19 · **Kind** index · **Status** living
+
+This is a database of feature and integration ideas for this fork. It is grouped by *purpose* (what people build with node graphs) and informed by how other projects use litegraph and its neighbours.
 
 **This is not the production pipeline.** Nothing here is planned, scheduled or promised:
 - The [roadmap](../plans/roadmap.md) and [plans/](../plans/README.md) hold accepted work.
@@ -55,7 +57,7 @@ Started 2026-11-19. **Living.** This is a database of feature and integration id
 
 ## Cards
 
-Ideas with a design sketch get a card in `cards/`, named `<ID>-<slug>.md` and copied from [_template.md](_template.md). A card links back to its area document and catalog row.
+Ideas with a design sketch get a card in `cards/`, named `<ID>-<slug>.md` and copied from [idea-card template](../_templates/idea-card.md). A card links back to its area document and catalog row.
 
 ## Conventions
 
@@ -75,7 +77,7 @@ Ideas with a design sketch get a card in `cards/`, named `<ID>-<slug>.md` and co
 | `X` | Cross-cutting platform ideas that several areas need |
 | `DEV` | Repository tooling: coverage, benchmarks, release |
 
-Hook IDs `H1`–`H10` refer to the monkey-patch hooks in the [feature harvest plan](../plans/261119_feature_harvest_and_priorities.md#3-the-monkey-patch-signal-hooks-core-must-own). Wave numbers refer to the [roadmap](../plans/roadmap.md).
+Hook IDs `H1`–`H10` refer to the monkey-patch hooks in the [feature harvest plan](../plans/2026-11-19-feature-harvest-and-priorities.md#3-the-monkey-patch-signal-hooks-core-must-own). Wave numbers refer to the [roadmap](../plans/roadmap.md).
 
 ### Fields
 

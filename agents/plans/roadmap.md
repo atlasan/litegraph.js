@@ -1,8 +1,10 @@
 # Roadmap: waves
 
-Living document; last updated 2026-11-19 (Wave 1 complete). This is the single place for the current status of planned work.
+> **Updated** 2026-11-19 · **Kind** roadmap · **Status** living; Wave 1 complete
 
-- **Design reasoning and idea catalog:** [feature harvest and priorities](261119_feature_harvest_and_priorities.md).
+This is the single place for the current status of planned work.
+
+- **Design reasoning and idea catalog:** [feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md).
 - **Evidence:** [ecosystem study](../memories/research/ecosystem-study/README.md) and [audits](../audits/README.md).
 
 ## Branch model
@@ -127,7 +129,7 @@ Requires deciding [ADR 0001](../memories/decisions/0001-subgraph-document-format
 
 ## Wave 5: repository organization and packaging (proposed)
 
-From the [workspace plan](261101_workspace_structure_and_memory.md) and the 11-18 roadmap phases 2 and 5:
+From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 11-18 roadmap phases 2 and 5:
 
 - **Packaging truthfulness:** an exports map without `./build/*` wildcards, real runtime dependencies, no `defaults_debug.js` in library builds.
 - **CI:** check that `build/` is fresh (`git diff --exit-code`).

@@ -1,6 +1,8 @@
 # Bun process designer and runner
 
-Date: 2026-11-19. Status: **investigation**, living. Ideas `BUN-01`–`BUN-22`. The concept design is in [card BUN-01](../cards/BUN-01-process-runner-on-bun.md).
+> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+
+Ideas `BUN-01`–`BUN-22`. The concept design is in [card BUN-01](../cards/BUN-01-process-runner-on-bun.md).
 
 **Question:** litegraph already designs graphs in the browser and runs them headless on Node (`headless/graphrunner`). What would it take to turn that into a **process designer and runner**? Such a runner has triggers, durable steps, retries, waits and human approvals. Which parts does Bun make cheap?
 

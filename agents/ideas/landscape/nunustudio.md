@@ -1,6 +1,8 @@
 # nunuStudio
 
-Date: 2026-11-19. Status: **investigation**, living. Ideas `NUN-01`–`NUN-06`.
+> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+
+Ideas `NUN-01`–`NUN-06`.
 
 **Question:** how could litegraph become the logic and material graph of [nunuStudio](https://github.com/tentone/nunuStudio), a three.js-based web 3D editor? What does that teach about hosting litegraph inside any 3D editor?
 

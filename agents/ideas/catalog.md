@@ -1,6 +1,8 @@
 # Ideas catalog
 
-Date: 2026-11-19. **Living database.** One row per idea. The [README](README.md#conventions) defines the IDs, fields and lifecycle, and [purposes.md](purposes.md) defines P1 to P10. Details are in each idea's area document.
+> **Updated** 2026-11-20 · **Kind** idea catalog · **Status** living
+
+One row per idea. The [README](README.md#conventions) defines the IDs, fields and lifecycle, and [purposes.md](purposes.md) defines P1 to P10. Details are in each idea's area document.
 
 Rows are grouped by area and sorted by ID. Keep the columns as they are, because the table is meant to be parsed. Before relying on any count derived from it, regenerate the count with a script.
 

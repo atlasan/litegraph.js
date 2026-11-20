@@ -1,6 +1,6 @@
 # Purposes: what node graphs are for
 
-Date: 2026-11-19. Living.
+> **Updated** 2026-11-20 · **Kind** idea taxonomy · **Status** living
 
 This taxonomy is the **first axis** of the ideas database. Each idea serves one or more purposes. The [catalog](catalog.md) is the second axis (one row per idea), and the [landscape](README.md#landscape-investigations) documents are the evidence.
 

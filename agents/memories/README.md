@@ -1,19 +1,28 @@
 # Memories
 
-Durable knowledge: what is true about the code, what was decided, and what was learned. Keep each record dated and current, and correct it rather than appending to it.
+Durable knowledge. **Codebase** documents are living: correct them in place whenever the code changes. **Decisions** and **research** are dated records: write them once, and replace them with a new record instead of rewriting them.
 
-| Folder | Holds |
+## Codebase (living)
+
+| Document | Holds |
 |---|---|
-| [codebase/](codebase/README.md) | The codebase map and the [node runtime catalog](codebase/node-runtime-catalog.md) |
-| [decisions/](decisions/) | Architecture decision records. [0001 Subgraph document format](decisions/0001-subgraph-document-format.md) is proposed; it is decision D2 in the [roadmap](../plans/roadmap.md) |
-| [research/](research/) | Dated investigations (listed below) |
+| [Codebase map](codebase/README.md) | Layout, initialization, model, execution, platform, canvas, runner, build, traps |
+| [Node runtime catalog](codebase/node-runtime-catalog.md) | Node families, their dependencies and runtimes, evidence |
+
+## Decisions
+
+Template: [decision](../_templates/decision.md).
+
+| Record | Status |
+|---|---|
+| [0001 Subgraph document format](decisions/0001-subgraph-document-format.md) | proposed; decision D2 in the [roadmap](../plans/roadmap.md) |
 
 ## Research
 
+Template: [research](../_templates/research.md). Research that yields *ideas* goes to [ideas/](../ideas/README.md); research that yields *knowledge* belongs here.
+
 | Date | Record |
 |---|---|
-| 2026-10-30 | [Investigation](research/2026-10-30-study.md): history, upstream and forks, branch choice, baseline defects |
-| 2026-11-01 → 11-19 | [Ecosystem study](research/ecosystem-study/README.md): ComfyUI, LiteGraph-TSX, plugin UIs, the relationship with Comfy |
 | 2026-11-19 | [Upstream issue triage](research/2026-11-19-upstream-issue-triage.md): 50 upstream defects checked against this fork |
-
-Research that produces *ideas* goes to the [ideas docspace](../ideas/README.md). Research that produces *knowledge* belongs here.
+| 2026-11-01 → 11-19 | [Ecosystem study](research/ecosystem-study/README.md) (series): ComfyUI, LiteGraph-TSX, plugin UIs, the relationship with Comfy |
+| 2026-10-30 | [Fork investigation](research/2026-10-30-fork-investigation.md): history, upstream and forks, branch choice, baseline defects |

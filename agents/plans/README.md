@@ -1,37 +1,30 @@
 # Plans
 
-What will change, and its status. What exists today is in [docs/](../../docs/) and the [codebase map](../memories/codebase/README.md). What was done is in [executions/](../executions/README.md).
+What will change, and its status. What exists today is in [docs/](../../docs/) and the [codebase map](../memories/codebase/README.md); what was done is in [executions/](../executions/README.md).
 
-**Start here:** [roadmap.md](roadmap.md) has the current waves, their status, the branch model and the open decisions.
+**Start here:** the [roadmap](roadmap.md) has the current waves, the branch model and the open decisions.
 
 ## Lifecycle
 
-**Idea → proposal → accepted plan → completed work**. An item may also be deferred, rejected or superseded.
+**Idea → proposal → plan → done**, or deferred, rejected, superseded.
 
-- **Idea:** a problem or opportunity, why it matters, where it came from. Ideas that are not yet in this lifecycle live in the [ideas docspace](../ideas/README.md). An idea enters here only when someone writes a proposal for it.
-- **Proposal:** alternatives, tradeoffs, compatibility impact, a recommendation.
-- **Plan:** the accepted outcome, its boundaries, dependencies, acceptance checks and status.
-- **Decision record:** a durable architectural choice and its consequences. These live in [memories/decisions](../memories/decisions/).
+| Stage | Where | Content |
+|---|---|---|
+| Idea | [ideas/](../ideas/README.md) | Problem or opportunity, purpose, source |
+| Proposal | here, `Status: proposed` | Alternatives, tradeoffs, compatibility, a recommendation |
+| Plan | here, `Status: accepted` | Outcome, scope, steps with acceptance checks |
+| Wave | [roadmap](roadmap.md) | Accepted work in order |
+| Decision | [memories/decisions](../memories/decisions/) | A durable architectural choice |
+| Done | [executions/](../executions/README.md) | What ran and how it was verified |
 
-Status belongs in the record itself, or in the roadmap for waves. Indexes link to records rather than copying them.
+New plans start from the [plan template](../_templates/plan.md).
 
-## Plans
+## Index
 
-| File | Date | Kind | Status |
-|---|---|---|---|
-| [261119_feature_harvest_and_priorities.md](261119_feature_harvest_and_priorities.md) | 2026-11-19 | Idea catalog and wave proposal | Accepted as the basis of the [roadmap](roadmap.md); Waves 0–1 delivered |
-| [261118_repo_review_and_roadmap.md](261118_repo_review_and_roadmap.md) | 2026-11-18 | Repository review (bugs B1–B15, P0) and phase plan | Mostly superseded by the roadmap; its bug list is tracked in the [inventory audit](../audits/2026-11-19-fork-inventory.md) |
-| [261101_litegraph_ecosystem_study.md](261101_litegraph_ecosystem_study.md) | 2026-11-01 | Research plan | Completed; findings in the [ecosystem study](../memories/research/ecosystem-study/README.md) |
-| [261101_workspace_structure_and_memory.md](261101_workspace_structure_and_memory.md) | 2026-11-01 | Workspace and documentation model | Accepted direction; implementation is Wave 5 (this folder layout and `AGENTS.md` follow it) |
-
-## Decisions
-
-| Record | Status |
-|---|---|
-| [0001 Subgraph document format](../memories/decisions/0001-subgraph-document-format.md) | Proposed; decision D2 in the roadmap |
-
-## Evidence
-
-- [Memories](../memories/README.md): the codebase map, decisions, research (including the ecosystem study).
-- [Audits](../audits/README.md): dated reviews.
-- [Executions](../executions/README.md): validation runs and wave records.
+| Date | Plan | Status |
+|---|---|---|
+| 2026-11-19 | [Feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md): idea catalog and wave proposal | accepted; the basis of the roadmap |
+| 2026-11-18 | [Repository review and roadmap](2026-11-18-repo-review-and-roadmap.md): bugs B1–B15, phase plan | superseded by the roadmap |
+| 2026-11-01 | [Workspace structure and memory](2026-11-01-workspace-structure-and-memory.md): repository and documentation model | accepted; `agents/` and `docs/` are done, app moves are Wave 5 |
+| 2026-11-01 | [Ecosystem study plan](2026-11-01-ecosystem-study-plan.md): research scope | done |
+| 2024-05-05 | [Goals for 1.0](2024-05-05-goals-for-1-0.md): the former root `TODO.md` | historical |

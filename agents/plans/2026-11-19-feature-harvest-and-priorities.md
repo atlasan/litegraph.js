@@ -1,13 +1,13 @@
 # Feature harvest and priorities: ComfyUI LiteGraph, the litegraph plugin ecosystem, and this fork
 
-Date: 2026-11-19. Base: `master` @ `01cb4ea`.
+> **Date** 2026-11-19 · **Kind** plan · **Status** accepted: the basis of the [roadmap](roadmap.md) · **Base** `master` @ `01cb4ea`
 
-**Status:** accepted as the basis of the [roadmap](roadmap.md), which tracks progress: Wave 0 and the Wave 1 core are delivered. The full research behind it is in [ecosystem-study](../memories/research/ecosystem-study/README.md) (reports 7–9) and the [inventory audit](../audits/2026-11-19-fork-inventory.md).
+The [roadmap](roadmap.md) tracks progress: Wave 0 and the Wave 1 core are delivered. The full research behind it is in [ecosystem-study](../memories/research/ecosystem-study/README.md) (reports 7–9) and the [inventory audit](../audits/2026-11-19-fork-inventory.md).
 
 This builds on three earlier documents and does not repeat them:
 - the [ecosystem study](../memories/research/ecosystem-study/README.md) (2026-11-01)
-- the [ComfyUI relationship study](../memories/research/ecosystem-study/comfyui-litegraph-relationship.md) (2026-11-18)
-- the [roadmap](261118_repo_review_and_roadmap.md) (2026-11-18)
+- the [ComfyUI relationship study](../memories/research/ecosystem-study/2026-11-18-comfyui-litegraph-relationship.md) (2026-11-18)
+- the [roadmap](2026-11-18-repo-review-and-roadmap.md) (2026-11-18)
 
 **Labels:**
 - **[V]** verified in source; **[I]** inferred.

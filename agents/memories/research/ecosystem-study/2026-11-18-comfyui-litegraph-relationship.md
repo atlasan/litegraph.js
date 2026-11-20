@@ -1,6 +1,6 @@
 # ComfyUI's LiteGraph and this fork: relationship, interoperability, and options
 
-**Date:** 2026-11-18.
+> **Date** 2026-11-18 · **Kind** research · **Status** final
 
 **Sources:**
 - This fork: `claude/litegraph-study-baseline` @ `8a8d952`.
@@ -9,7 +9,7 @@
 
 **Labels:** **[V]** means verified by reading the source, running git, or running a probe. **[I]** means inferred.
 
-This complements the [UX-focused ComfyUI report](comfyui-core-frontend.md). That report asks *what can we learn from Comfy's editor*. This one asks *what is the relationship between the codebases, and what should we import, sync, derive, fork, or join*.
+This complements the [UX-focused ComfyUI report](2026-11-01-comfyui-core-frontend.md). That report asks *what can we learn from Comfy's editor*. This one asks *what is the relationship between the codebases, and what should we import, sync, derive, fork, or join*.
 
 ## Answer in one paragraph
 
@@ -155,7 +155,7 @@ Method: Comfy's current `workflowSchema.ts` run verbatim under zod 4 against 5 r
 
 ## 6. Proposed plan
 
-Phase names refer to the [repository roadmap](../../../plans/261118_repo_review_and_roadmap.md). Sizes: S = under a day, M = a few days, L = a week or more.
+Phase names refer to the [repository roadmap](../../../plans/2026-11-18-repo-review-and-roadmap.md). Sizes: S = under a day, M = a few days, L = a week or more.
 
 ### C0: Serializer hygiene, in core (S). Fixes our own bugs first.
 1. Stop shipping `editor/js/defaults_debug.js` in full builds, or at least stop it setting `use_uuids`.

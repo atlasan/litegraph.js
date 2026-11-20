@@ -1,10 +1,12 @@
 # ComfyUI LiteGraph core: feature harvest
 
-Date: 2026-11-19. Status: **research report** (source reading only, nothing executed). Feeds the [feature harvest plan](../../../plans/261119_feature_harvest_and_priorities.md) and the [roadmap](../../../plans/roadmap.md).
+> **Date** 2026-11-19 · **Kind** research · **Status** final
+
+Source reading only, nothing executed. Feeds the [feature harvest plan](../../../plans/2026-11-19-feature-harvest-and-priorities.md) and the [roadmap](../../../plans/roadmap.md).
 
 **Snapshots:**
 - **SA** = the archived MIT standalone [Comfy-Org/litegraph.js](https://github.com/Comfy-Org/litegraph.js) @ `ea0e1a8` (0.17.2, 2025-08-05). It may be adapted module by module, with attribution.
-- **FE** = [Comfy-Org/ComfyUI_frontend](https://github.com/Comfy-Org/ComfyUI_frontend) @ `4f26f4d` (2026-11-19). It is a design reference only: the root is GPL-3.0, and the provenance of post-merge changes in `src/lib/litegraph` is ambiguous (see the [relationship study](comfyui-litegraph-relationship.md) §2).
+- **FE** = [Comfy-Org/ComfyUI_frontend](https://github.com/Comfy-Org/ComfyUI_frontend) @ `4f26f4d` (2026-11-19). It is a design reference only: the root is GPL-3.0, and the provenance of post-merge changes in `src/lib/litegraph` is ambiguous (see the [relationship study](2026-11-18-comfyui-litegraph-relationship.md) §2).
 
 **Columns and labels:**
 - **MIT** says whether the feature already existed in SA.

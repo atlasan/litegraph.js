@@ -1,10 +1,12 @@
 # 0001: Subgraph document format (inline vs ComfyUI-style definitions)
 
-**Status:** Proposed on 2026-11-18. It is to be **accepted or rejected when subgraph authoring (roadmap Phase 4.3) starts**, together with the conversion work it depends on.
+> **Date** 2026-11-18 · **Kind** decision · **Status** proposed; decision D2 in the [roadmap](../../plans/roadmap.md)
+
+It is to be **accepted or rejected when subgraph authoring (roadmap Phase 4.3) starts**, together with the conversion work it depends on.
 
 **Context documents:**
-- [ComfyUI LiteGraph relationship](../research/ecosystem-study/comfyui-litegraph-relationship.md), §3 "Semantic collisions" and §6 "C4".
-- [Repository roadmap](../../plans/261118_repo_review_and_roadmap.md).
+- [ComfyUI LiteGraph relationship](../research/ecosystem-study/2026-11-18-comfyui-litegraph-relationship.md), §3 "Semantic collisions" and §6 "C4".
+- [Repository roadmap](../../plans/2026-11-18-repo-review-and-roadmap.md).
 
 ## Context
 

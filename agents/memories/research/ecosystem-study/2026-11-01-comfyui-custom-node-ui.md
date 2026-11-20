@@ -1,6 +1,8 @@
 # ComfyUI custom-node UI ecosystem study
 
-Study date: 2026-11-01. Scope: source-level research of selected frontend extensions, their UI patterns, integration contracts, and suitability for this LiteGraph fork. No extensions were installed or executed, and no visual acceptance or compatibility pass is claimed. This is a deliberately selected sample, not a census of the ecosystem or a ranking by popularity.
+> **Date** 2026-11-01 · **Kind** research · **Status** final
+
+Scope: source-level research of selected frontend extensions, their UI patterns, integration contracts, and suitability for this LiteGraph fork. No extensions were installed or executed, and no visual acceptance or compatibility pass is claimed. This is a deliberately selected sample, not a census of the ecosystem or a ranking by popularity.
 
 ## Main finding
 

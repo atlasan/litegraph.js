@@ -1,6 +1,8 @@
 # Other JS libraries: node families, widgets and runtimes
 
-Date: 2026-11-19. Status: **investigation**, living. Ideas `JS-01`–`JS-34`.
+> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+
+Ideas `JS-01`–`JS-34`.
 
 **Question:** which JavaScript libraries would make good node families, widgets, extensions or alternative runtimes for litegraph? What does each cost in weight, license and runtime support?
 

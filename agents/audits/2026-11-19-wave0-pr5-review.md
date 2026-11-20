@@ -1,6 +1,8 @@
 # PR #5 (Wave 0) independent verification
 
-Date: 2026-11-19. Status: **audit**. This is an independent review of [PR #5](https://github.com/atlasan/litegraph.js/pull/5) (`LG/wave0_safety`), made by a separate agent session in its own worktree.
+> **Date** 2026-11-19 · **Kind** audit · **Status** final; follow-ups listed below · **Base** `LG/wave0_safety` (PR #5)
+
+This is an independent review of [PR #5](https://github.com/atlasan/litegraph.js/pull/5) (`LG/wave0_safety`), made by a separate agent session in its own worktree.
 
 **Follow-up since the review:**
 - The two fixes below were merged into `LG/wave1_platform` and `LG/dev`.

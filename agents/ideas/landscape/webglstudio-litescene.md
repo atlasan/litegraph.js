@@ -1,6 +1,8 @@
 # WebGLStudio, LiteScene and litegl
 
-Date: 2026-11-19. Status: **investigation**, living. Ideas `WGS-01`–`WGS-10`.
+> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+
+Ideas `WGS-01`–`WGS-10`.
 
 **Question:** litegraph was born inside jagenjo's WebGLStudio, a browser 3D editor built on LiteScene (engine) and litegl (WebGL wrapper). How did that stack use graphs? What can this fork revive, given that it still ships litegl-based node families (`glshaders.js`, `gltextures.js`, `glfx.js`)?
 

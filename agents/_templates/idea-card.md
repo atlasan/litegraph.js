@@ -1,5 +1,5 @@
 <!--
-Idea card template. Copy to cards/<ID>-<slug>.md only when an idea outgrows its row
+Idea card template. Copy to agents/ideas/cards/<ID>-<slug>.md only when an idea outgrows its row
 in an area document (it needs a design sketch, open questions or experiments).
 Short ideas stay as entries in their area document and as a row in catalog.md.
 -->

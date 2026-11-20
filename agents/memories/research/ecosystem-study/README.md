@@ -1,6 +1,8 @@
 # LiteGraph ecosystem study and development directions
 
-Research date: 2026-11-01. Status: first source-based research pass complete; implementation and comparative browser validation remain follow-on work. The [saved plan](../../../plans/261101_litegraph_ecosystem_study.md) tracks scope and next steps.
+> **Date** 2026-11-01 → 2026-11-19 · **Kind** research series · **Status** first pass complete
+
+Implementation and comparative browser validation remain follow-on work. The [saved plan](../../../plans/2026-11-01-ecosystem-study-plan.md) tracks scope and next steps.
 
 **The strongest opportunity is to combine this fork's general-purpose execution with a more capable authoring environment: reusable subgraph interfaces, contextual discovery, rich inspection, and extensions with clear ownership.** ComfyUI provides detailed examples of these interactions. LiteGraph-TSX provides a related modernization experiment. Their useful ideas need different adoption strategies; neither is a drop-in upgrade for this fork.
 
@@ -9,16 +11,16 @@ Research date: 2026-11-01. Status: first source-based research pass complete; im
 | Step | Report | What it answers |
 | --- | --- | --- |
 | 1 | This synthesis | What matters across the projects, and what direction follows? |
-| 2 | [LiteGraph-TSX](litegraph-tsx.md) | What modernization exists, what remains experimental, and which patterns transfer? |
-| 3 | [ComfyUI core and frontend](comfyui-core-frontend.md) | How do empowered subgraphs, search, rendering, and extension services work? |
-| 4 | [Custom-node UI patterns](comfyui-custom-node-ui.md) | What can rgthree, Custom-Scripts, KJNodes, VideoHelperSuite, and Easy-Use teach us? |
-| 5 | [Local fit and experiments](local-fit-and-experiments.md) | How can this fork adopt the useful behavior while preserving its contracts? |
-| 6 | [ComfyUI LiteGraph relationship](comfyui-litegraph-relationship.md) (2026-11-18) | Should we import, sync, derive, fork, or join? How interoperable is the graph JSON? |
+| 2 | [LiteGraph-TSX](2026-11-01-litegraph-tsx.md) | What modernization exists, what remains experimental, and which patterns transfer? |
+| 3 | [ComfyUI core and frontend](2026-11-01-comfyui-core-frontend.md) | How do empowered subgraphs, search, rendering, and extension services work? |
+| 4 | [Custom-node UI patterns](2026-11-01-comfyui-custom-node-ui.md) | What can rgthree, Custom-Scripts, KJNodes, VideoHelperSuite, and Easy-Use teach us? |
+| 5 | [Local fit and experiments](2026-11-01-local-fit-and-experiments.md) | How can this fork adopt the useful behavior while preserving its contracts? |
+| 6 | [ComfyUI LiteGraph relationship](2026-11-18-comfyui-litegraph-relationship.md) (2026-11-18) | Should we import, sync, derive, fork, or join? How interoperable is the graph JSON? |
 | 7 | [ComfyUI core harvest](2026-11-19-comfy-core-harvest.md) (2026-11-19) | Which subgraph, widget, link, rendering, group and selection features exist in Comfy's core, and are they available under MIT? |
 | 8 | [ComfyUI application layer](2026-11-19-comfy-app-layer.md) (2026-11-19) | How do Comfy's extension API, command/keybinding/settings registries, node definitions, library, packages and workspace work? |
 | 9 | [Plugin and litegraph UI survey](2026-11-19-plugin-ui-survey.md) (2026-11-19) | What do other custom-node UIs and litegraph-based apps add, and which core hooks do they keep monkey-patching? |
 
-These three reports feed the [feature harvest plan](../../../plans/261119_feature_harvest_and_priorities.md) and the [roadmap](../../../plans/roadmap.md).
+These three reports feed the [feature harvest plan](../../../plans/2026-11-19-feature-harvest-and-priorities.md) and the [roadmap](../../../plans/roadmap.md).
 
 ## What changed in our understanding
 
@@ -42,7 +44,7 @@ For this fork, component interfaces can evolve while retaining inline nested gra
 
 ### Custom-node UI is a pattern library and a compatibility case study
 
-The sampled repositories show useful solutions for group controls, reroutes, dynamic slots, finding existing nodes, text completion, comparison widgets, media previews, and parameter-driven layouts. They also contain adapters for changing frontend generations, private APIs, and prototype patches. A generic host should turn repeated needs into supported services instead of requiring every extension to repeat those patches. See the [pinned pattern catalog](comfyui-custom-node-ui.md).
+The sampled repositories show useful solutions for group controls, reroutes, dynamic slots, finding existing nodes, text completion, comparison widgets, media previews, and parameter-driven layouts. They also contain adapters for changing frontend generations, private APIs, and prototype patches. A generic host should turn repeated needs into supported services instead of requiring every extension to repeat those patches. See the [pinned pattern catalog](2026-11-01-comfyui-custom-node-ui.md).
 
 ## Capability comparison
 
@@ -81,7 +83,7 @@ This order can be adjusted after the baseline assessment. Navigation state and v
 - What extension contribution APIs cover real examples without exposing the whole application singleton?
 - Which operations must be atomic for history, event delivery, and resource ownership?
 
-The [experiment proposals](local-fit-and-experiments.md) turn these into acceptance cases rather than speculative deadlines.
+The [experiment proposals](2026-11-01-local-fit-and-experiments.md) turn these into acceptance cases rather than speculative deadlines.
 
 ## Evidence and scope
 

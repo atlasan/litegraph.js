@@ -1,6 +1,8 @@
 # Upstream issue triage (jagenjo/litegraph.js)
 
-Checked on 2026-11-19 against branch `LG/bug_test_fixes`. The upstream repository had
+> **Date** 2026-11-19 · **Kind** research · **Status** final · **Base** `LG/bug_test_fixes`
+
+The upstream repository had
 132 open issues. About 80 are questions, feature requests or support threads and were not
 examined beyond their title. The 50 that describe a defect were checked against this fork:
 by reading the code and, where possible, by running a reproduction against

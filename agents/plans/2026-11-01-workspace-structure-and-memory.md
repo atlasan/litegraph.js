@@ -1,5 +1,7 @@
 # LiteGraph.js: workspace structure and project memory
 
+> **Date** 2026-11-01 · **Kind** plan · **Status** accepted direction. The `agents/` workspace and the reference-only `docs/` were done in 2026-11; moving the applications is Wave 5
+
 ## 1. Foundation and current state
 
 Organize the repository around **LiteGraph.js as a shared foundation**, surrounded by applications, extensions, integrations, and utilities that can evolve at different speeds. Give users, contributors, and coding agents clear entry points into the same maintained knowledge.

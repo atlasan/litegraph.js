@@ -24,7 +24,27 @@ Short operational notes for contributors and coding agents. Keep this file refer
 - **New `src/` modules:**
   - Add them to the file lists in `build.py`, in dependency order.
   - Declare new public exports in `src/litegraph.d.cts`, or `src/litegraph.node.d.cts` for the Node bundle. `check:types` fails when the declared exports and the runtime exports differ.
-- **Docs:** update `docs/` (reference only), the [roadmap](agents/plans/roadmap.md) and `CHANGES.md` with the change that makes them true. Put research in `agents/memories/`, run records in `agents/executions/`, reviews in `agents/audits/`, ideas in `agents/ideas/`.
+- **Docs:** update `docs/`, the [roadmap](agents/plans/roadmap.md) and `CHANGES.md` together with the change that makes them true. `docs/` holds only the generated API (`docs/api/`) and the reference pages.
+
+## Records
+
+Write every plan, run, review, research note and idea as a file in [agents/](agents/README.md), never only in chat:
+
+| Record | Where | Template |
+|---|---|---|
+| Plan or proposal | `agents/plans/YYYY-MM-DD-topic.md` | [plan](agents/_templates/plan.md) |
+| What was done, with its checks (one per wave or run) | `agents/executions/YYYY-MM-DD-topic.md` | [execution](agents/_templates/execution.md) |
+| Review at a commit | `agents/audits/YYYY-MM-DD-topic.md` | [audit](agents/_templates/audit.md) |
+| Research, findings | `agents/memories/research/YYYY-MM-DD-topic.md` | [research](agents/_templates/research.md) |
+| Architectural decision | `agents/memories/decisions/NNNN-topic.md` | [decision](agents/_templates/decision.md) |
+| Idea | a row in `agents/ideas/catalog.md`; a card when it needs a sketch | [idea card](agents/_templates/idea-card.md) |
+
+- **Name and header:** name records with the date they were written. Start each one with `> **Date** … · **Kind** … · **Status** … · **Base** branch @ commit`.
+- **Index:** add a row to the folder's `README.md` in the same commit.
+- **Living documents:** the roadmap, the codebase map and the catalog are corrected in place. Dated records are not rewritten; a newer record supersedes them.
+- **After code changes:** if a change makes the [codebase map](agents/memories/codebase/README.md) wrong, fix the map in the same change.
+
+The full conventions are in [agents/README.md](agents/README.md).
 
 ## Rules
 

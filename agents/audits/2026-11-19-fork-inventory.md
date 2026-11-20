@@ -1,6 +1,8 @@
 # Fork inventory and gap analysis
 
-Date: 2026-11-19. Base: `master` @ `01cb4ea`. Status: **audit**, read-only when it was written. Several items have since been fixed; see the **Since** column and the [roadmap](../plans/roadmap.md). Citations are `file:line` at `01cb4ea` and may have drifted.
+> **Date** 2026-11-19 · **Kind** audit · **Status** final; later fixes are in the **Since** column · **Base** `master` @ `01cb4ea`
+
+Read-only when it was written. Several items have since been fixed; see the **Since** column and the [roadmap](../plans/roadmap.md). Citations are `file:line` at `01cb4ea` and may have drifted.
 
 ## 1. 11-18 roadmap items at `01cb4ea`
 

@@ -1,6 +1,8 @@
 # Codebase map
 
-Verified against `LG/dev` on 2026-11-19 (after Wave 1). This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
+> **Updated** 2026-11-19 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 1
+
+This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
 ## Layout
 
