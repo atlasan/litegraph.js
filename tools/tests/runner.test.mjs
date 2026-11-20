@@ -74,6 +74,8 @@ test('a workflow with subgraph definitions opens, runs and syncs back in the def
       { id: 7, origin_id: 3, origin_slot: 0, target_id: -20, target_slot: 0, type: 'number' }],
   }] } };
   fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'definitions.json'), JSON.stringify(doc));
+  const states = [];
+  manager.setExecutionStateCallback((graphId, message) => states.push({ graphId, message }));
   try {
     const opened = await manager.openGraph('definitions.json', logger);
     assert.equal(opened.status, 'stopped', opened.error);
@@ -85,7 +87,13 @@ test('a workflow with subgraph definitions opens, runs and syncs back in the def
     assert.equal(synced.nodes.find((n) => n.id === 2).subgraph, undefined);
     assert.deepEqual(synced.definitions.subgraphs.map((d) => d.id), [id]);
     assert.equal(synced.definitions.subgraphs[0].nodes[0].properties.OP, '*');
-  } finally { await manager.unloadAllGraphs(logger); }
+    // execution state (protocol v1): a reset at start, then one "done" per node, by path (inside the subgraph: "2:3")
+    const messages = states.filter((s) => s.graphId === 'definitions.json').map((s) => s.message);
+    assert.deepEqual(messages[0] && { v: messages[0].v, kind: messages[0].kind, path: messages[0].path }, { v: 1, kind: 'reset', path: null });
+    const done = messages.filter((m) => m.kind === 'status' && m.status === 'done').map((m) => m.path);
+    assert.ok(done.includes('2:3'), `inner node reported by path: ${JSON.stringify(done)}`);
+    assert.equal(done.filter((p) => p === '2:3').length, 1, 'one message per change, not per step');
+  } finally { manager.setExecutionStateCallback(null); await manager.unloadAllGraphs(logger); }
 });
 
 test('worker stop/update acknowledgments wait for bound ports to be released', { timeout: 10000 }, async () => {

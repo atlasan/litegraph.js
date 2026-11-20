@@ -6,6 +6,7 @@ import { Reroute } from "./reroute.js";
 import { LGraphEventTarget } from "./eventtarget.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
 import { PackRegistry } from "./packs.js";
+import { ExecutionState } from "./executionstate.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -42,7 +43,140 @@ export class LGraph {
 
     /** dispatch only when someone listens (no allocation otherwise) */
     _emit(type, detail, options) {
+        let recorded = false;
+        if (options && "recorded" in options) {
+            recorded = !!options.recorded;
+            const { recorded: _ignored, ...rest } = options;
+            options = Object.keys(rest).length ? rest : undefined;
+        }
+        const kind = recorded ? null : LGraph.CHANGE_KINDS[type];
+        if (kind) {
+            (this._pendingChangeKinds ??= new Set()).add(kind);
+            // a change no history entry records (e.g. node.connect from code) is reported once, after the current task step
+            if (!this._transaction && !this.isConfiguring) this._scheduleChangeFlush();
+        }
         return this._events?.has(type) ? this._events.dispatch(type, detail, options) : null;
+    }
+
+    /** typed events that say what kind of change the next `graph-changed` reports */
+    static CHANGE_KINDS = Object.freeze({
+        "node-added": "node-added",
+        "node-removed": "node-removed",
+        "link-connected": "link",
+        "link-removed": "link",
+        "node-property-changed": "property",
+        "widget-changed": "widget",
+        "reroute-added": "reroute",
+        "reroute-removed": "reroute",
+        "node-replaced": "node-replaced",
+        "subgraph-definition-changed": "subgraph",
+        "subgraph-forked": "subgraph",
+    });
+
+    /** the kind of a change named only by its history action (moves, groups, ...) */
+    static _kindOfAction(action) {
+        const name = String(action ?? "").toLowerCase();
+        if (/group/.test(name)) return "group";
+        if (/reroute/.test(name)) return "reroute";
+        if (/subgraph|definition|component/.test(name)) return "subgraph";
+        if (/move|resize|align|arrange|layout|pos|size|collapse|pin/.test(name)) return "layout";
+        if (/link|connect/.test(name)) return "link";
+        if (/propert/.test(name)) return "property";
+        if (/widget/.test(name)) return "widget";
+        if (/add|paste|insert|clone/.test(name)) return "node-added";
+        if (/remove|delete/.test(name)) return "node-removed";
+        return "other";
+    }
+
+    /**
+     * Reports one recorded change (one per transaction) as `graph-changed {kind, kinds, action,
+     * revision, graph}` on this graph and, from a subgraph, on the root graph too, then updates
+     * the modified state.
+     */
+    /** notes the kind of a change about to be recorded (so the event after it is not reported again) */
+    _markChange(kind) {
+        (this._pendingChangeKinds ??= new Set()).add(kind);
+    }
+
+    _scheduleChangeFlush() {
+        if (this._changeFlushQueued) return;
+        this._changeFlushQueued = true;
+        queueMicrotask(() => {
+            this._changeFlushQueued = false;
+            if (!this._pendingChangeKinds?.size || this._transaction || this.isConfiguring) return;
+            this._reportChange(null, { untracked: true });
+        });
+    }
+
+    _reportChange(action, { untracked = false } = {}) {
+        const kinds = this._pendingChangeKinds?.size ? [...this._pendingChangeKinds] : [LGraph._kindOfAction(action)];
+        this._pendingChangeKinds = null;
+        if (untracked) (this.rootGraph ?? this)._modifiedExtra = true;
+        const detail = { kind: kinds[0], kinds, action: action ?? "", revision: this.revision, graph: this };
+        this._emit("graph-changed", detail);
+        const root = this.rootGraph;
+        if (root && root !== this) {
+            root._emit("graph-changed", { ...detail, kind: "subgraph", kinds: ["subgraph", ...kinds.filter((k) => k !== "subgraph")] });
+            root._modifiedExtra = true;
+            root._updateModified();
+        } else {
+            this._updateModified();
+        }
+    }
+
+    /** true when the document changed since it was loaded or last marked saved (markSaved) */
+    get isModified() {
+        return (this._savedRevision ?? 0) !== this.revision || !!this._modifiedExtra;
+    }
+
+    /** Marks the current state as saved: isModified becomes false (emits modified-changed). */
+    markSaved() {
+        this._savedRevision = this.revision;
+        this._modifiedExtra = false;
+        this._updateModified();
+    }
+
+    /** Marks the document as modified without a recorded change (e.g. a restored draft). */
+    markModified() {
+        this._modifiedExtra = true;
+        this._updateModified();
+    }
+
+    _updateModified() {
+        const modified = this.isModified;
+        if (modified === !!this._lastModified) return;
+        this._lastModified = modified;
+        this._emit("modified-changed", { modified });
+    }
+
+    // ---- execution state (protocol: ExecutionState) ---------------------------------------
+
+    /**
+     * Sets a node's execution state and, when someone listens on the root graph, emits it as
+     * `execution-state {message, node}`.
+     * @param {object} node - a node of this graph
+     * @param {string} kind - "status", "progress", "error" or "reset"
+     * @param {object} [fields] - status, value, max, message
+     */
+    reportExecutionState(node, kind, fields = {}) {
+        const root = this.rootGraph ?? this;
+        const listening = !!root._events?.has("execution-state");
+        const message = ExecutionState.create(kind, listening ? (node?.getPath?.() ?? null) : null, fields);
+        if (node) ExecutionState.applyToNode(node, message);
+        else if (kind === "reset") ExecutionState.clear(root);
+        if (listening) root._emit("execution-state", { message, node: node ?? null });
+        return message;
+    }
+
+    /**
+     * Applies an execution-state message received from elsewhere (the runner): the node at its
+     * path gets the state, and the root graph emits `execution-state {message, node, remote: true}`.
+     * @returns {object|null} the node changed (the root graph for a full reset), or null
+     */
+    applyExecutionState(message) {
+        const target = ExecutionState.apply(this, message);
+        if (target) (this.rootGraph ?? this)._emit("execution-state", { message, node: target === (this.rootGraph ?? this) ? null : target, remote: true });
+        return target;
     }
 
     get last_node_id() { return this.state.lastNodeId; }
@@ -365,6 +499,7 @@ export class LGraph {
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
+        if (!this._subgraph_node) this.reportExecutionState(null, "reset");
 
         const onAnimationFrame = () => {
             if (this.execution_timer_id !== -1) {
@@ -496,7 +631,11 @@ export class LGraph {
                     const node = nodes[index];
                     if (node.graph !== this) continue;
                     if (LiteGraph.use_deferred_actions) node.executePendingActions();
-                    if (node.mode === LiteGraph.ALWAYS) node.doExecute?.();
+                    if (node.mode === LiteGraph.ALWAYS && node.doExecute) {
+                        node.doExecute();
+                        // one message per change, not one per step
+                        if (node.execution_state?.status !== "done") this.reportExecutionState(node, "status", { status: "done" });
+                    }
                 }
                 this.fixedtime += this.fixedtime_lapse;
                 this.processCallbackHandlers("onExecuteStep", { def_cb: this.onExecuteStep });
@@ -511,6 +650,9 @@ export class LGraph {
             // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
             const failing = typeof error?.node?.getPath === "function" ? error.node : null;
             this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
+            if (failing?.graph && failing.execution_state?.status !== "error") {
+                failing.graph.reportExecutionState(failing, "error", { message: error?.message ?? String(error) });
+            }
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
@@ -996,8 +1138,9 @@ export class LGraph {
             node.autoSize(!node.hasDefaultSize?.());
         }
         // record after the node is in the graph, so the history snapshot contains it
+        if (opts.doProcessChange) this._markChange("node-added");
         this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
-        this._emit("node-added", { node });
+        this._emit("node-added", { node }, { recorded: opts.doProcessChange });
         this.setDirtyCanvas(true);
         this.change();
 
@@ -1090,8 +1233,9 @@ export class LGraph {
             this.updateExecutionOrder();
             cleanup(() => this.processCallbackHandlers("onNodeRemoved", { def_cb: this.onNodeRemoved }, node));
 
+            this._markChange("node-removed");
             cleanup(() => this.onGraphChanged({action: "nodeRemove"}));
-            cleanup(() => this._emit("node-removed", { node }));
+            cleanup(() => this._emit("node-removed", { node }, { recorded: true }));
 
             // close panels
             cleanup(() => this.sendActionToCanvas("checkPanels"));
@@ -1581,6 +1725,7 @@ export class LGraph {
         }
         if (--transaction.depth > 0) return false;
         this._transaction = null;
+        if (!transaction.changed && this._pendingChangeKinds?.size) this._scheduleChangeFlush();
         if (transaction.changed) {
             this.onGraphChanged({ action: transaction.label, doSave: true });
         }
@@ -1798,9 +1943,11 @@ export class LGraph {
         const resolved = typeof mapping === "string" ? { old_type: type, new_type: mapping } : (mapping ?? this._replacementFor(node));
         if (!resolved) throw new Error(`replaceNode: no replacement is registered for ${type}`);
         if (!LiteGraph.registered_node_types[resolved.new_type]) throw new Error(`replaceNode: node type ${resolved.new_type} is not registered`);
-        const result = this.transact(`Replace ${type}`, () => PackRegistry.replaceNodeInGraph(this, node, resolved), { rollback: true });
-        this._emit("node-replaced", { node: result.node, from: type, to: resolved.new_type, dropped: result.dropped });
-        return result;
+        return this.transact(`Replace ${type}`, () => {
+            const result = PackRegistry.replaceNodeInGraph(this, node, resolved);
+            this._emit("node-replaced", { node: result.node, from: type, to: resolved.new_type, dropped: result.dropped });
+            return result;
+        }, { rollback: true });
     }
 
     /**
@@ -1996,8 +2143,9 @@ export class LGraph {
         const reroute = new Reroute(++this.state.lastRerouteId, pos, link?.parentId);
         this.reroutes.set(reroute.id, reroute);
         if (link) link.parentId = reroute.id;
+        this._markChange("reroute");
         this.onGraphChanged({action: "rerouteAdd"});
-        this._emit("reroute-added", { reroute, link: link ?? null });
+        this._emit("reroute-added", { reroute, link: link ?? null }, { recorded: true });
         this.setDirtyCanvas(true, true);
         return reroute;
     }
@@ -2026,8 +2174,9 @@ export class LGraph {
             else floating.parentId = reroute.parentId;
         }
         this.reroutes.delete(id);
+        this._markChange("reroute");
         this.onGraphChanged({action: "rerouteRemove"});
-        this._emit("reroute-removed", { reroute });
+        this._emit("reroute-removed", { reroute }, { recorded: true });
         this.setDirtyCanvas(true, true);
         return true;
     }
@@ -2609,6 +2758,14 @@ export class LGraph {
         }
         this.setDirtyCanvas(true, true);
         this._emit("configured", { data, error, replaced });
+        this._pendingChangeKinds = null;
+        if (!this._subgraph_node) {
+            // a loaded document is saved as it is; undo and rollbacks compare with the saved revision
+            if (!this._configureReason) this._savedRevision = this.revision;
+            this._modifiedExtra = false;
+            this._emit("graph-changed", { kind: "configure", kinds: ["configure"], action: "configure", revision: this.revision, graph: this, reason: this._configureReason ?? "load" });
+            this._updateModified();
+        }
         if (!this._subgraph_node && this._events?.has("missing-nodes")) {
             const report = this.getMissingNodes();
             if (report.length) this._emit("missing-nodes", { report, reason: this._configureReason ?? "load" });
@@ -2705,6 +2862,7 @@ export class LGraph {
         if (opts.doSave) {
             this.revision++; // a saved (user-level) change to the document
             this._emit("changed", { action: opts.action, revision: this.revision });
+            this._reportChange(opts.action);
         }
 
         if(opts.action) {

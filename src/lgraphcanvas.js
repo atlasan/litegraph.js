@@ -3510,6 +3510,20 @@ export class LGraphCanvas {
      * renders the whole canvas content, by rendering in two separated canvas, one containing the background grid and the connections, and one containing the nodes)
      * @method draw
      **/
+    /**
+     * Emits `viewport-changed {offset, scale, visible_area}` once when the view moved or zoomed
+     * since the last frame (checked when drawing, so no timer is needed).
+     */
+    _checkViewportChanged() {
+        const ds = this.ds;
+        if (!ds) return;
+        const last = this._last_viewport;
+        if (last && last[0] === ds.offset[0] && last[1] === ds.offset[1] && last[2] === ds.scale) return;
+        this._last_viewport = [ds.offset[0], ds.offset[1], ds.scale];
+        if (!last) return; // the first frame is not a change
+        this._emit("viewport-changed", { offset: [ds.offset[0], ds.offset[1]], scale: ds.scale, visible_area: Array.from(ds.visible_area ?? []) });
+    }
+
     draw(force_canvas, force_bgcanvas) {
         if (!this.canvas || this.canvas.width == 0 || this.canvas.height == 0) {
             return;
@@ -3523,6 +3537,7 @@ export class LGraphCanvas {
         if (this.graph) {
             this.ds.computeVisibleArea(this.viewport);
         }
+        this._checkViewportChanged();
 
         if (
             this.dirty_bgcanvas ||
@@ -4922,6 +4937,8 @@ export class LGraphCanvas {
             if (LiteGraph.node_box_coloured_when_on) {
                 colState = node.action_triggered ? "#FFF" : (node.execute_triggered ? "#AAA" : colState);
             }
+            const statusColor = this.executionOverlaysEnabled() ? LGraphCanvas.EXECUTION_STATUS_COLORS[node.execution_state?.status] : null;
+            if (statusColor) colState = statusColor;
 
             // title box
             var box_size = 10;
@@ -4948,7 +4965,7 @@ export class LGraphCanvas {
                     ctx.fill();
                 }
 
-                ctx.fillStyle = node.boxcolor || colState || LiteGraph.NODE_DEFAULT_BOXCOLOR;
+                ctx.fillStyle = (statusColor || node.boxcolor || colState) || LiteGraph.NODE_DEFAULT_BOXCOLOR;
                 if(low_quality)
                     ctx.fillRect( title_height * 0.5 - box_size *0.5, title_height * -0.5 - box_size *0.5, box_size , box_size );
                 else {
@@ -4972,7 +4989,7 @@ export class LGraphCanvas {
                         box_size + 2,
                     );
                 }
-                ctx.fillStyle = node.boxcolor || colState || LiteGraph.NODE_DEFAULT_BOXCOLOR;
+                ctx.fillStyle = (statusColor || node.boxcolor || colState) || LiteGraph.NODE_DEFAULT_BOXCOLOR;
                 ctx.fillRect(
                     (title_height - box_size) * 0.5,
                     (title_height + box_size) * -0.5,
@@ -4993,35 +5010,7 @@ export class LGraphCanvas {
                 this.title_text_font,
                 selected,
             );
-            if (!low_quality) {
-                ctx.font = this.title_text_font;
-                var title = String(node.getTitle());
-                if (title) {
-                    if (selected) {
-                        ctx.fillStyle = LiteGraph.NODE_SELECTED_TITLE_COLOR;
-                    } else {
-                        ctx.fillStyle =
-                            node.constructor.title_text_color ||
-                            this.node_title_color;
-                    }
-                    if (node.flags.collapsed) {
-                        ctx.textAlign = "left";
-                        ctx.fillText(
-                            title, // NO? .substring(0,20), // avoid urls too long
-                            title_height,// + measure.width * 0.5,
-                            LiteGraph.NODE_TITLE_TEXT_Y - title_height,
-                        );
-                        ctx.textAlign = "left";
-                    } else {
-                        ctx.textAlign = "left";
-                        ctx.fillText(
-                            title,
-                            title_height,
-                            LiteGraph.NODE_TITLE_TEXT_Y - title_height,
-                        );
-                    }
-                }
-            }
+            if (!low_quality) this.drawNodeTitleText(node, ctx, title_height, selected);
 
             // subgraph box
             if (!node.flags.collapsed && node.subgraph && !node.skip_subgraph_button) {
@@ -5105,6 +5094,10 @@ export class LGraphCanvas {
             ctx.stroke();
             ctx.strokeStyle = fgcolor;
             ctx.globalAlpha = 1;
+        }
+
+        if (node.execution_state && this.executionOverlaysEnabled()) {
+            this.drawNodeExecutionOverlay(node, ctx, size, render_title ? title_height : 0, shape, low_quality);
         }
 
         // these counter helps in conditioning drawing based on if the node has been executed or an action occurred
@@ -5797,6 +5790,91 @@ export class LGraphCanvas {
     }
 
     /** Draws a node's badges and title buttons (see getNodeTitleDecorations). */
+    /** title-box colours for execution states (setting LiteGraph.Canvas.ExecutionOverlays) */
+    static EXECUTION_STATUS_COLORS = { queued: "#888", running: "#FC3", done: "#5C5", error: "#E44", skipped: "#666" };
+
+    /** true when execution overlays are drawn (setting `LiteGraph.Canvas.ExecutionOverlays`) */
+    executionOverlaysEnabled() {
+        const settings = LiteGraph.settings;
+        return !settings?.has?.("LiteGraph.Canvas.ExecutionOverlays") || settings.get("LiteGraph.Canvas.ExecutionOverlays") !== false;
+    }
+
+    /** The icon of a node: `node.icon`, else the definition's `icon` (a short text glyph or an image). */
+    getNodeIcon(node) {
+        return node.icon ?? LiteGraph.getNodeDefinition?.(node.type)?.icon ?? null;
+    }
+
+    /**
+     * Draws the title text, after the node's icon when it has one (`node.icon` or `def.icon`: a
+     * short string such as an emoji, or a loaded image).
+     */
+    drawNodeTitleText(node, ctx, title_height, selected) {
+        ctx.font = this.title_text_font;
+        ctx.textAlign = "left";
+        const y = LiteGraph.NODE_TITLE_TEXT_Y - title_height;
+        let x = title_height;
+        const icon = this.getNodeIcon(node);
+        const textColor = selected ? LiteGraph.NODE_SELECTED_TITLE_COLOR : (node.constructor.title_text_color || this.node_title_color);
+        if (typeof icon === "string" && icon) {
+            ctx.fillStyle = textColor;
+            ctx.fillText(icon, x, y);
+            x += ctx.measureText(icon).width + 4;
+        } else if (icon && typeof icon === "object" && (icon.complete || icon.width) && typeof ctx.drawImage === "function") {
+            const side = Math.round(title_height * 0.6);
+            try {
+                ctx.drawImage(icon, x, -title_height + (title_height - side) / 2, side, side);
+                x += side + 4;
+            } catch {
+                // an image that cannot be drawn is skipped
+            }
+        }
+        const title = String(node.getTitle() ?? "");
+        if (!title) return;
+        ctx.fillStyle = textColor;
+        ctx.fillText(title, x, y);
+    }
+
+    /**
+     * Draws the execution state of a node (`node.execution_state`, see ExecutionState): an
+     * outline for running and error, a progress bar under the title, and the error message
+     * under the node.
+     */
+    drawNodeExecutionOverlay(node, ctx, size, title_height, shape, low_quality) {
+        const state = node.execution_state;
+        const color = LGraphCanvas.EXECUTION_STATUS_COLORS[state.status];
+        const collapsed = !!node.flags?.collapsed;
+        const width = collapsed ? (node._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH) : size[0];
+        const height = collapsed ? 0 : size[1];
+        if (state.status === "running" || state.status === "error") {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = state.status === "error" ? 3 : 2;
+            ctx.beginPath();
+            if (shape == LiteGraph.BOX_SHAPE || low_quality || typeof ctx.roundRect !== "function") ctx.rect(-2, -title_height - 2, width + 4, height + title_height + 4);
+            else ctx.roundRect(-2, -title_height - 2, width + 4, height + title_height + 4, [this.round_radius + 2]);
+            ctx.stroke();
+            ctx.restore();
+        }
+        if (Number.isFinite(state.value) && Number.isFinite(state.max) && state.max > 0 && state.status !== "done") {
+            const fraction = Math.max(0, Math.min(1, state.value / state.max));
+            ctx.save();
+            ctx.fillStyle = "rgba(0,0,0,0.35)";
+            ctx.fillRect(0, -3, width, 3);
+            ctx.fillStyle = LGraphCanvas.EXECUTION_STATUS_COLORS.running;
+            ctx.fillRect(0, -3, width * fraction, 3);
+            ctx.restore();
+        }
+        if (state.status === "error" && state.message && !low_quality && !collapsed) {
+            ctx.save();
+            ctx.font = "11px Arial";
+            ctx.textAlign = "left";
+            ctx.fillStyle = color;
+            const text = state.message.length > 80 ? state.message.slice(0, 79) + "…" : state.message;
+            ctx.fillText(text, 0, height + 16);
+            ctx.restore();
+        }
+    }
+
     drawNodeTitleDecorations(node, ctx, title_height) {
         const layout = this.getNodeTitleDecorations(node, ctx);
         node._title_decorations = layout; // used for hit testing until the next draw
@@ -6085,11 +6163,15 @@ export class LGraphCanvas {
                 node.processCallbackHandlers("onWidgetChanged",{
                     def_cb: node.onWidgetChanged
                 }, widget.name, value, old_value, widget);
-                node.graph.onGraphChanged({action: "widgetChanged", doSave: true}); // tag: graph event entrypoint
-                node.graph._emit?.("widget-changed", { node, widget, value, previous: old_value });
             }
+            // a bound property is written before the change is recorded, so the history entry includes it
             if ( widget.options && widget.options.property && node.properties[widget.options.property] !== undefined ) {
                 node.setProperty( widget.options.property, value );
+            }
+            if( old_value != value ) {
+                node.graph._markChange?.("widget");
+                node.graph.onGraphChanged({action: "widgetChanged", doSave: true}); // tag: graph event entrypoint
+                node.graph._emit?.("widget-changed", { node, widget, value, previous: old_value }, { recorded: true });
             }
             if (widget.callback) {
                 widget.callback(widget.value, that, node, pos, event, value_original);

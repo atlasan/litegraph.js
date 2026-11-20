@@ -392,6 +392,7 @@ export interface LiteGraphAPI extends CallbackHost {
     GraphInput: typeof GraphInput;
     GraphOutput: typeof GraphOutput;
     CallbackHandler: typeof CallbackHandler;
+    ExecutionState: typeof ExecutionState;
     use_uuids: boolean;
     use_deferred_actions: boolean;
     ensureNodeSingleExecution: boolean;
@@ -713,6 +714,14 @@ export declare class LGraph {
     insertBlueprint(json: object, options?: { pos?: ArrayLike<number> }): Subgraph;
     /** the node at a path from the root graph ("3:7:2"), or null */
     resolvePath(path: string): LGraphNode | null;
+    /** changed since loaded or marked saved */
+    readonly isModified: boolean;
+    markSaved(): void;
+    markModified(): void;
+    /** sets a node's execution state and emits execution-state on the root graph when someone listens */
+    reportExecutionState(node: LGraphNode | null, kind: ExecutionStateKind, fields?: { status?: ExecutionStatus; value?: number; max?: number; message?: string }): ExecutionStateMessage;
+    /** applies a received execution-state message (e.g. from the runner) */
+    applyExecutionState(message: ExecutionStateMessage): LGraphNode | LGraph | null;
     /** missing node types, one entry per type (deep: include subgraphs, default true) */
     getMissingNodes(options?: { deep?: boolean }): MissingNodeReport[];
     /** replaces a node (one undo step); mapping: a mapping, a type name, or the registered mapping */
@@ -861,6 +870,14 @@ export declare class LGraphNode {
     /** get the title string */
     /** node ids from the root graph joined by ":" (e.g. "3:7:2" inside subgraphs) */
     getPath(): string;
+    /** runtime execution state (not saved), set by runStep, reportProgress, setExecutionStatus or applyExecutionState */
+    execution_state?: NodeExecutionState;
+    /** a short glyph or a loaded image drawn before the title (else the definition's icon) */
+    icon?: string | CanvasImageSource | null;
+    /** reports progress (value of max) through the execution-state protocol */
+    reportProgress(value: number, max?: number, message?: string): ExecutionStateMessage | null;
+    /** sets the execution status; null clears it */
+    setExecutionStatus(status: ExecutionStatus | null, message?: string): ExecutionStateMessage | null;
     getTitle(): string;
     /** sets the value of a property */
     setProperty(name: string, value: any): void;
@@ -1315,6 +1332,12 @@ export interface LGraphEventMap {
     /** reason: "load", or "history" / "rollback" when undo, redo or a failed transaction reloads the graph */
     "missing-nodes": { report: MissingNodeReport[]; reason: 'load' | 'history' | 'rollback' };
     "node-replaced": { node: LGraphNode; from: string; to: string; dropped: DroppedLink[] };
+    /** one per recorded change (per transaction); from a subgraph also on the root graph with kind "subgraph"; kind "configure" after a load */
+    "graph-changed": { kind: GraphChangeKind; kinds: GraphChangeKind[]; action: string; revision: number; graph: LGraph; reason?: 'load' | 'history' | 'rollback' };
+    /** isModified changed */
+    "modified-changed": { modified: boolean };
+    /** a node's execution state changed (root graph); remote: applied from a received message */
+    "execution-state": { message: ExecutionStateMessage; node: LGraphNode | null; remote?: boolean };
     "node-added": { node: LGraphNode };
     "node-removed": { node: LGraphNode };
     /** a saved change (one per transaction) */
@@ -1346,6 +1369,8 @@ export interface LGraphCanvasEventMap {
     "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
     "selection-changed": { nodes: LGraphNode[]; items?: Array<LGraphNode | LGraphGroup | Reroute> };
     disposed: { canvas: LGraphCanvas };
+    /** the view moved or zoomed (checked once per drawn frame) */
+    "viewport-changed": { offset: [number, number]; scale: number; visible_area: number[] };
 }
 
 /** A point links are routed through; chains via parentId towards the origin. */
@@ -1882,6 +1907,11 @@ export declare class LGraphCanvas {
     /** badge and title-button rectangles in node space (right-aligned, buttons outermost) */
     getNodeTitleDecorations(node: LGraphNode, ctx?: CanvasRenderingContext2D | null): { buttons: Array<{ button: NodeTitleButton; rect: number[] }>; badges: Array<{ badge: NodeBadge; rect: number[] }>; font: string };
     drawNodeTitleDecorations(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number): void;
+    static EXECUTION_STATUS_COLORS: Record<ExecutionStatus, string>;
+    executionOverlaysEnabled(): boolean;
+    getNodeIcon(node: LGraphNode): string | CanvasImageSource | null;
+    drawNodeTitleText(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number, selected: boolean): void;
+    drawNodeExecutionOverlay(node: LGraphNode, ctx: CanvasRenderingContext2D, size: ArrayLike<number>, title_height: number, shape: number, low_quality: boolean): void;
     getNodeTitleButtonAt(node: LGraphNode, x: number, y: number): NodeTitleButton | null;
     clickNodeTitleButton(node: LGraphNode, button: NodeTitleButton, e: any): void;
     /** the group's header toggle rectangle [x, y, w, h] (setting LiteGraph.Group.HeaderToggle), or null */
@@ -2236,6 +2266,8 @@ export interface NodeDefinition {
     experimental: boolean;
     hidden: boolean;
     source: string | null;
+    /** a short glyph or an image drawn before the title */
+    icon: string | CanvasImageSource | null;
     /** the installed pack that owns the type (see LiteGraph.packs) */
     pack: Readonly<{ id: string; version: string; builtin: boolean }> | null;
     inputs: readonly Readonly<NodeSlotDefinition>[] | null;
@@ -2315,6 +2347,33 @@ export declare class PackRegistry {
     registerReplacement(mapping: NodeReplacementMapping): () => void;
     getReplacement(type: string): Readonly<NodeReplacementMapping> | null;
     listReplacements(): Readonly<NodeReplacementMapping>[];
+}
+
+export type GraphChangeKind = 'node-added' | 'node-removed' | 'link' | 'property' | 'widget' | 'layout' | 'group' | 'reroute' | 'subgraph' | 'node-replaced' | 'configure' | 'other';
+export type ExecutionStateKind = 'status' | 'progress' | 'error' | 'reset';
+export type ExecutionStatus = 'queued' | 'running' | 'done' | 'error' | 'skipped';
+/** One execution-state message (protocol v1), shared by the in-page loop and the runner. */
+export interface ExecutionStateMessage {
+    v: 1;
+    kind: ExecutionStateKind;
+    /** the node's path ("3:7" inside a subgraph); null with "reset" means every node */
+    path: string | null;
+    status?: ExecutionStatus;
+    value?: number;
+    max?: number;
+    message?: string;
+    time: number;
+}
+export interface NodeExecutionState { status: ExecutionStatus; time: number; value?: number; max?: number; message?: string }
+export declare class ExecutionState {
+    static VERSION: 1;
+    static KINDS: readonly ExecutionStateKind[];
+    static STATUSES: readonly ExecutionStatus[];
+    static create(kind: ExecutionStateKind, path: string | null, fields?: { status?: ExecutionStatus; value?: number; max?: number; message?: string; time?: number }): ExecutionStateMessage;
+    static isMessage(message: unknown): message is ExecutionStateMessage;
+    static apply(graph: LGraph, message: ExecutionStateMessage): LGraphNode | LGraph | null;
+    static applyToNode(node: LGraphNode, message: ExecutionStateMessage): LGraphNode;
+    static clear(graph: LGraph): void;
 }
 
 export type MenuLocation = 'canvas' | 'node';

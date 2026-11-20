@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   openGraph, controlGraph, updateGraph, requestSync, getCurrentProcesses,
-  getGraphStatus, unloadGraph, stopAllGraphs, setConsolePipeCallback, setStatusCallback,
+  getGraphStatus, unloadGraph, stopAllGraphs, setConsolePipeCallback, setStatusCallback, setExecutionStateCallback,
 } from './graphManager.js';
 import { logger } from '../logger.js';
 import { upgradeRefusal } from './security.js';
@@ -24,6 +24,7 @@ export function setupWebSocket(server) {
     graphs: getCurrentProcesses().map((graphId) => ({ graphId, status: getGraphStatus(graphId) })),
   } });
   setConsolePipeCallback((graphId, level, message) => broadcast({ type: 'console', data: { graphId, level, message } }));
+  setExecutionStateCallback((graphId, message) => broadcast({ type: 'execution_state', data: { graphId, message } }));
   setStatusCallback((graphId, status) => {
     broadcast({ type: 'graph_status', data: { graphId, status } });
     broadcast(activeGraphs());

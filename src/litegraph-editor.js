@@ -109,7 +109,72 @@ export class Editor {
             button.innerHTML = `<img src="imgs/icon-play.png"/> Play`;
         };
 
+        // modified marker and draft autosave (settings LiteGraph.Editor.Autosave / AutosaveDelay)
+        this.setupModifiedMarker();
+        if (!options.skip_autosave) this.setupAutosave(options.draft_storage);
+
         graphcanvas.resize();
+    }
+
+    /** Shows "• modified" in the header and prefixes the page title while the document is modified. */
+    setupModifiedMarker() {
+        const marker = this.modified_marker = document.createElement("span");
+        marker.className = "modified-marker";
+        marker.title = "Modified since it was loaded or saved";
+        marker.style.cssText = "position:absolute;right:8px;bottom:4px;z-index:5;font:12px Arial;color:#fc6;pointer-events:none;display:none";
+        marker.textContent = "• modified";
+        this.root.querySelector(".content")?.appendChild(marker);
+        const baseTitle = typeof document !== "undefined" ? document.title.replace(/^• /, "") : "";
+        this.graph.events.on("modified-changed", (event) => {
+            marker.style.display = event.detail.modified ? "" : "none";
+            if (typeof document !== "undefined") document.title = (event.detail.modified ? "• " : "") + baseTitle;
+        });
+    }
+
+    /**
+     * Keeps a draft of the modified document and, when one is left from an earlier session,
+     * offers to restore it (never restores silently).
+     */
+    setupAutosave(storage) {
+        const settings = LiteGraph.settings;
+        if (settings && !settings.has("LiteGraph.Editor.Autosave")) {
+            settings.define({ id: "LiteGraph.Editor.Autosave", name: "Keep a draft of the modified document and offer it after a reload", default: true });
+            settings.define({ id: "LiteGraph.Editor.AutosaveDelay", name: "Draft autosave delay (ms)", default: 2000 });
+        }
+        if (settings && settings.get("LiteGraph.Editor.Autosave") === false) return;
+        this.autosave = new DraftAutosave(this.graph, { storage, delay: settings?.get("LiteGraph.Editor.AutosaveDelay") ?? 2000 });
+        const draft = this.autosave.load();
+        this.autosave.start();
+        if (draft) this.offerDraftRestore(draft);
+    }
+
+    /** A small bar with Restore / Discard for a draft left from an earlier session. */
+    offerDraftRestore(draft) {
+        const bar = this.draft_bar = document.createElement("div");
+        bar.className = "draft-restore";
+        bar.style.cssText = "position:absolute;top:44px;left:50%;transform:translateX(-50%);z-index:10;background:#333;color:#ddd;border:1px solid #666;border-radius:4px;padding:6px 10px;font:13px Arial;white-space:nowrap;display:flex;align-items:center;gap:6px";
+        const when = new Date(draft.time).toLocaleString();
+        const count = Array.isArray(draft.doc?.nodes) ? draft.doc.nodes.length : 0;
+        bar.innerHTML = `<span>Unsaved draft from ${when} (${count} node${count === 1 ? "" : "s"}).</span> `;
+        const button = (label, onClick) => {
+            const element = document.createElement("button");
+            element.className = "btn";
+            element.textContent = label;
+            element.addEventListener("click", () => { onClick(); bar.remove(); this.draft_bar = null; });
+            bar.appendChild(element);
+            return element;
+        };
+        button("Restore", () => this.restoreDraft(draft));
+        button("Discard", () => this.autosave?.clear());
+        this.root.appendChild(bar);
+        return bar;
+    }
+
+    /** Loads a draft into the graph; the document stays modified until it is saved. */
+    restoreDraft(draft) {
+        this.graph.configure(draft.doc);
+        this.graph.markModified();
+        this.autosave?.save(true);
     }
 
     addLoadCounter() {
@@ -369,5 +434,87 @@ export class Editor {
         } else if (document.webkitExitFullscreen) {
             document.webkitExitFullscreen();
         }
+    }
+}
+
+/**
+ * Draft autosave for an editor document: after each recorded change (debounced) the modified
+ * document is written to a storage (default `localStorage`, key "litegraph.editor.draft");
+ * marking the document saved removes the draft.
+ */
+export class DraftAutosave {
+
+    static KEY = "litegraph.editor.draft";
+
+    /**
+     * @param {object} graph
+     * @param {{storage?: {getItem: Function, setItem: Function, removeItem: Function}, key?: string, delay?: number}} [options]
+     */
+    constructor(graph, { storage, key = DraftAutosave.KEY, delay = 2000 } = {}) {
+        this.graph = graph;
+        this.key = key;
+        this.delay = delay;
+        this.storage = storage ?? DraftAutosave.defaultStorage();
+        this._timer = null;
+        this._disposers = [];
+    }
+
+    /** localStorage when it is usable, else null (no drafts) */
+    static defaultStorage() {
+        try {
+            return typeof localStorage !== "undefined" ? localStorage : null;
+        } catch {
+            return null;
+        }
+    }
+
+    start() {
+        const events = this.graph.events;
+        this._disposers.push(events.on("graph-changed", (event) => {
+            if (event.detail.kind !== "configure") this.schedule();
+        }));
+        this._disposers.push(events.on("modified-changed", (event) => {
+            if (!event.detail.modified) this.clear();
+        }));
+        return this;
+    }
+
+    schedule() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = setTimeout(() => { this._timer = null; this.save(); }, this.delay);
+    }
+
+    /** Writes the draft now (only a modified document unless `force`). @returns {boolean} */
+    save(force = false) {
+        if (!this.storage || (!force && !this.graph.isModified)) return false;
+        try {
+            this.storage.setItem(this.key, JSON.stringify({ time: Date.now(), id: this.graph.id, revision: this.graph.revision, doc: this.graph.serialize() }));
+            return true;
+        } catch (error) {
+            LiteGraph.log_warn?.("editor", "draft autosave failed", error);
+            return false;
+        }
+    }
+
+    /** @returns {{time: number, id: string, revision: number, doc: object}|null} the stored draft */
+    load() {
+        try {
+            const draft = JSON.parse(this.storage?.getItem(this.key) ?? "null");
+            return draft && typeof draft === "object" && draft.doc && Array.isArray(draft.doc.nodes) ? draft : null;
+        } catch {
+            return null;
+        }
+    }
+
+    clear() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = null;
+        try { this.storage?.removeItem(this.key); } catch { /* storage unavailable */ }
+    }
+
+    dispose() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = null;
+        this._disposers.splice(0).forEach((dispose) => dispose?.());
     }
 }

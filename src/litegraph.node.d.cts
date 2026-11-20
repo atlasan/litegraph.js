@@ -2,7 +2,12 @@
 export * from './litegraph.full.cjs';
 import { LGraph, LGraphNode, LGraphCanvas, ExtensionDefinition } from './litegraph.cjs';
 export declare class Editor {
-    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean });
+    constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean; skip_autosave?: boolean; draft_storage?: DraftStorage });
+    autosave?: DraftAutosave;
+    setupModifiedMarker(): void;
+    setupAutosave(storage?: DraftStorage): void;
+    offerDraftRestore(draft: Draft): HTMLDivElement;
+    restoreDraft(draft: Draft): void;
     root: HTMLDivElement;
     canvas: HTMLCanvasElement;
     graph: LGraph;
@@ -15,6 +20,24 @@ export declare class Editor {
     goFullscreen(): void;
     exitFullscreen(): void;
     isFullscreen(): boolean;
+}
+export interface DraftStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+export interface Draft { time: number; id: string; revision: number; doc: { nodes: object[]; [key: string]: unknown } }
+/** Draft autosave: the modified document is written after each change (debounced); markSaved removes it. */
+export declare class DraftAutosave {
+    static KEY: string;
+    static defaultStorage(): DraftStorage | null;
+    constructor(graph: LGraph, options?: { storage?: DraftStorage; key?: string; delay?: number });
+    graph: LGraph;
+    key: string;
+    delay: number;
+    storage: DraftStorage | null;
+    start(): this;
+    schedule(): void;
+    save(force?: boolean): boolean;
+    load(): Draft | null;
+    clear(): void;
+    dispose(): void;
 }
 /** Registers the built-in extension once; a canvas argument is attached to the extension registry. */
 export declare function registerExtension_autoconnect(canvas?: LGraphCanvas): void;
