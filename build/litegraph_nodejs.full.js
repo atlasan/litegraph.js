@@ -726,6 +726,28 @@ export class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        this.linkRouters ??= new LinkRouterRegistry();
+        this.linkStyles ??= new LinkStyleRegistry();
+        this.RenderLink ??= RenderLink;
+        if (!this.settings.has("LiteGraph.Canvas.LinkStyles")) {
+            this.settings.define({
+                id: "LiteGraph.Canvas.LinkStyles",
+                type: "json",
+                name: "Active link styles, in order (spotlight, dim-by-type, hidden, labelled, or registered ones)",
+                default: () => []
+            });
+            this.settings.define({
+                id: "LiteGraph.Canvas.HiddenLinkTypes",
+                type: "json",
+                name: "Slot types whose links the \"hidden\" link style does not draw",
+                default: () => []
+            });
+            this.settings.define({
+                id: "LiteGraph.Canvas.Minimap",
+                name: "Show a minimap on canvases (Editor)",
+                default: false
+            });
+        }
         if (!this.settings.has("LiteGraph.Canvas.ExecutionOverlays")) {
             this.settings.define({
                 id: "LiteGraph.Canvas.ExecutionOverlays",
@@ -3746,9 +3768,25 @@ export class DragAndScale {
      * @param {HTMLElement} element - The HTML element to bind the events to.
      */
     bindEvents(element) {
+        this.unbindEvents();
         this.last_mouse = new Float32Array(2);
-        element.addEventListener("pointerdown", this.onMouseDown);
-        element.addEventListener("wheel", this.onWheel);
+        this._events = new AbortController();
+        element.addEventListener("pointerdown", this.onMouseDown, {
+            signal: this._events.signal
+        });
+        element.addEventListener("wheel", this.onWheel, {
+            signal: this._events.signal
+        });
+    }
+
+    /**
+     * Removes the listeners bindEvents added. LGraphCanvas never binds them: its pointer input
+     * (pan as a CanvasPointer gesture, wheel zoom) goes through the canvas.
+     */
+    unbindEvents() {
+        this._events?.abort();
+        this._events = null;
+        this.abortController?.abort();
     }
 
     onMouseDown = (event) => {
@@ -8166,6 +8204,12 @@ export class LGraphCanvas {
         this.render_link_tooltip = true;
 
         this.links_render_mode = LiteGraph.SPLINE_LINK;
+        /** link router name (LiteGraph.linkRouters); null: from links_render_mode */
+        this.link_router = null;
+        /** active link style names; null: the setting LiteGraph.Canvas.LinkStyles */
+        this.link_styles = null;
+        /** a slot type whose links stay bright with the "dim-by-type" style */
+        this.link_type_focus = null;
 
         // TODO refactor: options object do need refactoring .. all the options are actually outside of it
         this.autoresize = options.autoresize;
@@ -8903,6 +8947,7 @@ export class LGraphCanvas {
             return;
         }
         this.stopRendering();
+        this.hideMinimap();
         if (this.canvas && typeof document !== "undefined") {
             this.closePanels?.();
             this.search_box?.close?.();
@@ -9499,7 +9544,7 @@ export class LGraphCanvas {
 
             if (!skip_action && clicking_canvas_bg && this.allow_dragcanvas) {
                 LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging_canvas start");
-                this.dragging_canvas = true;
+                this._dragCanvasGesture(e, true);
             }
 
         } else if (e.which == 2) {
@@ -9569,7 +9614,7 @@ export class LGraphCanvas {
                 }
             } else if (!skip_action && this.allow_dragcanvas) {
                 LiteGraph.log_verbose("pointerevents: dragging_canvas start from middle button");
-                this.dragging_canvas = true;
+                this._dragCanvasGesture(e, false);
             }
 
 
@@ -11219,6 +11264,39 @@ export class LGraphCanvas {
      * drag is one undo step. A click on the collapse box (left of the title) collapses the node.
      * `node_dragged` is set for the whole gesture, for code that reads it.
      */
+    /**
+     * Pans the view as a CanvasPointer gesture (left drag on empty canvas, or middle drag).
+     * A left click without a drag clears the selection, as before.
+     * @param {PointerEvent} e - the pointer down
+     * @param {boolean} clickDeselects
+     */
+    _dragCanvasGesture(e, clickDeselects) {
+        const pointer = this.pointer;
+        if (!pointer?.isDown || pointer.hasHandlers) {
+            // no gesture tracked (not the primary pointer), or another gesture (a group) owns it: the flag as before
+            this.dragging_canvas = true;
+            return;
+        }
+        this.dragging_canvas = true;
+        let last = [pointer.downEvent.x, pointer.downEvent.y]; // from the press: no movement is lost to the drift tolerance
+        pointer.onDrag = (moveEvent) => {
+            const x = moveEvent.clientX;
+            const y = moveEvent.clientY;
+            this.ds.offset[0] += (x - last[0]) / this.ds.scale;
+            this.ds.offset[1] += (y - last[1]) / this.ds.scale;
+            last = [x, y];
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        if (clickDeselects) {
+            pointer.onClick = () => this.deselectAllNodes(); // a click is short (CanvasPointer.click_time) and still
+        }
+        pointer.finally = () => {
+            this.dragging_canvas = false;
+            this.dirty_canvas = true;
+        };
+    }
+
     _dragNodesGesture(node, deferredSelect = null) {
         const graph = this.graph;
         const pointer = this.pointer;
@@ -13496,8 +13574,19 @@ export class LGraphCanvas {
      * @method renderLinkPath
      **/
     renderLinkPath(ctx, points, link, skip_border, flow, color, start_dir, end_dir) {
+        // one style for the whole path (its segments are one link)
+        const style = link ? this.resolveLinkStyle(new RenderLink({
+            a: points[0],
+            b: points[points.length - 1],
+            startDir: start_dir,
+            endDir: end_dir,
+            link
+        })) : null;
+        if (style?.visible === false) return;
         if (points.length <= 2) {
-            this.renderLink(ctx, points[0], points[points.length - 1], link, skip_border, flow, color, start_dir, end_dir);
+            this.renderLink(ctx, points[0], points[points.length - 1], link, skip_border, flow, color, start_dir, end_dir, undefined, {
+                style
+            });
             return;
         }
         let segmentColor = color;
@@ -13513,6 +13602,13 @@ export class LGraphCanvas {
                 last ? color : segmentColor,
                 k === 0 ? start_dir : LiteGraph.RIGHT,
                 last ? end_dir : LiteGraph.LEFT,
+                undefined, {
+                    style: style && !last ? {
+                        ...style,
+                        label: undefined
+                    } : style,
+                    source: link
+                },
             );
         }
     }
@@ -13591,7 +13687,26 @@ export class LGraphCanvas {
         start_dir,
         end_dir,
         num_sublines,
+        options = {},
     ) {
+        start_dir = start_dir || LiteGraph.RIGHT;
+        end_dir = end_dir || LiteGraph.LEFT;
+        const rl = new RenderLink({
+            a,
+            b,
+            startDir: start_dir,
+            endDir: end_dir,
+            link: link ?? null,
+            color,
+            type: (link ?? options.source)?.type,
+            kind: link ? "link" : (options.source ? "segment" : "drag")
+        });
+        // style: given by renderLinkPath, else resolved here for a link
+        const style = options.style !== undefined ? options.style : (link ? this.resolveLinkStyle(rl) : null);
+        if (style?.visible === false) return; // not drawn, not hit-testable
+        const router = this.getLinkRouter();
+        if (!router) return; // unknown
+
         if (link) {
             this.visible_links.push(link);
         }
@@ -13603,17 +13718,17 @@ export class LGraphCanvas {
         if (!color) {
             color = this.default_link_color;
         }
+        if (style?.color) color = style.color;
         if (link != null && this.highlighted_links[link.id]) {
             color = "#FFF";
         }
-
-        start_dir = start_dir || LiteGraph.RIGHT;
-        end_dir = end_dir || LiteGraph.LEFT;
-
-        var dist = LiteGraph.distance(a, b);
+        const restoreAlpha = ctx.globalAlpha;
+        if (style && style.alpha !== 1) ctx.globalAlpha = restoreAlpha * style.alpha;
+        const lineWidth = style?.width ?? this.connections_width;
+        if (style?.dash) ctx.setLineDash?.(style.dash);
 
         if (this.render_connections_border && this.ds.scale > 0.6) {
-            ctx.lineWidth = this.connections_width + 4;
+            ctx.lineWidth = lineWidth + 4;
         }
         ctx.lineJoin = "round";
         num_sublines = num_sublines || 1;
@@ -13621,121 +13736,11 @@ export class LGraphCanvas {
             ctx.lineWidth = 0.5;
         }
 
-        // begin line shape
+        // begin line shape: the router adds the path (LiteGraph.linkRouters)
         ctx.beginPath();
         for (let i = 0; i < num_sublines; i += 1) {
             var offsety = (i - (num_sublines - 1) * 0.5) * 5;
-
-            if (this.links_render_mode == LiteGraph.SPLINE_LINK) {
-                ctx.moveTo(a[0], a[1] + offsety);
-                let start_offset_x = 0;
-                let start_offset_y = 0;
-                let end_offset_x = 0;
-                let end_offset_y = 0;
-                switch (start_dir) {
-                    case LiteGraph.LEFT:
-                        start_offset_x = dist * -0.25;
-                        break;
-                    case LiteGraph.RIGHT:
-                        start_offset_x = dist * 0.25;
-                        break;
-                    case LiteGraph.UP:
-                        start_offset_y = dist * -0.25;
-                        break;
-                    case LiteGraph.DOWN:
-                        start_offset_y = dist * 0.25;
-                        break;
-                }
-                switch (end_dir) {
-                    case LiteGraph.LEFT:
-                        end_offset_x = dist * -0.25;
-                        break;
-                    case LiteGraph.RIGHT:
-                        end_offset_x = dist * 0.25;
-                        break;
-                    case LiteGraph.UP:
-                        end_offset_y = dist * -0.25;
-                        break;
-                    case LiteGraph.DOWN:
-                        end_offset_y = dist * 0.25;
-                        break;
-                }
-                ctx.bezierCurveTo(
-                    a[0] + start_offset_x,
-                    a[1] + start_offset_y + offsety,
-                    b[0] + end_offset_x,
-                    b[1] + end_offset_y + offsety,
-                    b[0],
-                    b[1] + offsety,
-                );
-            } else if (this.links_render_mode == LiteGraph.LINEAR_LINK) {
-                ctx.moveTo(a[0], a[1] + offsety);
-                let start_offset_x = 0;
-                let start_offset_y = 0;
-                let end_offset_x = 0;
-                let end_offset_y = 0;
-                switch (start_dir) {
-                    case LiteGraph.LEFT:
-                        start_offset_x = -1;
-                        break;
-                    case LiteGraph.RIGHT:
-                        start_offset_x = 1;
-                        break;
-                    case LiteGraph.UP:
-                        start_offset_y = -1;
-                        break;
-                    case LiteGraph.DOWN:
-                        start_offset_y = 1;
-                        break;
-                }
-                switch (end_dir) {
-                    case LiteGraph.LEFT:
-                        end_offset_x = -1;
-                        break;
-                    case LiteGraph.RIGHT:
-                        end_offset_x = 1;
-                        break;
-                    case LiteGraph.UP:
-                        end_offset_y = -1;
-                        break;
-                    case LiteGraph.DOWN:
-                        end_offset_y = 1;
-                        break;
-                }
-                var l = 15;
-                ctx.lineTo(
-                    a[0] + start_offset_x * l,
-                    a[1] + start_offset_y * l + offsety,
-                );
-                ctx.lineTo(
-                    b[0] + end_offset_x * l,
-                    b[1] + end_offset_y * l + offsety,
-                );
-                ctx.lineTo(b[0], b[1] + offsety);
-            } else if (this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
-                ctx.moveTo(a[0], a[1]);
-                var start_x = a[0];
-                var start_y = a[1];
-                var end_x = b[0];
-                var end_y = b[1];
-                if (start_dir == LiteGraph.RIGHT) {
-                    start_x += 10;
-                } else {
-                    start_y += 10;
-                }
-                if (end_dir == LiteGraph.LEFT) {
-                    end_x -= 10;
-                } else {
-                    end_y -= 10;
-                }
-                ctx.lineTo(start_x, start_y);
-                ctx.lineTo((start_x + end_x) * 0.5, start_y);
-                ctx.lineTo((start_x + end_x) * 0.5, end_y);
-                ctx.lineTo(end_x, end_y);
-                ctx.lineTo(b[0], b[1]);
-            } else {
-                return;
-            } // unknown
+            router.path(ctx, rl, offsety);
         }
 
         // rendering the outline of the connection can be a little bit slow
@@ -13748,12 +13753,13 @@ export class LGraphCanvas {
             ctx.stroke();
         }
 
-        ctx.lineWidth = this.connections_width;
+        ctx.lineWidth = lineWidth;
         ctx.fillStyle = ctx.strokeStyle = color;
         ctx.stroke();
+        if (style?.dash) ctx.setLineDash?.([]);
         // end line shape
 
-        var pos = this.computeConnectionPoint(a, b, 0.5, start_dir, end_dir);
+        var pos = router.point(rl, 0.5);
         if (link && link._pos) {
             link._pos[0] = pos[0];
             link._pos[1] = pos[1];
@@ -13768,34 +13774,10 @@ export class LGraphCanvas {
             // render arrow
             if (this.render_connection_arrows) {
                 // compute two points in the connection
-                var posA = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.25,
-                    start_dir,
-                    end_dir,
-                );
-                var posB = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.26,
-                    start_dir,
-                    end_dir,
-                );
-                var posC = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.75,
-                    start_dir,
-                    end_dir,
-                );
-                var posD = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.76,
-                    start_dir,
-                    end_dir,
-                );
+                var posA = router.point(rl, 0.25);
+                var posB = router.point(rl, 0.26);
+                var posC = router.point(rl, 0.75);
+                var posD = router.point(rl, 0.76);
 
                 // compute the angle between them so the arrow points in the right direction
                 var angleA = 0;
@@ -13839,29 +13821,100 @@ export class LGraphCanvas {
             ctx.fillStyle = color;
             for (let i = 0; i < 5; ++i) {
                 var f = (LiteGraph.getTime() * 0.001 + i * 0.2) % 1;
-                pos = this.computeConnectionPoint(
-                    a,
-                    b,
-                    f,
-                    start_dir,
-                    end_dir,
-                );
+                pos = router.point(rl, f);
                 ctx.beginPath();
                 ctx.arc(pos[0], pos[1], 5, 0, 2 * Math.PI);
                 ctx.fill();
             }
         }
+
+        // a label (link style) at the centre
+        if (style?.label && this.ds.scale >= 0.6 && typeof ctx.fillText === "function") {
+            const center = router.point(rl, 0.5);
+            ctx.save();
+            ctx.font = "11px Arial";
+            ctx.textAlign = "center";
+            const width = (ctx.measureText?.(style.label)?.width ?? 0) + 8;
+            ctx.fillStyle = "rgba(20,20,20,0.85)";
+            ctx.fillRect(center[0] - width / 2, center[1] - 20, width, 14);
+            ctx.fillStyle = color;
+            ctx.fillText(style.label, center[0], center[1] - 9);
+            ctx.restore();
+        }
+        ctx.globalAlpha = restoreAlpha;
+    }
+
+    /**
+     * Shows a minimap over this canvas (bottom right of its parent element); see MiniMap.
+     * @returns {MiniMap|null} null without a DOM
+     */
+    showMinimap(options) {
+        if (this.minimap) return this.minimap;
+        if (!this.canvas?.ownerDocument) return null;
+        this.minimap = new MiniMap(this, options);
+        return this.minimap;
+    }
+
+    hideMinimap() {
+        this.minimap?.dispose();
+        this.minimap = null;
+    }
+
+    /** @returns {boolean} true when the minimap is now shown */
+    toggleMinimap(options) {
+        if (this.minimap) {
+            this.hideMinimap();
+            return false;
+        }
+        return !!this.showMinimap(options);
+    }
+
+    /** The link router this canvas draws with: `link_router` by name, else the one for `links_render_mode`. */
+    getLinkRouter() {
+        const routers = LiteGraph.linkRouters;
+        const byMode = LinkRouterRegistry.nameForMode(this.links_render_mode);
+        return (this.link_router ? routers?.get(this.link_router) : null) ?? routers?.get(byMode) ?? null;
+    }
+
+    /** Active link style names: `link_styles`, else the setting `LiteGraph.Canvas.LinkStyles`. */
+    getActiveLinkStyles() {
+        if (Array.isArray(this.link_styles)) return this.link_styles;
+        const settings = LiteGraph.settings;
+        const value = settings?.has?.("LiteGraph.Canvas.LinkStyles") ? settings.get("LiteGraph.Canvas.LinkStyles") : null;
+        return Array.isArray(value) ? value : [];
+    }
+
+    /** Composes the active link styles for a RenderLink (null when none applies). */
+    resolveLinkStyle(rl) {
+        const active = this.getActiveLinkStyles();
+        if (!active.length || !LiteGraph.linkStyles) return null;
+        // the context is computed once per frame
+        if (this._link_style_ctx_frame !== this.frame || !this._link_style_ctx) {
+            const settings = LiteGraph.settings;
+            const hidden = settings?.has?.("LiteGraph.Canvas.HiddenLinkTypes") ? settings.get("LiteGraph.Canvas.HiddenLinkTypes") : null;
+            this._link_style_ctx = {
+                canvas: this,
+                selectedIds: new Set(Object.values(this.selected_nodes ?? {}).map((node) => node?.id)),
+                focusType: this.link_type_focus ?? this.connecting_output?.type ?? this.connecting_input?.type ?? null,
+                hiddenTypes: Array.isArray(hidden) ? hidden.map(String) : [],
+            };
+            this._link_style_ctx_frame = this.frame;
+        }
+        return LiteGraph.linkStyles.resolve(rl, this._link_style_ctx, active);
     }
 
     // returns the link center point based on curvature
     computeConnectionPoint(a, b, t, start_dir, end_dir) {
         start_dir = start_dir || LiteGraph.RIGHT;
         end_dir = end_dir || LiteGraph.LEFT;
-
-        // follow the path renderLink actually draws, not always the spline
-        if (this.links_render_mode == LiteGraph.LINEAR_LINK || this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
-            return LGraphCanvas.pointAlongPolyline(this.getLinkPolyline(a, b, start_dir, end_dir), t);
-        }
+        // (also called with a plain object as `this`: fall back to the router of its render mode)
+        const router = typeof this.getLinkRouter === "function" ? this.getLinkRouter() : LiteGraph.linkRouters?.get(LinkRouterRegistry.nameForMode(this.links_render_mode));
+        if (router) return router.point(new RenderLink({
+            a,
+            b,
+            startDir: start_dir,
+            endDir: end_dir
+        }), t);
 
         var dist = LiteGraph.distance(a, b);
         var p0 = a;
@@ -14190,6 +14243,13 @@ export class LGraphCanvas {
 
     // corner points of a LINEAR_LINK / STRAIGHT_LINK path, as drawn by renderLink
     getLinkPolyline(a, b, start_dir, end_dir) {
+        const fromRouter = LiteGraph.linkRouters?.polyline(this.link_router ?? LinkRouterRegistry.nameForMode(this.links_render_mode), new RenderLink({
+            a,
+            b,
+            startDir: start_dir,
+            endDir: end_dir
+        }));
+        if (fromRouter) return fromRouter;
         if (this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
             var start_x = a[0] + (start_dir == LiteGraph.RIGHT ? 10 : 0);
             var start_y = a[1] + (start_dir == LiteGraph.RIGHT ? 0 : 10);
@@ -26770,6 +26830,604 @@ export class ExecutionState {
         }
     }
 }
+
+/**
+ * Link drawing in three pieces (Wave 4c, idea H1):
+ * - `RenderLink`: what one drawn link segment is (ends, directions, the link, colour).
+ * - `LinkRouterRegistry` (`LiteGraph.linkRouters`): how a segment's path runs between its ends.
+ *   Built-in routers: "spline", "linear", "straight" (the classic `links_render_mode` values).
+ * - `LinkStyleRegistry` (`LiteGraph.linkStyles`): how a link looks right now. Resolvers return
+ *   `{visible, alpha, color, width, dash, label}` and compose in the order they are active.
+ *   Built-in: "spotlight", "dim-by-type", "hidden", "labelled".
+ *
+ * Design reference: the RenderLink / link renderer split in Comfy-Org/litegraph.js (MIT); this is
+ * an independent implementation.
+ */
+export class RenderLink {
+    /**
+     * @param {object} options
+     * @param {number[]} options.a - start point (graph space)
+     * @param {number[]} options.b - end point
+     * @param {number} [options.startDir] - LiteGraph.RIGHT, LEFT, UP, DOWN, CENTER
+     * @param {number} [options.endDir]
+     * @param {object|null} [options.link] - the LLink drawn (null for a drag preview or a floating link)
+     * @param {string|null} [options.color]
+     * @param {string|number} [options.type] - the slot type
+     * @param {"link"|"segment"|"floating"|"drag"} [options.kind]
+     */
+    constructor({
+        a,
+        b,
+        startDir = LiteGraph.RIGHT,
+        endDir = LiteGraph.LEFT,
+        link = null,
+        color = null,
+        type,
+        kind = "link"
+    } = {}) {
+        this.a = a;
+        this.b = b;
+        this.startDir = startDir || LiteGraph.RIGHT;
+        this.endDir = endDir || LiteGraph.LEFT;
+        this.link = link;
+        this.color = color;
+        this.type = type ?? link?.type;
+        this.kind = kind;
+    }
+
+    get length() {
+        return Math.hypot(this.b[0] - this.a[0], this.b[1] - this.a[1]);
+    }
+}
+
+const linkDirUnit = (dir) => [
+    dir == LiteGraph.LEFT ? -1 : dir == LiteGraph.RIGHT ? 1 : 0,
+    dir == LiteGraph.UP ? -1 : dir == LiteGraph.DOWN ? 1 : 0,
+];
+
+/** point at fraction t (0..1) of the length of a polyline */
+function linkPointOnPolyline(points, t) {
+    const lengths = [];
+    let total = 0;
+    for (let i = 1; i < points.length; ++i) {
+        const len = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+        lengths.push(len);
+        total += len;
+    }
+    if (!total) return [points[0][0], points[0][1]];
+    let target = Math.min(Math.max(t, 0), 1) * total;
+    for (let i = 0; i < lengths.length; ++i) {
+        if (target <= lengths[i] || i == lengths.length - 1) {
+            const f = lengths[i] ? Math.min(target / lengths[i], 1) : 0;
+            const p = points[i];
+            const q = points[i + 1];
+            return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+        }
+        target -= lengths[i];
+    }
+    return [points[points.length - 1][0], points[points.length - 1][1]];
+}
+
+/** a router that draws a polyline (its corner points) */
+const linkPolylineRouter = (polyline) => ({
+    polyline,
+    path(ctx, rl, offsety = 0) {
+        const points = polyline(rl);
+        ctx.moveTo(points[0][0], points[0][1] + offsety);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1] + offsety);
+    },
+    point(rl, t) {
+        return linkPointOnPolyline(polyline(rl), t);
+    },
+});
+
+/** the built-in routers, as the classic render modes drew them */
+const LINK_BUILTIN_ROUTERS = {
+    spline: {
+        controls(rl) {
+            const dist = LiteGraph.distance(rl.a, rl.b);
+            const s = linkDirUnit(rl.startDir);
+            const e = linkDirUnit(rl.endDir);
+            return [
+                [rl.a[0] + s[0] * dist * 0.25, rl.a[1] + s[1] * dist * 0.25],
+                [rl.b[0] + e[0] * dist * 0.25, rl.b[1] + e[1] * dist * 0.25],
+            ];
+        },
+        path(ctx, rl, offsety = 0) {
+            const [p1, p2] = this.controls(rl);
+            ctx.moveTo(rl.a[0], rl.a[1] + offsety);
+            ctx.bezierCurveTo(p1[0], p1[1] + offsety, p2[0], p2[1] + offsety, rl.b[0], rl.b[1] + offsety);
+        },
+        point(rl, t) {
+            const [p1, p2] = this.controls(rl);
+            const p0 = rl.a;
+            const p3 = rl.b;
+            const c1 = (1 - t) * (1 - t) * (1 - t);
+            const c2 = 3 * ((1 - t) * (1 - t)) * t;
+            const c3 = 3 * (1 - t) * (t * t);
+            const c4 = t * t * t;
+            return [c1 * p0[0] + c2 * p1[0] + c3 * p2[0] + c4 * p3[0], c1 * p0[1] + c2 * p1[1] + c3 * p2[1] + c4 * p3[1]];
+        },
+    },
+    linear: linkPolylineRouter((rl) => {
+        const l = 15;
+        const s = linkDirUnit(rl.startDir);
+        const e = linkDirUnit(rl.endDir);
+        return [rl.a, [rl.a[0] + s[0] * l, rl.a[1] + s[1] * l],
+            [rl.b[0] + e[0] * l, rl.b[1] + e[1] * l], rl.b
+        ];
+    }),
+    straight: linkPolylineRouter((rl) => {
+        const a = rl.a;
+        const b = rl.b;
+        const start_x = a[0] + (rl.startDir == LiteGraph.RIGHT ? 10 : 0);
+        const start_y = a[1] + (rl.startDir == LiteGraph.RIGHT ? 0 : 10);
+        const end_x = b[0] - (rl.endDir == LiteGraph.LEFT ? 10 : 0);
+        const end_y = b[1] - (rl.endDir == LiteGraph.LEFT ? 0 : 10);
+        const mid_x = (start_x + end_x) * 0.5;
+        return [a, [start_x, start_y],
+            [mid_x, start_y],
+            [mid_x, end_y],
+            [end_x, end_y], b
+        ];
+    }),
+};
+
+/**
+ * Link routers by name (`LiteGraph.linkRouters`). A router is `{path(ctx, renderLink, offsety),
+ * point(renderLink, t)}`: `path` adds the segment to the current canvas path (moveTo first),
+ * `point` returns the point at fraction `t` (used for the link centre, arrows and flow dots).
+ * A canvas uses `canvas.link_router` (a name) or, when that is null, its `links_render_mode`.
+ */
+export class LinkRouterRegistry {
+
+    /** links_render_mode → router name */
+    static MODE_NAMES = {
+        0: "straight",
+        1: "linear",
+        2: "spline"
+    };
+
+    constructor() {
+        /** @type {Map<string, object>} */
+        this._routers = new Map();
+        for (const [name, router] of Object.entries(LINK_BUILTIN_ROUTERS)) this._routers.set(name, router);
+    }
+
+    /** @returns {() => void} disposer (a replaced built-in comes back) */
+    register(name, router) {
+        if (typeof name !== "string" || !name) throw new TypeError("link router name must be a non-empty string");
+        if (typeof router?.path !== "function" || typeof router?.point !== "function") {
+            throw new TypeError(`link router ${name}: needs path(ctx, renderLink, offsety) and point(renderLink, t)`);
+        }
+        const previous = this._routers.get(name);
+        this._routers.set(name, router);
+        return () => {
+            if (this._routers.get(name) !== router) return;
+            if (previous) this._routers.set(name, previous);
+            else this._routers.delete(name);
+        };
+    }
+
+    get(name) {
+        return this._routers.get(name) ?? null;
+    }
+
+    list() {
+        return [...this._routers.keys()];
+    }
+
+    /** the router name for a links_render_mode value */
+    static nameForMode(mode) {
+        return LinkRouterRegistry.MODE_NAMES[mode] ?? null;
+    }
+
+    /** corner points of a polyline router (linear, straight), or null for curves */
+    polyline(name, rl) {
+        const router = this.get(name);
+        return typeof router?.polyline === "function" ? router.polyline(rl) : null;
+    }
+}
+
+/** the built-in style resolvers */
+const LINK_BUILTIN_STYLES = {
+    /** links touching the selected nodes stay bright and a little wider; the others fade */
+    spotlight(rl, ctx) {
+        const selected = ctx.selectedIds;
+        if (!selected?.size || !rl.link) return null;
+        const touches = selected.has(rl.link.origin_id) || selected.has(rl.link.target_id);
+        return touches ? {
+            width: (ctx.canvas?.connections_width ?? 3) + 1
+        } : {
+            alpha: 0.15
+        };
+    },
+    /** while a link is dragged (or `canvas.link_type_focus` is set), links of other types fade */
+    "dim-by-type"(rl, ctx) {
+        const focus = ctx.focusType;
+        if (focus === undefined || focus === null || focus === "" || focus === 0 || focus === "*") return null;
+        return LiteGraph.isValidConnection(rl.type, focus) ? null : {
+            alpha: 0.2
+        };
+    },
+    /** links with `link.hidden`, or of a type listed in `LiteGraph.Canvas.HiddenLinkTypes`, are not drawn */
+    hidden(rl, ctx) {
+        if (rl.link?.hidden) return {
+            visible: false
+        };
+        const types = ctx.hiddenTypes;
+        return types?.length && types.includes(String(rl.type)) ? {
+            visible: false
+        } : null;
+    },
+    /** the link's label (`link.label`) or its type, at its centre */
+    labelled(rl) {
+        if (!rl.link) return null;
+        const text = rl.link.label ?? rl.type;
+        return text === undefined || text === null || text === "" || text === 0 || text === -1 ? null : {
+            label: String(text)
+        };
+    },
+};
+
+/**
+ * Link style resolvers by name (`LiteGraph.linkStyles`). A resolver is
+ * `(renderLink, ctx) → {visible?, alpha?, color?, width?, dash?, label?} | null`; `ctx` has
+ * `canvas`, `selectedIds` (Set of selected node ids), `focusType` and `hiddenTypes`.
+ * Active resolvers come from `canvas.link_styles` or the setting `LiteGraph.Canvas.LinkStyles`
+ * and compose in that order: later ones override earlier fields, `alpha` multiplies, and
+ * `visible: false` wins.
+ */
+export class LinkStyleRegistry {
+
+    constructor() {
+        /** @type {Map<string, Function>} */
+        this._resolvers = new Map(Object.entries(LINK_BUILTIN_STYLES));
+    }
+
+    /** @returns {() => void} disposer */
+    register(name, resolver) {
+        if (typeof name !== "string" || !name) throw new TypeError("link style name must be a non-empty string");
+        if (typeof resolver !== "function") throw new TypeError(`link style ${name}: resolver must be a function`);
+        const previous = this._resolvers.get(name);
+        this._resolvers.set(name, resolver);
+        return () => {
+            if (this._resolvers.get(name) !== resolver) return;
+            if (previous) this._resolvers.set(name, previous);
+            else this._resolvers.delete(name);
+        };
+    }
+
+    get(name) {
+        return this._resolvers.get(name) ?? null;
+    }
+
+    list() {
+        return [...this._resolvers.keys()];
+    }
+
+    /**
+     * Composes the active resolvers for one link.
+     * @param {RenderLink} rl
+     * @param {object} ctx
+     * @param {string[]} active - resolver names, in order
+     * @returns {{visible: boolean, alpha: number, color?: string, width?: number, dash?: number[], label?: string}|null}
+     *   null when no active resolver changed anything
+     */
+    resolve(rl, ctx, active) {
+        let style = null;
+        for (const name of active ?? []) {
+            const resolver = this._resolvers.get(name);
+            if (!resolver) continue;
+            let part;
+            try {
+                part = resolver(rl, ctx);
+            } catch (error) {
+                LiteGraph.log_warn?.("linkStyles", `resolver ${name} failed`, error);
+                continue;
+            }
+            if (!part) continue;
+            style ??= {
+                visible: true,
+                alpha: 1
+            };
+            if (part.visible === false) style.visible = false;
+            if (Number.isFinite(part.alpha)) style.alpha *= part.alpha;
+            for (const key of ["color", "width", "dash", "label"])
+                if (part[key] !== undefined) style[key] = part[key];
+        }
+        return style;
+    }
+}
+
+/**
+ * A minimap for a canvas (Wave 4c, ideas H1/H9): the nodes of the open graph, the visible area,
+ * and decoration layers drawn on top (selection and execution state by default).
+ *
+ * It redraws on events, never on a timer: `graph-changed` and `execution-state` of the open
+ * graph, and `viewport-changed`, `selection-changed`, `subgraph-opened` / `subgraph-closed` of
+ * the canvas; redraws are coalesced to one per animation frame. A click or drag on it centres
+ * the canvas on that point.
+ *
+ * ```js
+ * const minimap = canvas.showMinimap({ width: 220, height: 150 });
+ * minimap.addLayer("bookmarks", (ctx, map) => { ... map.toMap([x, y]) ... });
+ * canvas.hideMinimap();
+ * ```
+ */
+export class MiniMap {
+
+    /** built-in layers, drawn in this order after the nodes */
+    static DEFAULT_LAYERS = ["selection", "execution"];
+
+    /**
+     * @param {object} canvas - an LGraphCanvas
+     * @param {{width?: number, height?: number, margin?: number, container?: HTMLElement, layers?: string[]}} [options]
+     */
+    constructor(canvas, {
+        width = 200,
+        height = 140,
+        margin = 10,
+        container,
+        layers = MiniMap.DEFAULT_LAYERS
+    } = {}) {
+        this.canvas = canvas;
+        this.width = width;
+        this.height = height;
+        this.padding = 20;
+        this.redraws = 0;
+        /** @type {Array<{name: string, draw: Function}>} */
+        this.layers = [];
+        this._abort = new AbortController();
+        this._unsubscribe = [];
+        this._frame = null;
+        this._graph = null;
+        this._transform = null;
+
+        const element = this.element = canvas.canvas?.ownerDocument?.createElement("canvas") ?? null;
+        if (element) {
+            element.className = "litegraph-minimap";
+            element.width = width;
+            element.height = height;
+            element.style.cssText = `position:absolute;right:${margin}px;bottom:${margin}px;width:${width}px;height:${height}px;` +
+                "z-index:4;border:1px solid #555;border-radius:4px;background:rgba(20,20,20,0.85);cursor:crosshair;touch-action:none";
+            (container ?? canvas.canvas?.parentNode)?.appendChild(element);
+            const signal = this._abort.signal;
+            let dragging = false;
+            const move = (e) => this.centerOnMapPoint(e.offsetX, e.offsetY);
+            element.addEventListener("pointerdown", (e) => {
+                dragging = true;
+                element.setPointerCapture?.(e.pointerId);
+                move(e);
+                e.preventDefault();
+                e.stopPropagation();
+            }, {
+                signal
+            });
+            element.addEventListener("pointermove", (e) => {
+                if (dragging) move(e);
+            }, {
+                signal
+            });
+            const end = () => {
+                dragging = false;
+            };
+            element.addEventListener("pointerup", end, {
+                signal
+            });
+            element.addEventListener("pointercancel", end, {
+                signal
+            });
+        }
+
+        for (const name of layers) {
+            const draw = MiniMap.LAYERS[name];
+            if (draw) this.addLayer(name, draw);
+        }
+        const events = canvas.events;
+        for (const type of ["viewport-changed", "selection-changed", "subgraph-opened", "subgraph-closed"]) {
+            this._unsubscribe.push(events.on(type, () => this.requestDraw()));
+        }
+        this._watchGraph();
+        this.draw();
+    }
+
+    /** follows the canvas's open graph (and its root, for execution state) */
+    _watchGraph() {
+        const graph = this.canvas.graph;
+        if (graph === this._graph) return;
+        this._graphUnsubscribe?.forEach((off) => off());
+        this._graph = graph;
+        this._graphUnsubscribe = [];
+        if (!graph) return;
+        this._graphUnsubscribe.push(graph.events.on("graph-changed", () => this.requestDraw()));
+        const root = graph.rootGraph ?? graph;
+        this._graphUnsubscribe.push(root.events.on("execution-state", () => this.requestDraw()));
+    }
+
+    /**
+     * Adds a decoration layer: `draw(ctx, minimap)` runs after the nodes on every redraw.
+     * @returns {() => void} disposer
+     */
+    addLayer(name, draw) {
+        if (typeof draw !== "function") throw new TypeError(`minimap layer ${name}: draw must be a function`);
+        const layer = {
+            name,
+            draw
+        };
+        this.layers.push(layer);
+        this.requestDraw();
+        return () => {
+            const index = this.layers.indexOf(layer);
+            if (index !== -1) this.layers.splice(index, 1);
+            this.requestDraw();
+        };
+    }
+
+    /** Redraws once on the next animation frame (or now without one). */
+    requestDraw() {
+        if (this._frame !== null) return;
+        const raf = this.canvas.canvas?.ownerDocument?.defaultView?.requestAnimationFrame;
+        if (typeof raf !== "function") {
+            this.draw();
+            return;
+        }
+        this._frame = raf(() => {
+            this._frame = null;
+            this.draw();
+        });
+    }
+
+    /** graph-space bounds of the nodes and the visible area: [x, y, w, h] */
+    computeBounds() {
+        let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+        const add = (x, y, w, h) => {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + w);
+            maxY = Math.max(maxY, y + h);
+        };
+        for (const node of this.canvas.graph?._nodes ?? []) {
+            add(node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, node.size[0], node.size[1] + LiteGraph.NODE_TITLE_HEIGHT);
+        }
+        const area = this.canvas.visible_area ?? this.canvas.ds?.visible_area;
+        if (area && area[2] > 0 && area[3] > 0) add(area[0], area[1], area[2], area[3]);
+        if (!Number.isFinite(minX)) return [0, 0, 1, 1];
+        return [minX, minY, Math.max(1, maxX - minX), Math.max(1, maxY - minY)];
+    }
+
+    /** graph point → minimap pixel */
+    toMap(point) {
+        const t = this._transform ?? this._computeTransform();
+        return [(point[0] - t.x) * t.scale + t.ox, (point[1] - t.y) * t.scale + t.oy];
+    }
+
+    /** minimap pixel → graph point */
+    toGraph(x, y) {
+        const t = this._transform ?? this._computeTransform();
+        return [(x - t.ox) / t.scale + t.x, (y - t.oy) / t.scale + t.y];
+    }
+
+    /** a node's rectangle in minimap pixels: [x, y, w, h] */
+    nodeRect(node) {
+        const t = this._transform ?? this._computeTransform();
+        const [x, y] = this.toMap([node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT]);
+        return [x, y, Math.max(2, node.size[0] * t.scale), Math.max(2, (node.size[1] + LiteGraph.NODE_TITLE_HEIGHT) * t.scale)];
+    }
+
+    _computeTransform() {
+        const [x, y, w, h] = this.computeBounds();
+        const pad = this.padding;
+        const scale = Math.min((this.width - 2 * pad / 4) / w, (this.height - 2 * pad / 4) / h);
+        const ox = (this.width - w * scale) / 2;
+        const oy = (this.height - h * scale) / 2;
+        return (this._transform = {
+            x,
+            y,
+            scale,
+            ox,
+            oy
+        });
+    }
+
+    /** Centres the canvas on the graph point under a minimap pixel. */
+    centerOnMapPoint(x, y) {
+        const [gx, gy] = this.toGraph(x, y);
+        this.centerOn(gx, gy);
+    }
+
+    /** Centres the canvas on a graph point. */
+    centerOn(gx, gy) {
+        const ds = this.canvas.ds;
+        ds.computeVisibleArea?.(this.canvas.viewport); // the view may have moved since the last frame
+        const area = this.canvas.visible_area ?? ds.visible_area;
+        const cx = area[0] + area[2] / 2;
+        const cy = area[1] + area[3] / 2;
+        ds.offset[0] += cx - gx;
+        ds.offset[1] += cy - gy;
+        ds.computeVisibleArea?.(this.canvas.viewport);
+        this.canvas.setDirty(true, true);
+        this.requestDraw();
+    }
+
+    /** Draws the minimap now. */
+    draw() {
+        this._watchGraph();
+        this.redraws++;
+        this._transform = null;
+        const t = this._computeTransform();
+        const ctx = this.element?.getContext?.("2d");
+        if (!ctx) return;
+        ctx.clearRect(0, 0, this.width, this.height);
+        for (const node of this.canvas.graph?._nodes ?? []) {
+            const [x, y, w, h] = this.nodeRect(node);
+            ctx.fillStyle = node.bgcolor || node.constructor.bgcolor || LiteGraph.NODE_DEFAULT_BGCOLOR || "#353535";
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = node.color || node.constructor.color || LiteGraph.NODE_DEFAULT_COLOR || "#333";
+            ctx.fillRect(x, y, w, Math.max(1, LiteGraph.NODE_TITLE_HEIGHT * t.scale));
+        }
+        for (const layer of this.layers) {
+            try {
+                ctx.save();
+                layer.draw(ctx, this);
+            } catch (error) {
+                LiteGraph.log_warn?.("minimap", `layer ${layer.name} failed`, error);
+            } finally {
+                ctx.restore();
+            }
+        }
+        const area = this.canvas.visible_area ?? this.canvas.ds?.visible_area;
+        if (area) {
+            const [vx, vy] = this.toMap([area[0], area[1]]);
+            ctx.strokeStyle = "#DDD";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(vx + 0.5, vy + 0.5, area[2] * t.scale, area[3] * t.scale);
+        }
+    }
+
+    dispose() {
+        if (this._frame !== null) this.canvas.canvas?.ownerDocument?.defaultView?.cancelAnimationFrame?.(this._frame);
+        this._frame = null;
+        this._abort.abort();
+        this._unsubscribe.forEach((off) => off());
+        this._graphUnsubscribe?.forEach((off) => off());
+        this._unsubscribe = [];
+        this._graphUnsubscribe = [];
+        this.element?.remove();
+        this.element = null;
+    }
+}
+
+/** built-in decoration layers */
+MiniMap.LAYERS = {
+    /** selected nodes outlined */
+    selection(ctx, map) {
+        const selected = Object.values(map.canvas.selected_nodes ?? {});
+        if (!selected.length) return;
+        ctx.strokeStyle = "#FFF";
+        ctx.lineWidth = 1.5;
+        for (const node of selected) {
+            if (node.graph !== map.canvas.graph) continue;
+            const [x, y, w, h] = map.nodeRect(node);
+            ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+        }
+    },
+    /** execution state: running and failed nodes in their overlay colours */
+    execution(ctx, map) {
+        const colors = map.canvas.constructor?.EXECUTION_STATUS_COLORS ?? {};
+        for (const node of map.canvas.graph?._nodes ?? []) {
+            const status = node.execution_state?.status;
+            if (status !== "running" && status !== "error") continue;
+            const [x, y, w, h] = map.nodeRect(node);
+            ctx.fillStyle = colors[status] ?? (status === "error" ? "#E44" : "#FC3");
+            ctx.globalAlpha = 0.85;
+            ctx.fillRect(x, y, w, h);
+        }
+    },
+};
 
 // this needs to be called after all classes has been included, before registering nodes and creating canvas
 // will setup callback handlers and LiteGraph.CLASSES references ( eg. LitegGraph.LGraph, .. )
@@ -56516,6 +57174,91 @@ export function registerExtension_nodePacks(graphcanvas) {
 }
 
 registerExtension_nodePacks();
+
+/**
+ * View commands: the minimap and the built-in link styles, also in the canvas menu.
+ * - `litegraph.canvas.toggleMinimap` (Alt+M): shows or hides the minimap and remembers it in the
+ *   setting `LiteGraph.Canvas.Minimap`, so new canvases follow it.
+ * - `litegraph.links.spotlight`, `litegraph.links.dimByType`, `litegraph.links.labels`,
+ *   `litegraph.links.hidden`: each adds or removes its link style in the setting
+ *   `LiteGraph.Canvas.LinkStyles`.
+ */
+
+const VIEW_STYLE_COMMANDS = [
+    ["spotlight", "litegraph.links.spotlight", "Link spotlight on the selection"],
+    ["dim-by-type", "litegraph.links.dimByType", "Dim links of other types while connecting"],
+    ["labelled", "litegraph.links.labels", "Link labels"],
+    ["hidden", "litegraph.links.hidden", "Hide links of hidden types"],
+];
+
+/** true when a link style is active (setting LiteGraph.Canvas.LinkStyles) */
+export function isLinkStyleActive(name) {
+    const active = LiteGraph.settings?.get("LiteGraph.Canvas.LinkStyles");
+    return Array.isArray(active) && active.includes(name);
+}
+
+/** adds or removes a link style in the setting; returns whether it is now active */
+export function toggleLinkStyle(name, on = !isLinkStyleActive(name)) {
+    const active = (LiteGraph.settings.get("LiteGraph.Canvas.LinkStyles") ?? []).filter((entry) => entry !== name);
+    if (on) active.push(name);
+    LiteGraph.settings.set("LiteGraph.Canvas.LinkStyles", active);
+    return on;
+}
+
+const viewRedraw = (ctx) => ctx.canvas?.setDirty?.(true, true);
+
+export const viewToolsExtension = {
+    name: "litegraph.view_tools",
+    commands: [{
+            id: "litegraph.canvas.toggleMinimap",
+            label: (ctx) => (ctx.canvas?.minimap ? "Hide minimap" : "Show minimap"),
+            category: "view",
+            when: (ctx) => !!ctx.canvas?.canvas,
+            run(ctx) {
+                const shown = ctx.canvas.toggleMinimap();
+                LiteGraph.settings.set("LiteGraph.Canvas.Minimap", shown);
+                return shown;
+            },
+        },
+        ...VIEW_STYLE_COMMANDS.map(([style, id, label]) => ({
+            id,
+            label: () => `${isLinkStyleActive(style) ? "✓ " : ""}${label}`,
+            category: "view",
+            run(ctx) {
+                const on = toggleLinkStyle(style);
+                viewRedraw(ctx);
+                return on;
+            },
+        })),
+    ],
+    keybindings: [{
+        combo: "alt+m",
+        commandId: "litegraph.canvas.toggleMinimap"
+    }],
+    setup(ctx) {
+        ctx.menus.register("canvas", () => [
+            null,
+            {
+                command: "litegraph.canvas.toggleMinimap"
+            },
+            ...VIEW_STYLE_COMMANDS.map(([, id]) => ({
+                command: id
+            })),
+        ]);
+        // canvases follow the remembered minimap choice
+        ctx.onCanvas((canvas) => {
+            if (LiteGraph.settings.get("LiteGraph.Canvas.Minimap")) canvas.showMinimap?.();
+        });
+    },
+};
+
+/** Registers the extension once (the full bundles and the editor load it). */
+export function registerExtension_viewTools(graphcanvas) {
+    if (!LiteGraph.extensions?.has(viewToolsExtension.name)) LiteGraph.registerExtension(viewToolsExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
+
+registerExtension_viewTools();
 
 /**
  * Optional ComfyUI workflow interoperability.

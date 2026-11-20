@@ -302,6 +302,28 @@ graph.applyExecutionState(messageFromRunner);
 
 `runStep` sends one `done` per node (not per step) and an `error` with the failing node's path; `start()` sends a `reset`. The runner broadcasts the same messages as `execution_state`. The canvas draws them: a coloured title box, an outline while running or failed, a progress bar, and the error text (setting `LiteGraph.Canvas.ExecutionOverlays`). A node or definition `icon` (a glyph or an image) is drawn before the title.
 
+## Links and the view
+
+```js
+// routers: how a link runs ("spline", "linear", "straight" built in; canvas.link_router picks one by name)
+LiteGraph.linkRouters.register("diagonal", {
+  path(ctx, rl, offsety) { ctx.moveTo(rl.a[0], rl.a[1]); ctx.lineTo(rl.b[0], rl.b[1]); },
+  point(rl, t) { return [rl.a[0] + (rl.b[0] - rl.a[0]) * t, rl.a[1] + (rl.b[1] - rl.a[1]) * t]; },
+});
+canvas.link_router = "diagonal";
+
+// styles: how a link looks right now; active ones compose in order
+LiteGraph.linkStyles.register("errors-red", (rl) => rl.link?.error ? { color: "#e44", width: 4 } : null);
+LiteGraph.settings.set("LiteGraph.Canvas.LinkStyles", ["spotlight", "errors-red"]);
+
+const minimap = canvas.showMinimap();       // or the canvas menu / Alt+M
+minimap.addLayer("bookmarks", (ctx, map) => { const [x, y] = map.toMap([0, 0]); ctx.fillRect(x, y, 3, 3); });
+```
+
+- **Built-in styles:** `spotlight` (links of the selection stay bright, the rest fade), `dim-by-type` (while connecting, or for `canvas.link_type_focus`), `hidden` (`link.hidden`, or types in `LiteGraph.Canvas.HiddenLinkTypes`; not drawn and not clickable), `labelled` (the link's label or type). A style returns `{visible, alpha, color, width, dash, label}`; `alpha` multiplies and `visible: false` wins.
+- **Minimap:** redraws on graph, viewport, selection and execution-state events (no timer); a click or drag centres the view; layers `selection` and `execution` are built in. Setting `LiteGraph.Canvas.Minimap` remembers it.
+- **Pointer:** panning (left drag on empty canvas, middle drag) is a `CanvasPointer` gesture; `DragAndScale` binds no listeners for a canvas, and `unbindEvents()` removes the ones a standalone `bindEvents` added.
+
 ## Packs and missing nodes
 
 A pack is a manifest (plain JSON) for a group of node types. The code is whatever you already imported; node types registered inside `setup` belong to the pack.

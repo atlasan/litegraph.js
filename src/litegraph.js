@@ -19,6 +19,7 @@ import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 import { NodeSearch } from "./nodesearch.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
+import { LinkRouterRegistry, LinkStyleRegistry, RenderLink } from "./linkrender.js";
 
 /**
  * @class LiteGraph
@@ -597,6 +598,14 @@ export class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        this.linkRouters ??= new LinkRouterRegistry();
+        this.linkStyles ??= new LinkStyleRegistry();
+        this.RenderLink ??= RenderLink;
+        if (!this.settings.has("LiteGraph.Canvas.LinkStyles")) {
+            this.settings.define({ id: "LiteGraph.Canvas.LinkStyles", type: "json", name: "Active link styles, in order (spotlight, dim-by-type, hidden, labelled, or registered ones)", default: () => [] });
+            this.settings.define({ id: "LiteGraph.Canvas.HiddenLinkTypes", type: "json", name: "Slot types whose links the \"hidden\" link style does not draw", default: () => [] });
+            this.settings.define({ id: "LiteGraph.Canvas.Minimap", name: "Show a minimap on canvases (Editor)", default: false });
+        }
         if (!this.settings.has("LiteGraph.Canvas.ExecutionOverlays")) {
             this.settings.define({ id: "LiteGraph.Canvas.ExecutionOverlays", name: "Show node status, progress and errors on the canvas", default: true });
         }

@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4b
+> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4c
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -10,7 +10,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 |---|---|
 | `src/` | The library, as ES modules |
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
-| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
+| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
 | `editor/` | Demo editor. `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions |
 | `editor_tester/` | Browser tester that generates per-node scenarios |
@@ -39,6 +39,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `lgraphcanvas.js` | Rendering and interaction, about 9.5k lines |
 | `librarymanager.js` | Optional library loading and manifest |
 | `executionstate.js` | `ExecutionState` (`LiteGraph.ExecutionState`): the v1 execution-state messages (`create`, `isMessage`, `apply` by path, `applyToNode`, `clear`) (Wave 4b) |
+| `linkrender.js`, `minimap.js` | `RenderLink`, `LinkRouterRegistry` (`LiteGraph.linkRouters`), `LinkStyleRegistry` (`LiteGraph.linkStyles`); `MiniMap` (Wave 4c) |
 | `packs.js` | `PackRegistry` (`LiteGraph.packs`): pack manifests, type attribution, index, version ranges, replacement mappings; `replaceNodeInGraph` (Wave 4a) |
 | `widgets.js` | `BaseWidget` and its subclasses; the safe arithmetic parser |
 | `init_litegraph.js` | Calls `LiteGraph.initialize()`; last in the build, so bundles initialize themselves |
@@ -118,6 +119,8 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Title decorations:** `getNodeTitleDecorations` lays out title buttons (`node.title_buttons`) and badges (`LiteGraph.nodeBadges.collect`); `drawNodeTitleDecorations` caches it on `node._title_decorations` for hit testing. Group header toggle: `getGroupToggleRect`, `toggleGroupMuted`.
 - **Selection:** `selectedItems` covers nodes, groups and reroutes. Also `selectItem`, `moveSelected`, `deleteSelected`, `groupSelected`, and the event `selection-changed`.
 - **Clipboard:** `serializeSelection()` produces a fragment (nodes, links, reroute chains, groups). `insertFragment(fragment, pos)` inserts one with fresh ids in one undo step; copy and paste use both.
+- **Links (Wave 4c):** `renderLinkPath` resolves one style per link (`resolveLinkStyle`, context cached per frame) and passes it to each segment; `renderLink(ctx, a, b, link, …, num_sublines, {style, source})` builds a `RenderLink`, skips hidden links (not pushed to `visible_links`), and draws through `getLinkRouter()` (`link_router` name, else `links_render_mode`). `computeConnectionPoint` and `getLinkPolyline` use the router too.
+- **Minimap and pan (Wave 4c):** `showMinimap` creates a `MiniMap` in the canvas's parent element; `dispose` removes it. Panning is `_dragCanvasGesture` (left drag on empty canvas, middle drag); when another gesture already owns the pointer (a group) only the legacy flag is set. Space-key panning still uses `dragging_canvas`.
 - **Drawing:**
   - `drawBackCanvas`: background, groups, links.
   - `drawFrontCanvas`: nodes, overlays, tooltips.
