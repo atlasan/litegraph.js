@@ -658,6 +658,10 @@ export declare class LGraph {
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     /** Destroys a link */
     removeLink(link_id: GraphId): void;
+    /** turns nodes into a subgraph node (one undo step; rolled back on failure) */
+    convertToSubgraph(nodes: LGraphNode[]): Subgraph | null;
+    /** replaces a subgraph node by its contents (one undo step) */
+    unpackSubgraph(node: Subgraph): LGraphNode[];
     validateLinks(options?: { repair?: boolean }): {
         ok: boolean;
         repaired: boolean;
@@ -1882,6 +1886,10 @@ export declare class LibraryManager {
 export declare class Subgraph extends LGraphNode {
     subgraph: LGraph;
     enabled: boolean;
+    /** fills this (added, empty) node from nodes of its graph; see LGraph.convertToSubgraph */
+    buildFromNodes(nodes: LGraphNode[]): this;
+    /** moves the contents back into the parent graph and removes this node; see LGraph.unpackSubgraph */
+    unpack(): LGraphNode[];
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}

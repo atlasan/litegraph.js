@@ -8929,14 +8929,12 @@ export class LGraphCanvas {
         if( !nodes_list.length )
             nodes_list = [ node ];
 
-        var subgraph_node = LiteGraph.createNode("graph/subgraph");
-        subgraph_node.pos = node.pos.concat();
-        graph.add(subgraph_node);
-
-        subgraph_node.buildFromNodes( nodes_list );
+        // one undo step; nothing is left behind if the conversion fails (rollback)
+        var subgraph_node = graph.convertToSubgraph( nodes_list );
 
         graphcanvas.deselectAllNodes();
-        node.setDirtyCanvas(true, true);
+        if (subgraph_node) graphcanvas.selectNodes([subgraph_node]);
+        graphcanvas.setDirty(true, true);
     }
 
     static onMenuNodeClone(value, options, e, menu, node) {
