@@ -350,7 +350,18 @@ All six were decided by the user on 2026-11-20, as recommended.
 - **Canonical comparison cost:** canonical JSON of each definition at save. The cost is linear in document size. Measure it on a 1,000-node fixture in step 1.
 - **Graph-level `inputs` / `outputs` by name:** the interface still keys runtime values by name, so two IO nodes cannot share a name inside one definition. This is enforced already by `unique()` in convert, and to be added for rename.
 
+## Implementation notes (3a)
+
+These are corrections to §4, made while building; the [3a execution record](../executions/2026-11-20-wave3a-subgraph-definitions.md) has the details.
+- **The registry is the source for linked content.**
+  - Saves write definitions from `graph.subgraphs`, never from one instance's runtime state.
+  - Content changes reach the registry by commit, by first registration, or at a root save for instances whose inner `revision` moved since their last sync.
+  - There is no fork at save (§4.1 step 5). Forks happen when content is inserted: a known id with different content.
+- **The inline format also writes the registry**, so undo snapshots and older readers keep everything.
+- **Loaded `inputNode` / `outputNode` boxes** are kept (`extra.litegraph.io_bounds` at runtime) and written back while the boundary nodes have not moved.
+
 ## History
 
+- 2026-11-20: 3a done except the schema probe and the default flip ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md)).
 - 2026-11-20: accepted; W3-1 to W3-6 decided as recommended (linked paste, stateful function node, IO nodes kept, propagation on leave, components in scope).
 - 2026-11-20: proposed after ADR 0001 option B was chosen. The user asked for a lean litegraph-native system built on the function-node idea, open to going beyond ComfyUI, and planned thoroughly before code.

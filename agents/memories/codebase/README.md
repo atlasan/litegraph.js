@@ -35,7 +35,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `nodesearch.js` | `NodeSearch` (`LiteGraph.nodeSearch`): query parsing (`i:` `o:` `c:` `s:`), ranking, definition filters; used by the search box |
 | `contextmenu.js`, `curveeditor.js` | DOM menus; curve widget helper |
 | `dragandscale.js`, `canvaspointer.js`, `linkconnector.js`, `reroute.js` | View transform, pointer gestures, link-drag state machine, reroutes |
-| `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js` | The graph model |
+| `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js`, `subgraphdefs.js` | The graph model |
 | `lgraphcanvas.js` | Rendering and interaction, about 9.5k lines |
 | `librarymanager.js` | Optional library loading and manifest |
 | `widgets.js` | `BaseWidget` and its subclasses; the safe arithmetic parser |
@@ -65,9 +65,12 @@ Listed in build order (`build.py` `lib_js_files`):
 - **LLink:** serialized as a 6-element array; `parentId` points at the reroute chain.
 - **LGraphGroup:** a Float32Array bounding box; nested `_nodes` and `_groups`; `resizeTo(items)`, `fitToContents()`, `setNodesMode(mode)`.
 - **Reroute:** `id`, `pos`, `parentId`. Its design is credited to Comfy-Org standalone (MIT).
-- **Subgraph:**
-  - **Model:** inline. The node owns an `LGraph`, and `graph/input` / `graph/output` nodes map to the host's slots.
-  - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`) work on the inline model: one undo step, rolled back on failure. Subgraph v2 is Wave 3 (ADR 0001).
+- **Subgraph** (`subgraph.js`, `subgraphdefs.js`; [Wave 3 plan](../../plans/2026-11-20-wave3-subgraph-system.md)):
+  - **Runtime:** each instance owns its own `LGraph` (`node.subgraph`); `graph/input` / `graph/output` nodes map to the host's slots by name and carry `properties.slot_id`.
+  - **Definitions:** `rootGraph.subgraphs` (Map id → definition, ComfyUI shape) is the source for linked content; an instance names its definition in `properties.subgraph_id`. `SubgraphDefs` (pure JSON) converts between inline instances and `definitions.subgraphs` (`-10`/`-20` links). `LGraph.configure` builds the inner graph of every instance that references a definition; `serialize({format})` writes the registry, and in `"definitions"` format (ComfyUI) references instead of inline graphs. History snapshots stay inline.
+  - **Linked instances:** `commitDefinition` (the canvas calls it on `closeSubgraph`) refreshes the others (`refreshFromDefinition`: outer slots matched by slot id, then name); `makeUnique`; `Subgraph.onAdded` links equal inserted content and forks different content under a known id. A root save takes instances edited by code (inner `revision` moved since `_definition_revision`).
+  - **Function node:** `graph/function` (`NodeFunction extends Subgraph`) calls a definition: `call` → inputs, one step, outputs → `done`; own copy per node; recursion refused, `NodeFunction._depth` limited by `LiteGraph.subgraph_max_depth`.
+  - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`): one undo step, rolled back on failure.
 
 ## Execution
 

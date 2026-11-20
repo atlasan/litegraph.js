@@ -228,6 +228,8 @@ export class LiteGraphClass {
     middle_click_slot_add_default_node = false; // [true!] allows to create and connect a ndoe clicking with the third button (wheel)
 
     keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
+    subgraph_format = "inline"; // root serialize: "inline" (instances keep their inner graph) or "definitions" (ComfyUI form, instances reference definitions.subgraphs)
+    subgraph_max_depth = 32; // nesting limit for subgraph definitions (load) and calls
     snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
     two_fingers_opens_menu = false; // [true!] using pointer event isPrimary, when is not simulate right click
@@ -521,6 +523,7 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
             this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};

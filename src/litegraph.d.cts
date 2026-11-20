@@ -355,6 +355,10 @@ export interface LiteGraphAPI extends CallbackHost {
     };
     /** removing a routed link keeps its reroutes as a floating link (default true) */
     keep_floating_reroutes: boolean;
+    /** root serialize: "inline" keeps each instance's inner graph; "definitions" writes the ComfyUI form */
+    subgraph_format: "inline" | "definitions";
+    /** nesting limit for subgraph definitions (load) and calls */
+    subgraph_max_depth: number;
     /** a link dragged over a node body highlights, and a drop connects, the slot it would use (default true) */
     snap_link_to_slot: boolean;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
@@ -685,7 +689,17 @@ export declare class LGraph {
         issues: Array<{ kind: string; link_id?: GraphId; node_id?: GraphId; slot?: number }>;
     };
     /** Creates a Object containing all the info about this graph, it can be serialized */
-    serialize<T extends serializedLGraph>(): T;
+    serialize<T extends serializedLGraph>(options?: { format?: "inline" | "definitions" }): T;
+    /** subgraph definitions by id (on the root graph) */
+    subgraphs: Map<string, SubgraphDefinition>;
+    /** the outermost graph */
+    readonly rootGraph: LGraph;
+    /** adds the definitions of instances the root registry does not know yet; sync: also take instances edited since their last sync */
+    registerSubgraphDefinitions(options?: { sync?: boolean }): void;
+    /** subgraph and function nodes, at any depth, that use a definition */
+    findSubgraphInstances(id: string): Subgraph[];
+    /** true while this graph or a graph containing it is being configured */
+    readonly isConfiguring: boolean;
     /**
      * Configure a graph from a JSON string
      * @param data configure a graph from a JSON string
@@ -1282,6 +1296,10 @@ export interface LGraphEventMap {
     "execution-step": { iteration: number };
     /** execution stopped on an error */
     "node-error": { error: unknown; node: LGraphNode | null };
+    /** a subgraph definition changed by a commit; linked instances were refreshed (root graph) */
+    "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
+    /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
+    "subgraph-forked": { node: LGraphNode; from: string; to: string; reason: string };
 }
 
 export interface LGraphCanvasEventMap {
@@ -1978,10 +1996,28 @@ export declare class Subgraph extends LGraphNode {
     buildFromNodes(nodes: LGraphNode[]): this;
     /** moves the contents back into the parent graph and removes this node; see LGraph.unpackSubgraph */
     unpack(): LGraphNode[];
+    /** the definition this node uses (root registry), or null */
+    getDefinition(): SubgraphDefinition | null;
+    /** makes the current inner graph the definition and refreshes the linked instances (one undo step) */
+    commitDefinition(): boolean;
+    /** rebuilds the inner graph from the definition; outer slots follow it by slot id */
+    refreshFromDefinition(options?: { matchNames?: boolean }): boolean;
+    /** gives this node its own copy of the definition; returns the new id */
+    makeUnique(): string | null;
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}
-export declare class NodeFunction extends LGraphNode {}
+/** calls a subgraph definition: call -> inputs in, one run, outputs out -> done */
+export declare class NodeFunction extends Subgraph {
+    /** uses a definition of the root registry; false when unknown or recursive */
+    setDefinition(id: string): boolean;
+    setDefinitionByLabel(label: string): boolean;
+    definitionLabels(): string[];
+    /** true when `id` is a definition this node is inside of */
+    wouldRecurse(id: string): boolean;
+    /** runs the definition once with the current inputs, then fires done */
+    call(param?: unknown, options?: object): boolean;
+}
 export declare class CurveEditor {
     constructor(points: Vector2[]);
     points: Vector2[];
@@ -2229,6 +2265,48 @@ export interface NodeSearchQuery {
     filters: { i: string[]; o: string[]; c: string[]; s: string[] };
 }
 /** Node search without a DOM: `add i:number c:math s:core` (see src/nodesearch.js). */
+/** a subgraph definition (ComfyUI `definitions.subgraphs[]` entry) */
+export interface SubgraphDefinition {
+    id: string;
+    name?: string;
+    version?: number;
+    revision?: number;
+    inputs: SubgraphInterfaceSlot[];
+    outputs: SubgraphInterfaceSlot[];
+    inputNode?: { id: -10; bounding?: number[] };
+    outputNode?: { id: -20; bounding?: number[] };
+    widgets?: Array<{ id: GraphId; name: string }>;
+    nodes: object[];
+    links: object[];
+    [key: string]: unknown;
+}
+export interface SubgraphInterfaceSlot {
+    id: string;
+    name: string;
+    type: string;
+    /** LiteGraph type when the string type cannot carry it (event ports: -1) */
+    litegraph_type?: number;
+    linkIds?: GraphId[];
+    [key: string]: unknown;
+}
+/** document transforms between inline subgraphs and definitions (pure JSON) */
+export declare const SubgraphDefs: {
+    readonly IO_INPUT_NODE: -10;
+    readonly IO_OUTPUT_NODE: -20;
+    readonly IO_INPUT_BASE: number;
+    readonly IO_OUTPUT_BASE: number;
+    isInstanceData(node: unknown): boolean;
+    linkObject(link: unknown[] | object): { id: GraphId; origin_id: GraphId; origin_slot: number; target_id: GraphId; target_slot: number; type: unknown; parentId?: number };
+    canonical(definition: object): string;
+    definitionOf(node: object, out?: Map<string, SubgraphDefinition>): SubgraphDefinition;
+    materialize(definition: SubgraphDefinition, definitions: Map<string, SubgraphDefinition>, context?: { errors?: object[]; stack?: string[] }): object;
+    collectDefinitions(doc: object, out?: Map<string, SubgraphDefinition>, warnings?: object[]): Map<string, SubgraphDefinition>;
+    toInline(doc: object): { doc: object; definitions: Map<string, SubgraphDefinition>; errors: object[]; warnings: object[] };
+    toDefinitions(doc: object, options?: { definitions?: Map<string, SubgraphDefinition> }): object;
+    directDefinitionIds(data: object): Set<string>;
+    findCycles(definitions: Map<string, SubgraphDefinition>): Set<string>;
+};
+
 export declare class NodeSearch {
     static FILTER_PREFIXES: string[];
     constructor();

@@ -4,6 +4,7 @@ import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
 import { LGraphEventTarget } from "./eventtarget.js";
+import { SubgraphDefs } from "./subgraphdefs.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -117,6 +118,8 @@ export class LGraph {
         this.status = LGraph.STATUS_STOPPED;
 
         this.state = LGraph.createState(); // also resets last_node_id / last_link_id
+        /** subgraph definitions by id (meaningful on the root graph; see rootGraph) */
+        this.subgraphs = new Map();
 
         // drop document fields kept from a previous configure
         for (const key in this._foreign_fields ?? {}) delete this[key];
@@ -233,7 +236,10 @@ export class LGraph {
      * @param {GraphCanvas} graph_canvas
      */
     attachCanvas(graphcanvas) {
-        if ( ! (graphcanvas instanceof LGraphCanvas) ) {
+        // another copy of the library (e.g. the editor page loads both the bundle and src/) still has a canvas
+        const isCanvas = graphcanvas instanceof LGraphCanvas || (LiteGraph.LGraphCanvas && graphcanvas instanceof LiteGraph.LGraphCanvas)
+            || (typeof graphcanvas?.setGraph === "function" && typeof graphcanvas?.draw === "function" && graphcanvas?.ds);
+        if (!isCanvas) {
             throw new Error("attachCanvas expects a LiteGraph.LGraphCanvas instance");
         }
         if (graphcanvas.graph && graphcanvas.graph != this) {
@@ -1592,7 +1598,7 @@ export class LGraph {
      * @returns {*} fn's result
      */
     transact(label, fn, options = {}) {
-        const snapshot = options.rollback && !this._transaction ? this.serialize() : null;
+        const snapshot = options.rollback && !this._transaction ? this.serialize({ format: "inline" }) : null;
         this.beginTransaction(label);
         try {
             return fn();
@@ -2027,7 +2033,13 @@ export class LGraph {
      * @method serialize
      * @return {Object} value of the node
      */
-    serialize() {
+    /**
+     * @param {{format?: "inline"|"definitions"}} [options] - subgraph format of a root graph
+     *   (default LiteGraph.subgraph_format). Both write the definition registry to
+     *   definitions.subgraphs; "inline" also keeps each instance's inner graph, "definitions"
+     *   replaces instances by references (ComfyUI form). Nested graphs always serialize inline.
+     */
+    serialize(options = {}) {
         const nodesInfo = this._nodes.map((node) => node.serialize());
         // TODO ensure and remove
         // var nodesInfo = [];
@@ -2080,12 +2092,75 @@ export class LGraph {
         if (this.floating_links?.size || this._floating_links_field) {
             data.floatingLinks = [...this.floating_links.values()].map((floating) => ({ ...floating }));
         }
+        if (!this._subgraph_node) data = this._serializeDefinitions(data, options.format ?? LiteGraph.subgraph_format);
         this.processCallbackHandlers("onSerialize",{
             def_cb: this.onSerialize
         }, data);
         
         LiteGraph.log_verbose("lgraph","serialize",data);
 
+        return data;
+    }
+
+    /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
+    get rootGraph() {
+        let graph = this;
+        while (graph._subgraph_node?.graph) graph = graph._subgraph_node.graph;
+        return graph;
+    }
+
+    /**
+     * Adds the definitions of subgraph instances (at any depth) that the root registry does not
+     * know yet, taken from their current inner graphs.
+     */
+    registerSubgraphDefinitions({ sync = false } = {}) {
+        const root = this.rootGraph;
+        const visit = (graph, depth) => {
+            if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+            for (const node of graph._nodes) {
+                if (!node?.subgraph) continue;
+                const id = node.properties?.subgraph_id;
+                if (typeof id === "string" && id) {
+                    const known = root.subgraphs.has(id);
+                    const edited = known && sync && node._definition_revision !== undefined && node.subgraph.revision !== node._definition_revision;
+                    if (!known || edited) {
+                        const found = new Map();
+                        const definition = SubgraphDefs.definitionOf(node.serialize(), found);
+                        if (edited) definition.revision = (root.subgraphs.get(id).revision ?? 0) + 1;
+                        root.subgraphs.set(id, definition);
+                        for (const [key, nested] of found) if (!root.subgraphs.has(key)) root.subgraphs.set(key, nested);
+                    }
+                    if (!known || edited || node._definition_revision === undefined) node._definition_revision = node.subgraph.revision;
+                }
+                visit(node.subgraph, depth + 1);
+            }
+        };
+        visit(this, 0);
+    }
+
+    /** subgraph and function nodes (at any depth) that use a definition */
+    findSubgraphInstances(id) {
+        const found = [];
+        const visit = (graph, depth) => {
+            if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+            for (const node of graph._nodes) {
+                if (!node?.subgraph) continue;
+                if (node.properties?.subgraph_id === id) found.push(node);
+                visit(node.subgraph, depth + 1);
+            }
+        };
+        visit(this.rootGraph, 0);
+        return found;
+    }
+
+    /** root serialize: the definition registry, and in "definitions" format references for instances */
+    _serializeDefinitions(data, format) {
+        // instances edited without a commit (e.g. by code) bring their edit; siblings refresh only on commit
+        this.registerSubgraphDefinitions({ sync: true });
+        if (format === "definitions") return SubgraphDefs.toDefinitions(data, { definitions: this.subgraphs });
+        if (this.subgraphs.size) {
+            data.definitions = { ...(data.definitions ?? {}), subgraphs: [...this.subgraphs.values()].map((definition) => LiteGraph.cloneObject(definition)) };
+        }
         return data;
     }
 
@@ -2115,6 +2190,23 @@ export class LGraph {
      * @param {Boolean} returns if there was any error parsing
      */
     configure(data, keep_old) {
+        this._configuring = (this._configuring ?? 0) + 1;
+        try {
+            return this._configure(data, keep_old);
+        } finally {
+            this._configuring--;
+        }
+    }
+
+    /** true while this graph, or a graph containing it, is being configured (loading) */
+    get isConfiguring() {
+        for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
+            if (graph._configuring) return true;
+        }
+        return false;
+    }
+
+    _configure(data, keep_old) {
         if (!data) {
             return;
         }
@@ -2125,6 +2217,18 @@ export class LGraph {
 
         if (!keep_old) {
             this.clear();
+        }
+
+        // subgraph definitions: instances that reference one get their inner graph; the root keeps the registry
+        let subgraphErrors = [];
+        if (Array.isArray(data.definitions?.subgraphs)) {
+            const inline = SubgraphDefs.toInline(data);
+            data = inline.doc;
+            subgraphErrors = inline.errors;
+            for (const issue of [...inline.errors, ...inline.warnings]) LiteGraph.log_warn("lgraph", "configure", "subgraph definition", issue);
+            if (!this._subgraph_node) {
+                for (const [id, definition] of inline.definitions) this.subgraphs.set(id, definition);
+            }
         }
 
         var nodes = data.nodes;
@@ -2154,7 +2258,7 @@ export class LGraph {
         // copy all stored fields
         this._foreign_fields = {};
         for (let i in data) {
-            if (["nodes", "groups", "id", "revision", "state", "reroutes", "floatingLinks"].includes(i)) continue; // handled explicitly
+            if (["nodes", "groups", "id", "revision", "state", "reroutes", "floatingLinks", "subgraphs", "rootGraph"].includes(i)) continue; // handled explicitly
             if (!LGraph.serialized_fields.includes(i) && !i.startsWith("_") && !(i in this)) {
                 // not part of this runtime's model (e.g. another editor's document state): keep it for serialize
                 this._foreign_fields[i] = LiteGraph.cloneObject(data[i]);
@@ -2210,6 +2314,8 @@ export class LGraph {
         }
 
         this.updateExecutionOrder();
+        if (!this._subgraph_node) this.registerSubgraphDefinitions();
+        if (subgraphErrors.length) error = true;
 
         this.extra = data.extra ?? {};
         this._configureReroutes(data);
@@ -2337,7 +2443,7 @@ export class LGraph {
             var oHistory = { actionName: opts.action };
             if(opts.doSaveGraph) {
                 // this seems a heavy method, but the alternative is way more complex: every action has to have its contrary
-                oHistory = Object.assign(oHistory, { graphSave: this.serialize() });
+                oHistory = Object.assign(oHistory, { graphSave: this.serialize({ format: "inline" }) });
                 LiteGraph.log_debug("LG_history","onGraphChanged SAVED",oHistory); // debug history
             }
 
