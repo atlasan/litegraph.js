@@ -15,7 +15,8 @@ export class Subgraph {
     constructor() {
 
         this.size = [140, 80];
-        this.properties = { enabled: true };
+        // subgraph_id: the definition this instance uses (LGraph.subgraphs of the root graph)
+        this.properties = { enabled: true, subgraph_id: LiteGraph.uuidv4() };
         this.enabled = true;
 
         // create inner graph
@@ -623,6 +624,7 @@ export class GraphInput {
             name: "",
             type: "number",
             value: 0,
+            slot_id: LiteGraph.uuidv4(), // stable id of this interface input (definitions)
         };
 
         var that = this;
@@ -771,7 +773,7 @@ export class GraphOutput {
         this.addInput("", "");
 
         this.name_in_graph = "";
-        this.properties = { name: "", type: "" };
+        this.properties = { name: "", type: "", slot_id: LiteGraph.uuidv4() }; // slot_id: stable id of this interface output
 
         // Object.defineProperty(this.properties, "name", {
         //     get: function() {

@@ -228,6 +228,8 @@ export class LiteGraphClass {
     middle_click_slot_add_default_node = false; // [true!] allows to create and connect a ndoe clicking with the third button (wheel)
 
     keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
+    subgraph_format = "inline"; // root serialize: "inline" (instances keep their inner graph) or "definitions" (ComfyUI form, instances reference definitions.subgraphs)
+    subgraph_max_depth = 32; // nesting limit for subgraph definitions (load) and calls
     snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
     two_fingers_opens_menu = false; // [true!] using pointer event isPrimary, when is not simulate right click
