@@ -1627,7 +1627,7 @@ export declare class LGraphCanvas {
     processKey(e: KeyboardEvent): boolean | undefined;
 
     copyToClipboard(): void;
-    pasteFromClipboard(): void;
+    pasteFromClipboard(connectUnselected?: boolean): { nodes: LGraphNode[]; groups: LGraphGroup[] } | undefined;
     processDrop(e: DragEvent): void;
     checkDropItem(e: DragEvent): void;
     processNodeDblClicked(n: LGraphNode): void;
@@ -1653,6 +1653,10 @@ export declare class LGraphCanvas {
     moveSelected(dx: number, dy: number): void;
     /** deletes selected nodes, groups and reroutes, one undo step */
     deleteSelected(): void;
+    /** the selection as a portable fragment (nodes, links incl. incoming ones, reroute chains, groups) */
+    serializeSelection(): { litegraph_fragment: number; nodes: object[]; links: any[]; groups: object[] };
+    /** inserts a fragment with fresh ids at pos (graph coordinates), one undo step */
+    insertFragment(fragment: { nodes: object[]; links?: any[]; groups?: object[] }, pos?: ArrayLike<number>, options?: { select?: boolean; connectUnselected?: boolean }): { nodes: LGraphNode[]; groups: LGraphGroup[] };
     /** wraps the selection in a new group, one undo step */
     groupSelected(title?: string): LGraphGroup | null;
     getGroupMenuOptions(group?: LGraphGroup): any[];
