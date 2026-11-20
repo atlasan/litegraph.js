@@ -32,6 +32,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `callbackhandler.js` | Prioritised multi-handler hooks ([callbacks](../../../docs/callbacks.md)) |
 | `eventtarget.js` | `LGraphEventTarget`: typed events with `on` / `once` / `off` / `dispatch` |
 | `commands.js`, `keybindings.js`, `settings.js`, `menus.js`, `extensionregistry.js` | Wave 1 platform registries |
+| `nodesearch.js` | `NodeSearch` (`LiteGraph.nodeSearch`): query parsing (`i:` `o:` `c:` `s:`), ranking, definition filters; used by the search box |
 | `contextmenu.js`, `curveeditor.js` | DOM menus; curve widget helper |
 | `dragandscale.js`, `canvaspointer.js`, `linkconnector.js`, `reroute.js` | View transform, pointer gestures, link-drag state machine, reroutes |
 | `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js` | The graph model |
@@ -61,11 +62,11 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Widgets:** `addWidget(type, name, value, cb, options)` returns a `BaseWidget`. `options.socket` / `addWidgetInput` create a widget input. `serialize_widgets` controls whether values are saved.
   - **Readiness:** `ready`, `initialization_state`, `libraries`, `requiredLibraries`, `onPostConstruct`.
 - **LLink:** serialized as a 6-element array; `parentId` points at the reroute chain.
-- **LGraphGroup:** a Float32Array bounding box; nested `_nodes` and `_groups`.
+- **LGraphGroup:** a Float32Array bounding box; nested `_nodes` and `_groups`; `resizeTo(items)`, `fitToContents()`, `setNodesMode(mode)`.
 - **Reroute:** `id`, `pos`, `parentId`. Its design is credited to Comfy-Org standalone (MIT).
 - **Subgraph:**
   - **Model:** inline. The node owns an `LGraph`, and `graph/input` / `graph/output` nodes map to the host's slots.
-  - **Conversion:** `buildFromNodes` is **unfinished**; it creates no nodes. Conversion is planned for Wave 2 and subgraph v2 for Wave 3 (ADR 0001).
+  - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`) work on the inline model: one undo step, rolled back on failure. Subgraph v2 is Wave 3 (ADR 0001).
 
 ## Execution
 
@@ -103,7 +104,8 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Gestures:**
   - Only the reroute drag uses `pointer.onDrag*` handlers so far (`_dragRerouteGesture`).
   - Node, group and link drags move in Wave 2.
-- **Selection:** `selectedItems` covers nodes, groups and reroutes. Also `selectItem`, `moveSelected`, `deleteSelected`, and the event `selection-changed`.
+- **Selection:** `selectedItems` covers nodes, groups and reroutes. Also `selectItem`, `moveSelected`, `deleteSelected`, `groupSelected`, and the event `selection-changed`.
+- **Clipboard:** `serializeSelection()` produces a fragment (nodes, links, reroute chains, groups). `insertFragment(fragment, pos)` inserts one with fresh ids in one undo step; copy and paste use both.
 - **Drawing:**
   - `drawBackCanvas`: background, groups, links.
   - `drawFrontCanvas`: nodes, overlays, tooltips.

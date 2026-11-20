@@ -346,6 +346,8 @@ export interface LiteGraphAPI extends CallbackHost {
     menus: MenuRegistry;
     /** widget type name -> class (see registerWidgetType) */
     widget_types: Record<string, typeof BaseWidget>;
+    /** node search: parsing, ranking and definition filters */
+    nodeSearch: NodeSearch;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
@@ -658,6 +660,10 @@ export declare class LGraph {
     setDirtyCanvas(fg: boolean, bg: boolean): void;
     /** Destroys a link */
     removeLink(link_id: GraphId): void;
+    /** turns nodes into a subgraph node (one undo step; rolled back on failure) */
+    convertToSubgraph(nodes: LGraphNode[]): Subgraph | null;
+    /** replaces a subgraph node by its contents (one undo step) */
+    unpackSubgraph(node: Subgraph): LGraphNode[];
     validateLinks(options?: { repair?: boolean }): {
         ok: boolean;
         repaired: boolean;
@@ -1207,6 +1213,11 @@ export declare class LGraphGroup {
     recomputeInsideNodes(): void;
     isPointInside: LGraphNode["isPointInside"];
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
+    /** encloses items (nodes, groups, reroutes) with padding and room for the title */
+    resizeTo(items: Array<LGraphNode | LGraphGroup | Reroute>, padding?: number): boolean;
+    fitToContents(padding?: number): boolean;
+    /** sets the execution mode of every node inside; returns the nodes changed */
+    setNodesMode(mode: number): LGraphNode[];
 }
 
 /** An event delivered by LGraphEventTarget. */
@@ -1618,7 +1629,7 @@ export declare class LGraphCanvas {
     processKey(e: KeyboardEvent): boolean | undefined;
 
     copyToClipboard(): void;
-    pasteFromClipboard(): void;
+    pasteFromClipboard(connectUnselected?: boolean): { nodes: LGraphNode[]; groups: LGraphGroup[] } | undefined;
     processDrop(e: DragEvent): void;
     checkDropItem(e: DragEvent): void;
     processNodeDblClicked(n: LGraphNode): void;
@@ -1644,6 +1655,13 @@ export declare class LGraphCanvas {
     moveSelected(dx: number, dy: number): void;
     /** deletes selected nodes, groups and reroutes, one undo step */
     deleteSelected(): void;
+    /** the selection as a portable fragment (nodes, links incl. incoming ones, reroute chains, groups) */
+    serializeSelection(): { litegraph_fragment: number; nodes: object[]; links: any[]; groups: object[] };
+    /** inserts a fragment with fresh ids at pos (graph coordinates), one undo step */
+    insertFragment(fragment: { nodes: object[]; links?: any[]; groups?: object[] }, pos?: ArrayLike<number>, options?: { select?: boolean; connectUnselected?: boolean }): { nodes: LGraphNode[]; groups: LGraphGroup[] };
+    /** wraps the selection in a new group, one undo step */
+    groupSelected(title?: string): LGraphGroup | null;
+    getGroupMenuOptions(group?: LGraphGroup): any[];
     /** true for a graph node (registered classes need not extend LGraphNode) */
     static isNodeItem(item: unknown): boolean;
 
@@ -1882,6 +1900,10 @@ export declare class LibraryManager {
 export declare class Subgraph extends LGraphNode {
     subgraph: LGraph;
     enabled: boolean;
+    /** fills this (added, empty) node from nodes of its graph; see LGraph.convertToSubgraph */
+    buildFromNodes(nodes: LGraphNode[]): this;
+    /** moves the contents back into the parent graph and removes this node; see LGraph.unpackSubgraph */
+    unpack(): LGraphNode[];
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}
@@ -2112,3 +2134,21 @@ export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
 export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;
 /** Arithmetic for number entry (+ - * / % **, parentheses, pi, e); NaN for anything else. Nothing is executed. */
 export declare function evaluateMathExpression(text: string): number;
+
+export interface NodeSearchQuery {
+    terms: string[];
+    filters: { i: string[]; o: string[]; c: string[]; s: string[] };
+}
+/** Node search without a DOM: `add i:number c:math s:core` (see src/nodesearch.js). */
+export declare class NodeSearch {
+    static FILTER_PREFIXES: string[];
+    constructor();
+    registerFilter(filter: { id: string; name?: string; predicate(def: NodeDefinition): boolean; enabled?(): boolean }): () => void;
+    listFilters(): Array<{ id: string; name: string }>;
+    passesFilters(def: NodeDefinition): boolean;
+    static parseQuery(text: string): NodeSearchQuery;
+    static matchesFilters(def: NodeDefinition, filters: NodeSearchQuery["filters"]): boolean;
+    /** -1 when a word does not match */
+    static score(def: NodeDefinition, query: Pick<NodeSearchQuery, "terms">): number;
+    search(text: string | NodeSearchQuery, options?: { types?: string[]; limit?: number; applyFilters?: boolean }): Array<{ type: string; score: number; def: NodeDefinition }>;
+}

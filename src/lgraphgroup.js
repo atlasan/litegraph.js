@@ -138,6 +138,54 @@ export class LGraphGroup {
     }
 
     /**
+     * Resizes the group to enclose items (nodes, groups, reroutes), with padding and room for the title.
+     * Adapted from Comfy-Org/litegraph.js (MIT) LGraphGroup.resizeTo.
+     * @param {Array<object>} items
+     * @param {number} [padding=10]
+     * @returns {boolean} false when there was nothing to enclose
+     */
+    resizeTo(items, padding = 10) {
+        const box = [Infinity, Infinity, -Infinity, -Infinity];
+        const bounding = new Float32Array(4);
+        for (const item of items ?? []) {
+            if (!item || item === this) continue;
+            if (typeof item.getBounding === "function") item.getBounding(bounding);
+            else if (item.pos) bounding.set([item.pos[0] - 6, item.pos[1] - 6, 12, 12]); // reroute
+            else continue;
+            box[0] = Math.min(box[0], bounding[0]);
+            box[1] = Math.min(box[1], bounding[1]);
+            box[2] = Math.max(box[2], bounding[0] + bounding[2]);
+            box[3] = Math.max(box[3], bounding[1] + bounding[3]);
+        }
+        if (!Number.isFinite(box[0])) return false;
+        const title = (this.font_size ?? LiteGraph.DEFAULT_GROUP_FONT_SIZE ?? 24) * 1.4;
+        this._bounding[0] = box[0] - padding;
+        this._bounding[1] = box[1] - padding - title;
+        this._bounding[2] = box[2] - box[0] + padding * 2;
+        this._bounding[3] = box[3] - box[1] + padding * 2 + title;
+        return true;
+    }
+
+    /** Shrinks or grows the group around what is currently inside it. */
+    fitToContents(padding = 10) {
+        if (!this.graph) return false;
+        this.recomputeInsideNodes();
+        return this.resizeTo([...this._nodes, ...this._groups], padding);
+    }
+
+    /**
+     * Sets the execution mode of every node inside the group (LiteGraph.ALWAYS, NEVER, ...).
+     * @returns {Array<object>} the nodes changed
+     */
+    setNodesMode(mode) {
+        if (!this.graph) return [];
+        this.recomputeInsideNodes();
+        const changed = this._nodes.filter((node) => node.mode !== mode);
+        for (const node of changed) node.changeMode ? node.changeMode(mode) : (node.mode = mode);
+        return changed;
+    }
+
+    /**
      * Recomputes and updates the list of nodes inside the LGraphGroup based on their bounding boxes.
      * This method checks for nodes that overlap with the group's bounding box and updates the internal nodes list accordingly.
      */

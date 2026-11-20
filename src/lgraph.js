@@ -1701,6 +1701,30 @@ export class LGraph {
     }
 
     /**
+     * Turns nodes of this graph into a subgraph node, as one undo step (see Subgraph.buildFromNodes).
+     * @param {Array<object>} nodes
+     * @returns {object|null} the new subgraph node
+     */
+    convertToSubgraph(nodes) {
+        const selected = (nodes ?? []).filter((node) => node?.graph === this);
+        if (!selected.length) return null;
+        return this.transact("convertToSubgraph", () => {
+            const subgraphNode = LiteGraph.createNode("graph/subgraph");
+            this.add(subgraphNode);
+            return subgraphNode.buildFromNodes(selected);
+        }, { rollback: true });
+    }
+
+    /**
+     * Replaces a subgraph node by its contents, as one undo step (see Subgraph.unpack).
+     * @returns {Array<object>} the unpacked nodes
+     */
+    unpackSubgraph(subgraphNode) {
+        if (subgraphNode?.graph !== this || typeof subgraphNode.unpack !== "function") return [];
+        return this.transact("unpackSubgraph", () => subgraphNode.unpack(), { rollback: true });
+    }
+
+    /**
      * Checks that the link table and the slot references agree, and optionally repairs them.
      * The link table (`graph.links`) is the record of a connection; a slot reference is valid
      * only when the link it names connects that exact node and slot. Checks:
