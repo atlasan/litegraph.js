@@ -346,9 +346,29 @@ class LiteGraphClass {
         this.LibraryManager ??= new LibraryManager();
 
         this.setupPlatform();
+        this.registerBuiltinLibraries();
 
         // base inclusion
         this.includeBasicNodes();
+    }
+
+    /** Optional libraries the core uses on demand (loaded only when needed). */
+    registerBuiltinLibraries() {
+        const manager = this.LibraryManager;
+        if (!manager || manager.libraries_known?.dagre) return;
+        manager.registerLibrary({
+            key: "dagre",
+            version: "3.1.3",
+            globalObject: "dagre",
+            description: "Graph layout for the \"dagre\" auto-layout engine (graph.autoLayout)",
+            optional: true,
+            browser: {
+                remote: ["https://cdn.jsdelivr.net/npm/@dagrejs/dagre@3.1.3/dist/dagre.min.js"]
+            },
+            server: {
+                npm: ["@dagrejs/dagre"]
+            },
+        });
     }
 
     includeBasicNodes() {
@@ -726,6 +746,29 @@ class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        this.layout ??= new LayoutRegistry();
+        this.palette ??= new NodePalette(this);
+        if (!this.settings.has("LiteGraph.Palette.Favorites")) {
+            this.settings.define({
+                id: "LiteGraph.Palette.Favorites",
+                type: "json",
+                name: "Favourite node types (palette)",
+                default: () => []
+            });
+            this.settings.define({
+                id: "LiteGraph.Palette.Recent",
+                type: "json",
+                name: "Recently inserted node types (palette)",
+                default: () => []
+            });
+        }
+        if (!this.settings.has("LiteGraph.Layout.Engine")) {
+            this.settings.define({
+                id: "LiteGraph.Layout.Engine",
+                name: "Auto-layout engine (dagre, layered, or a registered one)",
+                default: "dagre"
+            });
+        }
         this.linkRouters ??= new LinkRouterRegistry();
         this.linkStyles ??= new LinkStyleRegistry();
         this.RenderLink ??= RenderLink;
@@ -6636,6 +6679,116 @@ class LGraph {
     }
 
     /**
+     * Arranges nodes with a layout engine (LiteGraph.layout), as one undo step. With `nodes` only
+     * those move (a selection), anchored at their current top-left corner; otherwise every node
+     * moves, anchored at the graph's current top-left. Pinned nodes stay. Reroutes on the links
+     * between moved nodes follow them, and groups whose nodes all moved are fitted around them.
+     * @param {{engine?: string, nodes?: object[], direction?: "LR"|"RL"|"TB"|"BT",
+     *   spacing?: {node?: number, rank?: number}}} [options]
+     *   engine: default the setting `LiteGraph.Layout.Engine` ("dagre")
+     * @returns {Promise<{engine: string, moved: number}>}
+     */
+    async autoLayout({
+        engine,
+        nodes,
+        direction = "LR",
+        spacing = {}
+    } = {}) {
+        const settings = LiteGraph.settings;
+        const name = engine ?? (settings?.has?.("LiteGraph.Layout.Engine") ? settings.get("LiteGraph.Layout.Engine") : null) ?? "dagre";
+        const impl = LiteGraph.layout?.get(name);
+        if (!impl) throw new Error(`autoLayout: unknown layout engine ${name} (registered: ${LiteGraph.layout?.list().join(", ")})`);
+        const targets = (nodes ?? this._nodes).filter((node) => node?.graph === this && !node.flags?.pinned);
+        if (!targets.length) return {
+            engine: name,
+            moved: 0
+        };
+        let lib = null;
+        if (impl.library) {
+            try {
+                lib = await LiteGraph.LibraryManager.waitForLib(impl.library);
+            } catch (error) {
+                throw new Error(`autoLayout: the ${impl.library} library could not be loaded (${error?.message ?? error}); install it (npm install @dagrejs/dagre) or use the engine "layered", which needs nothing`, {
+                    cause: error
+                });
+            }
+        }
+        const model = LiteGraph.layout.constructor.buildModel(this, targets);
+        const options = {
+            direction,
+            spacing: {
+                node: spacing.node ?? 40,
+                rank: spacing.rank ?? 80
+            }
+        };
+        const {
+            positions
+        } = await impl.layout(model, options, lib);
+        // keep the arranged block where it was: align its top-left corner with the old one
+        let oldX = Infinity,
+            oldY = Infinity,
+            newX = Infinity,
+            newY = Infinity;
+        for (const box of model.nodes) {
+            const p = positions?.[box.id];
+            if (!p) continue;
+            oldX = Math.min(oldX, box.x);
+            oldY = Math.min(oldY, box.y);
+            newX = Math.min(newX, p[0]);
+            newY = Math.min(newY, p[1]);
+        }
+        if (!Number.isFinite(newX)) return {
+            engine: name,
+            moved: 0
+        };
+        const dx = oldX - newX;
+        const dy = oldY - newY;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        // groups wholly made of moved nodes are fitted afterwards
+        const moving = new Set(targets.filter((node) => positions[node.id]));
+        const groups = this._groups.filter((group) => {
+            group.recomputeInsideNodes?.();
+            const inside = group._nodes ?? [];
+            return inside.length && inside.every((node) => moving.has(node));
+        });
+        let moved = 0;
+        this.transact("autoLayout", () => {
+            const shift = new Map();
+            for (const node of moving) {
+                const p = positions[node.id];
+                const x = Math.round(p[0] + dx);
+                const y = Math.round(p[1] + dy + title);
+                shift.set(node.id, [x - node.pos[0], y - node.pos[1]]);
+                node.pos[0] = x;
+                node.pos[1] = y;
+                moved++;
+            }
+            const rerouted = new Set();
+            for (const link of Object.values(this.links ?? {})) {
+                if (!link || link.parentId === undefined || !shift.has(link.origin_id) || !shift.has(link.target_id)) continue;
+                const a = shift.get(link.origin_id),
+                    b = shift.get(link.target_id);
+                for (const reroute of this.getRerouteChain?.(link) ?? []) {
+                    if (rerouted.has(reroute.id)) continue;
+                    rerouted.add(reroute.id);
+                    reroute.pos[0] = Math.round(reroute.pos[0] + (a[0] + b[0]) / 2);
+                    reroute.pos[1] = Math.round(reroute.pos[1] + (a[1] + b[1]) / 2);
+                }
+            }
+            for (const group of groups) group.fitToContents?.();
+            this._markChange("layout");
+            this.onGraphChanged({
+                action: "autoLayout"
+            });
+        });
+        this.setDirtyCanvas(true, true);
+        return {
+            engine: name,
+            moved
+        };
+    }
+
+    /**
      * Missing node types in this graph (and, with `deep`, in its subgraphs): one entry per type,
      * with where the type comes from (the node's stored pack stamp, the pack index, or ComfyUI's
      * `cnr_id` / `aux_id`) and a registered replacement.
@@ -10738,6 +10891,14 @@ class LGraphCanvas {
         e.preventDefault();
         this.adjustMouseEvent(e);
 
+        // a node type dragged from a palette (LGraphCanvas.NODE_DRAG_MIME)
+        const nodeType = e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes(LGraphCanvas.NODE_DRAG_MIME) ?
+            e.dataTransfer.getData(LGraphCanvas.NODE_DRAG_MIME) : null;
+        if (nodeType && !this.read_only && this.graph) {
+            LiteGraph.palette?.insert(this, nodeType, [e.canvasX, e.canvasY]);
+            return true;
+        }
+
         let r = null;
 
         var x = e.clientX;
@@ -14075,6 +14236,9 @@ class LGraphCanvas {
     }
 
     /** Draws a node's badges and title buttons (see getNodeTitleDecorations). */
+    /** drag data type for a node type dragged onto the canvas (the value is the type) */
+    static NODE_DRAG_MIME = "application/x-litegraph-node-type";
+
     /** title-box colours for execution states (setting LiteGraph.Canvas.ExecutionOverlays) */
     static EXECUTION_STATUS_COLORS = {
         queued: "#888",
@@ -27428,6 +27592,411 @@ MiniMap.LAYERS = {
         }
     },
 };
+
+/**
+ * Auto-layout (Wave 4d, decision W4-3): one adapter, several engines.
+ *
+ * `graph.autoLayout({engine, scope, direction, spacing})` builds a plain model of the nodes and
+ * links in scope, asks the engine for positions, and applies them as one undo step.
+ *
+ * Engines (`LiteGraph.layout`):
+ * - "dagre": `@dagrejs/dagre`, loaded on first use through the LibraryManager (key "dagre");
+ *   no hard dependency in the bundles.
+ * - "layered": a small built-in layered layout (longest path ranks), with no dependency.
+ * - "elk" or others: `LiteGraph.layout.register(name, engine)`; `LayoutRegistry.elkEngine(elk)`
+ *   adapts an elkjs instance.
+ *
+ * An engine is `{library?: string, layout(model, options, lib) → {positions: {id: [x, y]}} | Promise}`
+ * where positions are the top-left corners of the node boxes (title included).
+ */
+class LayoutRegistry {
+
+    constructor() {
+        /** @type {Map<string, object>} */
+        this._engines = new Map([
+            ["dagre", LayoutRegistry.dagreEngine],
+            ["layered", LayoutRegistry.layeredEngine],
+        ]);
+    }
+
+    /** @returns {() => void} disposer */
+    register(name, engine) {
+        if (typeof name !== "string" || !name) throw new TypeError("layout engine name must be a non-empty string");
+        if (typeof engine?.layout !== "function") throw new TypeError(`layout engine ${name}: needs layout(model, options, lib)`);
+        const previous = this._engines.get(name);
+        this._engines.set(name, engine);
+        return () => {
+            if (this._engines.get(name) !== engine) return;
+            if (previous) this._engines.set(name, previous);
+            else this._engines.delete(name);
+        };
+    }
+
+    get(name) {
+        return this._engines.get(name) ?? null;
+    }
+
+    list() {
+        return [...this._engines.keys()];
+    }
+
+    /**
+     * The model of a graph for an engine: node boxes (title included) and the links between the
+     * nodes in scope.
+     * @param {object} graph
+     * @param {object[]} nodes - the nodes to lay out
+     * @returns {{nodes: Array<{id: *, width: number, height: number, x: number, y: number}>,
+     *   edges: Array<{id: *, source: *, target: *, sourceSlot: number, targetSlot: number}>}}
+     */
+    static buildModel(graph, nodes) {
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        const ids = new Set(nodes.map((node) => node.id));
+        const model = {
+            nodes: nodes.map((node) => ({
+                id: node.id,
+                width: node.flags?.collapsed ? (node._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH || 80) : node.size[0],
+                height: node.flags?.collapsed ? title : node.size[1] + title,
+                x: node.pos[0],
+                y: node.pos[1] - title,
+            })),
+            edges: [],
+        };
+        for (const link of Object.values(graph.links ?? {})) {
+            if (!link || !ids.has(link.origin_id) || !ids.has(link.target_id) || link.origin_id === link.target_id) continue;
+            model.edges.push({
+                id: link.id,
+                source: link.origin_id,
+                target: link.target_id,
+                sourceSlot: link.origin_slot,
+                targetSlot: link.target_slot
+            });
+        }
+        return model;
+    }
+
+    /** Wraps an elkjs instance (`new ELK()`) as a layout engine. */
+    static elkEngine(elk) {
+        return {
+            async layout(model, options) {
+                const direction = {
+                    LR: "RIGHT",
+                    RL: "LEFT",
+                    TB: "DOWN",
+                    BT: "UP"
+                } [options.direction] ?? "RIGHT";
+                const result = await elk.layout({
+                    id: "root",
+                    layoutOptions: {
+                        "elk.algorithm": "layered",
+                        "elk.direction": direction,
+                        "elk.spacing.nodeNode": String(options.spacing.node),
+                        "elk.layered.spacing.nodeNodeBetweenLayers": String(options.spacing.rank),
+                    },
+                    children: model.nodes.map((n) => ({
+                        id: String(n.id),
+                        width: n.width,
+                        height: n.height
+                    })),
+                    edges: model.edges.map((e) => ({
+                        id: `e${e.id}`,
+                        sources: [String(e.source)],
+                        targets: [String(e.target)]
+                    })),
+                });
+                const byId = new Map(model.nodes.map((n) => [String(n.id), n.id]));
+                const positions = {};
+                for (const child of result.children ?? []) positions[byId.get(child.id)] = [child.x, child.y];
+                return {
+                    positions
+                };
+            },
+        };
+    }
+}
+
+/** dagre (graphlib) engine; `lib` is the dagre module or global */
+LayoutRegistry.dagreEngine = {
+    library: "dagre",
+    layout(model, options, lib) {
+        const dagre = lib?.layout ? lib : lib?.default;
+        if (!dagre?.layout || !dagre.graphlib?.Graph) throw new Error("layout dagre: the dagre library has no layout() / graphlib");
+        const g = new dagre.graphlib.Graph({
+            multigraph: true
+        });
+        g.setGraph({
+            rankdir: options.direction,
+            nodesep: options.spacing.node,
+            ranksep: options.spacing.rank,
+            marginx: 0,
+            marginy: 0
+        });
+        g.setDefaultEdgeLabel(() => ({}));
+        for (const node of model.nodes) g.setNode(String(node.id), {
+            width: node.width,
+            height: node.height
+        });
+        for (const edge of model.edges) g.setEdge(String(edge.source), String(edge.target), {}, String(edge.id));
+        dagre.layout(g);
+        const positions = {};
+        for (const node of model.nodes) {
+            const placed = g.node(String(node.id));
+            if (placed) positions[node.id] = [placed.x - node.width / 2, placed.y - node.height / 2];
+        }
+        return {
+            positions
+        };
+    },
+};
+
+/**
+ * A small layered layout without dependencies: ranks by longest path from the sources, nodes in
+ * a rank ordered by their current position, ranks side by side (LR) or stacked (TB).
+ */
+LayoutRegistry.layeredEngine = {
+    layout(model, options) {
+        const incoming = new Map(model.nodes.map((n) => [n.id, []]));
+        for (const edge of model.edges) incoming.get(edge.target)?.push(edge.source);
+        const rank = new Map();
+        const visiting = new Set();
+        const rankOf = (id) => {
+            if (rank.has(id)) return rank.get(id);
+            if (visiting.has(id)) return 0; // a cycle: break it here
+            visiting.add(id);
+            let r = 0;
+            for (const source of incoming.get(id) ?? []) r = Math.max(r, rankOf(source) + 1);
+            visiting.delete(id);
+            rank.set(id, r);
+            return r;
+        };
+        const ranks = [];
+        for (const node of model.nodes)(ranks[rankOf(node.id)] ??= []).push(node);
+        const horizontal = options.direction === "LR" || options.direction === "RL";
+        const positions = {};
+        let along = 0;
+        for (const nodes of ranks) {
+            if (!nodes) continue;
+            nodes.sort((a, b) => horizontal ? (a.y - b.y || a.x - b.x) : (a.x - b.x || a.y - b.y));
+            let across = 0;
+            let thickness = 0;
+            for (const node of nodes) {
+                positions[node.id] = horizontal ? [along, across] : [across, along];
+                across += (horizontal ? node.height : node.width) + options.spacing.node;
+                thickness = Math.max(thickness, horizontal ? node.width : node.height);
+            }
+            along += thickness + options.spacing.rank;
+        }
+        if (options.direction === "RL" || options.direction === "BT") {
+            const axis = options.direction === "RL" ? 0 : 1;
+            for (const node of model.nodes) {
+                positions[node.id][axis] = -positions[node.id][axis] - (axis === 0 ? node.width : node.height);
+            }
+        }
+        return {
+            positions
+        };
+    },
+};
+
+/**
+ * The node palette's data (Wave 4d, decision W4-7): node types grouped by pack and category,
+ * search, favourites and recently used types. The Editor draws it as a DOM panel; other hosts
+ * can draw their own from the same data.
+ *
+ * Favourites live in the setting `LiteGraph.Palette.Favorites`, recently used types in
+ * `LiteGraph.Palette.Recent`, so they persist with the other settings.
+ */
+class NodePalette {
+
+    static RECENT_LIMIT = 12;
+
+    /** previews do not build nodes of types that open devices or contexts */
+    static PREVIEW_SKIP_CAPABILITIES = ["audio", "webgl", "midi", "sys"];
+
+    constructor(host) {
+        this.host = host;
+        this._previews = new Map();
+    }
+
+    get _settings() {
+        return this.host?.settings ?? null;
+    }
+
+    _list(id) {
+        const value = this._settings?.has?.(id) ? this._settings.get(id) : [];
+        return Array.isArray(value) ? value.filter((type) => typeof type === "string") : [];
+    }
+
+    /** the definitions the palette offers: not hidden, supported here, deprecated only on request */
+    definitions({
+        includeDeprecated = false
+    } = {}) {
+        const host = this.host;
+        return (host.listNodeDefinitions?.({
+                includeDeprecated,
+                supportedOnly: true
+            }) ?? [])
+            .filter((def) => !def.hidden && !def.type.startsWith("graph/input") && !def.type.startsWith("graph/output"));
+    }
+
+    /**
+     * Definitions matching a query (through LiteGraph.nodeSearch) or every one, with a
+     * `favorite` flag, optionally limited to a pack, a category or the favourites.
+     * @param {{query?: string, pack?: string, category?: string, favoritesOnly?: boolean}} [options]
+     * @returns {Array<object>} definitions (frozen) wrapped as `{...def, favorite}`
+     */
+    list({
+        query = "",
+        pack,
+        category,
+        favoritesOnly = false
+    } = {}) {
+        const favorites = new Set(this.favorites());
+        let defs;
+        if (query && this.host.nodeSearch) {
+            const allowed = new Set(this.definitions().map((def) => def.type));
+            defs = this.host.nodeSearch.search(query).map((result) => this.host.getNodeDefinition(result.type)).filter((def) => def && allowed.has(def.type));
+        } else {
+            defs = this.definitions().sort((a, b) => a.category.localeCompare(b.category) || a.title.localeCompare(b.title));
+        }
+        return defs
+            .filter((def) => (pack === undefined || (def.pack?.id ?? "") === pack) &&
+                (category === undefined || def.category === category || def.category.startsWith(category + "/")) &&
+                (!favoritesOnly || favorites.has(def.type)))
+            .map((def) => ({
+                ...def,
+                favorite: favorites.has(def.type)
+            }));
+    }
+
+    /**
+     * Definitions grouped by pack, then by category.
+     * @returns {Array<{pack: {id: string, title: string, builtin: boolean}, categories: Array<{category: string, items: object[]}>}>}
+     */
+    groups(options = {}) {
+        const byPack = new Map();
+        for (const def of this.list(options)) {
+            const id = def.pack?.id ?? "";
+            if (!byPack.has(id)) {
+                const manifest = id ? this.host.packs?.get(id) : null;
+                byPack.set(id, {
+                    pack: {
+                        id,
+                        title: manifest?.title ?? (id || "Other"),
+                        builtin: !!def.pack?.builtin
+                    },
+                    categories: new Map()
+                });
+            }
+            const group = byPack.get(id);
+            const category = def.category || "";
+            if (!group.categories.has(category)) group.categories.set(category, []);
+            group.categories.get(category).push(def);
+        }
+        return [...byPack.values()]
+            .sort((a, b) => (a.pack.builtin === b.pack.builtin ? a.pack.title.localeCompare(b.pack.title) : a.pack.builtin ? 1 : -1))
+            .map((group) => ({
+                pack: group.pack,
+                categories: [...group.categories].map(([category, items]) => ({
+                    category,
+                    items
+                }))
+            }));
+    }
+
+    /** @returns {string[]} favourite node types */
+    favorites() {
+        return this._list("LiteGraph.Palette.Favorites");
+    }
+
+    isFavorite(type) {
+        return this.favorites().includes(type);
+    }
+
+    /** Adds or removes a favourite; returns whether it is now a favourite. */
+    toggleFavorite(type, on = !this.isFavorite(type)) {
+        const list = this.favorites().filter((entry) => entry !== type);
+        if (on) list.push(type);
+        this._settings?.set("LiteGraph.Palette.Favorites", list);
+        return on;
+    }
+
+    /** @returns {string[]} recently used node types, newest first */
+    recent() {
+        return this._list("LiteGraph.Palette.Recent");
+    }
+
+    /** Records that a type was inserted (newest first, at most RECENT_LIMIT). */
+    recordUse(type) {
+        if (typeof type !== "string" || !type) return;
+        const list = [type, ...this.recent().filter((entry) => entry !== type)].slice(0, NodePalette.RECENT_LIMIT);
+        this._settings?.set("LiteGraph.Palette.Recent", list);
+    }
+
+    /**
+     * What a preview draws: title, icon, colours and slots, from the definition when it declares
+     * its slots, else from a node built for the purpose (never added to a graph).
+     * @returns {{type: string, title: string, icon: *, color: string|null, bgcolor: string|null,
+     *   inputs: Array<{name: string, type: *}>, outputs: Array<{name: string, type: *}>}|null}
+     */
+    preview(type) {
+        const def = this.host.getNodeDefinition?.(type);
+        if (!def) return null;
+        const slot = (s) => ({
+            name: s.label ?? s.name ?? "",
+            type: s.type
+        });
+        if (this._previews.has(type)) return this._previews.get(type);
+        let inputs = def.inputs?.map(slot) ?? null;
+        let outputs = def.outputs?.map(slot) ?? null;
+        let color = null;
+        let bgcolor = null;
+        const skip = (def.capabilities ?? []).some((capability) => NodePalette.PREVIEW_SKIP_CAPABILITIES.includes(capability));
+        if ((!inputs || !outputs) && !skip) {
+            try {
+                const node = this.host.createNode(type);
+                inputs ??= (node?.inputs ?? []).map(slot);
+                outputs ??= (node?.outputs ?? []).map(slot);
+                color = node?.color ?? node?.constructor?.color ?? null;
+                bgcolor = node?.bgcolor ?? node?.constructor?.bgcolor ?? null;
+            } catch {
+                inputs ??= [];
+                outputs ??= [];
+            }
+        }
+        const preview = {
+            type,
+            title: def.title,
+            icon: def.icon ?? null,
+            color,
+            bgcolor,
+            inputs: inputs ?? [],
+            outputs: outputs ?? []
+        };
+        this._previews.set(type, preview);
+        return preview;
+    }
+
+    /**
+     * Inserts a node of `type` at a graph position, selected, as one undo step, and records the use.
+     * @returns {object|null} the node
+     */
+    insert(canvas, type, pos) {
+        const graph = canvas?.graph;
+        if (!graph) return null;
+        let node = null;
+        graph.transact("paletteInsert", () => {
+            node = this.host.createNode(type);
+            if (!node) return;
+            node.pos = [Math.round(pos[0]), Math.round(pos[1])];
+            graph.add(node);
+        });
+        if (!node) return null;
+        this.recordUse(type);
+        canvas.selectNodes?.([node]);
+        canvas.setDirty?.(true, true);
+        return node;
+    }
+}
 
 // this needs to be called after all classes has been included, before registering nodes and creating canvas
 // will setup callback handlers and LiteGraph.CLASSES references ( eg. LitegGraph.LGraph, .. )
@@ -53512,6 +54081,8 @@ exports.RenderLink = RenderLink;
 exports.LinkRouterRegistry = LinkRouterRegistry;
 exports.LinkStyleRegistry = LinkStyleRegistry;
 exports.MiniMap = MiniMap;
+exports.LayoutRegistry = LayoutRegistry;
+exports.NodePalette = NodePalette;
 exports.LGraphTexture = LGraphTexture;
 exports.LGShaderContext = LGShaderContext;
 exports.DOMSelector = DOMSelector;

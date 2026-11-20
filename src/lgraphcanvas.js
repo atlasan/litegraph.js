@@ -2557,6 +2557,14 @@ export class LGraphCanvas {
         e.preventDefault();
         this.adjustMouseEvent(e);
 
+        // a node type dragged from a palette (LGraphCanvas.NODE_DRAG_MIME)
+        const nodeType = e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes(LGraphCanvas.NODE_DRAG_MIME)
+            ? e.dataTransfer.getData(LGraphCanvas.NODE_DRAG_MIME) : null;
+        if (nodeType && !this.read_only && this.graph) {
+            LiteGraph.palette?.insert(this, nodeType, [e.canvasX, e.canvasY]);
+            return true;
+        }
+
         let r = null;
 
         var x = e.clientX;
@@ -5784,6 +5792,9 @@ export class LGraphCanvas {
     }
 
     /** Draws a node's badges and title buttons (see getNodeTitleDecorations). */
+    /** drag data type for a node type dragged onto the canvas (the value is the type) */
+    static NODE_DRAG_MIME = "application/x-litegraph-node-type";
+
     /** title-box colours for execution states (setting LiteGraph.Canvas.ExecutionOverlays) */
     static EXECUTION_STATUS_COLORS = { queued: "#888", running: "#FC3", done: "#5C5", error: "#E44", skipped: "#666" };
 

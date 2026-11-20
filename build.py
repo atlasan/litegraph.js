@@ -78,6 +78,8 @@ lib_js_files = [
     "./src/executionstate.js",
     "./src/linkrender.js",
     "./src/minimap.js",
+    "./src/layout.js",
+    "./src/palette.js",
     "./src/init_litegraph.js",
 ]
 

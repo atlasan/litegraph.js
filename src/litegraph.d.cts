@@ -398,6 +398,12 @@ export interface LiteGraphAPI extends CallbackHost {
     linkRouters: LinkRouterRegistry;
     /** link style resolvers by name: "spotlight", "dim-by-type", "hidden", "labelled", and registered ones */
     linkStyles: LinkStyleRegistry;
+    /** auto-layout engines: "dagre" (loaded on demand), "layered", and registered ones */
+    layout: LayoutRegistry;
+    /** the node palette's data: groups, search, favourites, recent */
+    palette: NodePalette;
+    /** registers the optional libraries the core loads on demand (dagre) */
+    registerBuiltinLibraries(): void;
     use_uuids: boolean;
     use_deferred_actions: boolean;
     ensureNodeSingleExecution: boolean;
@@ -727,6 +733,8 @@ export declare class LGraph {
     reportExecutionState(node: LGraphNode | null, kind: ExecutionStateKind, fields?: { status?: ExecutionStatus; value?: number; max?: number; message?: string }): ExecutionStateMessage;
     /** applies a received execution-state message (e.g. from the runner) */
     applyExecutionState(message: ExecutionStateMessage): LGraphNode | LGraph | null;
+    /** arranges nodes with a layout engine, one undo step; nodes: only these (a selection) */
+    autoLayout(options?: { engine?: string; nodes?: LGraphNode[]; direction?: 'LR' | 'RL' | 'TB' | 'BT'; spacing?: { node?: number; rank?: number } }): Promise<{ engine: string; moved: number }>;
     /** missing node types, one entry per type (deep: include subgraphs, default true) */
     getMissingNodes(options?: { deep?: boolean }): MissingNodeReport[];
     /** replaces a node (one undo step); mapping: a mapping, a type name, or the registered mapping */
@@ -1932,6 +1940,8 @@ export declare class LGraphCanvas {
     getNodeTitleDecorations(node: LGraphNode, ctx?: CanvasRenderingContext2D | null): { buttons: Array<{ button: NodeTitleButton; rect: number[] }>; badges: Array<{ badge: NodeBadge; rect: number[] }>; font: string };
     drawNodeTitleDecorations(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number): void;
     static EXECUTION_STATUS_COLORS: Record<ExecutionStatus, string>;
+    /** drag data type for a node type dropped on the canvas (inserted through LiteGraph.palette) */
+    static NODE_DRAG_MIME: string;
     executionOverlaysEnabled(): boolean;
     getNodeIcon(node: LGraphNode): string | CanvasImageSource | null;
     drawNodeTitleText(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number, selected: boolean): void;
@@ -2461,6 +2471,45 @@ export declare class MiniMap {
     centerOnMapPoint(x: number, y: number): void;
     centerOn(x: number, y: number): void;
     dispose(): void;
+}
+
+export interface LayoutModel {
+    nodes: { id: GraphId; width: number; height: number; x: number; y: number }[];
+    edges: { id: GraphId; source: GraphId; target: GraphId; sourceSlot: number; targetSlot: number }[];
+}
+export interface LayoutOptions { direction: 'LR' | 'RL' | 'TB' | 'BT'; spacing: { node: number; rank: number } }
+export interface LayoutEngine {
+    /** a LibraryManager key loaded before layout runs; its global is passed as `lib` */
+    library?: string;
+    /** top-left corners (title included) by node id */
+    layout(model: LayoutModel, options: LayoutOptions, lib: any): { positions: Record<string, [number, number]> } | Promise<{ positions: Record<string, [number, number]> }>;
+}
+export declare class LayoutRegistry {
+    static dagreEngine: LayoutEngine;
+    static layeredEngine: LayoutEngine;
+    static buildModel(graph: LGraph, nodes: LGraphNode[]): LayoutModel;
+    /** adapts an elkjs instance */
+    static elkEngine(elk: { layout(graph: object): Promise<any> }): LayoutEngine;
+    register(name: string, engine: LayoutEngine): () => void;
+    get(name: string): LayoutEngine | null;
+    list(): string[];
+}
+export interface NodePalettePreview { type: string; title: string; icon: unknown; color: string | null; bgcolor: string | null; inputs: { name: string; type: unknown }[]; outputs: { name: string; type: unknown }[] }
+export declare class NodePalette {
+    static RECENT_LIMIT: number;
+    static PREVIEW_SKIP_CAPABILITIES: string[];
+    constructor(host: object);
+    definitions(options?: { includeDeprecated?: boolean }): Readonly<NodeDefinition>[];
+    list(options?: { query?: string; pack?: string; category?: string; favoritesOnly?: boolean }): (NodeDefinition & { favorite: boolean })[];
+    groups(options?: { query?: string; pack?: string; category?: string; favoritesOnly?: boolean }): { pack: { id: string; title: string; builtin: boolean }; categories: { category: string; items: (NodeDefinition & { favorite: boolean })[] }[] }[];
+    favorites(): string[];
+    isFavorite(type: string): boolean;
+    toggleFavorite(type: string, on?: boolean): boolean;
+    recent(): string[];
+    recordUse(type: string): void;
+    preview(type: string): NodePalettePreview | null;
+    /** inserts a node at a graph position, selected, one undo step */
+    insert(canvas: LGraphCanvas, type: string, pos: ArrayLike<number>): LGraphNode | null;
 }
 
 export type MenuLocation = 'canvas' | 'node';

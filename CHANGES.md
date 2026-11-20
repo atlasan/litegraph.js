@@ -1,6 +1,15 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 4d, layout and palette
+
+## Added
+
+* `graph.autoLayout({engine, nodes, direction, spacing})`: one undo step; engines in `LiteGraph.layout` (`dagre`, loaded on demand; `layered`, built in; `LayoutRegistry.elkEngine` for elkjs); setting `LiteGraph.Layout.Engine`; command `litegraph.layout.auto` in the canvas menu.
+* `LiteGraph.palette` (`NodePalette`): groups by pack and category, search, favourites (`LiteGraph.Palette.Favorites`), recent types, previews, `insert`; dropping `LGraphCanvas.NODE_DRAG_MIME` data on the canvas inserts a node.
+* The Editor's node palette panel ("Nodes" button, `NodePalettePanel`, setting `LiteGraph.Editor.Palette`).
+* Development dependency `@dagrejs/dagre` 3.1.3 (MIT) for the Node layout test; the library is registered as an optional LibraryManager library.
+
 # Unreleased (0.10.x): Wave 4c, links and view
 
 ## Added

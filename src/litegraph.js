@@ -20,6 +20,8 @@ import { NodeSearch } from "./nodesearch.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
 import { LinkRouterRegistry, LinkStyleRegistry, RenderLink } from "./linkrender.js";
+import { LayoutRegistry } from "./layout.js";
+import { NodePalette } from "./palette.js";
 
 /**
  * @class LiteGraph
@@ -313,9 +315,25 @@ export class LiteGraphClass {
         this.LibraryManager ??= new LibraryManager();
 
         this.setupPlatform();
+        this.registerBuiltinLibraries();
 
         // base inclusion
         this.includeBasicNodes();
+    }
+
+    /** Optional libraries the core uses on demand (loaded only when needed). */
+    registerBuiltinLibraries() {
+        const manager = this.LibraryManager;
+        if (!manager || manager.libraries_known?.dagre) return;
+        manager.registerLibrary({
+            key: "dagre",
+            version: "3.1.3",
+            globalObject: "dagre",
+            description: "Graph layout for the \"dagre\" auto-layout engine (graph.autoLayout)",
+            optional: true,
+            browser: { remote: ["https://cdn.jsdelivr.net/npm/@dagrejs/dagre@3.1.3/dist/dagre.min.js"] },
+            server: { npm: ["@dagrejs/dagre"] },
+        });
     }
 
     includeBasicNodes(){
@@ -598,6 +616,15 @@ export class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        this.layout ??= new LayoutRegistry();
+        this.palette ??= new NodePalette(this);
+        if (!this.settings.has("LiteGraph.Palette.Favorites")) {
+            this.settings.define({ id: "LiteGraph.Palette.Favorites", type: "json", name: "Favourite node types (palette)", default: () => [] });
+            this.settings.define({ id: "LiteGraph.Palette.Recent", type: "json", name: "Recently inserted node types (palette)", default: () => [] });
+        }
+        if (!this.settings.has("LiteGraph.Layout.Engine")) {
+            this.settings.define({ id: "LiteGraph.Layout.Engine", name: "Auto-layout engine (dagre, layered, or a registered one)", default: "dagre" });
+        }
         this.linkRouters ??= new LinkRouterRegistry();
         this.linkStyles ??= new LinkStyleRegistry();
         this.RenderLink ??= RenderLink;

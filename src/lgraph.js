@@ -1863,6 +1863,84 @@ export class LGraph {
     }
 
     /**
+     * Arranges nodes with a layout engine (LiteGraph.layout), as one undo step. With `nodes` only
+     * those move (a selection), anchored at their current top-left corner; otherwise every node
+     * moves, anchored at the graph's current top-left. Pinned nodes stay. Reroutes on the links
+     * between moved nodes follow them, and groups whose nodes all moved are fitted around them.
+     * @param {{engine?: string, nodes?: object[], direction?: "LR"|"RL"|"TB"|"BT",
+     *   spacing?: {node?: number, rank?: number}}} [options]
+     *   engine: default the setting `LiteGraph.Layout.Engine` ("dagre")
+     * @returns {Promise<{engine: string, moved: number}>}
+     */
+    async autoLayout({ engine, nodes, direction = "LR", spacing = {} } = {}) {
+        const settings = LiteGraph.settings;
+        const name = engine ?? (settings?.has?.("LiteGraph.Layout.Engine") ? settings.get("LiteGraph.Layout.Engine") : null) ?? "dagre";
+        const impl = LiteGraph.layout?.get(name);
+        if (!impl) throw new Error(`autoLayout: unknown layout engine ${name} (registered: ${LiteGraph.layout?.list().join(", ")})`);
+        const targets = (nodes ?? this._nodes).filter((node) => node?.graph === this && !node.flags?.pinned);
+        if (!targets.length) return { engine: name, moved: 0 };
+        let lib = null;
+        if (impl.library) {
+            try {
+                lib = await LiteGraph.LibraryManager.waitForLib(impl.library);
+            } catch (error) {
+                throw new Error(`autoLayout: the ${impl.library} library could not be loaded (${error?.message ?? error}); install it (npm install @dagrejs/dagre) or use the engine "layered", which needs nothing`, { cause: error });
+            }
+        }
+        const model = LiteGraph.layout.constructor.buildModel(this, targets);
+        const options = { direction, spacing: { node: spacing.node ?? 40, rank: spacing.rank ?? 80 } };
+        const { positions } = await impl.layout(model, options, lib);
+        // keep the arranged block where it was: align its top-left corner with the old one
+        let oldX = Infinity, oldY = Infinity, newX = Infinity, newY = Infinity;
+        for (const box of model.nodes) {
+            const p = positions?.[box.id];
+            if (!p) continue;
+            oldX = Math.min(oldX, box.x); oldY = Math.min(oldY, box.y);
+            newX = Math.min(newX, p[0]); newY = Math.min(newY, p[1]);
+        }
+        if (!Number.isFinite(newX)) return { engine: name, moved: 0 };
+        const dx = oldX - newX;
+        const dy = oldY - newY;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        // groups wholly made of moved nodes are fitted afterwards
+        const moving = new Set(targets.filter((node) => positions[node.id]));
+        const groups = this._groups.filter((group) => {
+            group.recomputeInsideNodes?.();
+            const inside = group._nodes ?? [];
+            return inside.length && inside.every((node) => moving.has(node));
+        });
+        let moved = 0;
+        this.transact("autoLayout", () => {
+            const shift = new Map();
+            for (const node of moving) {
+                const p = positions[node.id];
+                const x = Math.round(p[0] + dx);
+                const y = Math.round(p[1] + dy + title);
+                shift.set(node.id, [x - node.pos[0], y - node.pos[1]]);
+                node.pos[0] = x;
+                node.pos[1] = y;
+                moved++;
+            }
+            const rerouted = new Set();
+            for (const link of Object.values(this.links ?? {})) {
+                if (!link || link.parentId === undefined || !shift.has(link.origin_id) || !shift.has(link.target_id)) continue;
+                const a = shift.get(link.origin_id), b = shift.get(link.target_id);
+                for (const reroute of this.getRerouteChain?.(link) ?? []) {
+                    if (rerouted.has(reroute.id)) continue;
+                    rerouted.add(reroute.id);
+                    reroute.pos[0] = Math.round(reroute.pos[0] + (a[0] + b[0]) / 2);
+                    reroute.pos[1] = Math.round(reroute.pos[1] + (a[1] + b[1]) / 2);
+                }
+            }
+            for (const group of groups) group.fitToContents?.();
+            this._markChange("layout");
+            this.onGraphChanged({ action: "autoLayout" });
+        });
+        this.setDirtyCanvas(true, true);
+        return { engine: name, moved };
+    }
+
+    /**
      * Missing node types in this graph (and, with `deep`, in its subgraphs): one entry per type,
      * with where the type comes from (the node's stored pack stamp, the pack index, or ComfyUI's
      * `cnr_id` / `aux_id`) and a registered replacement.

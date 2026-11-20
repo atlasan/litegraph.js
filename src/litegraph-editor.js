@@ -109,11 +109,36 @@ export class Editor {
             button.innerHTML = `<img src="imgs/icon-play.png"/> Play`;
         };
 
+        // node palette (setting LiteGraph.Editor.Palette remembers whether it is open)
+        if (!options.skip_palette) this.setupPalette();
+
         // modified marker and draft autosave (settings LiteGraph.Editor.Autosave / AutosaveDelay)
         this.setupModifiedMarker();
         if (!options.skip_autosave) this.setupAutosave(options.draft_storage);
 
         graphcanvas.resize();
+    }
+
+    /** Adds the "Nodes" button and opens the palette if it was open last time. */
+    setupPalette() {
+        const settings = LiteGraph.settings;
+        if (settings && !settings.has("LiteGraph.Editor.Palette")) {
+            settings.define({ id: "LiteGraph.Editor.Palette", name: "Show the node palette in the Editor", default: false });
+        }
+        this.addToolsButton("palette_button", "Nodes", "imgs/icon-gear.png", () => this.togglePalette(), ".tools-left");
+        if (settings?.get("LiteGraph.Editor.Palette")) this.togglePalette(true);
+    }
+
+    /** Opens or closes the node palette; returns whether it is open. */
+    togglePalette(open = !this.palette_panel) {
+        if (!open) {
+            this.palette_panel?.dispose();
+            this.palette_panel = null;
+        } else if (!this.palette_panel) {
+            this.palette_panel = new NodePalettePanel(this.graphcanvas, this.content);
+        }
+        LiteGraph.settings?.set("LiteGraph.Editor.Palette", !!this.palette_panel);
+        return !!this.palette_panel;
     }
 
     /** Shows "• modified" in the header and prefixes the page title while the document is modified. */
@@ -516,5 +541,168 @@ export class DraftAutosave {
         if (this._timer) clearTimeout(this._timer);
         this._timer = null;
         this._disposers.splice(0).forEach((dispose) => dispose?.());
+    }
+}
+
+/**
+ * The Editor's node palette: a DOM panel over the left side of the canvas, built from
+ * LiteGraph.palette. Types are grouped by pack and category; a search box filters them; the star
+ * marks favourites (setting LiteGraph.Palette.Favorites); "Recent" lists the last inserted types.
+ * Drag an entry onto the canvas (or double-click it) to insert it; hover shows a preview.
+ */
+export class NodePalettePanel {
+
+    constructor(graphcanvas, container) {
+        this.graphcanvas = graphcanvas;
+        this.query = "";
+        this.favoritesOnly = false;
+        this._abort = new AbortController();
+        const signal = this._abort.signal;
+        const root = this.root = document.createElement("div");
+        root.className = "litegraph-palette";
+        root.style.cssText = "position:absolute;left:0;top:0;bottom:0;width:240px;z-index:6;display:flex;flex-direction:column;background:rgba(28,28,28,0.96);border-right:1px solid #444;font:12px Arial;color:#ccc";
+        root.innerHTML = `<div style="display:flex;gap:4px;padding:6px;border-bottom:1px solid #444">
+                <input class="palette-search" type="search" placeholder="Search nodes" style="flex:1;min-width:0;background:#111;color:#ddd;border:1px solid #555;border-radius:3px;padding:3px 5px">
+                <button class="palette-favorites btn" title="Favourites only" style="padding:0 6px">☆</button>
+            </div>
+            <div class="palette-list" style="flex:1;overflow:auto;padding:4px 0"></div>`;
+        this.list = root.querySelector(".palette-list");
+        const search = root.querySelector(".palette-search");
+        search.addEventListener("input", () => { this.query = search.value.trim(); this.render(); }, { signal });
+        const favButton = root.querySelector(".palette-favorites");
+        favButton.addEventListener("click", () => {
+            this.favoritesOnly = !this.favoritesOnly;
+            favButton.textContent = this.favoritesOnly ? "★" : "☆";
+            this.render();
+        }, { signal });
+        // keys typed in the panel belong to it, not to the canvas shortcuts
+        root.addEventListener("keydown", (e) => e.stopPropagation(), { signal });
+        const preview = this.preview = document.createElement("canvas");
+        preview.className = "palette-preview";
+        preview.width = 180;
+        preview.height = 100;
+        preview.style.cssText = "position:absolute;left:246px;display:none;z-index:7;border:1px solid #555;border-radius:4px;background:#222;pointer-events:none";
+        container.appendChild(root);
+        container.appendChild(preview);
+        this.render();
+    }
+
+    render() {
+        const palette = LiteGraph.palette;
+        this.list.innerHTML = "";
+        if (!palette) return;
+        const section = (title) => {
+            const header = document.createElement("div");
+            header.textContent = title;
+            header.style.cssText = "padding:6px 8px 2px;color:#8ab;font-weight:bold;text-transform:uppercase;font-size:10px";
+            this.list.appendChild(header);
+        };
+        if (!this.query && !this.favoritesOnly) {
+            const recent = palette.recent().map((type) => LiteGraph.getNodeDefinition(type)).filter(Boolean);
+            if (recent.length) {
+                section("Recent");
+                for (const def of recent) this.list.appendChild(this.item({ ...def, favorite: palette.isFavorite(def.type) }));
+            }
+        }
+        const groups = palette.groups({ query: this.query, favoritesOnly: this.favoritesOnly });
+        for (const group of groups) {
+            section(group.pack.title);
+            for (const { category, items } of group.categories) {
+                const label = document.createElement("div");
+                label.textContent = category || "(no category)";
+                label.style.cssText = "padding:3px 10px 1px;color:#888";
+                this.list.appendChild(label);
+                for (const def of items) this.list.appendChild(this.item(def));
+            }
+        }
+        if (!groups.length) {
+            const empty = document.createElement("div");
+            empty.textContent = this.favoritesOnly ? "No favourites yet: star a node." : "No node matches.";
+            empty.style.cssText = "padding:8px;color:#888";
+            this.list.appendChild(empty);
+        }
+    }
+
+    /** one draggable entry */
+    item(def) {
+        const signal = this._abort.signal;
+        const element = document.createElement("div");
+        element.className = "palette-item";
+        element.draggable = true;
+        element.dataset.type = def.type;
+        element.title = def.description ? `${def.type}: ${def.description}` : def.type;
+        element.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 8px 2px 18px;cursor:grab;white-space:nowrap";
+        const star = document.createElement("span");
+        star.className = "palette-star";
+        star.textContent = def.favorite ? "★" : "☆";
+        star.style.cssText = `cursor:pointer;color:${def.favorite ? "#fc6" : "#666"}`;
+        const label = document.createElement("span");
+        label.textContent = (typeof def.icon === "string" && def.icon ? def.icon + " " : "") + def.title;
+        label.style.cssText = "overflow:hidden;text-overflow:ellipsis";
+        element.append(star, label);
+        star.addEventListener("click", (e) => {
+            e.stopPropagation();
+            LiteGraph.palette.toggleFavorite(def.type);
+            this.render();
+        }, { signal });
+        element.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData(this.graphcanvas.constructor.NODE_DRAG_MIME ?? "application/x-litegraph-node-type", def.type);
+            e.dataTransfer.setData("text/plain", def.type);
+            e.dataTransfer.effectAllowed = "copy";
+            this.preview.style.display = "none";
+        }, { signal });
+        element.addEventListener("dblclick", () => {
+            const area = this.graphcanvas.visible_area;
+            LiteGraph.palette.insert(this.graphcanvas, def.type, [area[0] + area[2] / 2, area[1] + area[3] / 2]);
+            this.render();
+        }, { signal });
+        element.addEventListener("mouseenter", () => this.showPreview(def.type, element), { signal });
+        element.addEventListener("mouseleave", () => { this.preview.style.display = "none"; }, { signal });
+        return element;
+    }
+
+    /** draws a small node from the palette's preview data next to the entry */
+    showPreview(type, anchor) {
+        const data = LiteGraph.palette.preview(type);
+        const canvas = this.preview;
+        const ctx = canvas.getContext?.("2d");
+        if (!data || !ctx) return;
+        const rows = Math.max(data.inputs.length, data.outputs.length, 1);
+        const titleHeight = 20;
+        canvas.height = Math.min(220, titleHeight + 12 + rows * 16);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = data.bgcolor || LiteGraph.NODE_DEFAULT_BGCOLOR || "#353535";
+        ctx.fillRect(6, 6, canvas.width - 12, canvas.height - 12);
+        ctx.fillStyle = data.color || LiteGraph.NODE_DEFAULT_COLOR || "#333";
+        ctx.fillRect(6, 6, canvas.width - 12, titleHeight);
+        ctx.font = "12px Arial";
+        ctx.fillStyle = "#ddd";
+        ctx.textAlign = "left";
+        ctx.fillText(((typeof data.icon === "string" && data.icon) ? data.icon + " " : "") + data.title, 14, 20);
+        ctx.font = "11px Arial";
+        data.inputs.slice(0, rows).forEach((slot, i) => {
+            const y = 6 + titleHeight + 14 + i * 16;
+            ctx.fillStyle = "#7c7";
+            ctx.beginPath(); ctx.arc(14, y - 4, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#bbb";
+            ctx.fillText(String(slot.name), 22, y);
+        });
+        ctx.textAlign = "right";
+        data.outputs.slice(0, rows).forEach((slot, i) => {
+            const y = 6 + titleHeight + 14 + i * 16;
+            ctx.fillStyle = "#7c7";
+            ctx.beginPath(); ctx.arc(canvas.width - 14, y - 4, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#bbb";
+            ctx.fillText(String(slot.name), canvas.width - 22, y);
+        });
+        const top = anchor.offsetTop - this.list.scrollTop; // offsetTop is relative to the panel (positioned)
+        canvas.style.top = `${Math.max(0, top)}px`;
+        canvas.style.display = "";
+    }
+
+    dispose() {
+        this._abort.abort();
+        this.root.remove();
+        this.preview.remove();
     }
 }
