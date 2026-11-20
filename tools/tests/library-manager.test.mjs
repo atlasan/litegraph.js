@@ -27,6 +27,8 @@ test('missing or partly available dependencies fail and can be retried', async (
     await assert.rejects(manager.loadLibrary('unregistered'), /not registered/);
     manager.registerLibrary({ key: 'fixture', server: { npm: ['node:path', 'litegraph-missing-test-dependency'] } });
     await assert.rejects(manager.loadLibrary('fixture'), /Could not load server library/);
+    // the cause names the missing optional package and how to install it
+    await assert.rejects(manager.loadLibrary('fixture'), (error) => /Optional package 'litegraph-missing-test-dependency' is not installed \(library fixture\): npm install litegraph-missing-test-dependency/.test(error.cause?.message));
     assert.equal(manager.getLibraryState('fixture'), 'error');
     assert.equal(manager.loading_promises.fixture, undefined);
     assert.deepEqual(manager.libraries_to_load, []);

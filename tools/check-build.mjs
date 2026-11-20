@@ -43,4 +43,32 @@ for (const subpath of ['@litegraph/litegraph/core', '@litegraph/litegraph/node']
     assert.equal(result.status, 0, result.stderr);
   }
 }
-console.log(`Validated ${checked} build artifacts, package contents, and ESM/CommonJS entry points.`);
+// exports: no wildcard (except css), every artifact listed by its path, every target present
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const exportKeys = Object.keys(manifest.exports);
+assert.deepEqual(exportKeys.filter((key) => key.includes('*') && key !== './css/*'), [], 'Export wildcards make every file public API');
+for (const dir of ['build', 'build_node']) {
+  for (const file of fs.readdirSync(path.join(root, dir))) {
+    assert.equal(manifest.exports[`./${dir}/${file}`], `./${dir}/${file}`, `Artifact not in the exports map: ${dir}/${file}`);
+  }
+}
+const targets = (value) => typeof value === 'string' ? [value] : Object.values(value).flatMap(targets);
+for (const key of exportKeys) {
+  for (const target of targets(manifest.exports[key])) {
+    if (!target.includes('*')) assert.ok(fs.existsSync(path.join(root, target)), `Export ${key} points at a missing file: ${target}`);
+  }
+}
+for (const subpath of ['@litegraph/litegraph/build/litegraph.full.js', '@litegraph/litegraph/build_node/litegraph.full.cjs']) {
+  const esm = subpath.endsWith('.js');
+  const code = esm ? `import {LiteGraph} from '${subpath}'; if(!LiteGraph) throw Error('deep import');` : `const {LiteGraph}=require('${subpath}'); if(!LiteGraph) throw Error('deep import');`;
+  const result = spawnSync(process.execPath, [esm ? '--input-type=module' : '--input-type=commonjs', '-e', code], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+}
+// library builds carry no editor or debug defaults: script evaluation stays off
+for (const file of ['build/litegraph.full.js', 'build_node/litegraph.full.cjs', 'build_node/litegraph_nodejs.full.cjs']) {
+  const source = fs.readFileSync(path.join(root, file), 'utf8');
+  assert.ok(!/LiteGraph\.allow_scripts\s*=\s*true/.test(source), `${file} turns script evaluation on`);
+}
+// runtime dependencies: the library needs none; integrations are optional
+assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0, 'The library must not have required dependencies (integrations are optionalDependencies)');
+console.log(`Validated ${checked} build artifacts, package contents, exports, and ESM/CommonJS entry points.`);
