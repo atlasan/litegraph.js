@@ -2001,13 +2001,23 @@ export declare class Subgraph extends LGraphNode {
     /** makes the current inner graph the definition and refreshes the linked instances (one undo step) */
     commitDefinition(): boolean;
     /** rebuilds the inner graph from the definition; outer slots follow it by slot id */
-    refreshFromDefinition(): boolean;
+    refreshFromDefinition(options?: { matchNames?: boolean }): boolean;
     /** gives this node its own copy of the definition; returns the new id */
     makeUnique(): string | null;
 }
 export declare class GraphInput extends LGraphNode {}
 export declare class GraphOutput extends LGraphNode {}
-export declare class NodeFunction extends LGraphNode {}
+/** calls a subgraph definition: call -> inputs in, one run, outputs out -> done */
+export declare class NodeFunction extends Subgraph {
+    /** uses a definition of the root registry; false when unknown or recursive */
+    setDefinition(id: string): boolean;
+    setDefinitionByLabel(label: string): boolean;
+    definitionLabels(): string[];
+    /** true when `id` is a definition this node is inside of */
+    wouldRecurse(id: string): boolean;
+    /** runs the definition once with the current inputs, then fires done */
+    call(param?: unknown, options?: object): boolean;
+}
 export declare class CurveEditor {
     constructor(points: Vector2[]);
     points: Vector2[];
