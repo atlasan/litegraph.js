@@ -153,7 +153,9 @@ export class LGraph {
         // links
         this.links = {}; // container with all the links
         this.reroutes = new Map(); // id -> Reroute (points links are routed through)
-        this._floating_reroutes = [];
+        /** floating links: reroute chains left attached to one end (ComfyUI 0.4 floatingLinks); id -> link */
+        this.floating_links = new Map();
+        this._floating_links_field = false; // the loaded document had a floatingLinks field
 
         // iterations
         this.iteration = 0;
@@ -1073,6 +1075,7 @@ export class LGraph {
                 this._nodes.splice(pos, 1);
             }
             delete this._nodes_by_id[node.id];
+            cleanup(() => this._removeFloatingLinksOf(node.id));
             this._notifyReadinessChange();
 
             this.updateExecutionOrder();
@@ -1708,11 +1711,18 @@ export class LGraph {
     convertToSubgraph(nodes) {
         const selected = (nodes ?? []).filter((node) => node?.graph === this);
         if (!selected.length) return null;
-        return this.transact("convertToSubgraph", () => {
+        return this._withoutFloatingLinks(() => this.transact("convertToSubgraph", () => {
             const subgraphNode = LiteGraph.createNode("graph/subgraph");
             this.add(subgraphNode);
             return subgraphNode.buildFromNodes(selected);
-        }, { rollback: true });
+        }, { rollback: true }));
+    }
+
+    /** runs fn with floating links off: operations that rebuild links leave no floating chains */
+    _withoutFloatingLinks(fn) {
+        const was = this._suspend_floating_links;
+        this._suspend_floating_links = true;
+        try { return fn(); } finally { this._suspend_floating_links = was; }
     }
 
     /**
@@ -1721,7 +1731,7 @@ export class LGraph {
      */
     unpackSubgraph(subgraphNode) {
         if (subgraphNode?.graph !== this || typeof subgraphNode.unpack !== "function") return [];
-        return this.transact("unpackSubgraph", () => subgraphNode.unpack(), { rollback: true });
+        return this._withoutFloatingLinks(() => this.transact("unpackSubgraph", () => subgraphNode.unpack(), { rollback: true }));
     }
 
     /**
@@ -1840,11 +1850,87 @@ export class LGraph {
                 if (reroute.parentId === undefined) delete other.parentId; else other.parentId = reroute.parentId;
             }
         }
+        for (const [floatingId, floating] of this.floating_links) {
+            if (floating.parentId !== id) continue;
+            if (reroute.parentId === undefined) this.floating_links.delete(floatingId); // nothing left to keep
+            else floating.parentId = reroute.parentId;
+        }
         this.reroutes.delete(id);
         this.onGraphChanged({action: "rerouteRemove"});
         this._emit("reroute-removed", { reroute });
         this.setDirtyCanvas(true, true);
         return true;
+    }
+
+    /**
+     * Routes a link through a reroute chain (`parentId`, the reroute nearest the target). Floating
+     * links whose reroutes the link now uses are dropped: the chain is attached again.
+     * @param {LLink} link
+     * @param {number|undefined} parentId
+     */
+    routeLink(link, parentId) {
+        if (!link) return;
+        if (parentId === undefined || parentId === null || !this.reroutes.has(parentId)) delete link.parentId;
+        else link.parentId = parentId;
+        if (link.parentId === undefined || !this.floating_links.size) return;
+        const chain = new Set(this.getRerouteChain(link).map((reroute) => reroute.id));
+        for (const [id, floating] of this.floating_links) {
+            if (chain.has(floating.parentId)) this.floating_links.delete(id);
+        }
+    }
+
+    /**
+     * Keeps the reroutes of a removed link as a floating link attached to the end that remains
+     * (LiteGraph.keep_floating_reroutes). Nothing is kept when another link still uses the reroutes.
+     * @param {LLink} link - already removed from graph.links
+     * @param {"origin"|"target"} keep - the end that stays
+     * @returns {object|null} the floating link
+     */
+    _keepFloatingLink(link, keep) {
+        if (!LiteGraph.keep_floating_reroutes || this._suspend_floating_links || link?.parentId === undefined || !this.reroutes.has(link.parentId)) return null;
+        if (this.getRerouteLinkIds().has(link.parentId)) return null; // still routed by another link
+        const node = this.getNodeById(keep === "origin" ? link.origin_id : link.target_id);
+        if (!node) return null;
+        const id = Math.max(0, ...this.floating_links.keys()) + 1;
+        const floating = keep === "origin"
+            ? { id, origin_id: link.origin_id, origin_slot: link.origin_slot, target_id: -1, target_slot: -1, type: link.type, parentId: link.parentId }
+            : { id, origin_id: -1, origin_slot: -1, target_id: link.target_id, target_slot: link.target_slot, type: link.type, parentId: link.parentId };
+        this.floating_links.set(id, floating);
+        return floating;
+    }
+
+    /** drops the floating links attached to a node */
+    _removeFloatingLinksOf(nodeId) {
+        for (const [id, floating] of this.floating_links) {
+            if (floating.origin_id === nodeId || floating.target_id === nodeId) this.floating_links.delete(id);
+        }
+    }
+
+    /**
+     * The end a floating link is attached to.
+     * @returns {{node: LGraphNode, slot: number, isOutput: boolean}|null}
+     */
+    getFloatingLinkEnd(floating) {
+        const isOutput = floating.origin_id !== -1;
+        const node = this.getNodeById(isOutput ? floating.origin_id : floating.target_id);
+        return node ? { node, slot: isOutput ? floating.origin_slot : floating.target_slot, isOutput } : null;
+    }
+
+    /** floating links whose reroute chain passes through a reroute */
+    getFloatingLinksThrough(rerouteId) {
+        return [...this.floating_links.values()].filter((floating) =>
+            this.getRerouteChain(floating).some((reroute) => reroute.id === rerouteId));
+    }
+
+    /** reroute id -> slot type ("output"/"input") for reroutes only floating links use */
+    _floatingRerouteSlots(used = this.getRerouteLinkIds()) {
+        const slots = new Map();
+        for (const floating of this.floating_links.values()) {
+            for (const reroute of this.getRerouteChain(floating)) {
+                if (!used.has(reroute.id) && !slots.has(reroute.id)) slots.set(reroute.id, floating.origin_id !== -1 ? "output" : "input");
+            }
+        }
+        return slots;
     }
 
     /** the reroute at a graph-space position, if any */
@@ -1890,16 +1976,22 @@ export class LGraph {
     /** loads reroutes from 0.4 (extra.reroutes + extra.linkExtensions) or version 1 (top-level) documents */
     _configureReroutes(data) {
         this.reroutes = new Map();
-        this._floating_reroutes = []; // not modelled (they belong to floatingLinks); written back verbatim
+        this.floating_links = new Map();
         const extra = data.extra && typeof data.extra === "object" ? data.extra : {};
         const list = Array.isArray(data.reroutes) ? data.reroutes : Array.isArray(extra.reroutes) ? extra.reroutes : [];
         for (const item of list) {
             if (!item || typeof item.id !== "number") continue;
-            if (item.floating) {
-                this._floating_reroutes.push(LiteGraph.cloneObject(item));
-                continue;
-            }
             this.reroutes.set(item.id, new Reroute(item.id, item.pos ?? [0, 0], item.parentId));
+        }
+        // floating links: kept when their reroute and the node they are attached to exist
+        this._floating_links_field = Array.isArray(data.floatingLinks);
+        for (const item of this._floating_links_field ? data.floatingLinks : []) {
+            if (!item || typeof item.id !== "number" || !this.reroutes.has(item.parentId)) continue;
+            const floating = {
+                id: item.id, origin_id: item.origin_id ?? -1, origin_slot: item.origin_slot ?? -1,
+                target_id: item.target_id ?? -1, target_slot: item.target_slot ?? -1, type: item.type, parentId: item.parentId,
+            };
+            if (this.getFloatingLinkEnd(floating)) this.floating_links.set(floating.id, floating);
         }
         for (const ext of Array.isArray(extra.linkExtensions) ? extra.linkExtensions : []) {
             const link = ext && this.links[ext.id];
@@ -1927,8 +2019,7 @@ export class LGraph {
             delete this.extra.reroutes;
             delete this.extra.linkExtensions;
         }
-        this.state.lastRerouteId = LGraph._maxNumericId(this.state.lastRerouteId,
-            [...this.reroutes.keys(), ...this._floating_reroutes.map((item) => item.id)]);
+        this.state.lastRerouteId = LGraph._maxNumericId(this.state.lastRerouteId, [...this.reroutes.keys()]);
     }
 
     /**
@@ -1986,6 +2077,9 @@ export class LGraph {
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
             state: { ...this.state }, // all id counters (nodes, links, groups, reroutes)
         });
+        if (this.floating_links?.size || this._floating_links_field) {
+            data.floatingLinks = [...this.floating_links.values()].map((floating) => ({ ...floating }));
+        }
         this.processCallbackHandlers("onSerialize",{
             def_cb: this.onSerialize
         }, data);
@@ -1995,15 +2089,18 @@ export class LGraph {
         return data;
     }
 
-    /** extra plus reroutes in the ComfyUI-compatible 0.4 form (only reroutes that links use) */
+    /**
+     * extra plus reroutes in the ComfyUI-compatible 0.4 form: reroutes that links use, and floating
+     * ones (only floating links use them) with `floating: {slotType}`
+     */
     _serializeExtra() {
         const used = this.getRerouteLinkIds();
-        const floating = this._floating_reroutes ?? [];
-        if (!used.size && !floating.length) return this.extra;
+        const floating = this._floatingRerouteSlots(used);
+        if (!used.size && !floating.size) return this.extra;
         const extra = { ...this.extra };
         extra.reroutes = [
             ...[...used.keys()].map((id) => this.reroutes.get(id).serialize(used.get(id))),
-            ...LiteGraph.cloneObject(floating),
+            ...[...floating].map(([id, slotType]) => ({ ...this.reroutes.get(id).serialize([]), floating: { slotType } })),
         ].sort((a, b) => a.id - b.id);
         extra.linkExtensions = Object.values(this.links)
             .filter((link) => link && link.parentId !== undefined && used.has(link.parentId))
@@ -2057,7 +2154,7 @@ export class LGraph {
         // copy all stored fields
         this._foreign_fields = {};
         for (let i in data) {
-            if (["nodes", "groups", "id", "revision", "state", "reroutes"].includes(i)) continue; // handled explicitly
+            if (["nodes", "groups", "id", "revision", "state", "reroutes", "floatingLinks"].includes(i)) continue; // handled explicitly
             if (!LGraph.serialized_fields.includes(i) && !i.startsWith("_") && !(i in this)) {
                 // not part of this runtime's model (e.g. another editor's document state): keep it for serialize
                 this._foreign_fields[i] = LiteGraph.cloneObject(data[i]);

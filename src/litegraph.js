@@ -24,6 +24,39 @@ import { NodeSearch } from "./nodesearch.js";
  * Try to avoid adding things to this class.
  * https://dzone.com/articles/singleton-anti-pattern
  */
+
+/**
+ * Node badges: small labels drawn in node title bars. Providers return a badge (or an array, or
+ * null) for a node: `{text, fgColor?, bgColor?}`. Nodes may also list their own in `node.badges`.
+ */
+function createNodeBadgeRegistry() {
+    const providers = new Set();
+    return {
+        /** @returns {() => void} disposer */
+        register(provider) {
+            if (typeof provider !== "function") throw new TypeError("badge provider must be a function");
+            providers.add(provider);
+            return () => providers.delete(provider);
+        },
+        /** badges for a node: its own (`node.badges`, entries may be functions of the node), then the providers' */
+        collect(node) {
+            const badges = [];
+            const add = (value) => {
+                for (const badge of Array.isArray(value) ? value : [value]) {
+                    if (badge && typeof badge === "object" && badge.text !== undefined && badge.text !== "") badges.push(badge);
+                }
+            };
+            for (const entry of node?.badges ?? []) {
+                try { add(typeof entry === "function" ? entry(node) : entry); } catch (error) { console.error?.("node badge failed", error); }
+            }
+            for (const provider of providers) {
+                try { add(provider(node)); } catch (error) { console.error?.("node badge provider failed", error); }
+            }
+            return badges;
+        },
+    };
+}
+
 export class LiteGraphClass {
 
     VERSION = "0.10.10";
@@ -194,6 +227,8 @@ export class LiteGraphClass {
 
     middle_click_slot_add_default_node = false; // [true!] allows to create and connect a ndoe clicking with the third button (wheel)
 
+    keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
+    snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
     two_fingers_opens_menu = false; // [true!] using pointer event isPrimary, when is not simulate right click
 
@@ -478,6 +513,27 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Search.ShowExperimental", name: "Show experimental nodes in search", default: true });
             this.nodeSearch.registerFilter({ id: "core.deprecated", name: "Deprecated", predicate: (def) => !def.deprecated, enabled: () => !this.settings.get("LiteGraph.Search.ShowDeprecated") });
             this.nodeSearch.registerFilter({ id: "core.experimental", name: "Experimental", predicate: (def) => !def.experimental, enabled: () => !this.settings.get("LiteGraph.Search.ShowExperimental") });
+        }
+        if (!this.nodeBadges) {
+            this.nodeBadges = createNodeBadgeRegistry();
+            // built-in badges, off unless a setting shows them
+            this.settings.define({ id: "LiteGraph.Node.IdBadge", name: "Show node id badges", default: false });
+            this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
+            this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
+            this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
+                const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
+                if (def.deprecated) return { text: "deprecated", fgColor: "#FDD", bgColor: "rgba(140,40,40,0.8)" };
+                if (def.experimental) return { text: "experimental", fgColor: "#FFE", bgColor: "rgba(120,100,30,0.8)" };
+                return null;
+            });
+            this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? { text: `#${node.id}` } : null);
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.SourceBadge")) return null;
+                const source = node.constructor?.source ?? this.getNodeDefinition?.(node.type)?.source;
+                return source && source !== "core" ? { text: String(source) } : null;
+            });
         }
         this.extensions ??= new ExtensionRegistry(this);
     }

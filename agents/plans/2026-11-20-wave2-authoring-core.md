@@ -6,7 +6,7 @@ This wave makes the everyday authoring operations work properly: turning a selec
 
 ## Context
 
-- **Roadmap:** [Wave 2](roadmap.md#wave-2-authoring-core-next). Sources:
+- **Roadmap:** [Wave 2](roadmap.md#wave-2-authoring-core-done). Sources:
   - the feature harvest ([plan](2026-11-19-feature-harvest-and-priorities.md))
   - the Comfy core harvest ([research](../memories/research/ecosystem-study/))
   - the open bugs B2 and B3 in the [fork inventory](../audits/2026-11-19-fork-inventory.md)
@@ -65,3 +65,4 @@ Each step: `npm run check`, a `feat:` commit and a `build:` commit. At the end o
 
 - 2026-11-20: accepted with the start of Wave 2; step 1 implemented on `LG/wave2_authoring`.
 - 2026-11-20: steps 1–4 (part 2a) done; see the [execution record](../executions/2026-11-20-wave2a-authoring.md).
+- 2026-11-20: steps 5–7 (part 2b) done, plus the group header toggle and reroute multi-select from the roadmap; see the [execution record](../executions/2026-11-20-wave2b-links.md). Folding DragAndScale's listeners into `CanvasPointer` and the RenderLink classes are carried over.

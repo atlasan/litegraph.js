@@ -146,6 +146,7 @@ test('dragging a reroute on the canvas is a pointer gesture and one undo step', 
     LiteGraph.actionHistory_enabled = true;
     try {
         graph.transact('baseline', () => graph.onGraphChanged({ action: 'baseline' }));
+        canvas.graph_mouse[0] = 500; canvas.graph_mouse[1] = 500; // the press
         canvas._dragRerouteGesture(reroute);
         const p = canvas.pointer;
         const ev = (x, y) => ({ clientX: x, clientY: y, canvasX: x, canvasY: y, button: 0 });
@@ -157,7 +158,7 @@ test('dragging a reroute on the canvas is a pointer gesture and one undo step', 
         p.up(ev(540, 530), 100);
         expect(canvas.dragging_reroute).toBeNull();
         expect(graph.isInTransaction).toBe(false);
-        expect(Array.from(reroute.pos)).toEqual([530, 530]); // moved by the drag delta, snapped to the grid
+        expect(Array.from(reroute.pos)).toEqual([540, 530]); // moved by the whole drag from the press
         expect(graph.history.actionHistory[graph.history.actionHistoryVersions.at(-1)].actionName).toBe('rerouteMove');
     } finally { LiteGraph.actionHistory_enabled = prev; canvas.dispose(); }
 });

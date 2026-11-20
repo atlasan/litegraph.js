@@ -51,6 +51,47 @@ function getRuntime() {
  * Try to avoid adding things to this class.
  * https://dzone.com/articles/singleton-anti-pattern
  */
+
+/**
+ * Node badges: small labels drawn in node title bars. Providers return a badge (or an array, or
+ * null) for a node: `{text, fgColor?, bgColor?}`. Nodes may also list their own in `node.badges`.
+ */
+function createNodeBadgeRegistry() {
+    const providers = new Set();
+    return {
+        /** @returns {() => void} disposer */
+        register(provider) {
+            if (typeof provider !== "function") throw new TypeError("badge provider must be a function");
+            providers.add(provider);
+            return () => providers.delete(provider);
+        },
+        /** badges for a node: its own (`node.badges`, entries may be functions of the node), then the providers' */
+        collect(node) {
+            const badges = [];
+            const add = (value) => {
+                for (const badge of Array.isArray(value) ? value : [value]) {
+                    if (badge && typeof badge === "object" && badge.text !== undefined && badge.text !== "") badges.push(badge);
+                }
+            };
+            for (const entry of node?.badges ?? []) {
+                try {
+                    add(typeof entry === "function" ? entry(node) : entry);
+                } catch (error) {
+                    console.error?.("node badge failed", error);
+                }
+            }
+            for (const provider of providers) {
+                try {
+                    add(provider(node));
+                } catch (error) {
+                    console.error?.("node badge provider failed", error);
+                }
+            }
+            return badges;
+        },
+    };
+}
+
 class LiteGraphClass {
 
     VERSION = "0.10.10";
@@ -221,6 +262,8 @@ class LiteGraphClass {
 
     middle_click_slot_add_default_node = false; // [true!] allows to create and connect a ndoe clicking with the third button (wheel)
 
+    keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
+    snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
     two_fingers_opens_menu = false; // [true!] using pointer event isPrimary, when is not simulate right click
 
@@ -547,6 +590,55 @@ class LiteGraphClass {
                 name: "Experimental",
                 predicate: (def) => !def.experimental,
                 enabled: () => !this.settings.get("LiteGraph.Search.ShowExperimental")
+            });
+        }
+        if (!this.nodeBadges) {
+            this.nodeBadges = createNodeBadgeRegistry();
+            // built-in badges, off unless a setting shows them
+            this.settings.define({
+                id: "LiteGraph.Node.IdBadge",
+                name: "Show node id badges",
+                default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.SourceBadge",
+                name: "Show node source badges",
+                default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.LifecycleBadge",
+                name: "Show deprecated and experimental badges",
+                default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Group.HeaderToggle",
+                name: "Show the mute toggle in group headers",
+                default: true
+            });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
+                const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
+                if (def.deprecated) return {
+                    text: "deprecated",
+                    fgColor: "#FDD",
+                    bgColor: "rgba(140,40,40,0.8)"
+                };
+                if (def.experimental) return {
+                    text: "experimental",
+                    fgColor: "#FFE",
+                    bgColor: "rgba(120,100,30,0.8)"
+                };
+                return null;
+            });
+            this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? {
+                text: `#${node.id}`
+            } : null);
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.SourceBadge")) return null;
+                const source = node.constructor?.source ?? this.getNodeDefinition?.(node.type)?.source;
+                return source && source !== "core" ? {
+                    text: String(source)
+                } : null;
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
@@ -3928,9 +4020,15 @@ class CanvasPointer {
  * is one graph transaction, so it is a single undo step, and cancelling reconnects the
  * original links. Design follows the LinkConnector idea in Comfy-Org/litegraph.js (MIT);
  * independent implementation for this runtime's slots and events.
+ *
+ * Lifecycle: `onEvent(type, detail)` (set by the canvas) receives "link-drag-start" when a drag
+ * starts and "link-drag-end" when it ends, with `outcome` "connected", "rejected" (dropped on a
+ * node that refused it), "dropped" (on empty space) or "cancelled".
  */
 class LinkConnector {
     constructor() {
+        /** @type {((type: string, detail: object) => void) | null} */
+        this.onEvent = null;
         this.reset();
     }
 
@@ -3950,6 +4048,9 @@ class LinkConnector {
         this.movingInputs = null;
         /** original links detached by a move, restored on cancel: [{origin_id, origin_slot, target_id, target_slot}] */
         this.detached = null;
+        /** reroute the drag started from: a new link is routed through it */
+        this.reroute = null;
+        this._routeId = undefined;
         this._graph = null;
     }
 
@@ -3969,18 +4070,82 @@ class LinkConnector {
 
     /** start a new link from an output slot */
     startFromOutput(node, slot) {
-        this._finishTransaction();
-        this.reset();
+        this._restart();
         this._attachOutput(node, slot);
+        this._started();
         return this;
     }
 
     /** start a new link from an input slot */
     startFromInput(node, slot) {
-        this._finishTransaction();
-        this.reset();
+        this._restart();
         this._attachInput(node, slot);
+        this._started();
         return this;
+    }
+
+    /**
+     * Start a new link from a reroute: it leaves the output feeding the reroute and is routed
+     * through it (and the reroutes before it).
+     * @param {Reroute} reroute
+     * @param {LGraph} graph
+     * @returns {boolean} false when no link passes through the reroute
+     */
+    startFromReroute(reroute, graph) {
+        const end = LinkConnector.rerouteEnd(reroute, graph);
+        if (!end) return false;
+        this._restart();
+        if (end.isOutput) this._attachOutput(end.node, end.slot);
+        else this._attachInput(end.node, end.slot);
+        this.reroute = reroute;
+        this._routeId = end.parentId;
+        this.pos = [reroute.pos[0], reroute.pos[1]];
+        this._started();
+        return true;
+    }
+
+    /**
+     * Where a link started from a reroute is anchored: the output feeding it (a link passes through
+     * it, or a floating link attached to an output), or the input a floating link is attached to.
+     * `parentId` is the route the new link takes.
+     * @returns {{node, slot: number, isOutput: boolean, parentId: number}|null}
+     */
+    static rerouteEnd(reroute, graph) {
+        if (!reroute || !graph) return null;
+        for (const id of graph.getRerouteLinkIds?.().get(reroute.id) ?? []) {
+            const link = graph.links[id];
+            const node = link && graph.getNodeById(link.origin_id);
+            if (node) return {
+                node,
+                slot: link.origin_slot,
+                isOutput: true,
+                parentId: reroute.id
+            };
+        }
+        for (const floating of graph.getFloatingLinksThrough?.(reroute.id) ?? []) {
+            const end = graph.getFloatingLinkEnd(floating);
+            if (!end) continue;
+            // towards an output the route ends at this reroute; towards an input it is the whole chain
+            return {
+                ...end,
+                parentId: end.isOutput ? reroute.id : floating.parentId
+            };
+        }
+        return null;
+    }
+
+    /**
+     * The slot a drop on `target`'s body would connect to: a compatible free slot first, then any
+     * compatible slot, then a generic one. -1 when none (the drop may still create an event slot).
+     * @returns {number}
+     */
+    findTargetSlot(target) {
+        if (!this.isConnecting || !target || target === this.node) return -1;
+        const isInput = !!this.output; // dragging from an output looks for an input
+        const type = this.type ?? 0;
+        let slot = target.findSlotByType?.(isInput, type, false, true) ?? -1;
+        if (slot < 0 && ![0, "", "*"].includes(type)) slot = target.findSlotByType?.(isInput, 0, false, true) ?? -1;
+        return slot;
     }
 
     /**
@@ -3992,9 +4157,11 @@ class LinkConnector {
         const link = graph?.links[node.inputs?.[slot]?.link];
         const origin = link && graph.getNodeById(link.origin_id);
         if (!origin) return false;
-        this.startFromOutput(origin, link.origin_slot);
+        this._restart();
+        this._attachOutput(origin, link.origin_slot);
         this._beginMove(graph, [link]);
         node.disconnectInput(slot);
+        this._started();
         return true;
     }
 
@@ -4009,13 +4176,15 @@ class LinkConnector {
             .filter((link) => link && graph.getNodeById(link.target_id));
         if (!links.length) return false;
         const first = graph.getNodeById(links[0].target_id);
-        this.startFromInput(first, links[0].target_slot);
+        this._restart();
+        this._attachInput(first, links[0].target_slot);
         this.movingInputs = links.map((link) => ({
             node: graph.getNodeById(link.target_id),
             slot: link.target_slot
         }));
         this._beginMove(graph, links);
         node.disconnectOutput(slot);
+        this._started();
         return true;
     }
 
@@ -4029,12 +4198,14 @@ class LinkConnector {
     dropOnNode(target, targetSlot = -1) {
         if (!this.isConnecting || !target) return this.cancel();
         const graph = this._graph ?? target.graph ?? this.node.graph;
+        if (targetSlot === -1) targetSlot = this.findTargetSlot(target);
         const connect = () => {
             if (this.output) {
                 const link = targetSlot !== -1 ?
                     this.node.connect(this.slot, target, targetSlot) :
                     this.node.connectByType(this.slot, target, this.type);
                 this._keepRoute(link, (d) => d.origin_id === this.node.id && d.origin_slot === this.slot);
+                this._routeThroughReroute(graph, link);
                 return link;
             }
             const inputs = this.movingInputs ?? [{
@@ -4051,16 +4222,24 @@ class LinkConnector {
                     target.connect(targetSlot, node, slot) :
                     node.connectByTypeOutput(slot, target, this.type);
                 this._keepRoute(result, (d) => d.target_id === node.id && d.target_slot === slot);
+                this._routeThroughReroute(graph, result);
             }
             return result;
         };
         let result;
+        const ended = this._snapshot();
         try {
             result = graph?.transact && !this._graph ? graph.transact("connectLink", connect) : connect();
         } finally {
             this._finishTransaction();
             this.reset();
         }
+        this._emit("link-drag-end", {
+            ...ended,
+            outcome: result ? "connected" : "rejected",
+            link: result || null,
+            target
+        });
         return result;
     }
 
@@ -4078,13 +4257,20 @@ class LinkConnector {
             input: this.input,
             type: this.type
         };
+        const ended = this._snapshot();
         this._finishTransaction();
         this.reset();
+        this._emit("link-drag-end", {
+            ...ended,
+            outcome: "dropped",
+            link: null
+        });
         return dropped;
     }
 
     /** abandon the drag; moved links are reconnected as they were */
     cancel() {
+        const ended = this.isConnecting ? this._snapshot() : null;
         if (this.detached) {
             for (const link of this.detached) {
                 const graph = this._graph;
@@ -4092,13 +4278,50 @@ class LinkConnector {
                 const target = graph?.getNodeById(link.target_id);
                 if (origin && target) {
                     const restored = origin.connect(link.origin_slot, target, link.target_slot);
-                    if (restored && link.parentId !== undefined) restored.parentId = link.parentId;
+                    if (restored && link.parentId !== undefined) LinkConnector._route(graph, restored, link.parentId);
                 }
             }
         }
         this._finishTransaction();
         this.reset();
+        if (ended) this._emit("link-drag-end", {
+            ...ended,
+            outcome: "cancelled",
+            link: null
+        });
         return null;
+    }
+
+    /** a new drag replaces the one in progress (whose move transaction is committed) */
+    _restart() {
+        this._finishTransaction();
+        this.reset();
+    }
+
+    /** what is being dragged, for the lifecycle events */
+    _snapshot() {
+        return {
+            node: this.node,
+            slot: this.slot,
+            output: this.output,
+            input: this.input,
+            type: this.type,
+            moving: this.isMoving,
+            reroute: this.reroute,
+        };
+    }
+
+    _started() {
+        this._emit("link-drag-start", this._snapshot());
+    }
+
+    _emit(type, detail) {
+        if (typeof this.onEvent !== "function") return;
+        try {
+            this.onEvent(type, detail);
+        } catch (error) {
+            console.error?.(`LinkConnector ${type} listener failed`, error);
+        }
     }
 
     _attachOutput(node, slot) {
@@ -4147,7 +4370,23 @@ class LinkConnector {
     _keepRoute(link, matches) {
         if (!link || typeof link !== "object" || !this.detached) return;
         const original = this.detached.find(matches);
-        if (original?.parentId !== undefined && link.parentId === undefined) link.parentId = original.parentId;
+        if (original?.parentId !== undefined && link.parentId === undefined) LinkConnector._route(this._graph ?? this.node?.graph, link, original.parentId);
+    }
+
+    /** a link started from a reroute is routed through it */
+    _routeThroughReroute(graph, link) {
+        if (!link || typeof link !== "object" || !this.reroute || this._routeId === undefined) return;
+        if (!graph?.reroutes?.has(this._routeId)) return;
+        LinkConnector._route(graph, link, this._routeId);
+        graph.onGraphChanged?.({
+            action: "linkRoute"
+        });
+    }
+
+    /** sets a link's route; through the graph when it can (floating links are re-attached) */
+    static _route(graph, link, parentId) {
+        if (typeof graph?.routeLink === "function") graph.routeLink(link, parentId);
+        else link.parentId = parentId;
     }
 
     _finishTransaction() {
@@ -4375,7 +4614,9 @@ class LGraph {
         // links
         this.links = {}; // container with all the links
         this.reroutes = new Map(); // id -> Reroute (points links are routed through)
-        this._floating_reroutes = [];
+        /** floating links: reroute chains left attached to one end (ComfyUI 0.4 floatingLinks); id -> link */
+        this.floating_links = new Map();
+        this._floating_links_field = false; // the loaded document had a floatingLinks field
 
         // iterations
         this.iteration = 0;
@@ -5377,6 +5618,7 @@ class LGraph {
                 this._nodes.splice(pos, 1);
             }
             delete this._nodes_by_id[node.id];
+            cleanup(() => this._removeFloatingLinksOf(node.id));
             this._notifyReadinessChange();
 
             this.updateExecutionOrder();
@@ -6050,13 +6292,24 @@ class LGraph {
     convertToSubgraph(nodes) {
         const selected = (nodes ?? []).filter((node) => node?.graph === this);
         if (!selected.length) return null;
-        return this.transact("convertToSubgraph", () => {
+        return this._withoutFloatingLinks(() => this.transact("convertToSubgraph", () => {
             const subgraphNode = LiteGraph.createNode("graph/subgraph");
             this.add(subgraphNode);
             return subgraphNode.buildFromNodes(selected);
         }, {
             rollback: true
-        });
+        }));
+    }
+
+    /** runs fn with floating links off: operations that rebuild links leave no floating chains */
+    _withoutFloatingLinks(fn) {
+        const was = this._suspend_floating_links;
+        this._suspend_floating_links = true;
+        try {
+            return fn();
+        } finally {
+            this._suspend_floating_links = was;
+        }
     }
 
     /**
@@ -6065,9 +6318,9 @@ class LGraph {
      */
     unpackSubgraph(subgraphNode) {
         if (subgraphNode?.graph !== this || typeof subgraphNode.unpack !== "function") return [];
-        return this.transact("unpackSubgraph", () => subgraphNode.unpack(), {
+        return this._withoutFloatingLinks(() => this.transact("unpackSubgraph", () => subgraphNode.unpack(), {
             rollback: true
-        });
+        }));
     }
 
     /**
@@ -6229,6 +6482,11 @@ class LGraph {
                 else other.parentId = reroute.parentId;
             }
         }
+        for (const [floatingId, floating] of this.floating_links) {
+            if (floating.parentId !== id) continue;
+            if (reroute.parentId === undefined) this.floating_links.delete(floatingId); // nothing left to keep
+            else floating.parentId = reroute.parentId;
+        }
         this.reroutes.delete(id);
         this.onGraphChanged({
             action: "rerouteRemove"
@@ -6238,6 +6496,97 @@ class LGraph {
         });
         this.setDirtyCanvas(true, true);
         return true;
+    }
+
+    /**
+     * Routes a link through a reroute chain (`parentId`, the reroute nearest the target). Floating
+     * links whose reroutes the link now uses are dropped: the chain is attached again.
+     * @param {LLink} link
+     * @param {number|undefined} parentId
+     */
+    routeLink(link, parentId) {
+        if (!link) return;
+        if (parentId === undefined || parentId === null || !this.reroutes.has(parentId)) delete link.parentId;
+        else link.parentId = parentId;
+        if (link.parentId === undefined || !this.floating_links.size) return;
+        const chain = new Set(this.getRerouteChain(link).map((reroute) => reroute.id));
+        for (const [id, floating] of this.floating_links) {
+            if (chain.has(floating.parentId)) this.floating_links.delete(id);
+        }
+    }
+
+    /**
+     * Keeps the reroutes of a removed link as a floating link attached to the end that remains
+     * (LiteGraph.keep_floating_reroutes). Nothing is kept when another link still uses the reroutes.
+     * @param {LLink} link - already removed from graph.links
+     * @param {"origin"|"target"} keep - the end that stays
+     * @returns {object|null} the floating link
+     */
+    _keepFloatingLink(link, keep) {
+        if (!LiteGraph.keep_floating_reroutes || this._suspend_floating_links || link?.parentId === undefined || !this.reroutes.has(link.parentId)) return null;
+        if (this.getRerouteLinkIds().has(link.parentId)) return null; // still routed by another link
+        const node = this.getNodeById(keep === "origin" ? link.origin_id : link.target_id);
+        if (!node) return null;
+        const id = Math.max(0, ...this.floating_links.keys()) + 1;
+        const floating = keep === "origin" ?
+            {
+                id,
+                origin_id: link.origin_id,
+                origin_slot: link.origin_slot,
+                target_id: -1,
+                target_slot: -1,
+                type: link.type,
+                parentId: link.parentId
+            } :
+            {
+                id,
+                origin_id: -1,
+                origin_slot: -1,
+                target_id: link.target_id,
+                target_slot: link.target_slot,
+                type: link.type,
+                parentId: link.parentId
+            };
+        this.floating_links.set(id, floating);
+        return floating;
+    }
+
+    /** drops the floating links attached to a node */
+    _removeFloatingLinksOf(nodeId) {
+        for (const [id, floating] of this.floating_links) {
+            if (floating.origin_id === nodeId || floating.target_id === nodeId) this.floating_links.delete(id);
+        }
+    }
+
+    /**
+     * The end a floating link is attached to.
+     * @returns {{node: LGraphNode, slot: number, isOutput: boolean}|null}
+     */
+    getFloatingLinkEnd(floating) {
+        const isOutput = floating.origin_id !== -1;
+        const node = this.getNodeById(isOutput ? floating.origin_id : floating.target_id);
+        return node ? {
+            node,
+            slot: isOutput ? floating.origin_slot : floating.target_slot,
+            isOutput
+        } : null;
+    }
+
+    /** floating links whose reroute chain passes through a reroute */
+    getFloatingLinksThrough(rerouteId) {
+        return [...this.floating_links.values()].filter((floating) =>
+            this.getRerouteChain(floating).some((reroute) => reroute.id === rerouteId));
+    }
+
+    /** reroute id -> slot type ("output"/"input") for reroutes only floating links use */
+    _floatingRerouteSlots(used = this.getRerouteLinkIds()) {
+        const slots = new Map();
+        for (const floating of this.floating_links.values()) {
+            for (const reroute of this.getRerouteChain(floating)) {
+                if (!used.has(reroute.id) && !slots.has(reroute.id)) slots.set(reroute.id, floating.origin_id !== -1 ? "output" : "input");
+            }
+        }
+        return slots;
     }
 
     /** the reroute at a graph-space position, if any */
@@ -6283,16 +6632,27 @@ class LGraph {
     /** loads reroutes from 0.4 (extra.reroutes + extra.linkExtensions) or version 1 (top-level) documents */
     _configureReroutes(data) {
         this.reroutes = new Map();
-        this._floating_reroutes = []; // not modelled (they belong to floatingLinks); written back verbatim
+        this.floating_links = new Map();
         const extra = data.extra && typeof data.extra === "object" ? data.extra : {};
         const list = Array.isArray(data.reroutes) ? data.reroutes : Array.isArray(extra.reroutes) ? extra.reroutes : [];
         for (const item of list) {
             if (!item || typeof item.id !== "number") continue;
-            if (item.floating) {
-                this._floating_reroutes.push(LiteGraph.cloneObject(item));
-                continue;
-            }
             this.reroutes.set(item.id, new Reroute(item.id, item.pos ?? [0, 0], item.parentId));
+        }
+        // floating links: kept when their reroute and the node they are attached to exist
+        this._floating_links_field = Array.isArray(data.floatingLinks);
+        for (const item of this._floating_links_field ? data.floatingLinks : []) {
+            if (!item || typeof item.id !== "number" || !this.reroutes.has(item.parentId)) continue;
+            const floating = {
+                id: item.id,
+                origin_id: item.origin_id ?? -1,
+                origin_slot: item.origin_slot ?? -1,
+                target_id: item.target_id ?? -1,
+                target_slot: item.target_slot ?? -1,
+                type: item.type,
+                parentId: item.parentId,
+            };
+            if (this.getFloatingLinkEnd(floating)) this.floating_links.set(floating.id, floating);
         }
         for (const ext of Array.isArray(extra.linkExtensions) ? extra.linkExtensions : []) {
             const link = ext && this.links[ext.id];
@@ -6322,8 +6682,7 @@ class LGraph {
             delete this.extra.reroutes;
             delete this.extra.linkExtensions;
         }
-        this.state.lastRerouteId = LGraph._maxNumericId(this.state.lastRerouteId,
-            [...this.reroutes.keys(), ...this._floating_reroutes.map((item) => item.id)]);
+        this.state.lastRerouteId = LGraph._maxNumericId(this.state.lastRerouteId, [...this.reroutes.keys()]);
     }
 
     /**
@@ -6383,6 +6742,11 @@ class LGraph {
                 ...this.state
             }, // all id counters (nodes, links, groups, reroutes)
         });
+        if (this.floating_links?.size || this._floating_links_field) {
+            data.floatingLinks = [...this.floating_links.values()].map((floating) => ({
+                ...floating
+            }));
+        }
         this.processCallbackHandlers("onSerialize", {
             def_cb: this.onSerialize
         }, data);
@@ -6392,17 +6756,25 @@ class LGraph {
         return data;
     }
 
-    /** extra plus reroutes in the ComfyUI-compatible 0.4 form (only reroutes that links use) */
+    /**
+     * extra plus reroutes in the ComfyUI-compatible 0.4 form: reroutes that links use, and floating
+     * ones (only floating links use them) with `floating: {slotType}`
+     */
     _serializeExtra() {
         const used = this.getRerouteLinkIds();
-        const floating = this._floating_reroutes ?? [];
-        if (!used.size && !floating.length) return this.extra;
+        const floating = this._floatingRerouteSlots(used);
+        if (!used.size && !floating.size) return this.extra;
         const extra = {
             ...this.extra
         };
         extra.reroutes = [
             ...[...used.keys()].map((id) => this.reroutes.get(id).serialize(used.get(id))),
-            ...LiteGraph.cloneObject(floating),
+            ...[...floating].map(([id, slotType]) => ({
+                ...this.reroutes.get(id).serialize([]),
+                floating: {
+                    slotType
+                }
+            })),
         ].sort((a, b) => a.id - b.id);
         extra.linkExtensions = Object.values(this.links)
             .filter((link) => link && link.parentId !== undefined && used.has(link.parentId))
@@ -6467,7 +6839,7 @@ class LGraph {
         // copy all stored fields
         this._foreign_fields = {};
         for (let i in data) {
-            if (["nodes", "groups", "id", "revision", "state", "reroutes"].includes(i)) continue; // handled explicitly
+            if (["nodes", "groups", "id", "revision", "state", "reroutes", "floatingLinks"].includes(i)) continue; // handled explicitly
             if (!LGraph.serialized_fields.includes(i) && !i.startsWith("_") && !(i in this)) {
                 // not part of this runtime's model (e.g. another editor's document state): keep it for serialize
                 this._foreign_fields[i] = LiteGraph.cloneObject(data[i]);
@@ -7070,7 +7442,7 @@ class LGraphCanvas {
         this.node_over = null;
         this.node_capturing_input = null;
         this.linkConnector?.cancel(); // restores links being moved
-        this.linkConnector = new LinkConnector(); // link-drag state; connecting_* are accessors over it
+        this.linkConnector = this._createLinkConnector(); // link-drag state; connecting_* are accessors over it
         this.clearSlotHighlights();
         this.highlighted_links = {};
 
@@ -7399,8 +7771,9 @@ class LGraphCanvas {
     }
 
     /**
-     * Typed canvas events: link-dropped-on-empty (cancelable: skip the default menu),
-     * subgraph-opened, subgraph-closed, selection-changed, disposed. See LGraphEventTarget.
+     * Typed canvas events: link-drag-start, link-drag-end (outcome: connected, rejected, dropped,
+     * cancelled), link-dropped-on-empty (cancelable: skip the default menu), subgraph-opened,
+     * subgraph-closed, selection-changed, disposed. See LGraphEventTarget.
      */
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
@@ -7411,36 +7784,46 @@ class LGraphCanvas {
         return this._events?.has(type) ? this._events.dispatch(type, detail, options) : null;
     }
 
+    /** a LinkConnector whose lifecycle events are canvas events */
+    _createLinkConnector() {
+        const connector = new LinkConnector();
+        connector.onEvent = (type, detail) => this._emit(type, {
+            ...detail,
+            canvas: this
+        });
+        return connector;
+    }
+
     // link-drag state, kept as fields for compatibility (see LinkConnector)
     get connecting_node() {
         return this.linkConnector?.node ?? null;
     }
     set connecting_node(value) {
-        (this.linkConnector ??= new LinkConnector()).node = value;
+        (this.linkConnector ??= this._createLinkConnector()).node = value;
     }
     get connecting_output() {
         return this.linkConnector?.output ?? null;
     }
     set connecting_output(value) {
-        (this.linkConnector ??= new LinkConnector()).output = value;
+        (this.linkConnector ??= this._createLinkConnector()).output = value;
     }
     get connecting_input() {
         return this.linkConnector?.input ?? null;
     }
     set connecting_input(value) {
-        (this.linkConnector ??= new LinkConnector()).input = value;
+        (this.linkConnector ??= this._createLinkConnector()).input = value;
     }
     get connecting_slot() {
         return this.linkConnector?.slot ?? -1;
     }
     set connecting_slot(value) {
-        (this.linkConnector ??= new LinkConnector()).slot = value;
+        (this.linkConnector ??= this._createLinkConnector()).slot = value;
     }
     get connecting_pos() {
         return this.linkConnector?.pos ?? null;
     }
     set connecting_pos(value) {
-        (this.linkConnector ??= new LinkConnector()).pos = value;
+        (this.linkConnector ??= this._createLinkConnector()).pos = value;
     }
     /** legacy multi-link move descriptor: {inputs: [{node, slot}]} or false */
     get connecting() {
@@ -7450,7 +7833,7 @@ class LGraphCanvas {
         } : false;
     }
     set connecting(value) {
-        (this.linkConnector ??= new LinkConnector()).movingInputs = value?.inputs ?? null;
+        (this.linkConnector ??= this._createLinkConnector()).movingInputs = value?.inputs ?? null;
     }
 
     /**
@@ -7841,8 +8224,7 @@ class LGraphCanvas {
                     skip_action = true;
                     if (!block_drag_node) {
                         if (this.allow_dragnodes) {
-                            this.graph.beforeChange();
-                            this.node_dragged = node;
+                            this._dragNodesGesture(node);
                         }
                         if (!this.selected_nodes[node.id]) {
                             this.processNodeSelected(node, e);
@@ -8004,6 +8386,9 @@ class LGraphCanvas {
                                 }
                             }
                         }
+
+                        // a link drag started on a slot is a pointer gesture
+                        if (this.linkConnector.isConnecting) this._linkDragGesture();
                     } // not resizing
                 }
 
@@ -8012,6 +8397,13 @@ class LGraphCanvas {
                     LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "check clicked on node", node);
                     var block_drag_node = false;
                     var pos = [e.canvasX - node.pos[0], e.canvasY - node.pos[1]];
+
+                    // title buttons: a click runs the button, the press does not drag the node
+                    const titleButton = !node.flags.collapsed && pos[1] < 0 ? this.getNodeTitleButtonAt(node, pos[0], pos[1]) : null;
+                    if (titleButton) {
+                        this.pointer.onClick = (ev) => this.clickNodeTitleButton(node, titleButton, ev);
+                        block_drag_node = true;
+                    }
 
                     // widgets: a whole widget gesture (click, or drag until pointer up) is one undo step
                     const widgetGraph = this.graph;
@@ -8075,12 +8467,14 @@ class LGraphCanvas {
                     }
 
                     if (!block_drag_node) {
+                        // a press on a selected node keeps the selection, so a drag moves all of it;
+                        // a click (no drag) then applies the usual selection change
+                        const keepSelection = this.allow_dragnodes && node.is_selected;
                         if (this.allow_dragnodes) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "started dragging", node);
-                            this.graph.beforeChange();
-                            this.node_dragged = node;
+                            this._dragNodesGesture(node, keepSelection ? e : null);
                         }
-                        this.processNodeSelected(node, e);
+                        if (!keepSelection) this.processNodeSelected(node, e);
                     } else {
                         /**
                          * Don't call the function if the block is already selected.
@@ -8102,16 +8496,24 @@ class LGraphCanvas {
                 if (reroute) {
                     if (is_double_click) {
                         this.graph.removeReroute(reroute.id);
+                    } else if (e.shiftKey && LinkConnector.rerouteEnd(reroute, this.graph)) {
+                        // shift: a click adds the reroute to the selection, a drag starts a new link from it
+                        this.pointer.onClick = () => this.selectItem(reroute, true);
+                        this.pointer.onDragStart = () => this._startLinkDrag(() => this.linkConnector.startFromReroute(reroute, this.graph));
                     } else {
-                        this.selectItem(reroute, e.shiftKey || e.ctrlKey);
+                        // a press on a selected reroute keeps the selection, so a drag moves all of it;
+                        // a click then applies the usual selection change
+                        const keepSelection = !!reroute.selected;
+                        if (!keepSelection) this.selectItem(reroute, e.shiftKey || e.ctrlKey);
                         this._dragRerouteGesture(reroute);
+                        if (keepSelection) this.pointer.onClick = () => this.selectItem(reroute, e.shiftKey || e.ctrlKey);
                     }
                     skip_action = true;
                 }
 
                 if (!skip_action) {
 
-                    // search for mouseDown on LINKS
+                    // search for mouseDown on LINKS: a click opens the link menu, a drag moves the link
                     if (!this.read_only) {
                         for (let i = 0; i < this.visible_links.length; ++i) {
                             var link = this.visible_links[i];
@@ -8126,12 +8528,15 @@ class LGraphCanvas {
                                 continue;
                             }
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on link", link);
-                            // link clicked
-                            this.showLinkMenu(link, e);
+                            this._linkCenterGesture(link, e);
                             this.over_link_center = null; // clear tooltip
+                            skip_action = true;
                             break;
                         }
                     }
+                }
+
+                if (!skip_action) {
 
                     // search for mouseDown on GROUPS
                     this.selected_group = this.graph.getGroupOnPos(e.canvasX, e.canvasY);
@@ -8142,21 +8547,26 @@ class LGraphCanvas {
                             this.dragging_rectangle = null;
                         }
 
-                        // clicking the title band selects the group (shift/ctrl adds to the selection)
-                        const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
-                        if (e.canvasY < this.selected_group.pos[1] + title_height) {
-                            this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
-                        }
-
-                        var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
-                        if (dist * this.ds.scale < this.options.groups_triangle_handler_size) {
-                            this.selected_group_resizing = true;
+                        const toggleRect = this.getGroupToggleRect(this.selected_group);
+                        if (toggleRect && LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, ...toggleRect)) {
+                            // the header toggle: a click mutes or unmutes the group's nodes
+                            const group = this.selected_group;
+                            this.selected_group = null;
+                            this.pointer.onClick = () => this.toggleGroupMuted(group);
+                            skip_action = true;
                         } else {
-                            this.selected_group.recomputeInsideNodes();
+                            // clicking the title band selects the group (shift/ctrl adds to the selection)
+                            const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+                            if (e.canvasY < this.selected_group.pos[1] + title_height) {
+                                this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
+                            }
+
+                            var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
+                            this._dragGroupGesture(this.selected_group, dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15));
                         }
                     }
 
-                    if (is_double_click && !this.read_only && this.allow_searchbox) {
+                    if (!skip_action && is_double_click && !this.read_only && this.allow_searchbox) {
                         LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "showing search box");
                         this.showSearchBox(e);
                         e.preventDefault();
@@ -8451,49 +8861,9 @@ class LGraphCanvas {
                     this.over_widget = widgetOver;
                 }
 
-                // if dragging a link
+                // if dragging a link: highlight the slot it would connect to
                 if (this.connecting_node) {
-                    let pos;
-                    if (this.connecting_output) {
-
-                        pos = this._highlight_input || [0, 0]; // to store the output of isOverNodeInput
-
-                        // on top of input
-                        if (!this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
-                            // check if I have a slot below de mouse
-                            let slot = this.isOverNodeInput(node, e.canvasX, e.canvasY, pos);
-                            if (slot != -1 && node.inputs[slot]) {
-                                let slot_type = node.inputs[slot].type;
-                                if (LiteGraph.isValidConnection(this.connecting_output.type, slot_type)) {
-                                    this._highlight_input = pos;
-                                    this._highlight_input_slot = node.inputs[slot]; // @TODO CHECK THIS
-                                }
-                            } else {
-                                this._highlight_input = null;
-                                this._highlight_input_slot = null; // @TODO CHECK THIS
-                            }
-                        }
-
-                    } else if (this.connecting_input) {
-
-                        pos = this._highlight_output || [0, 0]; // to store the output of isOverNodeOutput
-
-                        // on top of output
-                        if (!this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
-                            // check if I have a slot below de mouse
-                            let slot = this.isOverNodeOutput(node, e.canvasX, e.canvasY, pos);
-                            if (slot != -1 && node.outputs[slot]) {
-                                let slot_type = node.outputs[slot].type;
-                                if (LiteGraph.isValidConnection(this.connecting_input.type, slot_type)) {
-                                    this._highlight_output = pos;
-                                    this._highlight_output_slot = node.outputs[slot];
-                                }
-                            } else {
-                                this._highlight_output = null;
-                                this._highlight_output_slot = null;
-                            }
-                        }
-                    }
+                    this._updateLinkDragHighlight(node, e.canvasX, e.canvasY);
                 }
 
                 // Search for corner
@@ -8514,6 +8884,7 @@ class LGraphCanvas {
                     }
                 }
             } else { // not over a node
+                if (this.connecting_node && (this._highlight_input || this._highlight_output)) this.clearSlotHighlights();
 
                 // search for link connector
                 var over_link = null;
@@ -8765,68 +9136,8 @@ class LGraphCanvas {
                 }
                 this.dragging_rectangle = null;
             } else if (this.connecting_node) {
-                // dropping a dragged link (see LinkConnector)
-                this.dirty_canvas = true;
-                this.dirty_bgcanvas = true;
-
-                node = this.graph.getNodeOnPos(
-                    e.canvasX,
-                    e.canvasY,
-                    this.visible_nodes,
-                );
-
-                if (node) {
-                    // slot below the pointer, or -1 to pick the first compatible one
-                    const slot = this.connecting_output ?
-                        this.isOverNodeInput(node, e.canvasX, e.canvasY) :
-                        this.isOverNodeOutput(node, e.canvasX, e.canvasY);
-                    LiteGraph.log_debug("lgraphcanvas", "processMouseUp", "drop link on node", node, slot);
-                    this.linkConnector.dropOnNode(node, slot);
-                } else {
-                    const dropped = this.linkConnector.dropOnEmpty();
-                    const dropEvent = dropped && this._emit("link-dropped-on-empty", {
-                        ...dropped,
-                        canvasX: e.canvasX,
-                        canvasY: e.canvasY,
-                        event: e
-                    }, {
-                        cancelable: true
-                    });
-                    // add menu when releasing link in empty space (unless a listener handled it)
-                    if (dropped && !dropEvent?.defaultPrevented && LiteGraph.release_link_on_empty_shows_menu) {
-                        if (e.shiftKey && this.allow_searchbox) {
-                            if (dropped.output) {
-                                this.showSearchBox(e, {
-                                    node_from: dropped.node,
-                                    slot_from: dropped.output,
-                                    type_filter_in: dropped.output.type
-                                });
-                            } else if (dropped.input) {
-                                this.showSearchBox(e, {
-                                    node_to: dropped.node,
-                                    slot_from: dropped.input,
-                                    type_filter_out: dropped.input.type
-                                });
-                            }
-                        } else {
-                            if (dropped.output) {
-                                this.showConnectionMenu({
-                                    nodeFrom: dropped.node,
-                                    slotFrom: dropped.output,
-                                    e: e
-                                });
-                            } else if (dropped.input) {
-                                this.showConnectionMenu({
-                                    nodeTo: dropped.node,
-                                    slotTo: dropped.input,
-                                    e: e
-                                });
-                            }
-                        }
-                    }
-                }
-                this.linkConnector.reset();
-                this.clearSlotHighlights();
+                // dropping a dragged link that was not started as a pointer gesture
+                this._dropLink(e);
             } else if (this.resizing_node) { // not dragging connection
                 this.dirty_canvas = true;
                 this.dirty_bgcanvas = true;
@@ -8875,14 +9186,16 @@ class LGraphCanvas {
                     this.visible_nodes,
                 );
 
-                if (!node && e.click_time < 300 && !gesture.dragged) {
+                // a click on empty canvas clears the selection (not a click a gesture handler owned,
+                // such as one on a reroute or a link center)
+                if (!node && e.click_time < 300 && !gesture.dragged && !gesture.handled) {
                     this.deselectAllNodes();
                 }
 
                 this.dirty_canvas = true;
                 this.dragging_canvas = false;
 
-                if (this.node_over) {
+                if (this.node_over && !gesture.handled) {
                     // TAG callback node event entrypoint
                     this.node_over.processCallbackHandlers("onMouseUp", {
                         def_cb: this.node_over.onMouseUp
@@ -9871,32 +10184,316 @@ class LGraphCanvas {
         this.setDirty(true, true);
     }
 
-    /** Pointer gesture for dragging a reroute (handlers on this.pointer; one undo step per drag). */
+    /**
+     * What to offer for a link released on empty space.
+     * @param {"context-menu"|"search-box"|"none"} action - the search box (only with allow_searchbox)
+     *   lists node types that accept the link; the context menu offers search, add node and the defaults
+     * @param {{node, output?: object|null, input?: object|null}} dropped - from link-dropped-on-empty
+     * @param {Event} e - the pointer event, for the position
+     * @returns {boolean} true when something was shown
+     */
+    showLinkReleaseAction(action, dropped, e) {
+        if (!dropped?.node || (!dropped.output && !dropped.input)) return false;
+        if (action === "search-box") {
+            if (!this.allow_searchbox) return false;
+            if (dropped.output) this.showSearchBox(e, {
+                node_from: dropped.node,
+                slot_from: dropped.output,
+                type_filter_in: dropped.output.type
+            });
+            else this.showSearchBox(e, {
+                node_to: dropped.node,
+                slot_from: dropped.input,
+                type_filter_out: dropped.input.type
+            });
+            return true;
+        }
+        if (action === "context-menu") {
+            if (dropped.output) this.showConnectionMenu({
+                nodeFrom: dropped.node,
+                slotFrom: dropped.output,
+                e
+            });
+            else this.showConnectionMenu({
+                nodeTo: dropped.node,
+                slotTo: dropped.input,
+                e
+            });
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Starts a link drag from inside a pointer gesture: the gesture handlers are dropped so the
+     * link-drag handling of pointer move and up takes over.
+     * @param {() => *} start - starts the drag on this.linkConnector
+     */
+    _startLinkDrag(start) {
+        this.pointer.clearHandlers();
+        this.clearSlotHighlights();
+        if (start() === false) return false;
+        this._linkDragGesture();
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        return true;
+    }
+
+    /**
+     * Pointer gesture for the link being dragged on this.linkConnector: moving highlights the slot it
+     * would connect to, releasing drops it (see _dropLink). A press released without a drag cancels
+     * it, so moved links go back.
+     */
+    _linkDragGesture() {
+        const pointer = this.pointer;
+        pointer.onDrag = (e) => {
+            const node = this.graph?.getNodeOnPos(e.canvasX, e.canvasY, this.visible_nodes);
+            if (node) this._updateLinkDragHighlight(node, e.canvasX, e.canvasY);
+            else this.clearSlotHighlights();
+            this.dirty_canvas = true;
+        };
+        pointer.onDragEnd = (e) => this._dropLink(e);
+        pointer.finally = () => {
+            if (this.linkConnector?.isConnecting) this.linkConnector.cancel();
+            this.clearSlotHighlights();
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+    }
+
+    /**
+     * Drops the dragged link at the pointer: on the slot under it (or the one a drop on the node
+     * body picks), or on empty space (link-dropped-on-empty, then the release action).
+     */
+    _dropLink(e) {
+        this.dirty_canvas = true;
+        this.dirty_bgcanvas = true;
+        const node = this.graph.getNodeOnPos(e.canvasX, e.canvasY, this.visible_nodes);
+        if (node) {
+            // slot below the pointer, or -1 to pick the first compatible one
+            const slot = this.connecting_output ?
+                this.isOverNodeInput(node, e.canvasX, e.canvasY) :
+                this.isOverNodeOutput(node, e.canvasX, e.canvasY);
+            LiteGraph.log_debug("lgraphcanvas", "_dropLink", "drop link on node", node, slot);
+            this.linkConnector.dropOnNode(node, slot);
+        } else {
+            const dropped = this.linkConnector.dropOnEmpty();
+            const dropEvent = dropped && this._emit("link-dropped-on-empty", {
+                ...dropped,
+                canvasX: e.canvasX,
+                canvasY: e.canvasY,
+                event: e
+            }, {
+                cancelable: true
+            });
+            // add menu when releasing link in empty space (unless a listener handled it)
+            if (dropped && !dropEvent?.defaultPrevented && LiteGraph.release_link_on_empty_shows_menu) {
+                this.showLinkReleaseAction(e.shiftKey ? "search-box" : "context-menu", dropped, e);
+            }
+        }
+        this.linkConnector.reset();
+        this.clearSlotHighlights();
+    }
+
+    /**
+     * Pointer gesture for dragging nodes by one of them: every selected, unpinned node moves; the
+     * drag is one undo step. A click on the collapse box (left of the title) collapses the node.
+     * `node_dragged` is set for the whole gesture, for code that reads it.
+     */
+    _dragNodesGesture(node, deferredSelect = null) {
+        const graph = this.graph;
+        const pointer = this.pointer;
+        let transactionOpen = false;
+        let ended = false;
+        let last = [this.graph_mouse[0], this.graph_mouse[1]]; // from the press: no movement is lost to the drift tolerance
+        this.node_dragged = node;
+        pointer.onDragStart = () => {
+            graph.beforeChange();
+            graph.beginTransaction("nodeDrag");
+            transactionOpen = true;
+        };
+        pointer.onDrag = (e) => {
+            const off = [e.canvasX - last[0], e.canvasY - last[1]];
+            last = [e.canvasX, e.canvasY];
+            if (this.live_mode) return;
+            for (const n of Object.values(this.selected_nodes)) {
+                if (n.flags?.pinned) continue; // pinned nodes keep their position
+                n.pos[0] += off[0];
+                n.pos[1] += off[1];
+                if (!n.is_selected) this.processNodeSelected(n, e);
+                n.processCallbackHandlers("onDrag", {
+                    def_cb: n.onDrag
+                }, off);
+            }
+            for (const reroute of this._movingReroutes()) reroute.move(off[0], off[1]); // selected reroutes come along
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        pointer.onClick = (e) => {
+            if (LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT)) {
+                node.collapse();
+                this.setDirty(true, true);
+            }
+        };
+        pointer.onDragEnd = () => {
+            for (const n of Object.values(this.selected_nodes)) {
+                if (n.flags?.pinned) continue;
+                n.pos[0] = Math.round(n.pos[0]);
+                n.pos[1] = Math.round(n.pos[1]);
+                if (graph.config.align_to_grid || this.align_to_grid) n.alignToGrid();
+            }
+            for (const reroute of this._movingReroutes()) {
+                reroute.pos[0] = Math.round(reroute.pos[0]);
+                reroute.pos[1] = Math.round(reroute.pos[1]);
+            }
+            // TAG callback graphrenderer event entrypoint
+            this.processCallbackHandlers("onNodeMoved", {
+                def_cb: this.onNodeMoved
+            }, node, this.selected_nodes);
+            for (const n of Object.values(this.selected_nodes)) {
+                n.processCallbackHandlers("onMoved", {
+                    def_cb: n.onMoved
+                }, node, this.selected_nodes);
+            }
+            graph.onGraphChanged({
+                action: "nodeDrag",
+                doSave: true
+            });
+            graph.afterChange(node);
+            ended = true;
+        };
+        pointer.finally = (e) => {
+            if (deferredSelect && e && !transactionOpen && graph === this.graph) this.processNodeSelected(node, deferredSelect);
+            if (transactionOpen && !ended) graph.afterChange(node); // cancelled: the hooks stay paired
+            if (transactionOpen && graph.isInTransaction) graph.commitTransaction();
+            if (this.node_dragged === node) this.node_dragged = null;
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+    }
+
+    /**
+     * Pointer gesture for moving a group (with the nodes and groups inside it; Ctrl moves the group
+     * alone) or resizing it from its corner handle. One undo step per drag.
+     */
+    _dragGroupGesture(group, resizing) {
+        const graph = this.graph;
+        const pointer = this.pointer;
+        let transactionOpen = false;
+        let last = [this.graph_mouse[0], this.graph_mouse[1]];
+        this.selected_group = group;
+        this.selected_group_resizing = resizing;
+        if (!resizing) group.recomputeInsideNodes();
+        pointer.onDragStart = () => {
+            graph.beginTransaction(resizing ? "groupResize" : "groupMove");
+            transactionOpen = true;
+        };
+        pointer.onDrag = (e) => {
+            if (resizing) {
+                group.size = [e.canvasX - group.pos[0], e.canvasY - group.pos[1]];
+            } else {
+                const dx = e.canvasX - last[0];
+                const dy = e.canvasY - last[1];
+                group.move(dx, dy, e.ctrlKey);
+                if (dx || dy) this.processCallbackHandlers("onGroupMoving", {
+                    def_cb: this.onGroupMoving
+                }, group, dx, dy);
+            }
+            last = [e.canvasX, e.canvasY];
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        pointer.onDragEnd = (e) => {
+            group.move(Math.round(group.pos[0]) - group.pos[0], Math.round(group.pos[1]) - group.pos[1], e?.ctrlKey);
+            group.pos[0] = Math.round(group.pos[0]);
+            group.pos[1] = Math.round(group.pos[1]);
+            group.recomputeInsideNodes();
+            if (resizing) {
+                this.processCallbackHandlers("onGroupResized", {
+                    def_cb: this.onGroupResized
+                }, group);
+                graph.onGraphChanged({
+                    action: "groupResize",
+                    doSave: true
+                });
+            } else {
+                this.processCallbackHandlers("onGroupMoved", {
+                    def_cb: this.onGroupMoved
+                }, group);
+                graph.onGraphChanged({
+                    action: "groupMove",
+                    doSave: true
+                });
+            }
+            graph.afterChange();
+        };
+        pointer.finally = () => {
+            if (transactionOpen && graph.isInTransaction) graph.commitTransaction();
+            if (this.selected_group === group) this.selected_group = null;
+            this.selected_group_resizing = false;
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+    }
+
+    /** Pointer gesture on a link's center marker: a click opens the link menu, a drag moves the link's target end. */
+    _linkCenterGesture(link, downEvent) {
+        this.pointer.onClick = () => this.showLinkMenu(link, downEvent);
+        this.pointer.onDragStart = () => this._startLinkDrag(() => {
+            const target = this.graph.getNodeById(link.target_id);
+            return !!target && this.linkConnector.moveInputLink(target, link.target_slot);
+        });
+    }
+
+    /** the reroutes a drag moves: the selected ones, plus `extra` */
+    _movingReroutes(extra = null) {
+        const reroutes = new Set();
+        for (const item of this._selected_items ?? []) {
+            if (this.graph?.reroutes?.get?.(item.id) === item) reroutes.add(item);
+        }
+        if (extra) reroutes.add(extra);
+        return reroutes;
+    }
+
+    /**
+     * Pointer gesture for dragging a reroute, with the other selected reroutes and nodes (handlers
+     * on this.pointer; one undo step per drag).
+     */
     _dragRerouteGesture(reroute) {
         const graph = this.graph;
         const pointer = this.pointer;
         let transactionOpen = false;
-        let last = null;
+        let last = [this.graph_mouse[0], this.graph_mouse[1]]; // from the press: no movement is lost to the drift tolerance
         this.dragging_reroute = reroute;
-        pointer.onDragStart = (e) => {
+        pointer.onDragStart = () => {
             graph.beginTransaction("rerouteMove");
             transactionOpen = true;
-            last = [e.canvasX, e.canvasY];
         };
         pointer.onDrag = (e) => {
             if (!last) return;
-            reroute.move(e.canvasX - last[0], e.canvasY - last[1]);
+            const dx = e.canvasX - last[0];
+            const dy = e.canvasY - last[1];
+            for (const item of this._movingReroutes(reroute)) item.move(dx, dy);
+            for (const node of Object.values(this.selected_nodes)) {
+                if (node.flags?.pinned) continue;
+                node.pos[0] += dx;
+                node.pos[1] += dy;
+            }
             last = [e.canvasX, e.canvasY];
             this.dirty_canvas = true;
             this.dirty_bgcanvas = true;
         };
         pointer.onDragEnd = () => {
-            reroute.pos[0] = Math.round(reroute.pos[0]);
-            reroute.pos[1] = Math.round(reroute.pos[1]);
-            if (graph.config.align_to_grid || this.align_to_grid) {
-                const grid = LiteGraph.CANVAS_GRID_SIZE;
-                reroute.pos[0] = grid * Math.round(reroute.pos[0] / grid);
-                reroute.pos[1] = grid * Math.round(reroute.pos[1] / grid);
+            const grid = graph.config.align_to_grid || this.align_to_grid ? LiteGraph.CANVAS_GRID_SIZE : 0;
+            for (const item of this._movingReroutes(reroute)) {
+                item.pos[0] = grid ? grid * Math.round(item.pos[0] / grid) : Math.round(item.pos[0]);
+                item.pos[1] = grid ? grid * Math.round(item.pos[1] / grid) : Math.round(item.pos[1]);
+            }
+            for (const node of Object.values(this.selected_nodes)) {
+                if (node.flags?.pinned) continue;
+                node.pos[0] = Math.round(node.pos[0]);
+                node.pos[1] = Math.round(node.pos[1]);
+                if (grid) node.alignToGrid();
             }
             graph.onGraphChanged({
                 action: "rerouteMove"
@@ -11755,6 +12352,9 @@ class LGraphCanvas {
                 ctx.fill();
             }
 
+            // badges and title buttons (right-aligned)
+            if (!node.flags.collapsed && !low_quality) this.drawNodeTitleDecorations(node, ctx, title_height);
+
             // custom title render
             node.processCallbackHandlers("onDrawTitle", {
                 def_cb: node.onDrawTitle
@@ -11978,6 +12578,7 @@ class LGraphCanvas {
                 }
             }
         }
+        this.drawFloatingLinks(ctx);
         this.drawReroutes(ctx);
         ctx.globalAlpha = 1;
     }
@@ -12016,11 +12617,11 @@ class LGraphCanvas {
     drawReroutes(ctx) {
         if (!this.graph?.reroutes?.size) return;
         const used = this.graph.getRerouteLinkIds();
+        const floating = this.graph._floatingRerouteSlots?.(used) ?? new Map();
         ctx.save();
-        for (const [id, linkIds] of used) {
-            const reroute = this.graph.reroutes.get(id);
-            const link = this.graph.links[linkIds[0]];
-            ctx.fillStyle = link?.color || LGraphCanvas.link_type_colors[link?.type] || this.default_link_color;
+        const draw = (reroute, color, alpha) => {
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
             ctx.beginPath();
             const reroute_active = this.dragging_reroute === reroute || reroute.selected;
             ctx.arc(reroute.pos[0], reroute.pos[1], reroute_active ? 7 : 5, 0, Math.PI * 2);
@@ -12028,6 +12629,33 @@ class LGraphCanvas {
             ctx.lineWidth = 1.5;
             ctx.strokeStyle = reroute_active ? "#FFF" : "rgba(0,0,0,0.6)";
             ctx.stroke();
+        };
+        for (const [id, linkIds] of used) {
+            const link = this.graph.links[linkIds[0]];
+            draw(this.graph.reroutes.get(id), link?.color || LGraphCanvas.link_type_colors[link?.type] || this.default_link_color, 1);
+        }
+        for (const id of floating.keys()) draw(this.graph.reroutes.get(id), this.default_link_color, 0.6); // floating: dimmed
+        ctx.restore();
+    }
+
+    /**
+     * Draws floating links: a reroute chain attached to one end only, dashed and dimmed, from the
+     * slot it is attached to through its reroutes.
+     */
+    drawFloatingLinks(ctx) {
+        const graph = this.graph;
+        if (!graph?.floating_links?.size) return;
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.setLineDash?.([6, 4]);
+        for (const floating of graph.floating_links.values()) {
+            const end = graph.getFloatingLinkEnd(floating);
+            const chain = graph.getRerouteChain(floating).map((reroute) => reroute.pos);
+            if (!end || !chain.length) continue;
+            const slotPos = end.node.getConnectionPos(!end.isOutput, end.slot);
+            const points = end.isOutput ? [slotPos, ...chain] : [...chain, slotPos];
+            const color = LGraphCanvas.link_type_colors[floating.type] || this.default_link_color;
+            this.renderLinkPath(ctx, points, null, true, 0, color, LiteGraph.RIGHT, LiteGraph.LEFT);
         }
         ctx.restore();
     }
@@ -12387,6 +13015,172 @@ class LGraphCanvas {
         return lo ? text.slice(0, lo) + "…" : "";
     }
 
+    /**
+     * While a link is dragged over `node`: highlights the slot under the pointer when it accepts the
+     * link, else (over the node body, with LiteGraph.snap_link_to_slot) the slot a drop would pick.
+     */
+    _updateLinkDragHighlight(node, x, y) {
+        const fromOutput = !!this.connecting_output;
+        const dragged = this.connecting_output || this.connecting_input;
+        if (!dragged) return;
+        const slots = fromOutput ? node.inputs : node.outputs;
+        let pos = [0, 0];
+        let slot = -1;
+        if (!this.isOverNodeBox(node, x, y)) {
+            slot = fromOutput ? this.isOverNodeInput(node, x, y, pos) : this.isOverNodeOutput(node, x, y, pos);
+        }
+        let valid = slot !== -1 && !!slots?.[slot] &&
+            LiteGraph.isValidConnection(dragged.type, slots[slot].type);
+        if (!valid && slot === -1 && LiteGraph.snap_link_to_slot && node !== this.connecting_node) {
+            slot = this.linkConnector.findTargetSlot(node);
+            if (slot !== -1 && slots?.[slot]) {
+                pos = node.getConnectionPos(fromOutput, slot);
+                valid = true;
+            }
+        }
+        this.clearSlotHighlights();
+        if (!valid) return;
+        if (fromOutput) {
+            this._highlight_input = pos;
+            this._highlight_input_slot = slots[slot];
+        } else {
+            this._highlight_output = pos;
+            this._highlight_output_slot = slots[slot];
+        }
+    }
+
+    /**
+     * Layout of a node's badges and title buttons, in node space: from the right end of the title
+     * bar (left of the subgraph button), buttons first, then the badges that fit without covering
+     * the title text.
+     * @param {LGraphNode} node
+     * @param {CanvasRenderingContext2D} [ctx] - measures text; without it widths are estimated
+     * @returns {{buttons: Array<{button: object, rect: number[]}>, badges: Array<{badge: object, rect: number[]}>}}
+     */
+    getNodeTitleDecorations(node, ctx = null) {
+        const title_height = node.constructor.title_height ?? LiteGraph.NODE_TITLE_HEIGHT;
+        const fontSize = Math.max(8, Math.round(title_height * 0.45));
+        const font = `${fontSize}px Arial`;
+        const measure = (text) => {
+            if (ctx?.measureText) {
+                const previous = ctx.font;
+                ctx.font = font;
+                const width = ctx.measureText(text)?.width;
+                ctx.font = previous;
+                if (typeof width === "number" && width > 0) return width;
+            }
+            return String(text).length * fontSize * 0.6;
+        };
+        let right = node.size[0] - 4 - (node.subgraph && !node.skip_subgraph_button ? title_height : 0);
+        const h = title_height - 8;
+        const y = -title_height + 4;
+        const place = (text) => {
+            const w = Math.ceil(measure(String(text))) + 10;
+            right -= w;
+            const rect = [right, y, w, h];
+            right -= 4;
+            return rect;
+        };
+        const buttons = (node.title_buttons ?? []).map((button) => ({
+            button,
+            rect: place(button.text ?? button.name)
+        }));
+        // badges only where they do not cover the title text
+        let titleEnd = title_height;
+        const title = String(node.getTitle?.() ?? node.title ?? "");
+        if (title) {
+            let width = 0;
+            if (ctx?.measureText) {
+                const previous = ctx.font;
+                ctx.font = this.title_text_font;
+                width = ctx.measureText(title)?.width ?? 0;
+                ctx.font = previous;
+            }
+            titleEnd += (typeof width === "number" && width > 0 ? width : title.length * LiteGraph.NODE_TEXT_SIZE * 0.6) + 6;
+        }
+        const badges = [];
+        for (const badge of LiteGraph.nodeBadges?.collect(node) ?? []) {
+            const rect = place(badge.text);
+            if (rect[0] < titleEnd) break;
+            badges.push({
+                badge,
+                rect
+            });
+        }
+        return {
+            buttons,
+            badges,
+            font
+        };
+    }
+
+    /** Draws a node's badges and title buttons (see getNodeTitleDecorations). */
+    drawNodeTitleDecorations(node, ctx, title_height) {
+        const layout = this.getNodeTitleDecorations(node, ctx);
+        node._title_decorations = layout; // used for hit testing until the next draw
+        if (!layout.buttons.length && !layout.badges.length) return;
+        ctx.save();
+        ctx.font = layout.font;
+        ctx.textAlign = "center";
+        const mouse = [this.graph_mouse[0] - node.pos[0], this.graph_mouse[1] - node.pos[1]];
+        const box = (rect, fill) => {
+            ctx.fillStyle = fill;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(rect[0], rect[1], rect[2], rect[3], [4]);
+            else ctx.rect(rect[0], rect[1], rect[2], rect[3]);
+            ctx.fill();
+        };
+        const label = (text, rect, color) => {
+            ctx.fillStyle = color;
+            ctx.fillText(String(text), rect[0] + rect[2] / 2, rect[1] + rect[3] / 2 + title_height * 0.15);
+        };
+        for (const {
+                badge,
+                rect
+            }
+            of layout.badges) {
+            box(rect, badge.bgColor ?? "rgba(0,0,0,0.35)");
+            label(badge.text, rect, badge.fgColor ?? "#CCC");
+        }
+        for (const {
+                button,
+                rect
+            }
+            of layout.buttons) {
+            const over = LiteGraph.isInsideRectangle(mouse[0], mouse[1], rect[0], rect[1], rect[2], rect[3]);
+            box(rect, over ? "#777" : button.bgColor ?? "#555");
+            label(button.text ?? button.name, rect, button.fgColor ?? "#EEE");
+        }
+        ctx.restore();
+    }
+
+    /** the title button at a node-space position, or null */
+    getNodeTitleButtonAt(node, x, y) {
+        if (!node.title_buttons?.length) return null;
+        const layout = node._title_decorations ?? this.getNodeTitleDecorations(node);
+        for (const {
+                button,
+                rect
+            }
+            of layout.buttons) {
+            if (node.title_buttons.includes(button) && LiteGraph.isInsideRectangle(x, y, rect[0], rect[1], rect[2], rect[3])) return button;
+        }
+        return null;
+    }
+
+    /** runs a title button: its onClick, then the node's onTitleButtonClick */
+    clickNodeTitleButton(node, button, e) {
+        try {
+            button.onClick?.(node, this, e);
+        } catch (error) {
+            LiteGraph.log_error("lgraphcanvas", "title button failed", button.name, error);
+        }
+        node.processCallbackHandlers("onTitleButtonClick", {
+            def_cb: node.onTitleButtonClick
+        }, button, this, e);
+        this.setDirty(true, true);
+    }
+
     // the slot under the mouse while dragging a link; a new drag must not start with
     // the previous one's highlight
     clearSlotHighlights() {
@@ -12706,8 +13500,55 @@ class LGraphCanvas {
             } else {
                 ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
             }
+            this.drawGroupToggle(group, ctx);
         }
 
+        ctx.restore();
+    }
+
+    /**
+     * The header toggle of a group (right end of its title band), in graph space, or null when
+     * LiteGraph.Group.HeaderToggle is off.
+     * @returns {number[]|null} [x, y, w, h]
+     */
+    getGroupToggleRect(group) {
+        if (!LiteGraph.settings?.get?.("LiteGraph.Group.HeaderToggle")) return null;
+        const title_height = (group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+        const side = Math.max(10, title_height - 10);
+        if (group.size[0] < side * 3) return null;
+        return [group.pos[0] + group.size[0] - side - 5, group.pos[1] + (title_height - side) / 2, side, side];
+    }
+
+    /** true when the group has nodes and all of them are muted (mode NEVER) */
+    isGroupMuted(group) {
+        group.recomputeInsideNodes();
+        const nodes = group._nodes ?? [];
+        return nodes.length > 0 && nodes.every((node) => node.mode === LiteGraph.NEVER);
+    }
+
+    /** Mutes the group's nodes (mode NEVER), or sets them back to ALWAYS when all are muted; one undo step. */
+    toggleGroupMuted(group) {
+        const mode = this.isGroupMuted(group) ? LiteGraph.ALWAYS : LiteGraph.NEVER;
+        this.graph.transact("groupMode", () => group.setNodesMode(mode));
+        this.setDirty(true, true);
+        return mode;
+    }
+
+    /** Draws a group's header toggle: filled while its nodes run, hollow when they are all muted. */
+    drawGroupToggle(group, ctx) {
+        const rect = this.getGroupToggleRect(group);
+        if (!rect) return;
+        const muted = (group._nodes ?? []).length > 0 && group._nodes.every((node) => node.mode === LiteGraph.NEVER);
+        const [x, y, w, h] = rect;
+        ctx.save();
+        ctx.globalAlpha = this.editor_alpha;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h / 2, w / 2 - 1, 0, Math.PI * 2);
+        if (muted) ctx.stroke();
+        else ctx.fill();
         ctx.restore();
     }
 
@@ -18283,6 +19124,30 @@ class LGraphNode {
     }
 
     /**
+     * Adds a button to the title bar (right-aligned; not serialized). A click calls
+     * `button.onClick(node, canvas, e)`, then the node's `onTitleButtonClick(button, canvas, e)`.
+     * A button with the same name is replaced.
+     * @param {{name: string, text: string, tooltip?: string, fgColor?: string, bgColor?: string,
+     *   onClick?: (node: LGraphNode, canvas: object, e: Event) => void}} button
+     * @returns {object} the button
+     */
+    addTitleButton(button) {
+        if (!button || typeof button.name !== "string" || !button.name) throw new TypeError("a title button needs a name");
+        this.title_buttons = (this.title_buttons ?? []).filter((other) => other.name !== button.name);
+        this.title_buttons.push(button);
+        this.setDirtyCanvas?.(true, false);
+        return button;
+    }
+
+    /** @returns {boolean} true when a title button with that name was removed */
+    removeTitleButton(name) {
+        const before = this.title_buttons?.length ?? 0;
+        this.title_buttons = (this.title_buttons ?? []).filter((button) => button.name !== name);
+        this.setDirtyCanvas?.(true, false);
+        return this.title_buttons.length !== before;
+    }
+
+    /**
      * Add a new input or output slot to use in this node.
      * @param {string} name - Name of the slot.
      * @param {string} type - Type of the slot ("vec3", "number", etc). For a generic type, use 0.
@@ -19624,6 +20489,8 @@ class LGraphNode {
             }
             if (input?.link === id) input.link = null;
             delete graph.links[id];
+            // its reroutes stay, attached to the other end (the one not being disconnected)
+            graph._keepFloatingLink?.(link, this === target ? "origin" : "target");
             notifications.push({
                 link,
                 origin,
@@ -49399,6 +50266,91 @@ function registerExtension_renamer(graphcanvas) {
 registerExtension_renamer();
 
 /**
+ * Quick connect: what a link released on empty space offers, and connecting a selection in a chain.
+ *
+ * - Settings `LiteGraph.LinkRelease.Action` and `LiteGraph.LinkRelease.ShiftAction` (with Shift
+ *   held) choose "context-menu", "search-box" or "none". The defaults are the canvas defaults
+ *   (menu, Shift: search box). They apply where releasing a link on empty space shows something
+ *   at all (`LiteGraph.release_link_on_empty_shows_menu`).
+ * - Command `litegraph.link.chainSelection` connects the selected nodes left to right: each node
+ *   to the next through the first output that has a compatible free input. One undo step.
+ */
+
+const ACTIONS = ["context-menu", "search-box", "none"];
+
+/**
+ * Connects nodes in order: each node's first output with a compatible free input on the next node.
+ * @returns {number} links created
+ */
+function chainNodes(graph, nodes) {
+    let created = 0;
+    graph.transact("chainSelection", () => {
+        for (let i = 0; i + 1 < nodes.length; i++) {
+            const [from, to] = [nodes[i], nodes[i + 1]];
+            for (let slot = 0; slot < (from.outputs?.length ?? 0); slot++) {
+                const target = to.findSlotByType?.(true, from.outputs[slot].type ?? 0, false, true, true) ?? -1;
+                if (target >= 0 && from.connect(slot, to, target)) {
+                    created++;
+                    break;
+                }
+            }
+        }
+    });
+    return created;
+}
+
+const quickConnectExtension = {
+    name: "litegraph.quickconnect",
+    settings: [{
+            id: "LiteGraph.LinkRelease.Action",
+            name: "Link released on empty space",
+            type: "combo",
+            options: ACTIONS,
+            default: "context-menu"
+        },
+        {
+            id: "LiteGraph.LinkRelease.ShiftAction",
+            name: "Link released on empty space with Shift",
+            type: "combo",
+            options: ACTIONS,
+            default: "search-box"
+        },
+    ],
+    commands: [{
+        id: "litegraph.link.chainSelection",
+        label: "Connect selected nodes left to right",
+        category: "edit",
+        mutatesGraph: true,
+        when: (ctx) => !!ctx.canvas?.graph && ctx.selectedNodes?.length > 1,
+        run(ctx) {
+            const nodes = [...ctx.selectedNodes].sort((a, b) => a.pos[0] - b.pos[0] || a.pos[1] - b.pos[1]);
+            return chainNodes(ctx.canvas.graph, nodes) > 0;
+        },
+    }],
+    setup(ctx) {
+        ctx.onCanvas((canvas) => {
+            ctx.onEvent(canvas, "link-dropped-on-empty", (event) => {
+                if (!LiteGraph.release_link_on_empty_shows_menu) return;
+                const e = event.detail.event;
+                const id = e?.shiftKey ? "LiteGraph.LinkRelease.ShiftAction" : "LiteGraph.LinkRelease.Action";
+                const action = ctx.settings.get(id);
+                if (!ACTIONS.includes(action)) return; // unknown value: the canvas default applies
+                event.preventDefault();
+                canvas.showLinkReleaseAction(action, event.detail, e);
+            });
+        });
+    },
+};
+
+/** Registers the extension once (the full bundles and the editor load it). */
+function registerExtension_quickConnect(graphcanvas) {
+    if (!LiteGraph.extensions?.has(quickConnectExtension.name)) LiteGraph.registerExtension(quickConnectExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
+
+registerExtension_quickConnect();
+
+/**
  * Optional ComfyUI workflow interoperability.
  *
  * Loads ComfyUI workflow JSON (schema 0.4 and 1) into an LGraph so it can be inspected, edited
@@ -49684,8 +50636,11 @@ exports.valueToGLSL = valueToGLSL;
 exports.registerExtension_autoconnect = registerExtension_autoconnect;
 exports.registerExtension_keyhelper = registerExtension_keyhelper;
 exports.registerExtension_renamer = registerExtension_renamer;
+exports.chainNodes = chainNodes;
+exports.registerExtension_quickConnect = registerExtension_quickConnect;
 exports.LiteGraph = LiteGraph;
 exports.autoconnectExtension = autoconnectExtension;
 exports.keyboardHelperExtension = keyboardHelperExtension;
 exports.renamerExtension = renamerExtension;
+exports.quickConnectExtension = quickConnectExtension;
 exports.ComfyInterop = ComfyInterop;

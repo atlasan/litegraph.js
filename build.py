@@ -126,6 +126,7 @@ lib_extensions_files = [
     "./src/extensions/autoconnect.js",
     "./src/extensions/keyboard_helper.js",
     "./src/extensions/renamer.js",
+    "./src/extensions/quick_connect.js",
     "./src/extensions/comfy_interop.js",
 ]
 

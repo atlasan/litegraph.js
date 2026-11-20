@@ -1,6 +1,31 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 2b, links and pointer
+
+## Added
+
+* Link dragging:
+  * A link dropped on a node body connects to the highlighted compatible slot, a free one first (`LiteGraph.snap_link_to_slot`).
+  * The canvas events `link-drag-start` and `link-drag-end` (`outcome`: connected, rejected, dropped, cancelled).
+  * Shift-drag from a reroute starts a new link routed through it. Dragging a link's center marker moves the link.
+  * `canvas.showLinkReleaseAction(action, dropped, e)`.
+* The `quick_connect` extension: the settings `LiteGraph.LinkRelease.Action` / `ShiftAction`, and the command `litegraph.link.chainSelection`.
+* Node, group, reroute and link drags are `CanvasPointer` gestures, one undo step per drag. Selected reroutes move with the selection.
+* Floating reroutes:
+  * ComfyUI `floatingLinks` are modelled (`graph.floating_links`).
+  * Removing a routed link keeps its reroutes on the remaining end (`LiteGraph.keep_floating_reroutes`).
+  * `graph.routeLink(link, parentId)`.
+* Node badges (`LiteGraph.nodeBadges`, `node.badges`; id, source and lifecycle badges behind settings) and title buttons (`node.addTitleButton`, `onTitleButtonClick`).
+* Group header toggle: mutes or unmutes the group's nodes (`LiteGraph.Group.HeaderToggle`).
+
+## Fixes
+
+* Pressing an already selected node dropped the rest of the selection (or toggled the node off with Shift), so a multi-selection could not be dragged.
+* Clicking a reroute or a group title selected it, then cleared the selection on release.
+* Reroute drags lost the movement inside the click tolerance.
+* The group corner handle did not work when the canvas options omitted its size.
+
 # Unreleased (0.10.x): Wave 2a, authoring operations
 
 ## Added

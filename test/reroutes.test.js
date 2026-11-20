@@ -148,18 +148,80 @@ test('links draw through their reroutes; only the last segment carries the link'
     graph.clear();
 });
 
-test('floating reroutes (owned by floatingLinks) are preserved verbatim', () => {
+test('floating reroutes (owned by floatingLinks) load, are modelled and round-trip', () => {
     const { graph } = linked();
     const doc = json(graph.serialize());
     doc.extra = { reroutes: [{ id: 3, pos: [1, 2], linkIds: [], floating: { slotType: 'output' } }] };
     doc.floatingLinks = [{ id: 9, origin_id: 1, origin_slot: 0, target_id: -1, target_slot: -1, type: 'number', parentId: 3 }];
     const loaded = new LGraph();
     loaded.configure(doc);
-    expect(loaded.reroutes.size).toBe(0);
+    expect(loaded.reroutes.size).toBe(1);
+    expect(loaded.floating_links.get(9).origin_id).toBe(1);
     const out = json(loaded.serialize());
     expect(out.extra.reroutes).toEqual(doc.extra.reroutes);
     expect(out.floatingLinks).toEqual(doc.floatingLinks);
     expect(loaded.addReroute([0, 0]).id).toBe(4); // ids stay unique
     graph.clear();
     loaded.clear();
+});
+
+describe('floating reroutes', () => {
+    test('removing a routed link keeps its reroutes, attached to the end that remains', () => {
+        const { graph, a, b, ab } = linked();
+        const r1 = graph.addReroute([100, 10], ab);
+        const r2 = graph.addReroute([200, 10], ab);
+        b.disconnectInput(0); // the input side goes: the chain stays on the output
+        const [floating] = graph.floating_links.values();
+        expect(floating).toMatchObject({ origin_id: a.id, origin_slot: 0, target_id: -1, parentId: r2.id });
+        expect(graph.getFloatingLinkEnd(floating)).toEqual({ node: a, slot: 0, isOutput: true });
+        const out = json(graph.serialize());
+        expect(out.floatingLinks).toHaveLength(1);
+        expect(out.extra.reroutes.map((r) => [r.id, r.floating?.slotType])).toEqual([[r1.id, 'output'], [r2.id, 'output']]);
+        // a node removal drops the floating links attached to it
+        graph.remove(a);
+        expect(graph.floating_links.size).toBe(0);
+        graph.clear();
+    });
+
+    test('disconnecting the output keeps the chain on the input; shared reroutes make no floating link', () => {
+        const { graph, a, c, ab, ac } = linked();
+        const shared = graph.addReroute([100, 10], ab);
+        graph.routeLink(ac, shared.id);
+        a.disconnectOutput(0, c); // ac goes, but ab still uses the reroute
+        expect(graph.floating_links.size).toBe(0);
+        a.disconnectOutput(0); // now ab goes too, from the output side
+        const [floating] = graph.floating_links.values();
+        expect(floating).toMatchObject({ origin_id: -1, target_id: ab.target_id, target_slot: 0, parentId: shared.id });
+        graph.clear();
+    });
+
+    test('routing a link through the chain again attaches it; keep_floating_reroutes=false keeps nothing', () => {
+        const { graph, a, b, ab } = linked();
+        const r1 = graph.addReroute([100, 10], ab);
+        b.disconnectInput(0);
+        expect(graph.floating_links.size).toBe(1);
+        const link = a.connect(0, b, 0);
+        graph.routeLink(link, r1.id);
+        expect(graph.floating_links.size).toBe(0);
+        expect(json(graph.serialize()).extra.reroutes[0].floating).toBeUndefined();
+        const was = LiteGraph.keep_floating_reroutes;
+        LiteGraph.keep_floating_reroutes = false;
+        try {
+            b.disconnectInput(0);
+            expect(graph.floating_links.size).toBe(0);
+        } finally { LiteGraph.keep_floating_reroutes = was; }
+        graph.clear();
+    });
+
+    test('removing the last reroute of a floating link drops it; the middle one re-parents', () => {
+        const { graph, b, ab } = linked();
+        const r1 = graph.addReroute([100, 10], ab);
+        const r2 = graph.addReroute([200, 10], ab);
+        b.disconnectInput(0);
+        graph.removeReroute(r2.id);
+        expect([...graph.floating_links.values()][0].parentId).toBe(r1.id);
+        graph.removeReroute(r1.id);
+        expect(graph.floating_links.size).toBe(0);
+        graph.clear();
+    });
 });
