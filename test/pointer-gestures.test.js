@@ -349,6 +349,17 @@ describe('node badges and title buttons', () => {
         expect(src.serialize().title_buttons).toBeUndefined();
     });
 
+    test('badges that would cover the title are left out; buttons always fit', () => {
+        const { canvas, src } = setup();
+        src.title = 'A rather long title for a narrow node';
+        src.size = [120, 60];
+        src.badges = [{ text: 'v2' }];
+        src.addTitleButton({ name: 'x', text: 'x' });
+        const layout = canvas.getNodeTitleDecorations(src);
+        expect(layout.badges).toEqual([]);
+        expect(layout.buttons).toHaveLength(1);
+    });
+
     test('drawing renders badges and buttons in the title bar', () => {
         const { canvas, src } = setup();
         src.addTitleButton({ name: 'x', text: 'x' });
