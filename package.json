@@ -19,7 +19,8 @@
         "test:integration": "node --test tools/tests/*.test.mjs",
         "check:build": "node tools/check-build.mjs",
         "check": "npm run lint -- --quiet && npm run build && npm run check:types && npm test -- --runInBand && npm run test:integration && npm run check:build",
-        "check:types": "node tools/check-types.mjs"
+        "check:types": "node tools/check-types.mjs",
+        "check:fresh": "npm run build && git diff --exit-code --stat -- build build_node"
     },
     "repository": {
         "type": "git",

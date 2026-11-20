@@ -23,7 +23,9 @@ The package has three entries:
 - `/core`: classes only
 - `/node`: adds Node-only nodes
 
-Each entry works with ESM and CommonJS. For the browser, load `build/litegraph.js` and `css/litegraph.css`.
+Each entry works with ESM and CommonJS. In the browser, the bundles are ES modules: load `build/litegraph.js` with `<script type="module">`, plus `css/litegraph.css`. The library has no required dependencies; the network and system nodes use optional packages that npm installs by default.
+
+**Status:** `0.18.0-dev.1` is the first dev pre-release of this line, for testers. Start with [getting started](docs/getting-started.md).
 
 To run locally:
 
@@ -54,13 +56,19 @@ npm run graphrunner   # http://127.0.0.1:3000/
 - **Runner:**
   - `headless/graphrunner` runs each graph in its own worker.
   - It checks Origin and Host, refuses dangerous node types, and keeps scripts locked unless explicitly allowed.
-- **Interop:** ComfyUI workflow JSON import and export (`src/extensions/comfy_interop.js`).
-- **Quality gate:** `npm run check` runs lint, 12 builds, strict type consumers, about 430 tests, and a package check.
+- **Subgraphs:**
+  - Definitions in ComfyUI's document form, shared by linked instances.
+  - Interface editing, promoted widgets and path ids.
+  - `graph/function` calls a definition, and components register definitions as node types.
+- **Ecosystem:** packs with provenance, a missing-nodes report and replacement mappings; a shared execution-state protocol for the editor and the runner.
+- **Interop:** ComfyUI workflow JSON import and export, subgraphs included (`src/extensions/comfy_interop.js`).
+- **Quality gate:** `npm run check` runs lint, 12 builds, strict type consumers, over 500 Jest and integration tests, and a package check; CI also checks that the committed builds are fresh.
 
 ## Documentation
 
 | For | Read |
 |---|---|
+| Starting out | [Getting started](docs/getting-started.md), [architecture](docs/architecture.md) |
 | Using the library | [Guide](docs/guide.md), [callbacks](docs/callbacks.md), [API](docs/api/index.html) (generated) |
 | Developing it | [Development](docs/development.md), [AGENTS.md](AGENTS.md), [CHANGES.md](CHANGES.md) |
 | Where it is going | [Roadmap](agents/plans/roadmap.md), [ideas](agents/ideas/README.md) |
@@ -72,7 +80,7 @@ npm run graphrunner   # http://127.0.0.1:3000/
 |---|---|
 | **2022** | Experiments on top of upstream: autoconnect, type-filtered search, Ctrl+Z/Y history, ON_REQUEST mode with ancestor execution, logic and compare nodes |
 | **2024** | Class and ES6 refactor, thanks to @daniel-lewis-ab (now [litegraph-tsx](https://github.com/litegraph-tsx/)). Prioritised callback handlers, better debug logging, fuzzy search, keyboard-navigable menus, slot repair on `configure`, nested groups, first extensions |
-| **2026** | Stabilization and validation, then the roadmap waves: safety and the runner lockdown (Wave 0), and the platform layer (Wave 1). See the [roadmap](agents/plans/roadmap.md) |
+| **2026** | Stabilization and validation, then the roadmap waves: safety and the runner lockdown (Wave 0), the platform layer (1), authoring ports from the MIT standalone (2), the subgraph system (3), ecosystem and workspace (4), packaging and repository layout (5). See the [roadmap](agents/plans/roadmap.md) |
 
 ## Credits
 
