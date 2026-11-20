@@ -7724,6 +7724,76 @@ export class LGraphCanvas {
     }
 
     /**
+     * Leaves open subgraphs until `level` is shown (0: the root graph). Each one left commits its edits.
+     * @param {number} level
+     */
+    closeSubgraphTo(level) {
+        while ((this._graph_stack?.length ?? 0) > Math.max(0, level)) this.closeSubgraph();
+    }
+
+    /** breadcrumb segments, root first: {title, level} */
+    getBreadcrumb() {
+        const stack = this._graph_stack ?? [];
+        if (!stack.length) return [];
+        const graphs = [...stack, this.graph];
+        return graphs.map((graph, level) => ({
+            level,
+            title: level === 0 ? (graph.extra?.title || "Root") : (graph._subgraph_node?.getTitle?.() ?? "Subgraph"),
+        }));
+    }
+
+    /**
+     * Draws the path of open subgraphs at the top (outer levels can be clicked) and keeps their
+     * rectangles for getBreadcrumbAt.
+     */
+    drawBreadcrumb(ctx, color = "#AAA") {
+        const segments = this.getBreadcrumb();
+        this._breadcrumb_rects = [];
+        if (!segments.length) return;
+        const separator = "  \u203A  ";
+        ctx.font = "24px Arial";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        const width = (text) => ctx.measureText?.(text)?.width ?? text.length * 12;
+        const parts = segments.map((segment) => ({
+            ...segment,
+            w: width(segment.title)
+        }));
+        const sep = width(separator);
+        const total = parts.reduce((sum, part) => sum + part.w, 0) + sep * (parts.length - 1);
+        let x = Math.max(10, (this.cssWidth ?? 0) * 0.5 - total * 0.5);
+        const y = 40;
+        parts.forEach((part, index) => {
+            const current = index === parts.length - 1;
+            ctx.fillStyle = current ? color : "#888";
+            ctx.fillText(part.title, x, y);
+            if (!current) this._breadcrumb_rects.push({
+                level: part.level,
+                rect: [x - 4, y - 26, part.w + 8, 34]
+            });
+            x += part.w;
+            if (!current) {
+                ctx.fillStyle = "#666";
+                ctx.fillText(separator, x, y);
+                x += sep;
+            }
+        });
+    }
+
+    /** @returns {number|null} the level of the breadcrumb segment at a canvas-relative CSS position */
+    getBreadcrumbAt(x, y) {
+        if (!this._graph_stack?.length) return null;
+        for (const {
+                level,
+                rect
+            }
+            of this._breadcrumb_rects ?? []) {
+            if (x >= rect[0] && x <= rect[0] + rect[2] && y >= rect[1] && y <= rect[1] + rect[3]) return level;
+        }
+        return null;
+    }
+
+    /**
      * returns the visually active graph (in case there are more in the stack)
      * @method getCurrentGraph
      * @return {LGraph} the active graph
@@ -8250,6 +8320,13 @@ export class LGraphCanvas {
         }
 
         if (!is_inside) {
+            return;
+        }
+
+        // breadcrumb: a click on an outer level leaves the subgraphs down to it
+        const crumb = this.getBreadcrumbAt(this.last_mouse_position[0], this.last_mouse_position[1]);
+        if (crumb !== null && (e.isPrimary === undefined || e.isPrimary)) {
+            this.closeSubgraphTo(crumb);
             return;
         }
 
@@ -11520,18 +11597,7 @@ export class LGraphCanvas {
             ctx.lineWidth = 10;
             ctx.strokeRect(1, 1, this.cssWidth - 2, this.cssHeight - 2);
             ctx.lineWidth = 1;
-            ctx.font = "40px Arial";
-            ctx.textAlign = "center";
-            ctx.fillStyle = subgraph_node.bgcolor || "#AAA";
-            let title = "";
-            this._graph_stack.slice(1).forEach((item, index) => {
-                title += `${item._subgraph_node.getTitle()} ${index < this._graph_stack.length - 2 ? ">> " : ""}`;
-            });
-            ctx.fillText(
-                title + subgraph_node.getTitle(),
-                this.cssWidth * 0.5,
-                40,
-            );
+            this.drawBreadcrumb(ctx, subgraph_node.bgcolor || "#AAA");
             ctx.restore();
         }
 
@@ -14933,6 +14999,14 @@ export class LGraphCanvas {
             options.push(null);
         }
 
+        // inside a subgraph: the slot can become part of the interface
+        const host = that.graph?._subgraph_node;
+        const exposeLabel = isFrom ? "Add subgraph output" : "Add subgraph input";
+        if (host?.exposeSlot && nodeX.type !== "graph/input" && nodeX.type !== "graph/output") {
+            options.push(exposeLabel);
+            options.push(null);
+        }
+
         // get defaults nodes for this slottype
         const fromSlotType = slotX.type === LiteGraph.EVENT ? "_event_" : slotX.type;
         const slotTypesDefault = isFrom ? LiteGraph.slot_types_default_out : LiteGraph.slot_types_default_in;
@@ -14961,6 +15035,11 @@ export class LGraphCanvas {
                         LGraphCanvas.onMenuAdd(null, null, e, menu, (node) => {
                             isFrom ? opts.nodeFrom.connectByType(iSlotConn, node, fromSlotType) : opts.nodeTo.connectByTypeOutput(iSlotConn, node, fromSlotType);
                         });
+                    },
+                    [exposeLabel]: () => {
+                        const pos = opts.e && Number.isFinite(opts.e.canvasX) ? [opts.e.canvasX, opts.e.canvasY] : undefined;
+                        host.exposeSlot(nodeX, iSlotConn, !!isFrom, pos);
+                        that.setDirty(true, true);
                     },
                     "Search": () => {
                         isFrom ? that.showSearchBox(e, {
@@ -22460,6 +22539,71 @@ export class Subgraph {
         else this.outputs = next;
     }
 
+    /**
+     * Makes an inner slot part of the interface: a graph/input (for an inner input) or graph/output
+     * (for an inner output) is added and linked; its name is the slot name, made unique. One undo
+     * step in the inner graph; leaving the subgraph commits it to the linked instances.
+     * @returns {object|null} the boundary node
+     */
+    exposeSlot(innerNode, slotIndex, isOutput, pos) {
+        const inner = this.subgraph;
+        const slot = isOutput ? innerNode?.outputs?.[slotIndex] : innerNode?.inputs?.[slotIndex];
+        if (!slot || innerNode.graph !== inner) return null;
+        const taken = isOutput ? inner.outputs : inner.inputs;
+        const base = slot.name || (isOutput ? "out" : "in");
+        let name = base,
+            n = 2;
+        while (taken?.[name] || ["enabled", "call", "done"].includes(name)) name = `${base}_${n++}`;
+        const type = slot.type === LiteGraph.EVENT || slot.type === LiteGraph.ACTION ? "event" : (slot.type || "");
+        let io = null;
+        inner.transact("exposeSubgraphSlot", () => {
+            io = LiteGraph.createNode(isOutput ? "graph/output" : "graph/input");
+            io.pos = pos ? [pos[0], pos[1]] : [innerNode.pos[0] + (isOutput ? innerNode.size[0] + 80 : -260), innerNode.pos[1]];
+            inner.add(io);
+            io.setProperty("type", type);
+            io.setProperty("name", name);
+            if (isOutput) innerNode.connect(slotIndex, io, 0);
+            else io.connect(0, innerNode, slotIndex);
+        });
+        this.setSize?.(this.computeSize());
+        return io;
+    }
+
+    /**
+     * Moves an interface slot up (-1) or down (+1) among the interface slots of this node; outer
+     * links follow. Other linked instances follow by slot id when the definition is committed.
+     * @returns {boolean}
+     */
+    moveInterfaceSlot(isInput, name, delta) {
+        const list = isInput ? this.inputs : this.outputs;
+        if (!list || !this.graph) return false;
+        const names = new Set(this.subgraph._nodes.filter((n) => n.type === (isInput ? "graph/input" : "graph/output")).map((n) => n.properties.name));
+        const from = list.findIndex((slot) => slot.name === name);
+        if (from < 0 || !names.has(name)) return false;
+        let to = from + Math.sign(delta);
+        while (to >= 0 && to < list.length && !names.has(list[to].name)) to += Math.sign(delta);
+        if (to < 0 || to >= list.length) return false;
+        this.graph.transact("reorderSubgraphSlot", () => {
+            [list[from], list[to]] = [list[to], list[from]];
+            const links = this.graph.links;
+            for (const index of [from, to]) {
+                const slot = list[index];
+                if (isInput && slot.link != null && links[slot.link]) links[slot.link].target_slot = index;
+                if (!isInput)
+                    for (const id of slot.links ?? [])
+                        if (links[id]) links[id].origin_slot = index;
+            }
+            this.graph.onGraphChanged({
+                action: "reorderSubgraphSlot"
+            });
+        });
+        this.subgraph.onGraphChanged({
+            action: "reorderInterface"
+        }); // the definition changed: saved and committed
+        this.setDirtyCanvas?.(true, true);
+        return true;
+    }
+
     /** this node gets its own copy of its definition (a new id); one undo step */
     makeUnique() {
         const root = this.graph?.rootGraph;
@@ -22935,9 +23079,14 @@ export class GraphInput {
     }
 
     // this is executed AFTER the property has changed
-    onPropertyChanged(name, v) {
+    onPropertyChanged(name, v, previous) {
         if (name == "name") {
             if (v == "" || v == this.name_in_graph || v == "enabled") {
+                return false;
+            }
+            if (this.graph?.inputs?.[v]) { // interface names are unique: values are keyed by name
+                LiteGraph.log_warn("graph/input", "rename", `refused: the subgraph already has an input named "${v}"`);
+                if (this.name_widget) this.name_widget.value = previous ?? this.name_in_graph;
                 return false;
             }
             if (this.graph) {
@@ -22990,6 +23139,21 @@ export class GraphInput {
         if (this.name_in_graph) {
             this.graph.removeInput(this.name_in_graph);
         }
+    }
+
+    /** inside a subgraph: move this slot in the interface */
+    getExtraMenuOptions() {
+        const host = this.graph?._subgraph_node;
+        if (!host?.moveInterfaceSlot) return [];
+        return [{
+                content: "Move up in the interface",
+                callback: () => host.moveInterfaceSlot(true, this.properties.name, -1)
+            },
+            {
+                content: "Move down in the interface",
+                callback: () => host.moveInterfaceSlot(true, this.properties.name, 1)
+            },
+        ];
     }
 }
 
@@ -23070,9 +23234,14 @@ export class GraphOutput {
         this.size = [180, 60];
     }
 
-    onPropertyChanged(name, v) {
+    onPropertyChanged(name, v, previous) {
         if (name == "name") {
             if (v == "" || v == this.name_in_graph || v == "enabled") {
+                return false;
+            }
+            if (this.graph?.outputs?.[v]) { // interface names are unique: values are keyed by name
+                LiteGraph.log_warn("graph/output", "rename", `refused: the subgraph already has an output named "${v}"`);
+                if (this.name_widget) this.name_widget.value = previous ?? this.name_in_graph;
                 return false;
             }
             if (this.graph) {
@@ -23146,6 +23315,21 @@ export class GraphOutput {
         if (this.name_in_graph) {
             this.graph.removeOutput(this.name_in_graph);
         }
+    }
+
+    /** inside a subgraph: move this slot in the interface */
+    getExtraMenuOptions() {
+        const host = this.graph?._subgraph_node;
+        if (!host?.moveInterfaceSlot) return [];
+        return [{
+                content: "Move up in the interface",
+                callback: () => host.moveInterfaceSlot(false, this.properties.name, -1)
+            },
+            {
+                content: "Move down in the interface",
+                callback: () => host.moveInterfaceSlot(false, this.properties.name, 1)
+            },
+        ];
     }
 
     getTitle() {
@@ -51245,6 +51429,134 @@ export function registerExtension_quickConnect(graphcanvas) {
 }
 
 registerExtension_quickConnect();
+
+/**
+ * Subgraph commands: open and close, convert and unpack, make unique, remove unused definitions,
+ * promote and unpromote a widget. The canvas keeps its own buttons and menus; these make the same
+ * actions available to key bindings, command palettes and scripts.
+ */
+
+const single = (ctx) => (ctx.selectedNodes?.length === 1 ? ctx.selectedNodes[0] : null);
+const isInstance = (node) => !!node?.subgraph && typeof node.properties?.subgraph_id === "string";
+
+/** definitions of the root registry that no instance uses, directly or through another definition */
+export function unusedDefinitionIds(rootGraph) {
+    const used = new Set();
+    const use = (id) => {
+        if (used.has(id) || !rootGraph.subgraphs.has(id)) return;
+        used.add(id);
+        for (const next of SubgraphDefs.directDefinitionIds(rootGraph.subgraphs.get(id))) use(next);
+    };
+    const visit = (graph, depth) => {
+        if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+        for (const node of graph._nodes) {
+            if (typeof node?.properties?.subgraph_id === "string") use(node.properties.subgraph_id);
+            if (node?.subgraph) visit(node.subgraph, depth + 1);
+        }
+    };
+    visit(rootGraph, 0);
+    return [...rootGraph.subgraphs.keys()].filter((id) => !used.has(id));
+}
+
+/** removes the definitions nothing uses (one undo step); returns their ids */
+export function removeUnusedDefinitions(graph) {
+    const root = graph.rootGraph;
+    const unused = unusedDefinitionIds(root);
+    if (!unused.length) return [];
+    root.transact("removeUnusedDefinitions", () => {
+        for (const id of unused) root.subgraphs.delete(id);
+        root.onGraphChanged({
+            action: "removeUnusedDefinitions"
+        });
+    });
+    return unused;
+}
+
+export const subgraphToolsExtension = {
+    name: "litegraph.subgraph_tools",
+    commands: [{
+            id: "litegraph.subgraph.open",
+            label: "Open subgraph",
+            category: "subgraph",
+            when: (ctx) => !!single(ctx)?.subgraph && !!ctx.canvas,
+            run(ctx) {
+                ctx.canvas.openSubgraph(single(ctx).subgraph);
+                return true;
+            },
+        },
+        {
+            id: "litegraph.subgraph.close",
+            label: "Leave subgraph",
+            category: "subgraph",
+            when: (ctx) => (ctx.canvas?._graph_stack?.length ?? 0) > 0,
+            run(ctx) {
+                ctx.canvas.closeSubgraph();
+                return true;
+            },
+        },
+        {
+            id: "litegraph.subgraph.closeAll",
+            label: "Back to the root graph",
+            category: "subgraph",
+            when: (ctx) => (ctx.canvas?._graph_stack?.length ?? 0) > 0,
+            run(ctx) {
+                ctx.canvas.closeSubgraphTo(0);
+                return true;
+            },
+        },
+        {
+            id: "litegraph.subgraph.convert",
+            label: "Convert selection to subgraph",
+            category: "subgraph",
+            when: (ctx) => !!ctx.graph && (ctx.selectedNodes?.length ?? 0) > 0,
+            run(ctx) {
+                const node = ctx.graph.convertToSubgraph(ctx.selectedNodes);
+                if (node) ctx.canvas?.selectNodes?.([node]);
+                return !!node;
+            },
+        },
+        {
+            id: "litegraph.subgraph.unpack",
+            label: "Unpack subgraph",
+            category: "subgraph",
+            when: (ctx) => !!ctx.graph && single(ctx)?.type === "graph/subgraph",
+            run(ctx) {
+                const nodes = ctx.graph.unpackSubgraph(single(ctx));
+                if (nodes?.length) ctx.canvas?.selectNodes?.(nodes);
+                return !!nodes?.length;
+            },
+        },
+        {
+            id: "litegraph.subgraph.makeUnique",
+            label: "Make subgraph unique",
+            category: "subgraph",
+            when: (ctx) => {
+                const node = single(ctx);
+                return isInstance(node) && node.graph.rootGraph.findSubgraphInstances(node.properties.subgraph_id).length > 1;
+            },
+            run(ctx) {
+                return !!single(ctx).makeUnique();
+            },
+        },
+        {
+            id: "litegraph.subgraph.removeUnusedDefinitions",
+            label: "Remove unused subgraph definitions",
+            category: "subgraph",
+            when: (ctx) => !!ctx.graph && unusedDefinitionIds(ctx.graph.rootGraph).length > 0,
+            run(ctx) {
+                return removeUnusedDefinitions(ctx.graph).length > 0;
+            },
+        },
+    ],
+};
+
+/** Registers the extension once (the full bundles and the editor load it). */
+export function registerExtension_subgraphTools(graphcanvas) {
+    if (!LiteGraph.extensions?.has(subgraphToolsExtension.name)) LiteGraph.registerExtension(subgraphToolsExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
+
+registerExtension_subgraphTools();
 
 /**
  * Optional ComfyUI workflow interoperability.
