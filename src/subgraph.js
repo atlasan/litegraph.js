@@ -1099,6 +1099,8 @@ export class GraphInput {
             this.name_in_graph = v;
         } else if (name == "type") {
             this.updateType();
+        } else if (name == "value" && this.value_widget) {
+            this.value_widget.value = v;
         }
     }
 

@@ -55,6 +55,9 @@ test('promoting an inner widget shows it on the instance; its value drives the i
     run(graph);
     expect(sinkA.value).toBe(15);
     expect(a.promoteWidget(scaleOf(a), 'k')).toBe(false); // already promoted
+    const io = a.subgraph._nodes.find((n) => n.type === 'graph/input' && n.properties.name === 'k');
+    expect(io.properties.value).toBe(2);
+    expect(io.widgets.find((w) => w.name === 'Value').value).toBe(2); // the boundary node shows the default too
 });
 
 test('linked instances each own their value; the definition keeps the default', () => {

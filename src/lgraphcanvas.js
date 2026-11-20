@@ -3813,9 +3813,12 @@ export class LGraphCanvas {
             LiteGraph.log_warn("lgraphcanvas", "drawFrontCanvas", "no graph", this);
         }
 
-        // draws panel in the corner
+        // draws panel in the corner, and the subgraph path (breadcrumb) on top
         if (this._graph_stack && this._graph_stack.length) {
             this.drawSubgraphPanel( ctx );
+            ctx.save();
+            this.drawBreadcrumb(ctx, this.graph._subgraph_node?.bgcolor || "#AAA");
+            ctx.restore();
         }
         this.processCallbackHandlers("onDrawOverlay",{
             def_cb: this.onDrawOverlay
@@ -4093,7 +4096,6 @@ export class LGraphCanvas {
             ctx.lineWidth = 10;
             ctx.strokeRect(1, 1, this.cssWidth - 2, this.cssHeight - 2);
             ctx.lineWidth = 1;
-            this.drawBreadcrumb(ctx, subgraph_node.bgcolor || "#AAA");
             ctx.restore();
         }
 
