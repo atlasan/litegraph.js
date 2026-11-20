@@ -2586,6 +2586,8 @@ export class LGraphNode {
             }
             if (input?.link === id) input.link = null;
             delete graph.links[id];
+            // its reroutes stay, attached to the other end (the one not being disconnected)
+            graph._keepFloatingLink?.(link, this === target ? "origin" : "target");
             notifications.push({ link, origin, target, output, input });
         }
         const errors = [];

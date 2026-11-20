@@ -1228,7 +1228,7 @@ export class LGraphCanvas {
                 if (reroute) {
                     if (is_double_click) {
                         this.graph.removeReroute(reroute.id);
-                    } else if (e.shiftKey && LinkConnector.rerouteOrigin(reroute, this.graph)) {
+                    } else if (e.shiftKey && LinkConnector.rerouteEnd(reroute, this.graph)) {
                         // shift: a click adds the reroute to the selection, a drag starts a new link from it
                         this.pointer.onClick = () => this.selectItem(reroute, true);
                         this.pointer.onDragStart = () => this._startLinkDrag(() => this.linkConnector.startFromReroute(reroute, this.graph));
@@ -5156,6 +5156,7 @@ export class LGraphCanvas {
                 }
             }
         }
+        this.drawFloatingLinks(ctx);
         this.drawReroutes(ctx);
         ctx.globalAlpha = 1;
     }
@@ -5194,11 +5195,11 @@ export class LGraphCanvas {
     drawReroutes(ctx) {
         if (!this.graph?.reroutes?.size) return;
         const used = this.graph.getRerouteLinkIds();
+        const floating = this.graph._floatingRerouteSlots?.(used) ?? new Map();
         ctx.save();
-        for (const [id, linkIds] of used) {
-            const reroute = this.graph.reroutes.get(id);
-            const link = this.graph.links[linkIds[0]];
-            ctx.fillStyle = link?.color || LGraphCanvas.link_type_colors[link?.type] || this.default_link_color;
+        const draw = (reroute, color, alpha) => {
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
             ctx.beginPath();
             const reroute_active = this.dragging_reroute === reroute || reroute.selected;
             ctx.arc(reroute.pos[0], reroute.pos[1], reroute_active ? 7 : 5, 0, Math.PI * 2);
@@ -5206,6 +5207,33 @@ export class LGraphCanvas {
             ctx.lineWidth = 1.5;
             ctx.strokeStyle = reroute_active ? "#FFF" : "rgba(0,0,0,0.6)";
             ctx.stroke();
+        };
+        for (const [id, linkIds] of used) {
+            const link = this.graph.links[linkIds[0]];
+            draw(this.graph.reroutes.get(id), link?.color || LGraphCanvas.link_type_colors[link?.type] || this.default_link_color, 1);
+        }
+        for (const id of floating.keys()) draw(this.graph.reroutes.get(id), this.default_link_color, 0.6); // floating: dimmed
+        ctx.restore();
+    }
+
+    /**
+     * Draws floating links: a reroute chain attached to one end only, dashed and dimmed, from the
+     * slot it is attached to through its reroutes.
+     */
+    drawFloatingLinks(ctx) {
+        const graph = this.graph;
+        if (!graph?.floating_links?.size) return;
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.setLineDash?.([6, 4]);
+        for (const floating of graph.floating_links.values()) {
+            const end = graph.getFloatingLinkEnd(floating);
+            const chain = graph.getRerouteChain(floating).map((reroute) => reroute.pos);
+            if (!end || !chain.length) continue;
+            const slotPos = end.node.getConnectionPos(!end.isOutput, end.slot);
+            const points = end.isOutput ? [slotPos, ...chain] : [...chain, slotPos];
+            const color = LGraphCanvas.link_type_colors[floating.type] || this.default_link_color;
+            this.renderLinkPath(ctx, points, null, true, 0, color, LiteGraph.RIGHT, LiteGraph.LEFT);
         }
         ctx.restore();
     }

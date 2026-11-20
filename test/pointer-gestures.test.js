@@ -277,3 +277,37 @@ describe('gestures on CanvasPointer (wave 2b)', () => {
         expect(canvas.linkConnector.isConnecting).toBe(false);
     });
 });
+
+describe('floating reroutes on the canvas', () => {
+    test('a link moved off its input leaves a floating chain; shift-drag from it reconnects through it', () => {
+        const { canvas, src, dst, graph } = setup();
+        const link = src.connect(0, dst, 1);
+        const reroute = graph.addReroute([300, 250], link);
+        const inp = dst.getConnectionPos(true, 1);
+        drag(canvas, [inp, [inp[0] - 40, inp[1]], [700, 600]], { shiftKey: true }); // move the link to empty space
+        expect(dst.inputs[1].link).toBeNull();
+        expect(graph.floating_links.size).toBe(1);
+        const calls = [];
+        canvas.renderLinkPath = (ctx, points) => calls.push(points.length);
+        canvas.drawFloatingLinks({ save() {}, restore() {}, setLineDash() {} });
+        expect(calls).toEqual([2]); // output slot -> reroute
+        drag(canvas, [[300, 250], [330, 280], dst.getConnectionPos(true, 1)], { shiftKey: true });
+        const created = graph.links[dst.inputs[1].link];
+        expect(created.parentId).toBe(reroute.id);
+        expect(graph.floating_links.size).toBe(0);
+    });
+
+    test('cancelling a move restores the route and leaves nothing floating', () => {
+        const { canvas, src, dst, graph } = setup();
+        const link = src.connect(0, dst, 1);
+        const reroute = graph.addReroute([300, 250], link);
+        const inp = dst.getConnectionPos(true, 1);
+        canvas.pointer.lastClick = null;
+        canvas.processMouseDown(ev(inp[0], inp[1], { shiftKey: true }));
+        canvas.processMouseMove(ev(inp[0] - 40, inp[1], { shiftKey: true }));
+        expect(graph.floating_links.size).toBe(1);
+        canvas.processPointerCancel({ isPrimary: true });
+        expect(graph.links[dst.inputs[1].link].parentId).toBe(reroute.id);
+        expect(graph.floating_links.size).toBe(0);
+    });
+});

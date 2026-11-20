@@ -39,6 +39,7 @@ export class LinkConnector {
         this.detached = null;
         /** reroute the drag started from: a new link is routed through it */
         this.reroute = null;
+        this._routeId = undefined;
         this._graph = null;
     }
 
@@ -80,22 +81,36 @@ export class LinkConnector {
      * @returns {boolean} false when no link passes through the reroute
      */
     startFromReroute(reroute, graph) {
-        const origin = LinkConnector.rerouteOrigin(reroute, graph);
-        if (!origin) return false;
+        const end = LinkConnector.rerouteEnd(reroute, graph);
+        if (!end) return false;
         this._restart();
-        this._attachOutput(origin.node, origin.slot);
+        if (end.isOutput) this._attachOutput(end.node, end.slot);
+        else this._attachInput(end.node, end.slot);
         this.reroute = reroute;
+        this._routeId = end.parentId;
         this.pos = [reroute.pos[0], reroute.pos[1]];
         this._started();
         return true;
     }
 
-    /** the output that feeds a reroute: {node, slot}, or null when no link passes through it */
-    static rerouteOrigin(reroute, graph) {
-        for (const id of graph?.getRerouteLinkIds?.().get(reroute?.id) ?? []) {
+    /**
+     * Where a link started from a reroute is anchored: the output feeding it (a link passes through
+     * it, or a floating link attached to an output), or the input a floating link is attached to.
+     * `parentId` is the route the new link takes.
+     * @returns {{node, slot: number, isOutput: boolean, parentId: number}|null}
+     */
+    static rerouteEnd(reroute, graph) {
+        if (!reroute || !graph) return null;
+        for (const id of graph.getRerouteLinkIds?.().get(reroute.id) ?? []) {
             const link = graph.links[id];
             const node = link && graph.getNodeById(link.origin_id);
-            if (node) return { node, slot: link.origin_slot };
+            if (node) return { node, slot: link.origin_slot, isOutput: true, parentId: reroute.id };
+        }
+        for (const floating of graph.getFloatingLinksThrough?.(reroute.id) ?? []) {
+            const end = graph.getFloatingLinkEnd(floating);
+            if (!end) continue;
+            // towards an output the route ends at this reroute; towards an input it is the whole chain
+            return { ...end, parentId: end.isOutput ? reroute.id : floating.parentId };
         }
         return null;
     }
@@ -168,10 +183,7 @@ export class LinkConnector {
                     ? this.node.connect(this.slot, target, targetSlot)
                     : this.node.connectByType(this.slot, target, this.type);
                 this._keepRoute(link, (d) => d.origin_id === this.node.id && d.origin_slot === this.slot);
-                if (link && typeof link === "object" && this.reroute && graph?.reroutes?.has(this.reroute.id)) {
-                    link.parentId = this.reroute.id;
-                    graph.onGraphChanged?.({ action: "linkRoute" });
-                }
+                this._routeThroughReroute(graph, link);
                 return link;
             }
             const inputs = this.movingInputs ?? [{ node: this.node, slot: this.slot }];
@@ -181,6 +193,7 @@ export class LinkConnector {
                     ? target.connect(targetSlot, node, slot)
                     : node.connectByTypeOutput(slot, target, this.type);
                 this._keepRoute(result, (d) => d.target_id === node.id && d.target_slot === slot);
+                this._routeThroughReroute(graph, result);
             }
             return result;
         };
@@ -221,7 +234,7 @@ export class LinkConnector {
                 const target = graph?.getNodeById(link.target_id);
                 if (origin && target) {
                     const restored = origin.connect(link.origin_slot, target, link.target_slot);
-                    if (restored && link.parentId !== undefined) restored.parentId = link.parentId;
+                    if (restored && link.parentId !== undefined) LinkConnector._route(graph, restored, link.parentId);
                 }
             }
         }
@@ -286,7 +299,21 @@ export class LinkConnector {
     _keepRoute(link, matches) {
         if (!link || typeof link !== "object" || !this.detached) return;
         const original = this.detached.find(matches);
-        if (original?.parentId !== undefined && link.parentId === undefined) link.parentId = original.parentId;
+        if (original?.parentId !== undefined && link.parentId === undefined) LinkConnector._route(this._graph ?? this.node?.graph, link, original.parentId);
+    }
+
+    /** a link started from a reroute is routed through it */
+    _routeThroughReroute(graph, link) {
+        if (!link || typeof link !== "object" || !this.reroute || this._routeId === undefined) return;
+        if (!graph?.reroutes?.has(this._routeId)) return;
+        LinkConnector._route(graph, link, this._routeId);
+        graph.onGraphChanged?.({ action: "linkRoute" });
+    }
+
+    /** sets a link's route; through the graph when it can (floating links are re-attached) */
+    static _route(graph, link, parentId) {
+        if (typeof graph?.routeLink === "function") graph.routeLink(link, parentId);
+        else link.parentId = parentId;
     }
 
     _finishTransaction() {
