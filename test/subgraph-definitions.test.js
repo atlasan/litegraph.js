@@ -24,7 +24,7 @@ beforeAll(async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-afterEach(() => { LiteGraph.subgraph_format = 'inline'; });
+afterEach(() => { LiteGraph.subgraph_format = 'definitions'; });
 
 const make = (graph, type, x = 0) => { const n = LiteGraph.createNode(`sgd/${type}`); n.pos = [x, 0]; graph.add(n); return n; };
 const run = (graph, steps = 3) => { for (let i = 0; i < steps; i++) graph.runStep(1); };
@@ -81,12 +81,13 @@ describe('document form', () => {
 
     test('inline format keeps inner graphs for older readers and also writes the registry', () => {
         const { graph, sub } = doubled();
+        LiteGraph.subgraph_format = 'inline';
         const doc = graph.serialize();
         const instance = doc.nodes.find((n) => n.id === sub.id);
         expect(instance.type).toBe('graph/subgraph');
         expect(instance.subgraph.nodes.length).toBe(3);
         expect(doc.definitions.subgraphs[0].id).toBe(sub.properties.subgraph_id);
-        LiteGraph.subgraph_format = 'definitions';
+        LiteGraph.subgraph_format = 'definitions'; // the default
         expect(graph.serialize().nodes.find((n) => n.id === sub.id).type).toBe(sub.properties.subgraph_id);
     });
 
@@ -138,7 +139,7 @@ describe('document form', () => {
 
     test('a document saved before definitions loads and gets a registry entry', () => {
         const { graph, sub } = doubled();
-        const old = graph.serialize();
+        const old = graph.serialize({ format: 'inline' });
         delete old.definitions;
         const instance = old.nodes.find((n) => n.id === sub.id);
         delete instance.properties.subgraph_id;

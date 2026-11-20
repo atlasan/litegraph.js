@@ -1,6 +1,6 @@
 # 0001: Subgraph document format (inline vs ComfyUI-style definitions)
 
-> **Date** 2026-11-18 · **Kind** decision · **Status** proposed, option B chosen 2026-11-20 (accepted when Wave 3a meets the criteria); decision D2 in the [roadmap](../../plans/roadmap.md)
+> **Date** 2026-11-18 · **Kind** decision · **Status** **accepted** 2026-11-20 (option B; acceptance below); decision D2 in the [roadmap](../../plans/roadmap.md)
 
 It is to be **accepted or rejected when subgraph authoring (roadmap Phase 4.3) starts**, together with the conversion work it depends on.
 
@@ -75,6 +75,20 @@ Keep from our model:
 5. **Compatibility:**
    - Documents that contain both inline and definition subgraphs load.
    - Older readers fall back to preserving `definitions` verbatim; the core already keeps unknown fields.
+
+## Acceptance (2026-11-20)
+
+The user chose option B on 2026-11-20. The [Wave 3 plan](../../plans/2026-11-20-wave3-subgraph-system.md) keeps litegraph's nested runtime and adopts the definition shape as the document format. Wave 3a met the criteria:
+
+| # | Evidence |
+|---|---|
+| 1 | Wave 2a conversion and unpack: one transaction each. A refresh restarts inner nodes, the same as a load (documented in the guide) |
+| 2 | Jest round trips, and the [schema probe](../../executions/2026-11-20-wave3a-schema-probe.md): our exports and 41 ComfyUI subgraph workflows validate against ComfyUI's schema before and after an edit (79/79), and no fixture loses content |
+| 3 | Stable definition guids, slot ids and inner node ids (Jest); inserts link or fork (decision W3-1). Path ids follow in 3b |
+| 4 | Jest, the editor, and a runner test that opens, runs and syncs back a definitions workflow |
+| 5 | The `"inline"` format writes inline instances and the registry together; documents with both forms load |
+
+`LiteGraph.subgraph_format` defaults to `"definitions"` from this point.
 
 ## Consequences
 

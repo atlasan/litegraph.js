@@ -15,7 +15,7 @@ Template: [decision](../_templates/decision.md).
 
 | Record | Status |
 |---|---|
-| [0001 Subgraph document format](decisions/0001-subgraph-document-format.md) | proposed; decision D2 in the [roadmap](../plans/roadmap.md) |
+| [0001 Subgraph document format](decisions/0001-subgraph-document-format.md) | **accepted** 2026-11-20 (option B, litegraph runtime kept) |
 
 ## Research
 

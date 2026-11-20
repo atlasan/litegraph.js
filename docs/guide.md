@@ -195,7 +195,7 @@ graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0
 
 | Setting or flag | Default | Effect |
 |---|---|---|
-| `LiteGraph.subgraph_format` | `"inline"` | `"inline"`: instances keep their inner graph, plus a `definitions.subgraphs` registry (older readers keep working). `"definitions"`: the ComfyUI form, where instances reference definitions (`graph.serialize({format})` chooses per call) |
+| `LiteGraph.subgraph_format` | `"definitions"` | `"definitions"`: the ComfyUI form, where instances reference `definitions.subgraphs`. `"inline"`: instances keep their inner graph as well, so builds older than 0.10.x Wave 3 can still run them (`graph.serialize({format})` chooses per call) |
 | `LiteGraph.subgraph_max_depth` | 32 | Nesting limit when loading definitions, and the call depth of function nodes |
 | `LiteGraph.Subgraph.PasteLinked` | on | Pasted or duplicated subgraph nodes share their definition; off: each gets a copy |
 

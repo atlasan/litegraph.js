@@ -1,0 +1,7 @@
+# fetched locally, never committed (GPL-3.0 ComfyUI_frontend files), see README
+schema/
+fixtures/
+node_modules/
+package.json
+package-lock.json
+out_*.json

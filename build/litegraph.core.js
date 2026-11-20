@@ -263,7 +263,7 @@ export class LiteGraphClass {
     middle_click_slot_add_default_node = false; // [true!] allows to create and connect a ndoe clicking with the third button (wheel)
 
     keep_floating_reroutes = true; // removing a routed link keeps its reroutes, attached to the end that remains (ComfyUI floating links)
-    subgraph_format = "inline"; // root serialize: "inline" (instances keep their inner graph) or "definitions" (ComfyUI form, instances reference definitions.subgraphs)
+    subgraph_format = "definitions"; // root serialize: "definitions" (ComfyUI form, instances reference definitions.subgraphs) or "inline" (instances keep their inner graph, for older readers)
     subgraph_max_depth = 32; // nesting limit for subgraph definitions (load) and calls
     snap_link_to_slot = true; // dragging a link over a node body highlights (and a drop connects to) the slot it would use
     release_link_on_empty_shows_menu = false; // [true!] dragging a link to empty space will open a menu, add from list, search or defaults
@@ -21472,7 +21472,7 @@ function interfaceSlot(io, fallbackName) {
 function runtimeType(slot) {
     if (typeof slot.litegraph_type === "number") return slot.litegraph_type;
     if (isEventType(slot.type)) return LiteGraph.EVENT;
-    return slot.type === "*" ? "" : slot.type;
+    return slot.type; // "*" is a wildcard here too
 }
 
 function boundsOf(nodes, fallback) {
@@ -22275,6 +22275,23 @@ export class Subgraph {
         this.removeOutput(slot);
     }
 
+    /**
+     * Instance fields this runtime does not model (e.g. ComfyUI's widgets_values of promoted
+     * widgets) are kept and written back.
+     */
+    onConfigure(info) {
+        this.kept_fields = {};
+        for (const key of Object.keys(info ?? {})) {
+            if (!Subgraph.MODELLED_FIELDS.includes(key)) this.kept_fields[key] = LiteGraph.cloneObject(info[key]);
+        }
+    }
+
+    onSerialize(data) {
+        for (const [key, value] of Object.entries(this.kept_fields ?? {})) {
+            if (!(key in data)) data[key] = LiteGraph.cloneObject(value);
+        }
+    }
+
     // --- definitions (see subgraphdefs.js and LGraph.subgraphs) ---
 
     /** the definition this node uses, from the root graph's registry */
@@ -22419,7 +22436,7 @@ export class Subgraph {
             else this.disconnectOutput(j);
         }
         const typeOf = (slot) => (typeof slot.litegraph_type === "number" ? slot.litegraph_type :
-            (slot.type === "event" ? LiteGraph.EVENT : (slot.type === "*" ? "" : slot.type)));
+            (slot.type === "event" ? LiteGraph.EVENT : slot.type));
         const next = plan.map(([j, slot]) => {
             const kept = j >= 0 ? list[j] : (isInput ? {
                 link: null
@@ -22817,6 +22834,11 @@ export class Subgraph {
     }
 
     static title_color = "#334";
+
+    /** node fields the core serializer writes; other stored fields are kept (kept_fields) */
+    static MODELLED_FIELDS = ["id", "type", "pos", "size", "flags", "order", "mode", "inputs", "outputs",
+        "properties", "title", "color", "bgcolor", "boxcolor", "shape", "subgraph"
+    ];
 }
 
 
@@ -23217,6 +23239,7 @@ export class NodeFunction extends Subgraph {
     }
 
     onConfigure(info) {
+        Subgraph.prototype.onConfigure.call(this, info);
         // an older document: the definition of the subgraph node it pointed at
         const host = info?.properties?.func_subgraph_id;
         if (host !== undefined && host !== null && !info.properties.subgraph_id) this._migrate_host = host;
