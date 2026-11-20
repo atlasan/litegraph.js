@@ -10,7 +10,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 |---|---|
 | `src/` | The library, as ES modules |
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
-| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
+| `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
 | `editor/` | Demo editor. `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions |
 | `editor_tester/` | Browser tester that generates per-node scenarios |
@@ -53,8 +53,9 @@ Listed in build order (`build.py` `lib_js_files`):
 ## Graph model
 
 - **LGraph**
-  - **Contents:** `_nodes`, `_groups`, `links` (an object keyed by id), `reroutes` (a Map), `state.last*Id`, `revision`.
-  - **Serialization:** `serialize()` writes `version: 0.4` and keeps unknown top-level fields. Reroutes go to `extra.reroutes`, in ComfyUI form.
+  - **Contents:** `_nodes`, `_groups`, `links` (an object keyed by id), `reroutes` (a Map), `floating_links` (a Map), `state.last*Id`, `revision`.
+  - **Serialization:** `serialize()` writes `version: 0.4` and keeps unknown top-level fields. Reroutes go to `extra.reroutes`, in ComfyUI form; floating links go to `floatingLinks`, and the reroutes only they use carry `floating: {slotType}`.
+  - **Floating links:** `LGraphNode._disconnectLinks` keeps a removed link's reroute chain on the remaining end (`_keepFloatingLink`); `routeLink(link, parentId)` re-attaches it. Conversion and unpack suspend this (`_withoutFloatingLinks`).
   - **Transactions:** `transact(label, fn, {rollback})` records one history entry. Undo history (`actionHistory*`) records only when `LiteGraph.actionHistory_enabled` is set; it is off in the core and on in the editor defaults.
   - **Repair:** `validateLinks({repair})` repairs dangling links and back-pointers, for the current graph only.
 - **LGraphNode**
@@ -99,11 +100,10 @@ Listed in build order (`build.py` `lib_js_files`):
 
 ## Canvas
 
-- **Owned objects:** `ds` (DragAndScale), `pointer` (CanvasPointer), `linkConnector`. The `connecting_*` fields are accessors over `linkConnector`.
+- **Owned objects:** `ds` (DragAndScale), `pointer` (CanvasPointer), `linkConnector` (made by `_createLinkConnector`, which re-emits its `link-drag-start` / `link-drag-end`). The `connecting_*` fields are accessors over `linkConnector`.
 - **Input:** `processMouseDown`, `processMouseMove`, `processMouseUp`, `processMouseWheel` and `processKey`.
-- **Gestures:**
-  - Only the reroute drag uses `pointer.onDrag*` handlers so far (`_dragRerouteGesture`).
-  - Node, group and link drags move in Wave 2.
+- **Gestures:** drags are `pointer` handlers set at pointer down: `_dragNodesGesture`, `_dragGroupGesture`, `_dragRerouteGesture`, `_linkDragGesture` (drop in `_dropLink`), `_linkCenterGesture`. While handlers are set, `processMouseMove` returns early; `processMouseUp` skips the empty-canvas deselect and node `onMouseUp` for a handled gesture. The legacy `node_dragged` / `connecting_*` move and up paths remain for code that sets those fields directly.
+- **Title decorations:** `getNodeTitleDecorations` lays out title buttons (`node.title_buttons`) and badges (`LiteGraph.nodeBadges.collect`); `drawNodeTitleDecorations` caches it on `node._title_decorations` for hit testing. Group header toggle: `getGroupToggleRect`, `toggleGroupMuted`.
 - **Selection:** `selectedItems` covers nodes, groups and reroutes. Also `selectItem`, `moveSelected`, `deleteSelected`, `groupSelected`, and the event `selection-changed`.
 - **Clipboard:** `serializeSelection()` produces a fragment (nodes, links, reroute chains, groups). `insertFragment(fragment, pos)` inserts one with fresh ids in one undo step; copy and paste use both.
 - **Drawing:**
