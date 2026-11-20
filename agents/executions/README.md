@@ -9,6 +9,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 | 2026-11-01 | [Baseline validation](2026-11-01-baseline-validation.md): setup, contracts, editor, tester and runner acceptance | final |
 | 2026-11-01 | [Readiness checklist](2026-11-01-readiness-checklist.md): verified foundation and remaining acceptance work | snapshot |
 | 2026-11-20 | [Integrate LG/dev and align master](2026-11-20-integrate-dev-and-master.md): joined the records and runner lines, then opened PR #8 to `master` | final |
+| 2026-11-20 | [Wave 4a: packs and missing nodes](2026-11-20-wave4a-packs.md): pack manifests and registry, builtin packs, provenance stamping, missing-nodes report and panel, replacement mappings | final |
 | 2026-11-20 | [Wave 3c: components](2026-11-20-wave3c-components.md): registered subgraph components with updates, blueprints, 43 SA acceptance cases; Wave 3 complete | final |
 | 2026-11-20 | [Wave 3b: subgraph authoring](2026-11-20-wave3b-subgraph-authoring.md): breadcrumb, subgraph commands, interface editing, promoted widgets, path ids | final |
 | 2026-11-20 | [Wave 3a: schema probe](2026-11-20-wave3a-schema-probe.md): ComfyUI schema validation (79/79), content kept, definitions by default, ADR 0001 accepted | final |
@@ -24,6 +25,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 | 1 Platform | `LG/wave1_platform`, `LG/wave1_finish` | [roadmap](../plans/roadmap.md#wave-1-platform-layer-done), `CHANGES.md` |
 | 2a Authoring operations | `LG/wave2_authoring` | [execution](2026-11-20-wave2a-authoring.md), [plan](../plans/2026-11-20-wave2-authoring-core.md) |
 | 2b Links and pointer | `LG/wave2_links` | [execution](2026-11-20-wave2b-links.md), [plan](../plans/2026-11-20-wave2-authoring-core.md) |
+| 4a Packs and missing nodes | `LG/wave4a_packs` | [execution](2026-11-20-wave4a-packs.md), [plan](../plans/2026-11-20-wave4-ecosystem-workspace.md) |
 
 From Wave 2 on, each wave gets a dated execution record: what changed, the gate result, browser checks, and what was left open.
 

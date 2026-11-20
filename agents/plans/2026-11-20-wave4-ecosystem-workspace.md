@@ -213,7 +213,16 @@ All seven were decided by the user on 2026-11-20, as recommended.
 - **dagre maintenance** (4d): `dagre` 0.8.5 is old but stable; `@dagrejs/dagre` is the maintained fork. Choose at 4d after the changelog review; both satisfy the two-week rule.
 - **Router change** (4c) risks small visual differences; step 11 compares paths numerically before and after.
 
+## Implementation notes (4a)
+
+Corrections made while building; the [4a execution record](../executions/2026-11-20-wave4a-packs.md) has the details.
+- **Runner check before loading:** instead of re-checking after replacement, `assertAllowedGraph` takes `replacedType` and checks the type an `auto` mapping loads as, before any node is constructed.
+- **Builtin attribution** uses `packs.open(manifest)` / `packs.close(id)` around each node file, the same mechanism `register(manifest, setup)` uses.
+- **`missing-nodes {reason}`:** undo, redo and transaction rollbacks reload the graph, so the event says why it fired; the Editor opens its panel only for `"load"`.
+- **A placeholder whose type is registered later** is rebuilt as that type by `replaceNode` / `replaceNodes` (identity mapping).
+
 ## History
 
+- 2026-11-20: 4a done: steps 1–5 ([record](../executions/2026-11-20-wave4a-packs.md)).
 - 2026-11-20: accepted; W4-1 to W4-7 decided as recommended (stamp `pack`/`pack_ver` on non-builtin nodes, replacements offered with `auto` for own renames, dagre loaded on demand, one v1 execution-state shape, autosave with a restore offer, builtin packs declared now and split in Wave 5, palette as core API plus editor panel).
 - 2026-11-20: proposed.
