@@ -17,7 +17,7 @@ This is the single place for the current status of planned work.
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
-| `LG/dev` → `master` | [PR #8](https://github.com/atlasan/litegraph.js/pull/8) brings `master` level with `LG/dev` (Wave 1, `agents/` workspace, ideas), 2026-11-20. See the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
+| `LG/dev` → `master` | [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1, `agents/` workspace, ideas) was merged into `master` on 2026-11-20 as `35c7e4f` after CI passed; `LG/dev` was fast-forwarded to the same commit. See the [integration record](../executions/2026-11-20-integrate-dev-and-master.md). |
 
 Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
 
@@ -26,7 +26,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Wave | Theme | Status |
 |---|---|---|
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
-| 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev`; to `master` with [PR #8](https://github.com/atlasan/litegraph.js/pull/8) |
+| 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Next** |
 | 3 | Subgraph v2 and components | Proposed; needs the ADR 0001 decision |
 | 4 | Ecosystem and workspace features | Proposed |
