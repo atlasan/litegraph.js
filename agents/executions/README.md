@@ -8,6 +8,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 |---|---|---|
 | 2026-11-01 | [Baseline validation](2026-11-01-baseline-validation.md): setup, contracts, editor, tester and runner acceptance | final |
 | 2026-11-01 | [Readiness checklist](2026-11-01-readiness-checklist.md): verified foundation and remaining acceptance work | snapshot |
+| 2026-11-21 | [Wave 5a–5b: packaging, CI, docs](2026-11-21-wave5ab-packaging-ci-docs.md): dependency advisories, no required dependencies, explicit exports, no debug defaults in builds, build freshness in CI, getting started and architecture docs | final |
 | 2026-11-20 | [Integrate LG/dev and align master](2026-11-20-integrate-dev-and-master.md): joined the records and runner lines, then opened PR #8 to `master` | final |
 | 2026-11-20 | [Wave 4c: links and view](2026-11-20-wave4c-links-view.md): RenderLink and routers, link styles, minimap, pan as a pointer gesture | final |
 | 2026-11-20 | [Wave 4b: workspace state and execution](2026-11-20-wave4b-workspace.md): change stream, dirty flag, draft autosave, execution-state protocol, overlays and title icons | final |

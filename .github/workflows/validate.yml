@@ -14,3 +14,5 @@ jobs:
           python-version: '3.x'
       - run: npm ci --ignore-scripts
       - run: npm run check
+      # the committed build/ and build_node/ must match the sources (npm run build, then commit)
+      - run: git diff --exit-code --stat -- build build_node

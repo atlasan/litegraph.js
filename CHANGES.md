@@ -44,6 +44,26 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 * The runner checks the type an automatic replacement loads as against its denylist (`assertAllowedGraph(..., {replacedType})`).
 
+# Unreleased (0.18.0-dev): pre-release work, Wave 5a–5b
+
+## Changed
+
+* **Packaging:**
+  * The package has no required dependencies. Network and system integrations (`socket.io`, `socket.io-client`, `ws`, `osc-js`, `ps-list`, `diskusage`, `node-os-utils`, `node-windows`, `chalk`, `node-fetch`) are `optionalDependencies`. A node that needs a missing one names it and the install command.
+  * Exports list each bundle by its path; the `./build/*` and `./build_node/*` wildcards are gone.
+* **Full builds no longer include the editor's debug defaults:** script evaluation (`LiteGraph.allow_scripts`), debug logging and the editor UX flags stay at the library defaults. Set them yourself if you relied on them.
+* Ctrl+drag on a group's title moves the group without its nodes; Ctrl on the group body still box-selects.
+
+## Added
+
+* "Insert subgraph › From file…" (`canvas.pickBlueprintFile`).
+* `npm run check:fresh`; CI fails on stale committed builds.
+* Docs: `docs/getting-started.md`, `docs/architecture.md`.
+
+## Fixed
+
+* Runtime dependency advisories (12, 10 of them high) are resolved: `engine.io`, `engine.io-client`, `socket.io-adapter`, `socket.io-parser`, nested `ws`, `brace-expansion`, `cross-spawn`, `js-cookie`.
+
 # Unreleased (0.10.x): Wave 3c, components and blueprints
 
 ## Added

@@ -51,4 +51,5 @@ The sources are the [11-18 repository review](2026-11-18-repo-review-and-roadmap
 
 ## History
 
+- 2026-11-21: 5a and 5b done ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)). Full builds no longer carry `defaults_debug.js`, which had turned scripts on.
 - 2026-11-21: proposed and accepted. The user answered W5-1 to W5-3 as recommended.
