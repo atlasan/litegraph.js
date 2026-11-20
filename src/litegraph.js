@@ -519,6 +519,15 @@ export class LiteGraphClass {
             // built-in badges, off unless a setting shows them
             this.settings.define({ id: "LiteGraph.Node.IdBadge", name: "Show node id badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
+            this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
+            this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
+                const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
+                if (def.deprecated) return { text: "deprecated", fgColor: "#FDD", bgColor: "rgba(140,40,40,0.8)" };
+                if (def.experimental) return { text: "experimental", fgColor: "#FFE", bgColor: "rgba(120,100,30,0.8)" };
+                return null;
+            });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? { text: `#${node.id}` } : null);
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.SourceBadge")) return null;

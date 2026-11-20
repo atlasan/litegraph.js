@@ -1825,6 +1825,12 @@ export declare class LGraphCanvas {
     drawNodeTitleDecorations(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number): void;
     getNodeTitleButtonAt(node: LGraphNode, x: number, y: number): NodeTitleButton | null;
     clickNodeTitleButton(node: LGraphNode, button: NodeTitleButton, e: any): void;
+    /** the group's header toggle rectangle [x, y, w, h] (setting LiteGraph.Group.HeaderToggle), or null */
+    getGroupToggleRect(group: LGraphGroup): number[] | null;
+    isGroupMuted(group: LGraphGroup): boolean;
+    /** mutes the group's nodes, or sets them back to ALWAYS when all are muted; one undo step; returns the mode set */
+    toggleGroupMuted(group: LGraphGroup): number;
+    drawGroupToggle(group: LGraphGroup, ctx: CanvasRenderingContext2D): void;
     /** draws floating links, dashed and dimmed */
     drawFloatingLinks(ctx: CanvasRenderingContext2D): void;
     showLinkReleaseAction(action: "context-menu" | "search-box" | "none", dropped: { node: LGraphNode; output?: INodeOutputSlot | null; input?: INodeInputSlot | null }, e: any): boolean;

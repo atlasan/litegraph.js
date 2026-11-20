@@ -360,3 +360,48 @@ describe('node badges and title buttons', () => {
         expect(src._title_decorations.buttons[0].rect[2]).toBe(16);
     });
 });
+
+describe('group header toggle, lifecycle badges, reroute multi-select', () => {
+    test('the group header toggle mutes and unmutes the group nodes, one undo step each', () => {
+        const { canvas, graph, src, dst } = setup();
+        const group = new LGraphGroup('G'); group.pos = [80, 40]; group.size = [520, 200]; graph.add(group);
+        const rect = canvas.getGroupToggleRect(group);
+        expect(rect).not.toBeNull();
+        const at = [rect[0] + rect[2] / 2, rect[1] + rect[3] / 2];
+        drag(canvas, [at, at]);
+        expect([src.mode, dst.mode]).toEqual([LiteGraph.NEVER, LiteGraph.NEVER]);
+        expect(canvas.isGroupMuted(group)).toBe(true);
+        expect(Array.from(group.pos)).toEqual([80, 40]);
+        drag(canvas, [at, at]);
+        expect([src.mode, dst.mode]).toEqual([LiteGraph.ALWAYS, LiteGraph.ALWAYS]);
+        LiteGraph.settings.set('LiteGraph.Group.HeaderToggle', false);
+        try { expect(canvas.getGroupToggleRect(group)).toBeNull(); } finally { LiteGraph.settings.set('LiteGraph.Group.HeaderToggle', true); }
+    });
+
+    test('deprecated and experimental nodes get a lifecycle badge', () => {
+        class Old { constructor() { this.addOutput('o', 'number'); } }
+        Old.deprecated = true;
+        LiteGraph.registerNodeType('pg/old', Old);
+        const node = LiteGraph.createNode('pg/old');
+        expect(LiteGraph.nodeBadges.collect(node).map((b) => b.text)).toEqual(['deprecated']);
+        LiteGraph.settings.set('LiteGraph.Node.LifecycleBadge', false);
+        try { expect(LiteGraph.nodeBadges.collect(node)).toEqual([]); } finally { LiteGraph.settings.set('LiteGraph.Node.LifecycleBadge', true); }
+    });
+
+    test('selected reroutes move with a node drag, and a reroute drag moves the whole selection', () => {
+        const { canvas, graph, src, dst } = setup();
+        const link = src.connect(0, dst, 1);
+        const r1 = graph.addReroute([300, 300], link);
+        const r2 = graph.addReroute([340, 300], link);
+        canvas.selectNodes([src]);
+        canvas.selectItem(r1, true);
+        canvas.selectItem(r2, true);
+        drag(canvas, [[150, 130], [160, 140], [170, 150]]);
+        expect(Array.from(src.pos)).toEqual([120, 120]);
+        expect([Array.from(r1.pos), Array.from(r2.pos)]).toEqual([[320, 320], [360, 320]]);
+        drag(canvas, [[320, 320], [330, 330], [340, 340]]); // press on a selected reroute
+        expect([Array.from(r1.pos), Array.from(r2.pos), Array.from(src.pos)]).toEqual([[340, 340], [380, 340], [140, 140]]);
+        drag(canvas, [[340, 340], [340, 340]]); // a click selects only it
+        expect(canvas.selectedItems).toEqual([r1]);
+    });
+});
