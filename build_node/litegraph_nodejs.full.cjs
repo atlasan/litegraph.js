@@ -7840,9 +7840,12 @@ class LGraph {
         if (nodes) {
             for (let i = 0, l = nodes.length; i < l; ++i) {
                 var n_info = nodes[i]; // stored info
-                var node = LiteGraph.createNode(n_info.type, n_info.title);
+                // a renamed type (an automatic replacement) loads as a placeholder and is replaced below, quietly
+                const renamed = !LiteGraph.registered_node_types[n_info.type] && LiteGraph.getNodeReplacement?.(n_info.type)?.auto && LiteGraph.settings?.get("LiteGraph.Packs.AutoReplace") !== false;
+                var node = renamed ? null : LiteGraph.createNode(n_info.type, n_info.title);
                 if (!node) {
-                    LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
+                    if (renamed) LiteGraph.log_debug("lgraph", "configure", "renamed node type", n_info.type, "->", renamed && LiteGraph.getNodeReplacement(n_info.type).new_type);
+                    else LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
 
                     // in case of error we create a replacement node to avoid losing info
                     node = new LiteGraph.LGraphNode();
@@ -7869,6 +7872,8 @@ class LGraph {
 
         // replacement mappings marked auto (renamed types): applied while loading, without an undo step
         const replaced = this._applyAutoReplacements();
+        // a replaced placeholder is no longer an error
+        if (replaced.length) error = this._nodes.some((node) => PackRegistry.isMissingNodePlaceholder(node));
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
         this.state = {
@@ -23240,6 +23245,31 @@ const SubgraphDefs = {
  * extracted from base nodes
  */
 
+/**
+ * Appends reroutes at `points` (origin → target order) to a link of `graph`, after the reroutes
+ * it already has, without a history entry. Returns the last reroute's id (or the link's previous
+ * parentId when there are no points).
+ */
+function subgraphAppendReroutes(graph, link, points, offset = [0, 0]) {
+    let parentId = link?.parentId;
+    for (const point of points) {
+        const reroute = new Reroute(++graph.state.lastRerouteId, [Math.round(point[0] + offset[0]), Math.round(point[1] + offset[1])], parentId);
+        graph.reroutes.set(reroute.id, reroute);
+        parentId = reroute.id;
+    }
+    if (link && parentId !== undefined) link.parentId = parentId;
+    return parentId;
+}
+
+/** removes reroutes that no link uses any more (from a list of candidates) */
+function subgraphDropUnusedReroutes(graph, ids) {
+    if (!ids.size) return;
+    const used = graph.getRerouteLinkIds();
+    const floating = graph._floatingRerouteSlots?.(used) ?? new Map();
+    for (const id of ids)
+        if (!used.has(id) && !floating.has(id)) graph.reroutes.delete(id);
+}
+
 // Subgraph: a node that contains a graph
 class Subgraph {
 
@@ -24264,7 +24294,8 @@ class Subgraph {
                 };
                 entry.targets.push({
                     node: link.target_id,
-                    slot: link.target_slot
+                    slot: link.target_slot,
+                    link: link.id
                 });
                 incoming.set(key, entry);
             } else if (fromIn && !toIn) {
@@ -24279,10 +24310,25 @@ class Subgraph {
                 };
                 entry.targets.push({
                     node: link.target_id,
-                    slot: link.target_slot
+                    slot: link.target_slot,
+                    link: link.id
                 });
                 outgoing.set(key, entry);
             }
+        }
+
+        // reroute chains of the links that cross or stay inside the selection (origin → target),
+        // captured before the links go: a chain point inside the selection's box moves into the subgraph
+        const chainOf = new Map();
+        const touched = new Set();
+        for (const link of links) {
+            if (link.parentId === undefined || !(inSet.has(link.origin_id) || inSet.has(link.target_id))) continue;
+            const chain = graph.getRerouteChain(link);
+            chainOf.set(link.id, chain.map((reroute) => ({
+                id: reroute.id,
+                pos: [reroute.pos[0], reroute.pos[1]]
+            })));
+            chain.forEach((reroute) => touched.add(reroute.id));
         }
 
         // 2. copies of the nodes, without their links (ids are kept: the inner graph is empty)
@@ -24310,8 +24356,12 @@ class Subgraph {
         for (const node of selected) graph.remove(node);
         this.pos = [bounds[0], bounds[1]];
         for (const copy of copies.values()) inner.add(copy);
+        const box = [bounds[0] - 20, bounds[1] - LiteGraph.NODE_TITLE_HEIGHT - 20, bounds[2] + 20, bounds[3] + 20];
+        const insideBox = (point) => point.pos[0] >= box[0] && point.pos[0] <= box[2] && point.pos[1] >= box[1] && point.pos[1] <= box[3];
         for (const link of internal) {
-            copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+            const created = copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+            const chain = chainOf.get(link.id);
+            if (created && chain?.length) subgraphAppendReroutes(inner, created, chain.map((point) => point.pos));
         }
 
         // 4. graph inputs and outputs, then the outside wiring
@@ -24332,10 +24382,23 @@ class Subgraph {
             io.setProperty("type", entry.type);
             const name = unique(entry.name, inputNames);
             io.setProperty("name", name);
-            for (const target of entry.targets) io.connect(0, copies.get(target.node), target.slot);
+            // each crossing link: the part of its chain inside the box goes inside, the rest stays out
+            let outerPart = null;
+            for (const target of entry.targets) {
+                const created = io.connect(0, copies.get(target.node), target.slot);
+                const chain = chainOf.get(target.link) ?? [];
+                const split = chain.findIndex(insideBox);
+                const inside = split === -1 ? [] : chain.slice(split);
+                outerPart ??= split === -1 ? chain : chain.slice(0, split);
+                if (created && inside.length) subgraphAppendReroutes(inner, created, inside.map((point) => point.pos));
+            }
             const source = graph.getNodeById(entry.origin);
             const slot = this.findInputSlot(name);
-            if (source && slot !== -1) source.connect(entry.slot, this, slot);
+            if (source && slot !== -1) {
+                const outer = source.connect(entry.slot, this, slot);
+                // the outside part keeps its reroutes (and their parents up to the source)
+                if (outer && outerPart?.length && graph.reroutes.has(outerPart[outerPart.length - 1].id)) outer.parentId = outerPart[outerPart.length - 1].id;
+            }
         }
         row = 0;
         for (const entry of outgoing.values()) {
@@ -24345,13 +24408,31 @@ class Subgraph {
             io.setProperty("type", entry.type);
             const name = unique(entry.name, outputNames);
             io.setProperty("name", name);
-            copies.get(entry.origin).connect(entry.slot, io, 0);
+            const innerLink = copies.get(entry.origin).connect(entry.slot, io, 0);
             const slot = this.findOutputSlot(name);
+            let innerDone = false;
             for (const target of entry.targets) {
+                const chain = chainOf.get(target.link) ?? [];
+                // the leading points inside the box go inside (once: they are the origin's side), the rest stays out
+                let split = 0;
+                while (split < chain.length && insideBox(chain[split])) split++;
+                if (!innerDone && innerLink && split) {
+                    subgraphAppendReroutes(inner, innerLink, chain.slice(0, split).map((point) => point.pos));
+                    innerDone = true;
+                }
                 const node = graph.getNodeById(target.node);
-                if (node && slot !== -1) this.connect(slot, node, target.slot);
+                if (!node || slot === -1) continue;
+                const outer = this.connect(slot, node, target.slot);
+                const outside = chain.slice(split);
+                if (outer && outside.length && graph.reroutes.has(outside[outside.length - 1].id)) {
+                    const first = graph.reroutes.get(outside[0].id);
+                    if (first) delete first.parentId; // it now starts at the subgraph node
+                    outer.parentId = outside[outside.length - 1].id;
+                }
             }
         }
+        // reroutes that moved inside (or were only on removed links) leave the parent graph
+        subgraphDropUnusedReroutes(graph, touched);
         this.setSize(this.computeSize());
         return this;
     }
@@ -24376,7 +24457,8 @@ class Subgraph {
             const link = input.link != null ? graph.links[input.link] : null;
             if (link) outerSource.set(input.name, {
                 node: graph.getNodeById(link.origin_id),
-                slot: link.origin_slot
+                slot: link.origin_slot,
+                parentId: link.parentId
             });
         });
         const outerTargets = new Map(); // output name -> [{node, slot}]
@@ -24384,7 +24466,8 @@ class Subgraph {
             outerTargets.set(output.name, (output.links ?? []).map((id) => graph.links[id]).filter(Boolean)
                 .map((link) => ({
                     node: graph.getNodeById(link.target_id),
-                    slot: link.target_slot
+                    slot: link.target_slot,
+                    chain: graph.getRerouteChain(link).map((reroute) => reroute.id)
                 })));
         });
 
@@ -24408,7 +24491,10 @@ class Subgraph {
             copies.set(node.id, copy);
         }
 
-        // what to connect, resolved through the graph inputs and outputs
+        // what to connect, resolved through the graph inputs and outputs; each pair carries its
+        // reroutes: the outside chain to the subgraph input, the inner chain, the outside chain from the output
+        const offset = [this.pos[0] - minX, this.pos[1] - minY];
+        const innerPoints = (link) => inner.getRerouteChain(link).map((reroute) => reroute.pos);
         const plan = [];
         const sourceOf = (link) => {
             const origin = inner.getNodeById(link.origin_id);
@@ -24422,21 +24508,48 @@ class Subgraph {
             const target = inner.getNodeById(link.target_id);
             const source = sourceOf(link);
             if (!source?.node) continue;
+            const route = {
+                before: source.parentId,
+                points: innerPoints(link),
+                innerLink: link.id
+            };
             if (isOutput(target)) {
                 for (const outer of outerTargets.get(target.properties.name) ?? []) {
-                    if (outer.node) plan.push([source, outer]);
+                    if (outer.node) plan.push([source, outer, {
+                        ...route,
+                        after: outer.chain
+                    }]);
                 }
             } else if (copies.has(link.target_id)) {
                 plan.push([source, {
                     node: copies.get(link.target_id),
                     slot: link.target_slot
-                }]);
+                }, route]);
             }
         }
 
         graph.remove(this);
         for (const copy of copies.values()) graph.add(copy);
-        for (const [source, target] of plan) source.node.connect(source.slot, target.node, target.slot);
+        const innerEnds = new Map(); // inner link id -> last reroute id created for it (shared by its outputs)
+        for (const [source, target, route] of plan) {
+            const created = source.node.connect(source.slot, target.node, target.slot);
+            if (!created) continue;
+            // the outside chain before the subgraph input (kept objects)
+            if (route.before !== undefined && graph.reroutes.has(route.before)) created.parentId = route.before;
+            // the inner chain, created once per inner link
+            if (route.points.length) {
+                if (innerEnds.has(route.innerLink)) created.parentId = innerEnds.get(route.innerLink);
+                else innerEnds.set(route.innerLink, subgraphAppendReroutes(graph, created, route.points, offset));
+            }
+            // the outside chain after the subgraph output (kept objects), attached after the inner one
+            const after = (route.after ?? []).filter((id) => graph.reroutes.has(id));
+            if (after.length) {
+                const first = graph.reroutes.get(after[0]);
+                if (created.parentId === undefined) delete first.parentId;
+                else first.parentId = created.parentId;
+                created.parentId = after[after.length - 1];
+            }
+        }
         return [...copies.values()];
     }
 
@@ -26836,11 +26949,17 @@ function replaceNodeInGraph(graph, node, mapping) {
     const id = node.id;
     graph.remove(node);
 
+    const oldSize = node.size ? [node.size[0], node.size[1]] : null;
     newNode.id = id;
     graph.add(newNode, true, {
         doCalcSize: true
     });
     if (newNode.id !== id) throw new Error(`replaceNode: could not keep node id ${id}`);
+    // the node keeps the size it had, grown if the new type needs more room
+    if (oldSize && Number.isFinite(oldSize[0]) && Number.isFinite(oldSize[1])) {
+        newNode.size[0] = Math.max(oldSize[0], newNode.size[0]);
+        newNode.size[1] = Math.max(oldSize[1], newNode.size[1]);
+    }
 
     for (const move of inputMoves) {
         const link = graph.links[move.link];
@@ -28710,17 +28829,87 @@ LiteGraph.registerNodeType("basic/download", DownloadData);
 
 
 // Watch a value in the editor
+/**
+ * Watch: shows the value on its input. One node with three displays (property `display`):
+ * - "value": the value as the input's label (the classic watch);
+ * - "text": multiline text with font options (was `basic/watch_advanced`);
+ * - "tree": a JSON tree viewer (was `watch/value`, registered by watch.js as a display).
+ * The old types load as this one through automatic replacement mappings.
+ */
 class Watch {
 
     static title = "Watch";
     static desc = "Show value of input";
+
+    /** displays by name: {setup?(node), execute?(node), draw?(node, ctx, ...), mouseDown?(node, e, pos), menu?(node, canvas)} */
+    static displays = {
+        value: {
+            draw(node) {
+                node.inputs[0].label = Watch.toString(node.value);
+            },
+        },
+        text: {
+            setup(node) {
+                if (node.inputs[0]) node.inputs[0].label = "";
+                for (const [name, value, type] of [
+                        ["font_family", "Arial", "string"],
+                        ["font_size", 14, "number"],
+                        ["clip", false, "toggle"]
+                    ]) {
+                    if (!(name in node.properties)) node.addProperty(name, value, type);
+                }
+                node.value_last = undefined;
+                node.contlines = {
+                    lines: [],
+                    lines_tot: 0
+                };
+                node.changed = true;
+                // the text display's menu and resize handlers call these through `this`
+                for (const method of ["showFull", "fullWidth", "fullHeight", "copyContent", "onResize", "onResizeEnd"]) {
+                    if (typeof node[method] !== "function") node[method] = WatchAdvanced.prototype[method];
+                }
+            },
+            execute(node) {
+                WatchAdvanced.prototype.onExecute.call(node);
+            },
+            draw(node, ctx) {
+                WatchAdvanced.prototype.onDrawBackground.call(node, ctx);
+            },
+            menu(node, canvas) {
+                return WatchAdvanced.prototype.getExtraMenuOptions.call(node, canvas);
+            },
+        },
+    };
 
     constructor() {
         this.size = [60, 30];
         this.addInput("value", 0, {
             label: ""
         });
+        this.addProperty("display", "value", "enum", {
+            values: ["value", "text", "tree"]
+        });
         this.value = null;
+    }
+
+    /** the display in use (an unknown name, e.g. "tree" without watch.js, falls back to "value") */
+    getDisplay() {
+        return Watch.displays[this.properties?.display] ?? Watch.displays.value;
+    }
+
+    onPropertyChanged(name, value) {
+        if (name === "display") {
+            this.getDisplay().setup?.(this);
+            this.setDirtyCanvas?.(true, true);
+        } else if (this.properties?.display === "text") {
+            this.changed = true;
+        } else if (name === "clip_area") {
+            this.clip_area = value;
+        }
+    }
+
+    onConfigure() {
+        this.getDisplay().setup?.(this);
     }
 
     onConnectionsChange(connection, slot, connected, link_info) {
@@ -28728,11 +28917,18 @@ class Watch {
         if (connection != LiteGraph.INPUT) {
             return;
         }
+        if (this.properties?.display === "text") {
+            this.changed = true;
+            return;
+        }
         this.value = this.getInputData(0, true); // force update
     }
 
     onExecute() {
-        if (this.inputs[0]) {
+        const display = this.getDisplay();
+        if (display.execute) {
+            display.execute(this);
+        } else if (this.inputs[0]) {
             this.value = this.getInputData(0);
         }
     }
@@ -28765,9 +28961,16 @@ class Watch {
         }
     }
 
-    onDrawBackground() {
-        // show the current value
-        this.inputs[0].label = WatchAdvanced.toString(this.value);
+    onDrawBackground(ctx, canvas, element, pos) {
+        this.getDisplay().draw?.(this, ctx, canvas, element, pos);
+    }
+
+    onMouseDown(e, pos, canvas) {
+        return this.getDisplay().mouseDown?.(this, e, pos, canvas);
+    }
+
+    getExtraMenuOptions(canvas) {
+        return this.getDisplay().menu?.(this, canvas) ?? [];
     }
 }
 LiteGraph.registerNodeType("basic/watch", Watch);
@@ -28984,7 +29187,23 @@ class WatchAdvanced {
         }
     }
 }
-LiteGraph.registerNodeType("basic/watch_advanced", WatchAdvanced);
+// basic/watch_advanced is now basic/watch with display "text" (catalog cleanup, Wave 4e)
+LiteGraph.registerNodeReplacement({
+    old_type: "basic/watch_advanced",
+    new_type: "basic/watch",
+    auto: true,
+    properties: {
+        font_family: "font_family",
+        font_size: "font_size",
+        clip: "clip"
+    },
+    set: {
+        properties: {
+            display: "text"
+        }
+    },
+    reason: "one watch node: basic/watch with display \"text\"",
+});
 
 
 // in case one type doesnt match other type but you want to connect them anyway
@@ -51199,6 +51418,21 @@ class DOMSelector {
     }
 }
 LiteGraph.registerNodeType("html/dom_selector", DOMSelector);
+// the jQuery nodes (never in a build) are folded into the html family; their selector maps here (offered, not automatic)
+LiteGraph.registerNodeReplacement({
+    old_type: "jquery/select",
+    new_type: "html/dom_selector",
+    inputs: {
+        selector: "selector"
+    },
+    outputs: {
+        elements: "result"
+    },
+    properties: {
+        selector: null
+    },
+    reason: "the jQuery nodes were removed; html/dom_selector selects with a CSS selector",
+});
 
 class HtmlNode {
 
@@ -53587,7 +53821,58 @@ class WatchValue {
         }
     }
 }
-LiteGraph.registerNodeType("watch/value", WatchValue);
+// the JSON tree viewer is the "tree" display of basic/watch (catalog cleanup, Wave 4e)
+const WatchNode = LiteGraph.registered_node_types["basic/watch"];
+if (WatchNode?.displays) {
+    WatchNode.displays.tree = {
+        setup(node) {
+            if (node.inputs?.[0]) node.inputs[0].label = "";
+            node.state ??= {
+                scrollOffset: 0,
+                expandedNodes: new Set(),
+                hoverNodeId: null,
+                maxChildren: 6,
+                expandDepth: 2,
+                loadMoreNodes: new Set(),
+            };
+            node.clickRegions ??= [];
+            // the viewer's methods call each other through `this`
+            for (const method of ["render", "renderJSON", "handleClick", "expandUpToDepth", "updateInputData"]) {
+                if (typeof node[method] !== "function") node[method] = WatchValue.prototype[method];
+            }
+            if (!("clip_area" in node.properties)) node.addProperty("clip_area", true, "toggle");
+            node.clip_area = node.properties.clip_area;
+        },
+        execute(node) {
+            WatchValue.prototype.updateInputData.call(node);
+        },
+        draw(node, ctx, canvas, element, pos) {
+            if (!node.state) WatchNode.displays.tree.setup(node);
+            WatchValue.prototype.onDrawBackground.call(node, ctx, canvas, element, pos);
+        },
+        mouseDown(node, e, pos) {
+            if (!node.state) return;
+            WatchValue.prototype.handleClick.call(node, pos);
+        },
+    };
+}
+LiteGraph.registerNodeReplacement({
+    old_type: "watch/value",
+    new_type: "basic/watch",
+    auto: true,
+    inputs: {
+        data: "value"
+    },
+    properties: {
+        clip_area: "clip_area"
+    },
+    set: {
+        properties: {
+            display: "tree"
+        }
+    },
+    reason: "one watch node: basic/watch with display \"tree\"",
+});
 
 LiteGraph.packs.close("litegraph/watch");
 
@@ -53878,7 +54163,7 @@ class LGSocketIO {
             });
 
         } catch (e) {
-            console?.warn("network/SocketIO", "error", e);
+            console?.warn("network/socketio", "error", e);
             this.boxcolor = "#F00";
         }
     }
@@ -53899,7 +54184,13 @@ class LGSocketIO {
     }
 }
 
-LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
+LiteGraph.registerNodeType("network/socketio", LGSocketIO);
+LiteGraph.registerNodeReplacement({
+    old_type: "network/SocketIO",
+    new_type: "network/socketio",
+    auto: true,
+    reason: "renamed in the catalog cleanup (Wave 4e)"
+});
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("network/", ["network"]);
@@ -54533,7 +54824,13 @@ class WebSocketServer extends BaseServer {
 }
 
 // Register the node type with LiteGraph
-LiteGraph.registerNodeType("server/network/websocketserver", WebSocketServer);
+LiteGraph.registerNodeType("network/server/websocket", WebSocketServer);
+LiteGraph.registerNodeReplacement({
+    old_type: "server/network/websocketserver",
+    new_type: "network/server/websocket",
+    auto: true,
+    reason: "renamed in the catalog cleanup (Wave 4e)"
+});
 
 
 
@@ -54656,7 +54953,13 @@ class SocketIOServerNode extends BaseServer {
 }
 
 // Register Socket.io server node.
-LiteGraph.registerNodeType("nodejs/network/SocketIO_server", SocketIOServerNode);
+LiteGraph.registerNodeType("network/server/socketio", SocketIOServerNode);
+LiteGraph.registerNodeReplacement({
+    old_type: "nodejs/network/SocketIO_server",
+    new_type: "network/server/socketio",
+    auto: true,
+    reason: "renamed in the catalog cleanup (Wave 4e)"
+});
 
 // ======================
 // OSC Bridge Node
@@ -54769,7 +55072,13 @@ class OSCBridge extends BaseServer {
 
 // Register OSC Bridge node.
 if (typeof LiteGraph !== "undefined") {
-    LiteGraph.registerNodeType("nodejs/network/osc_bridge", OSCBridge);
+    LiteGraph.registerNodeType("network/server/osc_bridge", OSCBridge);
+    LiteGraph.registerNodeReplacement({
+        old_type: "nodejs/network/osc_bridge",
+        new_type: "network/server/osc_bridge",
+        auto: true,
+        reason: "renamed in the catalog cleanup (Wave 4e)"
+    });
 }
 
 // ======================
@@ -54885,7 +55194,13 @@ class OSCServerNode extends BaseServer {
 
 // Register OSC Server node.
 if (typeof LiteGraph !== "undefined") {
-    LiteGraph.registerNodeType("nodejs/network/OSC_server", OSCServerNode);
+    LiteGraph.registerNodeType("network/server/osc", OSCServerNode);
+    LiteGraph.registerNodeReplacement({
+        old_type: "nodejs/network/OSC_server",
+        new_type: "network/server/osc",
+        auto: true,
+        reason: "renamed in the catalog cleanup (Wave 4e)"
+    });
 }
 
 // ======================
@@ -54996,11 +55311,17 @@ class UDPServerNode extends BaseServer {
 }
 // Register UDP Server node.
 if (typeof LiteGraph !== "undefined") {
-    LiteGraph.registerNodeType("nodejs/network/UDP_server", UDPServerNode);
+    LiteGraph.registerNodeType("network/server/udp", UDPServerNode);
+    LiteGraph.registerNodeReplacement({
+        old_type: "nodejs/network/UDP_server",
+        new_type: "network/server/udp",
+        auto: true,
+        reason: "renamed in the catalog cleanup (Wave 4e)"
+    });
 }
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
-LiteGraph.declareCapabilities(["nodejs/", "server/network/"], ["node", "network"]);
+LiteGraph.declareCapabilities("network/server/", ["node", "network"]);
 
 LiteGraph.packs.close("litegraph/nodejs-network");
 
@@ -55043,10 +55364,16 @@ class NodeProcessInfo {
     }
 }
 
-LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
+LiteGraph.registerNodeType("sys/processInfo", NodeProcessInfo);
+LiteGraph.registerNodeReplacement({
+    old_type: "server/process/NodeProcessInfo",
+    new_type: "sys/processInfo",
+    auto: true,
+    reason: "renamed in the catalog cleanup (Wave 4e)"
+});
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
-LiteGraph.declareCapabilities("server/process/", ["node", "sys"]);
+LiteGraph.declareCapabilities("sys/processInfo", ["node", "sys"]);
 
 LiteGraph.packs.close("litegraph/nodejs-process");
 

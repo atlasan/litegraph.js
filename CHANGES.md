@@ -1,6 +1,23 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 4e, catalog and boundaries
+
+## Changed
+
+* One watch node: `basic/watch` with a `display` property (`value`, `text`, `tree`); `basic/watch_advanced` and `watch/value` load as it.
+* Network and process type names: servers under `network/server/*`, `network/socketio`, `sys/processInfo`; the old names load through automatic replacement mappings, and the runner's `RUNNER_ALLOW_TYPES` / `RUNNER_DENY_TYPES` still accept them.
+* Converting to a subgraph and unpacking keep reroutes on both sides of the boundary.
+* A node replacement keeps the node's size (grown if the new type needs more room).
+
+## Removed
+
+* `src/nodes/jquery.js` (never in a build); `jquery/select` is offered as `html/dom_selector`.
+
+## Fixed
+
+* A document whose missing types were all replaced automatically no longer reports a load error (`configure` returned true, so the runner refused it).
+
 # Unreleased (0.10.x): Wave 4d, layout and palette
 
 ## Added

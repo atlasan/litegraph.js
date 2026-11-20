@@ -25,7 +25,7 @@ New plans start from the [plan template](../_templates/plan.md).
 |---|---|---|
 | 2026-11-21 | [Wave 5: repository and packaging](2026-11-21-wave5-repository-packaging.md): dependencies, exports, CI build freshness, docs, apps move | accepted; in progress |
 | 2026-11-20 | [Pre-release 0.18.0-dev.1](2026-11-20-pre-release-0.18.0-dev.1.md): wave audit, open items, release steps (tag only) | accepted; in progress |
-| 2026-11-20 | [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md): packs and missing nodes (4a), workspace state and execution (4b), links and view (4c), layout and palette (4d), catalog and boundaries (4e) | accepted |
+| 2026-11-20 | [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md): packs and missing nodes (4a), workspace state and execution (4b), links and view (4c), layout and palette (4d), catalog and boundaries (4e) | done |
 | 2026-11-20 | [Wave 3: subgraph system](2026-11-20-wave3-subgraph-system.md): definitions in ComfyUI's format, linked instances, function node, promoted widgets, components | done |
 | 2026-11-20 | [Wave 2: authoring core](2026-11-20-wave2-authoring-core.md): subgraph convert/unpack, groups, clipboard, search (2a); links and pointer (2b) | done |
 | 2026-11-19 | [Feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md): idea catalog and wave proposal | accepted; the basis of the roadmap |

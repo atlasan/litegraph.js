@@ -14,11 +14,13 @@
 // - RUNNER_ALLOW_SCRIPTS=1: let script nodes evaluate their code, without allowing the other types.
 // - RUNNER_ALLOW_TYPES: comma-separated default-denied types to allow again. Entries can be
 //   - a type: "sys/fileRead";
-//   - a prefix ending in "/": "nodejs/network/";
+//   - a prefix ending in "/": "network/server/";
 //   - a family from DENIED_FAMILIES: "@outbound", "@host-read", ...
 //   e.g. RUNNER_ALLOW_TYPES=@outbound,sys/fileRead
 // - RUNNER_DENY_TYPES: comma-separated extra types to deny; an entry ending in "/" denies a prefix.
 //   It wins over RUNNER_ALLOW_TYPES.
+// Types renamed by the catalog cleanup (RENAMED_TYPES) are still understood in both settings and in
+// workflows (they load as the new type, which is the one checked).
 
 /** Default-denied node types, by family; `@<family>` in RUNNER_ALLOW_TYPES re-allows a whole family. */
 export const DENIED_FAMILIES = Object.freeze({
@@ -28,14 +30,14 @@ export const DENIED_FAMILIES = Object.freeze({
   'file-write': { description: 'write or delete files', types: ['sys/fileWrite', 'sys/fileDelete'] },
   'host-read': { description: 'read files and inspect the runner host', types: [
     'sys/fileRead', 'sys/fileList', 'sys/fileExists', 'sys/processList', 'sys/serviceList', 'sys/info',
-    'server/process/NodeProcessInfo',
+    'sys/processInfo',
   ] },
   'servers': { description: 'open listening network servers on the runner host', types: [
-    'server/network/websocketserver', 'nodejs/network/SocketIO_server', 'nodejs/network/OSC_server',
-    'nodejs/network/UDP_server', 'nodejs/network/osc_bridge',
+    'network/server/websocket', 'network/server/socketio', 'network/server/osc',
+    'network/server/udp', 'network/server/osc_bridge',
   ] },
   'outbound': { description: 'make requests from the runner host (HTTP, WebSocket, Socket.IO, WebRTC)', types: [
-    'network/httprequest', 'network/websocket', 'network/SocketIO', 'network/webrtc', 'basic/file',
+    'network/httprequest', 'network/websocket', 'network/socketio', 'network/webrtc', 'basic/file',
   ] },
   'databases': { description: 'connect to databases with credentials from the workflow', types: [
     'mysql/connection', 'mysql/query', 'mysql/insert', 'mysql/update', 'mysql/delete', 'mysql/transaction',
@@ -44,6 +46,28 @@ export const DENIED_FAMILIES = Object.freeze({
     'libraries/load', 'libraries/register', 'libraries/search_CDN_lib', 'geometry/eval',
   ] },
 });
+
+/** Old type names → current ones (catalog cleanup, Wave 4e); old prefixes map as prefixes. */
+export const RENAMED_TYPES = Object.freeze({
+  'server/network/websocketserver': 'network/server/websocket',
+  'nodejs/network/SocketIO_server': 'network/server/socketio',
+  'nodejs/network/OSC_server': 'network/server/osc',
+  'nodejs/network/UDP_server': 'network/server/udp',
+  'nodejs/network/osc_bridge': 'network/server/osc_bridge',
+  'network/SocketIO': 'network/socketio',
+  'server/process/NodeProcessInfo': 'sys/processInfo',
+  'nodejs/network/': 'network/server/',
+  'server/network/': 'network/server/',
+  'server/process/': 'sys/processInfo',
+});
+
+/** The current name of a renamed type, or null. */
+export function renamedType(type) {
+  return !type.endsWith('/') && Object.hasOwn(RENAMED_TYPES, type) ? RENAMED_TYPES[type] : null;
+}
+
+/** A setting entry or type with its renamed form (both are kept, so either name matches). */
+const withRenames = (entry) => (RENAMED_TYPES[entry] ? [entry, RENAMED_TYPES[entry]] : [entry]);
 
 export const DEFAULT_DENIED_TYPES = Object.freeze(Object.values(DENIED_FAMILIES).flatMap((family) => family.types));
 
@@ -67,9 +91,9 @@ export function deniedTypes(env = process.env) {
   if (env.RUNNER_ALLOW_SYS === '1') return [];
   const allowed = listOf(env.RUNNER_ALLOW_TYPES).flatMap((entry) => entry.startsWith('@')
     ? (DENIED_FAMILIES[entry.slice(1)]?.types ?? unknownFamily(entry))
-    : [entry]);
+    : withRenames(entry));
   const defaults = DEFAULT_DENIED_TYPES.filter((type) => !isDenied(type, allowed));
-  return [...defaults, ...listOf(env.RUNNER_DENY_TYPES)];
+  return [...defaults, ...listOf(env.RUNNER_DENY_TYPES).flatMap(withRenames)];
 }
 
 function isDenied(type, denied) {
@@ -109,9 +133,9 @@ function eachNode(data, visitNode, maxDepth = 64) {
  *   mapping), or null. The resulting type must be registered and allowed as well.
  * @throws {Error} on an unknown node type, or listing every denied type
  */
-export function assertAllowedGraph(data, isRegistered, { env = process.env, maxDepth = 64, replacedType = () => null } = {}) {
+export function assertAllowedGraph(data, isRegistered, { env = process.env, maxDepth = 64, replacedType = renamedType } = {}) {
   const denied = deniedTypes(env);
-  const extraDenied = listOf(env.RUNNER_DENY_TYPES);
+  const extraDenied = listOf(env.RUNNER_DENY_TYPES).flatMap(withRenames);
   const refused = new Map(); // type -> node paths
   eachNode(data, (node, where, definitionIds) => {
     const type = node?.type;

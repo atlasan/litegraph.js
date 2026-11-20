@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4d
+> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -81,6 +81,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Execution state (Wave 4b):** `runStep` calls `reportExecutionState(node, "status", {status: "done"})` when a node's state is not already done; the catch reports `error` on the failing node; root `start()` reports `reset`. `node.execution_state` is runtime only. The canvas draws it in `drawNodeShape` (title-box colour, `drawNodeExecutionOverlay`); the title text goes through `drawNodeTitleText` (icon first).
   - **Auto-layout (Wave 4d):** `autoLayout` builds a model (`LayoutRegistry.buildModel`: boxes with titles, links between nodes in scope), awaits the engine (loading its library first), then applies positions anchored at the old top-left in one `transact("autoLayout")`; reroutes move by the mean shift of their link's ends; groups wholly made of moved nodes are fitted. `LiteGraph.registerBuiltinLibraries()` (called by `initialize`) registers `dagre`.
   - **Missing types and replacement (Wave 4a):** a missing type loads as a plain `LGraphNode` placeholder (`has_errors`, `last_serialization`, title = type) that serializes back unchanged. `getMissingNodes({deep})`; root `configure` emits `missing-nodes {report, reason}` (`reason` "history" / "rollback" when undo or a failed transaction reloads). `replaceNode` / `replaceNodes` run `PackRegistry.replaceNodeInGraph` in a transaction: same id, link objects moved to mapped slots (ids and reroutes kept), unplaceable links removed and returned as `dropped`. `_applyAutoReplacements` runs `auto` mappings during configure inside a discarded transaction (no history, no revision).
+  - **Reroutes across the boundary (Wave 4e):** `buildFromNodes` captures the chains of links touching the selection, keeps the points outside the selection's box on the outer links (reusing the reroute objects) and recreates the inside points in the inner graph (`subgraphAppendReroutes`, no history entry); unused outer reroutes are dropped. `unpack` joins the outer chain before an input, the inner chain (offset, created once per inner link) and the outer chain after an output.
   - **Conversion:** `LGraph.convertToSubgraph(nodes)` / `unpackSubgraph(node)` (on `Subgraph.buildFromNodes` / `unpack`): one undo step, rolled back on failure.
 
 ## Execution
@@ -157,7 +158,8 @@ Listed in build order (`build.py` `lib_js_files`):
 ## Known traps
 
 - **`allow_scripts`:** false in the core, **true in every `*.full*` bundle** (because `defaults_debug.js` is part of the build), and toggleable from the `math/formula` widget. The runner resets it.
-- **Unbuilt node files:** six node files are in no build: `device`, `jquery`, `threejs`, `libraries/osc`, `libraries/udp`, `nodejs_mysql`.
+- **Unbuilt node files:** five node files are in no build: `device`, `threejs`, `libraries/osc`, `libraries/udp`, `nodejs_mysql` (`jquery.js` was removed in Wave 4e).
+- **Renamed types (Wave 4e):** old names load through automatic replacement mappings registered next to the new types (`basic/watch_advanced`, `watch/value` → `basic/watch` with a `display`; network servers → `network/server/*`; `network/SocketIO` → `network/socketio`; `server/process/NodeProcessInfo` → `sys/processInfo`). `nodePolicy.RENAMED_TYPES` keeps the same table for runner settings.
 - **Gated families:** geometry, glfx and math3d register fewer types without `GL` or `glMatrix`.
 - **`instanceof LGraphNode` is unreliable**, because registration copies methods. Use `LGraphCanvas.isNodeItem`.
 - **`active_canvas`** is set on pointer down and on keydown. Prefer `this`.

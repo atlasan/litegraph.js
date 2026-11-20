@@ -21,7 +21,7 @@ async function fixture(type) {
 }
 
 test('graph stop closes WebSocket server and connected clients; graph can restart', { timeout: 5000 }, async () => {
-    const { graph, node } = await fixture('server/network/websocketserver');
+    const { graph, node } = await fixture('network/server/websocket');
     let client;
     try {
         graph.start(100);
@@ -49,7 +49,7 @@ test('graph stop closes WebSocket server and connected clients; graph can restar
 });
 
 test('UDP node receives loopback data and graph stop releases the socket', { timeout: 5000 }, async () => {
-    const { graph, node } = await fixture('nodejs/network/UDP_server');
+    const { graph, node } = await fixture('network/server/udp');
     const sender = dgram.createSocket('udp4');
     try {
         graph.start(100);
@@ -71,7 +71,7 @@ test('UDP node receives loopback data and graph stop releases the socket', { tim
 
 test('stop and removal cancel a failed server retry', { timeout: 5000 }, async () => {
     for (const cleanup of ['stop', 'clear']) {
-        const { graph, node } = await fixture('server/network/websocketserver');
+        const { graph, node } = await fixture('network/server/websocket');
         let attempts = 0;
         node.properties.retryTimeout = 25;
         node._createServer = () => { attempts++; throw new Error('simulated bind failure'); };
@@ -90,7 +90,7 @@ test('stop and removal cancel a failed server retry', { timeout: 5000 }, async (
 
 test('Socket.IO server constructor is independent of a loaded client global', { timeout: 5000 }, async () => {
     await LiteGraph.LibraryManager.loadLibrary('io');
-    const { graph, node } = await fixture('nodejs/network/SocketIO_server');
+    const { graph, node } = await fixture('network/server/socketio');
     try {
         node.startServer();
         assert.ok(node.server instanceof LiteGraph.LibraryManager.getLib('socket.io'));

@@ -453,7 +453,8 @@ class WebSocketServer extends BaseServer {
 }
 
 // Register the node type with LiteGraph
-LiteGraph.registerNodeType("server/network/websocketserver", WebSocketServer);
+LiteGraph.registerNodeType("network/server/websocket", WebSocketServer);
+LiteGraph.registerNodeReplacement({ old_type: "server/network/websocketserver", new_type: "network/server/websocket", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 
 
 
@@ -570,7 +571,8 @@ class SocketIOServerNode extends BaseServer {
 }
 
 // Register Socket.io server node.
-LiteGraph.registerNodeType("nodejs/network/SocketIO_server", SocketIOServerNode);
+LiteGraph.registerNodeType("network/server/socketio", SocketIOServerNode);
+LiteGraph.registerNodeReplacement({ old_type: "nodejs/network/SocketIO_server", new_type: "network/server/socketio", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 
 // ======================
 // OSC Bridge Node
@@ -681,7 +683,8 @@ class OSCBridge extends BaseServer {
 
 // Register OSC Bridge node.
 if (typeof LiteGraph !== "undefined") {
-    LiteGraph.registerNodeType("nodejs/network/osc_bridge", OSCBridge);
+    LiteGraph.registerNodeType("network/server/osc_bridge", OSCBridge);
+    LiteGraph.registerNodeReplacement({ old_type: "nodejs/network/osc_bridge", new_type: "network/server/osc_bridge", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 }
 
 // ======================
@@ -786,7 +789,8 @@ class OSCServerNode extends BaseServer {
 
 // Register OSC Server node.
 if (typeof LiteGraph !== "undefined") {
-    LiteGraph.registerNodeType("nodejs/network/OSC_server", OSCServerNode);
+    LiteGraph.registerNodeType("network/server/osc", OSCServerNode);
+    LiteGraph.registerNodeReplacement({ old_type: "nodejs/network/OSC_server", new_type: "network/server/osc", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 }
 
 // ======================
@@ -894,10 +898,11 @@ class UDPServerNode extends BaseServer {
 }
 // Register UDP Server node.
 if (typeof LiteGraph !== "undefined") {
-    LiteGraph.registerNodeType("nodejs/network/UDP_server", UDPServerNode);
+    LiteGraph.registerNodeType("network/server/udp", UDPServerNode);
+    LiteGraph.registerNodeReplacement({ old_type: "nodejs/network/UDP_server", new_type: "network/server/udp", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 }
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
-LiteGraph.declareCapabilities(["nodejs/", "server/network/"], ["node", "network"]);
+LiteGraph.declareCapabilities("network/server/", ["node", "network"]);
 
 LiteGraph.packs.close("litegraph/nodejs-network");

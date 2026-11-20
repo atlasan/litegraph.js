@@ -2769,9 +2769,12 @@ export class LGraph {
         if (nodes) {
             for (let i = 0, l = nodes.length; i < l; ++i) {
                 var n_info = nodes[i]; // stored info
-                var node = LiteGraph.createNode(n_info.type, n_info.title);
+                // a renamed type (an automatic replacement) loads as a placeholder and is replaced below, quietly
+                const renamed = !LiteGraph.registered_node_types[n_info.type] && LiteGraph.getNodeReplacement?.(n_info.type)?.auto && LiteGraph.settings?.get("LiteGraph.Packs.AutoReplace") !== false;
+                var node = renamed ? null : LiteGraph.createNode(n_info.type, n_info.title);
                 if (!node) {
-                    LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
+                    if (renamed) LiteGraph.log_debug("lgraph", "configure", "renamed node type", n_info.type, "->", renamed && LiteGraph.getNodeReplacement(n_info.type).new_type);
+                    else LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
 
                     // in case of error we create a replacement node to avoid losing info
                     node = new LiteGraph.LGraphNode();
@@ -2796,6 +2799,8 @@ export class LGraph {
 
         // replacement mappings marked auto (renamed types): applied while loading, without an undo step
         const replaced = this._applyAutoReplacements();
+        // a replaced placeholder is no longer an error
+        if (replaced.length) error = this._nodes.some((node) => PackRegistry.isMissingNodePlaceholder(node));
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
         this.state = {
