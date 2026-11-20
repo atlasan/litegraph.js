@@ -458,6 +458,17 @@ export class LGraphNode {
      * @method getTitle
      */
 
+    /**
+     * The node's address from the root graph: node ids joined by ":", outermost first
+     * (e.g. "3:7:2" is node 2 inside subgraph node 7 inside subgraph node 3).
+     * @returns {string}
+     */
+    getPath() {
+        const ids = [];
+        for (let node = this; node; node = node.graph?._subgraph_node) ids.unshift(node.id);
+        return ids.join(":");
+    }
+
     getTitle() {
         return this.title ?? this.constructor.title;
     }
@@ -980,6 +991,10 @@ export class LGraphNode {
         } catch (error) {
             this.exec_version = previousExecution;
             graph.nodes_executedAction[this.id] = previousAction;
+            // the innermost failing node names itself; outer graphs (subgraphs) report it and its path
+            if (error && typeof error === "object" && !error.node) {
+                try { error.node = this; } catch { /* a frozen error keeps its fields */ }
+            }
             throw error;
         } finally {
             // A callback may remove this node or clear its graph.

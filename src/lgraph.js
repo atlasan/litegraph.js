@@ -507,7 +507,9 @@ export class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
-            this._emit("node-error", { error, node: error?.node ?? this.nodes_executing?.at?.(-1) ?? null });
+            // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
+            const failing = typeof error?.node?.getPath === "function" ? error.node : null;
+            this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
@@ -2136,6 +2138,23 @@ export class LGraph {
             }
         };
         visit(this, 0);
+    }
+
+    /**
+     * The node at a path from the root graph (see LGraphNode.getPath), or null.
+     * @param {string} path - node ids joined by ":", e.g. "3:7:2"
+     */
+    resolvePath(path) {
+        const parts = String(path ?? "").split(":").filter((part) => part !== "");
+        let graph = this.rootGraph, node = null;
+        for (const [index, part] of parts.entries()) {
+            if (!graph) return null;
+            const id = /^-?\d+$/.test(part) ? Number(part) : part;
+            node = graph.getNodeById(id) ?? null;
+            if (!node) return null;
+            graph = index < parts.length - 1 ? node.subgraph : null;
+        }
+        return node;
     }
 
     /** subgraph and function nodes (at any depth) that use a definition */

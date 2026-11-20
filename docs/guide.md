@@ -199,6 +199,13 @@ graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0
 | `LiteGraph.subgraph_max_depth` | 32 | Nesting limit when loading definitions, and the call depth of function nodes |
 | `LiteGraph.Subgraph.PasteLinked` | on | Pasted or duplicated subgraph nodes share their definition; off: each gets a copy |
 
+**Working inside subgraphs:**
+- **Navigation:** the ▼ title button or a double click opens a subgraph. The path at the top ("Root › Outer › Inner") is clickable: a click on an outer level leaves down to it.
+- **Interface:** inside a subgraph, dropping a link from a slot on empty space offers "Add subgraph input" or "Add subgraph output". `graph/input` and `graph/output` nodes have "Move up/down in the interface", and a name already used by another slot is refused. Outer links follow renames and reorders, and so do the other linked instances.
+- **Promoted widgets:** "Promote widget" in an inner node's menu shows that widget on the subgraph node. Its value belongs to that instance, and a link into the input overrides it. The definition keeps the inner widget's default.
+- **Commands:** the `subgraph_tools` extension adds `litegraph.subgraph.open`, `close`, `closeAll`, `convert`, `unpack`, `makeUnique` and `removeUnusedDefinitions`.
+- **Paths:** `node.getPath()` addresses a node from the root ("3:7:2"), and `graph.resolvePath(path)` finds it. `node-error` events carry the innermost failing node and its `path`.
+
 **Function nodes:** `graph/function` calls a definition of the document. Pick it in the node's `function` combo; `call` (action input or button) pushes the inputs, runs it once, pulls the outputs and fires `done`. Each function node keeps its own state between calls. A function cannot call a definition it is inside of.
 
 **Groups:** `group.resizeTo(items)` and `group.fitToContents()` change a group's size; `group.setNodesMode(mode)` sets the mode of every node inside. The group menu offers "Fit to contents" and "Mode for all nodes".
