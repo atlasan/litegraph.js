@@ -24471,9 +24471,17 @@ export class LibraryManager {
         }
         try {
             this.vm = await import("vm").then(m => m.default || m);
-            this.fetch = await import("node-fetch").then(m => m.default || m);
         } catch (e) {
-            console.warn("Error importing Node.js modules:", e);
+            console.warn("Error importing 'vm':", e);
+        }
+        // Node.js 18+ has fetch; node-fetch (optional dependency) is only the fallback
+        this.fetch = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
+        if (!this.fetch) {
+            try {
+                this.fetch = await import("node-fetch").then(m => m.default || m);
+            } catch {
+                console.warn("No fetch: use Node.js 18 or later, or install the optional package: npm install node-fetch");
+            }
         }
     }
 
@@ -24670,7 +24678,18 @@ export class LibraryManager {
     async loadPackages(library) {
         const modules = [];
         for (const name of library.npmPackages) {
-            modules.push(this.selectExport(await import(name), library.defaultExport));
+            let namespace;
+            try {
+                namespace = await import(name);
+            } catch (error) {
+                const missing = error?.code === "ERR_MODULE_NOT_FOUND" || error?.code === "MODULE_NOT_FOUND";
+                if (!missing) throw error;
+                // integrations are optional dependencies: name the package and how to get it
+                throw new Error(`Optional package '${name}' is not installed (library ${library.key}): npm install ${name}`, {
+                    cause: error
+                });
+            }
+            modules.push(this.selectExport(namespace, library.defaultExport));
         }
         return modules;
     }
@@ -47610,7 +47629,7 @@ class LGWebSocket {
             try {
                 WSConstructor = require("ws");
             } catch (err) {
-                console.error("WebSocket module not found:", err);
+                console.error("WebSocket is not available: install the optional package with npm install ws", err);
                 return;
             }
         }
