@@ -1,6 +1,25 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased (0.10.x): Wave 3b, subgraph authoring
+
+## Added
+
+* A clickable subgraph breadcrumb (`closeSubgraphTo`, `getBreadcrumb`, `getBreadcrumbAt`).
+* The `subgraph_tools` extension: `litegraph.subgraph.open/close/closeAll/convert/unpack/makeUnique/removeUnusedDefinitions`.
+* Interface editing: "Add subgraph input/output" from a link release (`exposeSlot`), "Move up/down in the interface" (`moveInterfaceSlot`), and refusal of duplicate interface names.
+* Promoted widgets: `promoteWidget` / `unpromoteWidget` / `isWidgetPromoted` and the matching node menu entries. Values belong to each instance, and ComfyUI `widgets_values` load into them.
+* `node.getPath()`, `graph.resolvePath(path)`, and `path` in `node-error` events.
+
+## Changed
+
+* Leaving a subgraph on the canvas commits it only after an edit.
+
+## Fixed
+
+* `node-error` named no node (`node` was `false`); it now names the innermost failing node, also from inside subgraphs.
+* The subgraph path at the top of the canvas never showed.
+
 # Unreleased (0.10.x): Wave 3a, subgraph definitions
 
 ## Added
