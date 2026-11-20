@@ -165,7 +165,7 @@ describe('blueprints', () => {
         expect(graph.subgraphs.get(inner.id).nodes[0].properties.k).toBe(3); // untouched
     });
 
-    test('the canvas menu lists the document definitions to insert', () => {
+    test('the canvas menu lists the document definitions to insert, and a blueprint file', async () => {
         const dom = new JSDOM('<main></main>');
         globalThis.window = dom.window; globalThis.document = dom.window.document;
         dom.window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: (t, k) => k in t ? t[k] : () => ({ width: 0 }), set: (t, k, v) => { t[k] = v; return true; } });
@@ -174,16 +174,22 @@ describe('blueprints', () => {
             const graph = new LGraph();
             const el = document.createElement('canvas'); document.querySelector('main').appendChild(el);
             const canvas = new LGraphCanvas(el, graph, { skip_render: true });
-            expect(canvas.getCanvasMenuOptions().some((o) => o?.content === 'Insert subgraph')).toBe(false);
             const first = graph.insertDefinition(times(2));
             const entry = canvas.getCanvasMenuOptions().find((o) => o?.content === 'Insert subgraph');
             let captured;
             LiteGraph.ContextMenu = (options, settings) => { captured = { options, settings }; return {}; };
             LGraphCanvas.active_canvas = canvas;
             entry.callback(null, {}, {}, null);
-            expect(captured.options.map((o) => o.content)).toEqual(['Times', 'Times (copy)']);
-            captured.settings.callback(captured.options[0]);
+            expect(captured.options.map((o) => o?.content ?? null)).toEqual(['From file…', null, 'Times', 'Times (copy)']);
+            captured.settings.callback(captured.options[2]);
             expect(graph._nodes.filter((n) => n.properties?.subgraph_id === first.properties.subgraph_id).length).toBe(2);
+            // a blueprint file (a definitions document) is inserted as a copy
+            const file = { text: async () => JSON.stringify({ nodes: [{ id: 1, type: 'bp-0000-4000-8000-000000000001', properties: {} }], links: [],
+                definitions: { subgraphs: [times(9, 'bp-0000-4000-8000-000000000001', 'From file')] } }) };
+            const node = await canvas.pickBlueprintFile([300, 40], file);
+            expect(node.title).toBe('From file');
+            expect(node.properties.subgraph_id).not.toBe('bp-0000-4000-8000-000000000001');
+            expect(await canvas.pickBlueprintFile([0, 0], { text: async () => '{}' })).toBeNull();
         } finally { LiteGraph.ContextMenu = original; dom.window.close(); delete globalThis.window; delete globalThis.document; }
     });
 });
