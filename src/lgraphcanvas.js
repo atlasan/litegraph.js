@@ -5876,7 +5876,24 @@ export class LGraphCanvas {
         }else{
             group.pos = canvas.convertEventToCanvasOffset(mouse_event);
         }
-        canvas.graph.add(group);
+        canvas.graph.transact("groupAdd", () => canvas.graph.add(group));
+    }
+
+    /**
+     * Wraps the whole selection (nodes, groups, reroutes) in a new group, as one undo step.
+     * @param {string} [title]
+     * @returns {object|null} the group
+     */
+    groupSelected(title = "Group") {
+        const items = this.selectedItems;
+        if (!this.graph || !items.length) return null;
+        const group = new LiteGraph.LGraphGroup(title);
+        this.graph.transact("groupSelected", () => {
+            group.resizeTo(items, this.options.groups_add_default_spacing ?? 10);
+            this.graph.add(group);
+        });
+        this.setDirty(true, true);
+        return group;
     }
 
     /**
@@ -9000,6 +9017,10 @@ export class LGraphCanvas {
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
 
+            if (this.selectedItems.length) {
+                options.push({ content: "Group selected", callback: () => this.groupSelected() });
+            }
+
             if (Object.keys(this.selected_nodes).length > 1) {
                 options.push({
                     content: "Align",
@@ -9186,9 +9207,37 @@ export class LGraphCanvas {
         return options;
     }
 
-    getGroupMenuOptions() {
+    getGroupMenuOptions(group) {
+        const canvas = this;
+        const modes = LiteGraph.NODE_MODES.map((name, mode) => ({ content: name, mode }))
+            .filter((entry) => entry.content);
         var o = [
             { content: "Title", callback: LGraphCanvas.onShowNodeInfoEditor },
+            {
+                content: "Fit to contents",
+                callback: () => {
+                    if (!group?.graph) return;
+                    group.graph.transact("groupFit", () => {
+                        group.fitToContents();
+                        group.graph.onGraphChanged({ action: "groupFit" });
+                    });
+                    canvas.setDirty(true, true);
+                },
+            },
+            {
+                content: "Mode for all nodes",
+                has_submenu: true,
+                submenu: {
+                    options: modes,
+                    callback: (entry) => {
+                        if (!group?.graph) return;
+                        group.graph.transact("groupNodesMode", () => {
+                            if (group.setNodesMode(entry.mode).length) group.graph.onGraphChanged({ action: "groupNodesMode" });
+                        });
+                        canvas.setDirty(true, true);
+                    },
+                },
+            },
             {
                 content: "Color",
                 has_submenu: true,

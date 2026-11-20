@@ -1211,6 +1211,11 @@ export declare class LGraphGroup {
     recomputeInsideNodes(): void;
     isPointInside: LGraphNode["isPointInside"];
     setDirtyCanvas: LGraphNode["setDirtyCanvas"];
+    /** encloses items (nodes, groups, reroutes) with padding and room for the title */
+    resizeTo(items: Array<LGraphNode | LGraphGroup | Reroute>, padding?: number): boolean;
+    fitToContents(padding?: number): boolean;
+    /** sets the execution mode of every node inside; returns the nodes changed */
+    setNodesMode(mode: number): LGraphNode[];
 }
 
 /** An event delivered by LGraphEventTarget. */
@@ -1648,6 +1653,9 @@ export declare class LGraphCanvas {
     moveSelected(dx: number, dy: number): void;
     /** deletes selected nodes, groups and reroutes, one undo step */
     deleteSelected(): void;
+    /** wraps the selection in a new group, one undo step */
+    groupSelected(title?: string): LGraphGroup | null;
+    getGroupMenuOptions(group?: LGraphGroup): any[];
     /** true for a graph node (registered classes need not extend LGraphNode) */
     static isNodeItem(item: unknown): boolean;
 

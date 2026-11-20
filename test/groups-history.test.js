@@ -76,3 +76,34 @@ describe('graph history', () => {
         } finally { LiteGraph.actionHistory_enabled = prev; }
     });
 });
+
+describe('group authoring', () => {
+    test('resizeTo encloses items with padding and title room; fitToContents follows the contents', () => {
+        const graph = new LGraph();
+        const a = LiteGraph.createNode('grp/box'); a.pos = [100, 100]; graph.add(a);
+        const b = LiteGraph.createNode('grp/box'); b.pos = [300, 200]; graph.add(b);
+        const group = new LGraphGroup('G'); graph.add(group);
+        expect(group.resizeTo([a, b], 10)).toBe(true);
+        const ba = a.getBounding(), bb = b.getBounding();
+        const title = group.font_size * 1.4;
+        expect(group._bounding[0]).toBeCloseTo(ba[0] - 10);
+        expect(group._bounding[1]).toBeCloseTo(ba[1] - 10 - title);
+        expect(group._bounding[0] + group._bounding[2]).toBeCloseTo(bb[0] + bb[2] + 10);
+        expect(group._bounding[1] + group._bounding[3]).toBeCloseTo(bb[1] + bb[3] + 10);
+        expect(group.resizeTo([], 10)).toBe(false);
+        b.pos = [150, 120]; // move inside, then shrink to fit
+        expect(group.fitToContents(5)).toBe(true);
+        expect(group._bounding[2]).toBeLessThan(260);
+    });
+
+    test('setNodesMode changes every node inside the group', () => {
+        const graph = new LGraph();
+        const inside = LiteGraph.createNode('grp/box'); inside.pos = [50, 80]; graph.add(inside);
+        const outside = LiteGraph.createNode('grp/box'); outside.pos = [900, 900]; graph.add(outside);
+        const group = new LGraphGroup('G'); graph.add(group); group._bounding.set([0, 0, 300, 200]);
+        expect(group.setNodesMode(LiteGraph.NEVER)).toEqual([inside]);
+        expect(inside.mode).toBe(LiteGraph.NEVER);
+        expect(outside.mode).toBe(LiteGraph.ALWAYS);
+        expect(group.setNodesMode(LiteGraph.NEVER)).toEqual([]); // already
+    });
+});

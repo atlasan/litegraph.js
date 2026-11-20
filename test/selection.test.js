@@ -161,3 +161,25 @@ test('dragging a reroute on the canvas is a pointer gesture and one undo step', 
         expect(graph.history.actionHistory[graph.history.actionHistoryVersions.at(-1)].actionName).toBe('rerouteMove');
     } finally { LiteGraph.actionHistory_enabled = prev; canvas.dispose(); }
 });
+
+test('groupSelected wraps nodes, groups and reroutes in one undo step', () => {
+    const { graph, canvas, node, reroute } = setup();
+    const prev = LiteGraph.actionHistory_enabled;
+    LiteGraph.actionHistory_enabled = true;
+    try {
+        graph.transact('baseline', () => graph.onGraphChanged({ action: 'baseline' }));
+        const groups = graph._groups.length;
+        canvas.selectItem(node);
+        canvas.selectItem(reroute, true);
+        const group = canvas.groupSelected('Wrapped');
+        expect(graph._groups).toHaveLength(groups + 1);
+        expect(group.title).toBe('Wrapped');
+        const nb = node.getBounding();
+        expect(group._bounding[0]).toBeLessThanOrEqual(nb[0]);
+        expect(group._bounding[0] + group._bounding[2]).toBeGreaterThanOrEqual(reroute.pos[0]);
+        graph.actionHistoryBack();
+        expect(graph._groups).toHaveLength(groups);
+        canvas.deselectAllNodes();
+        expect(canvas.groupSelected()).toBeNull();
+    } finally { LiteGraph.actionHistory_enabled = prev; canvas.dispose(); }
+});
