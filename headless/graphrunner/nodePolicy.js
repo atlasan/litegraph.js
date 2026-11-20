@@ -56,9 +56,16 @@ export const RENAMED_TYPES = Object.freeze({
   'nodejs/network/osc_bridge': 'network/server/osc_bridge',
   'network/SocketIO': 'network/socketio',
   'server/process/NodeProcessInfo': 'sys/processInfo',
-  'nodejs/network/': 'network/server/',
-  'server/network/': 'network/server/',
-  'server/process/': 'sys/processInfo',
+});
+
+/**
+ * Old prefixes → the exact current types they covered. A setting keeps its old meaning: allowing
+ * `nodejs/network/` never also allows `network/server/websocket`, which was never under it.
+ */
+export const RENAMED_PREFIXES = Object.freeze({
+  'nodejs/network/': ['network/server/socketio', 'network/server/osc', 'network/server/udp', 'network/server/osc_bridge'],
+  'server/network/': ['network/server/websocket'],
+  'server/process/': ['sys/processInfo'],
 });
 
 /** The current name of a renamed type, or null. */
@@ -67,7 +74,8 @@ export function renamedType(type) {
 }
 
 /** A setting entry or type with its renamed form (both are kept, so either name matches). */
-const withRenames = (entry) => (RENAMED_TYPES[entry] ? [entry, RENAMED_TYPES[entry]] : [entry]);
+const withRenames = (entry) => (RENAMED_PREFIXES[entry] ? [entry, ...RENAMED_PREFIXES[entry]]
+  : RENAMED_TYPES[entry] ? [entry, RENAMED_TYPES[entry]] : [entry]);
 
 export const DEFAULT_DENIED_TYPES = Object.freeze(Object.values(DENIED_FAMILIES).flatMap((family) => family.types));
 
