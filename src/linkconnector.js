@@ -9,9 +9,15 @@
  * is one graph transaction, so it is a single undo step, and cancelling reconnects the
  * original links. Design follows the LinkConnector idea in Comfy-Org/litegraph.js (MIT);
  * independent implementation for this runtime's slots and events.
+ *
+ * Lifecycle: `onEvent(type, detail)` (set by the canvas) receives "link-drag-start" when a drag
+ * starts and "link-drag-end" when it ends, with `outcome` "connected", "rejected" (dropped on a
+ * node that refused it), "dropped" (on empty space) or "cancelled".
  */
 export class LinkConnector {
     constructor() {
+        /** @type {((type: string, detail: object) => void) | null} */
+        this.onEvent = null;
         this.reset();
     }
 
@@ -31,6 +37,8 @@ export class LinkConnector {
         this.movingInputs = null;
         /** original links detached by a move, restored on cancel: [{origin_id, origin_slot, target_id, target_slot}] */
         this.detached = null;
+        /** reroute the drag started from: a new link is routed through it */
+        this.reroute = null;
         this._graph = null;
     }
 
@@ -50,18 +58,60 @@ export class LinkConnector {
 
     /** start a new link from an output slot */
     startFromOutput(node, slot) {
-        this._finishTransaction();
-        this.reset();
+        this._restart();
         this._attachOutput(node, slot);
+        this._started();
         return this;
     }
 
     /** start a new link from an input slot */
     startFromInput(node, slot) {
-        this._finishTransaction();
-        this.reset();
+        this._restart();
         this._attachInput(node, slot);
+        this._started();
         return this;
+    }
+
+    /**
+     * Start a new link from a reroute: it leaves the output feeding the reroute and is routed
+     * through it (and the reroutes before it).
+     * @param {Reroute} reroute
+     * @param {LGraph} graph
+     * @returns {boolean} false when no link passes through the reroute
+     */
+    startFromReroute(reroute, graph) {
+        const origin = LinkConnector.rerouteOrigin(reroute, graph);
+        if (!origin) return false;
+        this._restart();
+        this._attachOutput(origin.node, origin.slot);
+        this.reroute = reroute;
+        this.pos = [reroute.pos[0], reroute.pos[1]];
+        this._started();
+        return true;
+    }
+
+    /** the output that feeds a reroute: {node, slot}, or null when no link passes through it */
+    static rerouteOrigin(reroute, graph) {
+        for (const id of graph?.getRerouteLinkIds?.().get(reroute?.id) ?? []) {
+            const link = graph.links[id];
+            const node = link && graph.getNodeById(link.origin_id);
+            if (node) return { node, slot: link.origin_slot };
+        }
+        return null;
+    }
+
+    /**
+     * The slot a drop on `target`'s body would connect to: a compatible free slot first, then any
+     * compatible slot, then a generic one. -1 when none (the drop may still create an event slot).
+     * @returns {number}
+     */
+    findTargetSlot(target) {
+        if (!this.isConnecting || !target || target === this.node) return -1;
+        const isInput = !!this.output; // dragging from an output looks for an input
+        const type = this.type ?? 0;
+        let slot = target.findSlotByType?.(isInput, type, false, true) ?? -1;
+        if (slot < 0 && ![0, "", "*"].includes(type)) slot = target.findSlotByType?.(isInput, 0, false, true) ?? -1;
+        return slot;
     }
 
     /**
@@ -73,9 +123,11 @@ export class LinkConnector {
         const link = graph?.links[node.inputs?.[slot]?.link];
         const origin = link && graph.getNodeById(link.origin_id);
         if (!origin) return false;
-        this.startFromOutput(origin, link.origin_slot);
+        this._restart();
+        this._attachOutput(origin, link.origin_slot);
         this._beginMove(graph, [link]);
         node.disconnectInput(slot);
+        this._started();
         return true;
     }
 
@@ -90,10 +142,12 @@ export class LinkConnector {
             .filter((link) => link && graph.getNodeById(link.target_id));
         if (!links.length) return false;
         const first = graph.getNodeById(links[0].target_id);
-        this.startFromInput(first, links[0].target_slot);
+        this._restart();
+        this._attachInput(first, links[0].target_slot);
         this.movingInputs = links.map((link) => ({ node: graph.getNodeById(link.target_id), slot: link.target_slot }));
         this._beginMove(graph, links);
         node.disconnectOutput(slot);
+        this._started();
         return true;
     }
 
@@ -107,12 +161,17 @@ export class LinkConnector {
     dropOnNode(target, targetSlot = -1) {
         if (!this.isConnecting || !target) return this.cancel();
         const graph = this._graph ?? target.graph ?? this.node.graph;
+        if (targetSlot === -1) targetSlot = this.findTargetSlot(target);
         const connect = () => {
             if (this.output) {
                 const link = targetSlot !== -1
                     ? this.node.connect(this.slot, target, targetSlot)
                     : this.node.connectByType(this.slot, target, this.type);
                 this._keepRoute(link, (d) => d.origin_id === this.node.id && d.origin_slot === this.slot);
+                if (link && typeof link === "object" && this.reroute && graph?.reroutes?.has(this.reroute.id)) {
+                    link.parentId = this.reroute.id;
+                    graph.onGraphChanged?.({ action: "linkRoute" });
+                }
                 return link;
             }
             const inputs = this.movingInputs ?? [{ node: this.node, slot: this.slot }];
@@ -126,12 +185,14 @@ export class LinkConnector {
             return result;
         };
         let result;
+        const ended = this._snapshot();
         try {
             result = graph?.transact && !this._graph ? graph.transact("connectLink", connect) : connect();
         } finally {
             this._finishTransaction();
             this.reset();
         }
+        this._emit("link-drag-end", { ...ended, outcome: result ? "connected" : "rejected", link: result || null, target });
         return result;
     }
 
@@ -143,13 +204,16 @@ export class LinkConnector {
     dropOnEmpty() {
         if (!this.isConnecting) return null;
         const dropped = { node: this.node, slot: this.slot, output: this.output, input: this.input, type: this.type };
+        const ended = this._snapshot();
         this._finishTransaction();
         this.reset();
+        this._emit("link-drag-end", { ...ended, outcome: "dropped", link: null });
         return dropped;
     }
 
     /** abandon the drag; moved links are reconnected as they were */
     cancel() {
+        const ended = this.isConnecting ? this._snapshot() : null;
         if (this.detached) {
             for (const link of this.detached) {
                 const graph = this._graph;
@@ -163,7 +227,31 @@ export class LinkConnector {
         }
         this._finishTransaction();
         this.reset();
+        if (ended) this._emit("link-drag-end", { ...ended, outcome: "cancelled", link: null });
         return null;
+    }
+
+    /** a new drag replaces the one in progress (whose move transaction is committed) */
+    _restart() {
+        this._finishTransaction();
+        this.reset();
+    }
+
+    /** what is being dragged, for the lifecycle events */
+    _snapshot() {
+        return {
+            node: this.node, slot: this.slot, output: this.output, input: this.input, type: this.type,
+            moving: this.isMoving, reroute: this.reroute,
+        };
+    }
+
+    _started() {
+        this._emit("link-drag-start", this._snapshot());
+    }
+
+    _emit(type, detail) {
+        if (typeof this.onEvent !== "function") return;
+        try { this.onEvent(type, detail); } catch (error) { console.error?.(`LinkConnector ${type} listener failed`, error); }
     }
 
     _attachOutput(node, slot) {

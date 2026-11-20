@@ -1,6 +1,6 @@
 // The Node full bundle also exports the optional browser editor and extensions.
 export * from './litegraph.full.cjs';
-import { LGraph, LGraphCanvas, ExtensionDefinition } from './litegraph.cjs';
+import { LGraph, LGraphNode, LGraphCanvas, ExtensionDefinition } from './litegraph.cjs';
 export declare class Editor {
     constructor(containerId: string, options?: { skip_livemode?: boolean; skip_maximize?: boolean; miniwindow?: boolean; skip_persistence?: boolean });
     root: HTMLDivElement;
@@ -20,10 +20,14 @@ export declare class Editor {
 export declare function registerExtension_autoconnect(canvas?: LGraphCanvas): void;
 export declare function registerExtension_keyhelper(canvas?: LGraphCanvas): void;
 export declare function registerExtension_renamer(canvas?: LGraphCanvas): void;
+export declare function registerExtension_quickConnect(canvas?: LGraphCanvas): void;
 /** Extension definitions, for re-registering after LiteGraph.extensions.unregister(name). */
 export declare const autoconnectExtension: ExtensionDefinition;
 export declare const keyboardHelperExtension: ExtensionDefinition;
 export declare const renamerExtension: ExtensionDefinition;
+export declare const quickConnectExtension: ExtensionDefinition;
+/** Connects nodes in order (each to the next through its first output with a compatible free input), one undo step; returns the links created. */
+export declare function chainNodes(graph: LGraph, nodes: LGraphNode[]): number;
 
 /** Optional ComfyUI workflow interoperability (schema 0.4 and 1). */
 export declare const ComfyInterop: {

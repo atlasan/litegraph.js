@@ -1294,6 +1294,10 @@ export declare class LinkConnector {
     pos: Vector2 | Float32Array | null;
     movingInputs: Array<{ node: LGraphNode; slot: number }> | null;
     detached: Array<{ origin_id: GraphId; origin_slot: number; target_id: GraphId; target_slot: number; parentId?: number }> | null;
+    /** reroute the drag started from; a new link is routed through it */
+    reroute: Reroute | null;
+    /** receives "link-drag-start" and "link-drag-end" (set by the canvas, which re-emits them) */
+    onEvent: ((type: "link-drag-start" | "link-drag-end", detail: LinkDragDetail) => void) | null;
     readonly isConnecting: boolean;
     readonly isMoving: boolean;
     readonly type: string | number | undefined;
@@ -1302,9 +1306,29 @@ export declare class LinkConnector {
     startFromInput(node: LGraphNode, slot: number): this;
     moveInputLink(node: LGraphNode, slot: number): boolean;
     moveOutputLinks(node: LGraphNode, slot: number): boolean;
+    /** starts a new link from the output that feeds the reroute, routed through it; false when no link passes through it */
+    startFromReroute(reroute: Reroute, graph: LGraph): boolean;
+    static rerouteOrigin(reroute: Reroute, graph: LGraph): { node: LGraphNode; slot: number } | null;
+    /** the slot a drop on the node body would connect to (a free compatible slot first), or -1 */
+    findTargetSlot(target: LGraphNode): number;
     dropOnNode(target: LGraphNode, targetSlot?: number): unknown;
     dropOnEmpty(): { node: LGraphNode; slot: number; output: INodeOutputSlot | null; input: INodeInputSlot | null; type: string | number | undefined } | null;
     cancel(): null;
+}
+
+/** Detail of the link-drag-start / link-drag-end events (link-drag-end adds outcome, link and target). */
+export interface LinkDragDetail {
+    node: LGraphNode;
+    slot: number;
+    output: INodeOutputSlot | null;
+    input: INodeInputSlot | null;
+    type: string | number | undefined;
+    moving: boolean;
+    reroute: Reroute | null;
+    outcome?: "connected" | "rejected" | "dropped" | "cancelled";
+    link?: unknown;
+    target?: LGraphNode;
+    canvas?: LGraphCanvas;
 }
 
 /** Tracks one pointer gesture: click vs drag tolerance and double-click detection. */
@@ -1760,6 +1784,8 @@ export declare class LGraphCanvas {
     touchHandler(event: TouchEvent): void;
 
     showLinkMenu(link: LLink, e: any): false;
+    /** what a link released on empty space offers; true when something was shown */
+    showLinkReleaseAction(action: "context-menu" | "search-box" | "none", dropped: { node: LGraphNode; output?: INodeOutputSlot | null; input?: INodeInputSlot | null }, e: any): boolean;
     prompt(
         title: string,
         value: any,
