@@ -120,7 +120,7 @@ class LGWebSocket {
             try {
                 WSConstructor = require("ws");
             } catch (err) {
-                console.error("WebSocket module not found:", err);
+                console.error("WebSocket is not available: install the optional package with npm install ws", err);
                 return;
             }
         }

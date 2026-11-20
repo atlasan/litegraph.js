@@ -125,7 +125,6 @@ lib_editor_files = [
 ]
 
 lib_extensions_files = [
-    "./editor/js/defaults_debug.js",
     "./src/extensions/autoconnect.js",
     "./src/extensions/keyboard_helper.js",
     "./src/extensions/renamer.js",
