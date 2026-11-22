@@ -3,13 +3,14 @@
  * Integrates the testing framework with the UI and manages user interactions
  */
 
-import { LiteGraph } from "../../build/litegraph.js";
+import { LiteGraph } from "../../../build/litegraph.js";
 const { LGraphCanvas } = LiteGraph;
 import { testFramework } from "./test-framework.js";
 import { TestCaseGenerator } from "./test-generator.js";
 import { TestReporter } from "./test-reporter.js";
 import { UIManager } from "./ui-manager.js";
 import { TestRunner } from "./test-runner.js";
+import { nodeCategory } from "./report-utils.js";
 
 class EditorTesterApp {
     constructor() {
@@ -658,41 +659,6 @@ class EditorTesterApp {
     }
 
     /**
-     * Show configuration modal
-     */
-    showConfigModal() {
-        const modal = document.getElementById('config-modal');
-        if (modal) {
-            modal.style.display = 'block';
-            
-            // Populate current config values
-            const config = testFramework.config;
-            
-            const fields = {
-                'config-timeout': config.timeout,
-                'config-stress-iterations': config.stressIterations,
-                'config-performance-samples': config.performanceSamples,
-                'config-validate-inputs': config.validateInputs,
-                'config-validate-outputs': config.validateOutputs,
-                'config-validate-properties': config.validateProperties,
-                'config-validate-execution': config.validateExecution,
-                'config-validate-memory': config.validateMemory
-            };
-            
-            for (const [id, value] of Object.entries(fields)) {
-                const element = document.getElementById(id);
-                if (element) {
-                    if (element.type === 'checkbox') {
-                        element.checked = value;
-                    } else {
-                        element.value = value;
-                    }
-                }
-            }
-        }
-    }
-
-    /**
      * Apply configuration changes
      */
     applyConfig() {
@@ -1132,20 +1098,7 @@ class EditorTesterApp {
      * Extract category from node type
      */
     extractCategory(nodeType) {
-        const parts = nodeType.split('/');
-        if (parts.length > 1) {
-            return parts[0];
-        }
-        
-        // Fallback to common prefixes
-        const prefixes = ['Math', 'Logic', 'String', 'Array', 'Object', 'Time', 'File', 'Network', 'UI'];
-        for (const prefix of prefixes) {
-            if (nodeType.startsWith(prefix)) {
-                return prefix;
-            }
-        }
-        
-        return 'Other';
+        return nodeCategory(nodeType);
     }
 
     /**

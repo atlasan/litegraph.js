@@ -1,4 +1,4 @@
-import { LiteGraph } from "../../src/litegraph";
+import { LiteGraph } from "../../../src/litegraph.js";
 
 var editorUseHtmlConsole = true; // enable html console to debug on mobile
 		

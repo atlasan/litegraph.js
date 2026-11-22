@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 // The editor loads gl-matrix as a global script before LiteGraph; do the same.
-new Function(fs.readFileSync(new URL('../../editor/js/libs/gl-matrix-min.js', import.meta.url), 'utf8')).call(globalThis);
+new Function(fs.readFileSync(new URL('../../vendor/gl-matrix-min.js', import.meta.url), 'utf8')).call(globalThis);
 const { LiteGraph, LGraphTexture } = await import('../../build/litegraph.js');
 
 const GL_TYPES = Object.keys(LiteGraph.registered_node_types).filter((t) => /^(texture|fx)\//.test(t));

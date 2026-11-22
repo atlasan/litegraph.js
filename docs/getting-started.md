@@ -80,11 +80,12 @@ To run a saved document, call `graph.configure(JSON.parse(text))`, then `await g
 
 ```sh
 npm ci --ignore-scripts
-npm run editor        # editor:  http://127.0.0.1:8000/editor/editor_build.html
+npm run editor        # editor:  http://127.0.0.1:8000/editor/editor_build.html (also /apps/editor/...)
 npm run graphrunner   # runner:  http://127.0.0.1:3000/
 npm start             # both
 ```
 
+- **Apps:** the editor, tester and runner live in `apps/editor`, `apps/tester` and `apps/runner`; their old URLs and the old `headless/graphrunner/server/index.js` path keep working.
 - **Editor:** `editor_build.html` loads the bundle with the extensions, and `index.html` loads `src/` directly.
 - **Runner:** runs each graph in its own worker.
   - It only accepts its own page (Origin and Host checks).

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TestFramework } from '../../editor_tester/js/test-framework.js';
-import { TestCaseGenerator } from '../../editor_tester/js/test-generator.js';
+import { TestFramework } from '../../apps/tester/js/test-framework.js';
+import { TestCaseGenerator } from '../../apps/tester/js/test-generator.js';
 import { LiteGraph } from '../../build/litegraph.js';
-import { setNodeInput } from '../../editor_tester/js/test-inputs.js';
+import { setNodeInput } from '../../apps/tester/js/test-inputs.js';
 
 const definition = (extra = {}) => ({ nodeType: 'basic/const', id: 'test', timeout: 100, expectedInputs: [], expectedOutputs: [], ...extra });
 

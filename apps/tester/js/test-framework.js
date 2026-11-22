@@ -3,7 +3,7 @@
  * Comprehensive testing system for validating node functionality
  */
 
-import { LiteGraph } from '../../build/litegraph.js';
+import { LiteGraph } from '../../../build/litegraph.js';
 import { csvCell, escapeReportResult } from './report-utils.js';
 import { setNodeInput, slotName, slotType } from './test-inputs.js';
 const { LGraphNode } = LiteGraph;

@@ -2,7 +2,7 @@
 // Type "crash" on stdin to terminate loaded workers, then reopen in the UI.
 import { Worker } from 'node:worker_threads';
 import { createInterface } from 'node:readline';
-import { createRunnerServer } from '../../headless/graphrunner/server/index.js';
+import { createRunnerServer } from '../../apps/runner/server/index.js';
 
 const workers = new Set();
 const original = Worker.prototype.postMessage;

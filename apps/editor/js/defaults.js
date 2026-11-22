@@ -1,4 +1,4 @@
-import { LiteGraph } from "../../src/litegraph.js";
+import { LiteGraph } from "../../../src/litegraph.js";
 
 LiteGraph.debug = true; // enable logging
 LiteGraph.logging_set_level(-1); // -1 is none, 0 is error level, 5 is all up to debug, more is for verbose : will set LiteGraph.debug_level
@@ -63,3 +63,67 @@ LiteGraph.reprocess_slot_while_node_configure = false;
 
 LiteGraph.properties_allow_input_binding = false; // [true!] allow create and bind inputs, will update binded property value on node execute 
 LiteGraph.properties_allow_output_binding = false; // [true!] allow create and bind outputs, will update output slots when node executed 
+/*
+ * Page presets: a page loads `js/defaults.js?preset=<name>`; the settings above apply first, then the
+ * preset's changes. One module instead of a copy per page (Wave 5c).
+ */
+const PRESETS = {
+    debug: {
+        logging_level: 4,
+        do_add_triggers_slots: true,
+        actionHistory_enabled: true,
+        refreshAncestorsOnTriggers: true,
+        refreshAncestorsOnActions: true,
+        ensureUniqueExecutionAndActionCall: true,
+        use_deferred_actions: false,
+        context_menu_filter_enabled: true,
+        reprocess_slot_while_node_configure: true,
+        properties_allow_input_binding: true,
+        properties_allow_output_binding: true,
+        properties_input_binding_check_ancestors: true,
+    },
+    mobile: {
+        logging_level: 2,
+        allow_scripts: false,
+        dialog_close_on_mouse_leave: false,
+        search_hide_on_mouse_leave: false,
+        do_add_triggers_slots: true,
+        pointerevents_method: "pointer",
+        two_fingers_opens_menu: true,
+        refreshAncestorsOnTriggers: true,
+        refreshAncestorsOnActions: true,
+        ensureUniqueExecutionAndActionCall: true,
+        use_deferred_actions: false,
+        reprocess_slot_while_node_configure: true,
+        properties_allow_input_binding: true,
+        properties_allow_output_binding: true,
+    },
+    event_based: {
+        allow_scripts: false,
+        do_add_triggers_slots: true,
+        actionHistory_enabled: true,
+        refreshAncestorsOnTriggers: true,
+        refreshAncestorsOnActions: true,
+        ensureUniqueExecutionAndActionCall: true,
+        use_deferred_actions: false,
+        reprocess_slot_while_node_configure: true,
+        properties_allow_input_binding: true,
+        properties_allow_output_binding: true,
+    },
+};
+
+/** applies a preset by name (also usable from a page script) */
+export function applyEditorPreset(name) {
+    const preset = PRESETS[name];
+    if (!preset) {
+        if (name) console.warn(`editor defaults: unknown preset "${name}"; known: ${Object.keys(PRESETS).join(", ")}`);
+        return false;
+    }
+    for (const [key, value] of Object.entries(preset)) {
+        if (key === "logging_level") LiteGraph.logging_set_level(value);
+        else LiteGraph[key] = value;
+    }
+    return true;
+}
+
+applyEditorPreset(new URL(import.meta.url).searchParams.get("preset"));

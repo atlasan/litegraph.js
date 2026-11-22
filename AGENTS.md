@@ -54,12 +54,12 @@ The full conventions are in [agents/README.md](agents/README.md).
   - The ComfyUI frontend (GPL-3.0, with ambiguous `src/lib/litegraph` changes after the merge) is a design reference only.
   - Check the license of every plugin before reusing anything; see the license tables in the ecosystem study.
 - **Dependencies:** pick versions that are at least two weeks old, and read the changelog before upgrading.
-- **Runner security:** `headless/graphrunner` executes pushed graphs. Keep the Origin/Host checks, the recursive node-type denylist (`nodePolicy.js`) and the script lockdown (`LiteGraph.allow_scripts` is off unless `RUNNER_ALLOW_SYS=1`).
+- **Runner security:** `apps/runner` executes pushed graphs. Keep the Origin/Host checks, the recursive node-type denylist (`nodePolicy.js`) and the script lockdown (`LiteGraph.allow_scripts` is off unless `RUNNER_ALLOW_SYS=1`).
 - **Mode 4:** mode 4 means ON_REQUEST here and BYPASS in ComfyUI. `comfy_interop.js` maps them explicitly; never reuse 4 for bypass.
 
 ## Gotchas
 
-- `editor/index.html` loads `src/` modules **without** the extensions. Use `editor/editor_build.html` to exercise the extensions, commands and key bindings in a browser (`npm run editor`, port 8000).
+- `apps/editor/index.html` loads `src/` modules **without** the extensions. Use `apps/editor/editor_build.html` (served at `/editor/...`) to exercise the extensions, commands and key bindings in a browser (`npm run editor`, port 8000).
 - **Undo history:** the first saved change on a fresh graph becomes the first history entry; there is no empty baseline. Tests that check "one undo step" need an earlier change first.
 - **Edit paths:** use `graph.transact(label, fn)` for anything a user should undo in one step. `beforeChange`/`afterChange` are hooks only; the pointer paths call them asymmetrically.
 - **`LGraphCanvas.active_canvas`** is set by pointer down and by keydown. Prefer `this` (the canvas instance) in new code.

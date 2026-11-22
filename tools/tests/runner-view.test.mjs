@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { selectGraphView } from '../../headless/graphrunner/public/graph-view-state.js';
+import { selectGraphView } from '../../apps/runner/public/graph-view-state.js';
 
 test('tab navigation preserves detached drafts and edit mode, including reselecting the current tab', () => {
     const store = { a:{serializedGraph:{value:1}}, b:{serializedGraph:{value:2}} };

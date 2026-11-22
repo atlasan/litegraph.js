@@ -15,3 +15,11 @@ export const escapeReportResult = result => ({
     errors: result.errors.map(error => ({ ...error, type: escapeMarkup(error.type), message: escapeMarkup(error.message) })),
     warnings: result.warnings.map(escapeMarkup),
 });
+
+/** The category of a node type: its first path segment, else a known prefix, else "Other". */
+export function nodeCategory(nodeType) {
+    const parts = String(nodeType).split('/');
+    if (parts.length > 1) return parts[0];
+    const prefixes = ['Math', 'Logic', 'String', 'Array', 'Object', 'Time', 'File', 'Network', 'UI'];
+    return prefixes.find((prefix) => nodeType.startsWith(prefix)) ?? 'Other';
+}

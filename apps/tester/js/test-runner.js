@@ -3,7 +3,7 @@
  * Handles test execution, coordination, and result collection
  */
 
-import { LiteGraph } from '../../build/litegraph.js';
+import { LiteGraph } from '../../../build/litegraph.js';
 import { testFramework } from './test-framework.js';
 import TestCaseGenerator from './test-generator.js';
 import testConfig from './test-config.js';
