@@ -7,6 +7,7 @@ import { LGraphEventTarget } from "./eventtarget.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
+import { ExecutionEngine } from "./execution.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -301,6 +302,8 @@ export class LGraph {
         // custom data
         this.config = {};
         this.configApplyDefaults();
+        // a new document runs under the default model; a loaded one under its config.execution (absent: legacy)
+        this._execution_from_document = false;
 
         this.vars = {};
         this.extra = {}; // to store custom data
@@ -547,6 +550,15 @@ export class LGraph {
         }
     }
 
+    /** clears queued (deferred) actions here and in inner graphs */
+    _dropQueuedActions() {
+        for (const node of this._nodes) {
+            if (node._waiting_actions?.length) node._waiting_actions = [];
+            node._stopped_queue_reported = false;
+            if (node.subgraph && node.subgraph !== this) node.subgraph._dropQueuedActions();
+        }
+    }
+
     /** gives the inner graphs of subgraph and function nodes this graph's clock origin (B13) */
     _shareTiming() {
         for (const node of this._nodes) {
@@ -562,8 +574,9 @@ export class LGraph {
      * Stops the execution loop of the graph
      * @method stop execution
      */
-    stop() {
+    stop(options = {}) {
         this._pending_start = null;
+        if (options?.dropQueued) this._dropQueuedActions();
         if (this.status == LGraph.STATUS_STOPPED) {
             return;
         }
@@ -649,6 +662,10 @@ export class LGraph {
         }
         const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
+        const rules = ExecutionEngine.rulesFor(this);
+        const wasStepping = this._stepping;
+        const outerCall = ExecutionEngine._call;
+        this._stepping = true;
         const resetExecutionState = () => {
             this.nodes_executing = [];
             this.nodes_actioning = [];
@@ -658,14 +675,17 @@ export class LGraph {
         LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         try {
             for (let step = 0; step < num; step++) {
+                this._frame = (this._frame ?? 0) + 1;
+                if (!rules.legacy && !outerCall) ExecutionEngine._call = `frame_${ExecutionEngine._callCount++}`;
                 // Changes made during one cycle take effect in the following cycle.
                 const nodes = this._nodes_executable ?? this._nodes;
                 const count = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
                 for (let index = 0; index < count; index++) {
                     const node = nodes[index];
                     if (node.graph !== this) continue;
-                    if (LiteGraph.use_deferred_actions) node.executePendingActions();
+                    if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
                     if (node.mode === LiteGraph.ALWAYS && node.doExecute) {
+                        if (rules.frame_pull) ExecutionEngine.pull(node);
                         node.doExecute();
                         // one message per change, not one per step
                         if (node.execution_state?.status !== "done") this.reportExecutionState(node, "status", { status: "done" });
@@ -687,6 +707,8 @@ export class LGraph {
             LiteGraph.log_warn("lgraph", "Error during execution", error);
         } finally {
             LiteGraph._dispatch_depth--;
+            this._stepping = wasStepping;
+            ExecutionEngine._call = outerCall;
             const now = LiteGraph.getTime();
             this.execution_time = 0.001 * Math.max(1, now - start);
             this.globaltime += this.execution_time;
@@ -2505,7 +2527,7 @@ export class LGraph {
             nodes: nodesInfo,
             links: links,
             groups: groupsInfo,
-            config: this.config,
+            config: this._serializeConfig(),
             extra: this._serializeExtra(),
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
@@ -2522,6 +2544,42 @@ export class LGraph {
         LiteGraph.log_verbose("lgraph","serialize",data);
 
         return data;
+    }
+
+    /** config as saved: a new root document records the model it runs under */
+    _serializeConfig() {
+        // a copy: history snapshots must not share the live config object
+        if (this._subgraph_node || this._execution_from_document || this.config?.execution) return { ...this.config };
+        return { ...this.config, execution: ExecutionEngine.resolveDefaultModel() };
+    }
+
+    // ---- execution model (Wave 6) -----------------------------------------------------------
+
+    /** the name of the execution model this graph runs under (resolved from the root's config) */
+    get executionModel() {
+        return ExecutionEngine.modelNameFor(this);
+    }
+
+    /** the rules of this graph's execution model */
+    getExecutionRules() {
+        return ExecutionEngine.rulesFor(this);
+    }
+
+    /**
+     * Sets the document's execution model (on the root graph's `config.execution`) as one undo step.
+     * @param {string} name - a registered model ("ancestors", "step", "strict", "event", "legacy", ...)
+     * @returns {boolean} true when it changed
+     */
+    setExecutionModel(name) {
+        const root = this.rootGraph;
+        if (!ExecutionEngine.getModel(name)) throw new Error(`unknown execution model "${name}"; known: ${ExecutionEngine.listModels().map((m) => m.name).join(", ")}`);
+        if (root.config.execution === name) return false;
+        root.transact("executionModel", () => {
+            root.config = { ...root.config, execution: name };
+            root.onGraphChanged({ action: "executionModel" });
+        });
+        root._emit("execution-model-changed", { model: name });
+        return true;
     }
 
     /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
@@ -2792,6 +2850,7 @@ export class LGraph {
             }
             this[i] = data[i]; // TODO should probably use LiteGraph.cloneObject
         }
+        if (!keep_old) this._execution_from_document = true; // a document without config.execution runs as "legacy"
 
         var error = false;
 

@@ -3,6 +3,7 @@ import { CallbackHandler } from "./callbackhandler.js";
 import { LGraphNode } from "./lgraphnode.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
 import { Reroute } from "./reroute.js";
+import { ExecutionEngine } from "./execution.js";
 
 /**
  * extracted from base nodes
@@ -111,7 +112,27 @@ export class Subgraph {
 
     onAction(action, param, options) {
         LiteGraph.log_debug("subgraph","onAction",...arguments);
-        this.subgraph.onAction(action, param, options);
+        const rules = ExecutionEngine.rulesFor(this.graph);
+        if (rules.legacy) {
+            this.subgraph.onAction(action, param, options);
+            return;
+        }
+        // crossing into the inner graph: bounded by subgraph_max_depth, with fresh interface data
+        const depth = ExecutionEngine._boundaryDepth ?? 0;
+        const limit = LiteGraph.subgraph_max_depth ?? 32;
+        if (depth >= limit) {
+            ExecutionEngine.drop(this, "max-depth", { setting: "LiteGraph.subgraph_max_depth", message: `${this.type} ${this.id}: events nested through more than ${limit} subgraph boundaries (LiteGraph.subgraph_max_depth)` });
+            return;
+        }
+        ExecutionEngine._boundaryDepth = depth + 1;
+        try {
+            ExecutionEngine.enterBoundary(this);
+            this.subgraph.onAction(action, param, options);
+            // a subgraph node that does not step this frame still delivers its inner queued actions (B6)
+            if (rules.delivery === "deferred" && this.mode !== LiteGraph.ALWAYS) ExecutionEngine.flushInner(this, this.subgraph);
+        } finally {
+            ExecutionEngine._boundaryDepth = depth;
+        }
     }
 
     onExecute() {
@@ -1643,13 +1664,11 @@ export class NodeFunction extends Subgraph {
     onAction(action, param, options) {
         if (action === "call") return this.call(param, options);
         this._migrate();
+        if (!ExecutionEngine.rulesFor(this.graph).legacy) ExecutionEngine.enterBoundary(this);
         this.subgraph.onAction(action, param, options); // an interface event input
-        // the inner graph only steps on call: deliver the event chain now (deferred actions)
-        for (let pass = 0; pass < 64; pass++) {
-            const waiting = this.subgraph._nodes.filter((node) => node._waiting_actions?.length);
-            if (!waiting.length) break;
-            for (const node of waiting) node.executePendingActions();
-        }
+        // the inner graph only steps on call: deliver the event chain now (deferred actions), up to
+        // LiteGraph.Execution.MaxEventPasses passes (64); reaching the cap is reported
+        ExecutionEngine.flushInner(this, this.subgraph);
     }
 
     onExecute() {

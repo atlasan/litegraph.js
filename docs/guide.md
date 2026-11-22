@@ -86,6 +86,25 @@ LiteGraph.registerNodeType("math/my_sum", Sum);
 
 Mode 4 means ON_REQUEST here, and BYPASS in ComfyUI. `comfy_interop.js` maps between the two.
 
+**Execution models.** How events are delivered and when ON_REQUEST nodes run is chosen per document, in `graph.config.execution` (the root's; it applies to all subgraphs):
+
+| Model | What it does |
+|---|---|
+| `ancestors` | **Default for new graphs.** Events are delivered immediately. Before an action, a trigger or an ALWAYS node's turn in the step, the target's ON_REQUEST inputs are pulled; each pure node runs at most once per frame or call, and again only when one of its inputs has newer data. ALWAYS nodes are never re-run by a pull |
+| `step` | Actions to nodes that have an `onExecute` wait for the node's turn in the next step (the old core default) |
+| `strict` | Like `step`, and each node executes at most once per frame |
+| `event` | Events are delivered immediately, without refreshing data |
+| `legacy` | Documents saved without the field: the old global flags (`use_deferred_actions`, `refreshAncestorsOn*`, …) decide, exactly as before |
+
+```js
+graph.executionModel;                 // "ancestors"
+graph.setExecutionModel("step");      // one undo step
+LiteGraph.default_execution_model = "legacy";  // opt out for new graphs
+LiteGraph.registerExecutionModel("mine", { delivery: "immediate", refresh: "ancestors", frame_pull: true });
+```
+
+A project that assigns any legacy flag gets `legacy` for new graphs too, unless it sets `default_execution_model`. Refused events emit `event-dropped {node, path, reason, setting?}`.
+
 Data written with `setOutputData` is stored on the link and read with `getInputData`.
 
 **Readiness:** `await graph.whenReady()` waits for every node that is still loading its dependencies.

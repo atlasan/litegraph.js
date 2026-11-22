@@ -87,6 +87,10 @@ Listed in build order (`build.py` `lib_js_files`):
 
 ## Execution
 
+- **Execution models (Wave 6b):** `src/execution.js` holds `ExecutionEngine` and the model registry (`registerModel`; built in `ancestors`, `step`, `strict`, `event`, plus `legacy`). `ExecutionEngine.rulesFor(graph)` resolves the root's `config.execution`; a document loaded without it (`_execution_from_document`) is `legacy`, a new graph uses `resolveDefaultModel()` (`LiteGraph.default_execution_model`, `legacy` once a legacy flag was assigned: the flags are prototype accessors defined in `litegraph.js` with `LEGACY_EXECUTION_FLAGS`, noting assignments in `_legacy_flags_assigned`). New root documents write the resolved model on serialize (`_serializeConfig`). `graph.setExecutionModel(name)` is one transaction.
+  - **Delegation:** `triggerSlot`, `actionDo`, `doExecute`, `getInputData(force)`, `runStep`, `Subgraph.onAction` keep the old code for `legacy` and use the engine otherwise (`ExecutionEngine.triggerSlot`, `enter`, `pull`/`ensureFresh`, `enterBoundary`, `flushInner`).
+  - **Ancestors memo:** `setOutputData` stamps `link._data_version` (global counter); a run records `node._exec_memo {frame, call, stamp}`; fresh = same frame (`graph._frame` while `graph._stepping`) or same call (`ExecutionEngine._call`, one per external event chain or step) and no newer input version. `_pulling` drops triggers fired during a pull (`refreshing`).
+  - **Reporting:** `ExecutionEngine.drop(node, reason, {setting})` emits `event-dropped` on the root (only with listeners) and warns once per node and reason. Errors from event entry points go through `LGraphNode._dispatchEvent` → `LGraph._reportNodeError` (Wave 6a).
 - **`runStep`** (`lgraph.js:472`) does three things per node, in execution order:
   1. drains deferred actions (`executePendingActions`)
   2. runs `doExecute()` for **ALWAYS** nodes only

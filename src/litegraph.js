@@ -19,6 +19,7 @@ import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
 import { NodeSearch } from "./nodesearch.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
+import { ExecutionEngine } from "./execution.js";
 import { LinkRouterRegistry, LinkStyleRegistry, RenderLink } from "./linkrender.js";
 import { LayoutRegistry } from "./layout.js";
 import { NodePalette } from "./palette.js";
@@ -181,7 +182,11 @@ export class LiteGraphClass {
     catch_exceptions = true;
     throw_errors = true;
     allow_scripts = false; // nodes should be check this value before executing unsafe code :: does not prevent anything in the main library, implement in nodes :: if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits
-    use_deferred_actions = true; // executes actions during the graph execution flow
+    // use_deferred_actions and the other legacy execution flags are accessors (LEGACY_EXECUTION_FLAGS below)
+    _legacy_flag_values = Object.fromEntries(Object.entries(LEGACY_EXECUTION_FLAGS).map(([name, flag]) => [name, flag.value]));
+    _legacy_flags_assigned = new Set(); // flags a project assigned: the default execution model resolves to "legacy"
+    _default_execution_model = "ancestors";
+    _default_execution_model_set = false;
     _dispatch_depth = 0; // runtime: nesting of runStep and event entry points (node-error reporting)
     registered_node_types = {}; // nodetypes by string
     node_types_by_file_extension = {}; // used for dropping files in the canvas
@@ -249,10 +254,6 @@ export class LiteGraphClass {
     actionHistory_enabled = false; // cntrlZ, cntrlY
     actionHistoryMaxSave = 300;
 
-    /* EXECUTING ACTIONS AFTER UPDATING VALUES - ANCESTORS */
-    refreshAncestorsOnTriggers = false; // [true!]
-    refreshAncestorsOnActions = false; // [true!]
-    ensureUniqueExecutionAndActionCall = false; // [true!] the new tecnique.. let's make it working best of
 
     // if true, all newly created nodes/links will use string UUIDs for their id fields instead of integers.
     // use this if you must have node IDs that are unique across all graphs and subgraphs.
@@ -268,9 +269,6 @@ export class LiteGraphClass {
     canRemoveSlots = false; // use removable = true in specific slot
     canRenameSlots = false; // use nameLocked = false in specific slot
 
-    ensureNodeSingleExecution = false; // OLD this will prevent nodes to be executed more than once for step (comparing graph.iteration)
-    ensureNodeSingleAction = false; // OLD this will prevent nodes to be executed more than once for action call!
-    preventAncestorRecalculation = false; // OLD(?) when calculating the ancestors, set a flag to prevent recalculate the subtree
 
 
     reprocess_slot_while_node_configure = false; // reprocess inputs and output node slots comparing by name, will fix index changes, works on dynamics
@@ -312,6 +310,7 @@ export class LiteGraphClass {
         this.ContextMenu = function(){ return new ContextMenu(...arguments); };
         this.CallbackHandler = CallbackHandler;
         this.ExecutionState = ExecutionState;
+        this.ExecutionEngine = ExecutionEngine;
         this.LibraryManager ??= new LibraryManager();
 
         this.setupPlatform();
@@ -425,6 +424,24 @@ export class LiteGraphClass {
     registerNodeReplacement(mapping) {
         this.setupPlatform();
         return this.packs.registerReplacement(mapping);
+    }
+
+    /**
+     * Registers a named execution model (Wave 6): a set of rules a document can choose in its
+     * `config.execution` (see ExecutionEngine.registerModel).
+     */
+    registerExecutionModel(name, rules) {
+        return ExecutionEngine.registerModel(name, rules);
+    }
+
+    /** @returns {object|null} the rules of an execution model ("legacy" included) */
+    getExecutionModel(name) {
+        return ExecutionEngine.getModel(name);
+    }
+
+    /** @returns {object[]} every execution model, "legacy" first */
+    listExecutionModels() {
+        return ExecutionEngine.listModels();
     }
 
     /** @returns {object|null} the replacement mapping registered for a node type */
@@ -598,6 +615,8 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
             this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
             this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
+            this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
+            this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
@@ -1679,6 +1698,42 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
 // export var setGlobalVariable = setGlobalVariable;
 // export var getGlobalVariable = getGlobalVariable;
 
+
+/**
+ * The legacy execution flags (Wave 6). Each is an accessor: assigning one notes it, and the default
+ * execution model of new graphs then resolves to "legacy" (see LiteGraph.default_execution_model).
+ * Reading and writing keeps working; they are deprecated and removed no earlier than 0.20.
+ */
+export const LEGACY_EXECUTION_FLAGS = Object.freeze({
+    use_deferred_actions: { value: true, replacement: 'the "step" execution model (graph.setExecutionModel("step"))' },
+    refreshAncestorsOnTriggers: { value: false, replacement: 'the "ancestors" execution model' },
+    refreshAncestorsOnActions: { value: false, replacement: 'the "ancestors" execution model' },
+    ensureUniqueExecutionAndActionCall: { value: false, replacement: 'the "ancestors" execution model (memo per frame and call)' },
+    ensureNodeSingleExecution: { value: false, replacement: 'the "strict" execution model' },
+    ensureNodeSingleAction: { value: false, replacement: 'the "strict" execution model' },
+    preventAncestorRecalculation: { value: false, replacement: 'the "ancestors" execution model (memo per frame and call)' },
+});
+for (const name of Object.keys(LEGACY_EXECUTION_FLAGS)) {
+    Object.defineProperty(LiteGraphClass.prototype, name, {
+        configurable: true,
+        enumerable: true,
+        get() { return this._legacy_flag_values[name]; },
+        set(value) {
+            this._legacy_flag_values[name] = value;
+            this._legacy_flags_assigned.add(name);
+        },
+    });
+}
+Object.defineProperty(LiteGraphClass.prototype, "default_execution_model", {
+    configurable: true,
+    enumerable: true,
+    /** the model of new graphs ("ancestors"); "legacy" when a legacy flag was assigned and this was not */
+    get() { return this._default_execution_model_set ? this._default_execution_model : ExecutionEngine.resolveDefaultModel(); },
+    set(value) {
+        this._default_execution_model = value;
+        this._default_execution_model_set = true;
+    },
+});
 
 if(!getGlobalVariable("LiteGraph")){
     setGlobalVariable("LiteGraph", new LiteGraphClass());

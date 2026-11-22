@@ -405,13 +405,27 @@ export interface LiteGraphAPI extends CallbackHost {
     /** registers the optional libraries the core loads on demand (dagre) */
     registerBuiltinLibraries(): void;
     use_uuids: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     use_deferred_actions: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     ensureNodeSingleExecution: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     ensureNodeSingleAction: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     ensureUniqueExecutionAndActionCall: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     refreshAncestorsOnActions: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     refreshAncestorsOnTriggers: boolean;
+    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     preventAncestorRecalculation: boolean;
+    /** the execution model of new graphs: "ancestors", or "legacy" once a legacy flag was assigned (unless this was set) */
+    default_execution_model: string;
+    /** the execution engine and model registry (Wave 6) */
+    ExecutionEngine: typeof ExecutionEngine;
+    registerExecutionModel(name: string, rules?: ExecutionModelRules): ExecutionModel;
+    getExecutionModel(name: string): ExecutionModel | null;
+    listExecutionModels(): ExecutionModel[];
     properties_allow_input_binding: boolean;
     properties_allow_output_binding: boolean;
     formatNumber(value: number | string, precision?: number): string;
@@ -544,7 +558,13 @@ export declare class LGraph {
     whenReady(): Promise<this>;
     hasPendingInitialization(): boolean;
     /** Stops the execution loop of the graph */
-    stop(): void;
+    /** dropQueued: clear actions queued for deferred delivery (here and in inner graphs) */
+    stop(options?: { dropQueued?: boolean }): void;
+    /** the execution model this graph runs under, resolved from the root's config.execution */
+    readonly executionModel: string;
+    getExecutionRules(): ExecutionModel;
+    /** sets the root's config.execution in one undo step; throws for an unknown model */
+    setExecutionModel(name: string): boolean;
     /** Await asynchronous cleanup returned by stop/removal callbacks. */
     whenIdle(): Promise<this>;
     stopAsync(): Promise<this>;
@@ -1366,6 +1386,10 @@ export interface LGraphEventMap {
     /** execution stopped on an error */
     /** node: the innermost failing node (also inside subgraphs); path: its LGraphNode.getPath() */
     "node-error": { error: unknown; node: LGraphNode | null; path: string | null };
+    /** an event or execution was refused (root graph; only when someone listens); setting names what lifts a limit */
+    "event-dropped": { node: LGraphNode | null; path: string | null; reason: EventDropReason; setting?: string; message: string };
+    /** setExecutionModel changed the document's model (root graph) */
+    "execution-model-changed": { model: string };
     /** a subgraph definition changed by a commit; linked instances were refreshed (root graph) */
     "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
     /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
@@ -2409,6 +2433,47 @@ export declare class ExecutionState {
     static applyToNode(node: LGraphNode, message: ExecutionStateMessage): LGraphNode;
     static clear(graph: LGraph): void;
 }
+
+export type EventDropReason = 'reentry' | 'refreshing' | 'no-handler' | 'mode' | 'stopped-queue' | 'max-passes' | 'max-depth' | 'cycle' | 'once-per-frame';
+export interface ExecutionModelRules {
+    /** "immediate": actions run when sent; "deferred": actions to nodes that execute wait for their turn */
+    delivery?: 'deferred' | 'immediate';
+    /** "ancestors": pull ON_REQUEST data ancestors before actions, triggers and (frame_pull) ALWAYS nodes */
+    refresh?: 'none' | 'ancestors';
+    frame_pull?: boolean;
+    /** each node executes at most once per frame */
+    once_per_frame?: boolean;
+    /** the mode new nodes of undeclared types get */
+    default_mode?: number;
+    title?: string;
+    description?: string;
+}
+export interface ExecutionModel extends Required<Pick<ExecutionModelRules, 'delivery' | 'refresh' | 'frame_pull' | 'once_per_frame' | 'default_mode'>> {
+    name: string;
+    legacy: boolean;
+    title?: string;
+    description?: string;
+}
+/** Execution models and the engine (Wave 6); see the guide's Execution section. */
+export declare class ExecutionEngine {
+    static models: Map<string, ExecutionModel>;
+    static LEGACY: { name: 'legacy'; legacy: true; title: string };
+    static registerModel(name: string, rules?: ExecutionModelRules): ExecutionModel;
+    static getModel(name: string): ExecutionModel | { name: 'legacy'; legacy: true; title: string } | null;
+    static listModels(): Array<ExecutionModel | { name: 'legacy'; legacy: true; title: string }>;
+    static resolveDefaultModel(): string;
+    static modelNameFor(graph: LGraph): string;
+    static rulesFor(graph: LGraph): ExecutionModel | { name: 'legacy'; legacy: true; title: string };
+    /** pulls a node's ON_REQUEST data ancestors (memo per frame and call, link data versions) */
+    static pull(node: LGraphNode): void;
+    static ensureFresh(node: LGraphNode): void;
+    static drop(node: LGraphNode | null, reason: EventDropReason, extra?: { setting?: string; message?: string }): false;
+    static readonly maxEventDepth: number;
+    static readonly maxEventPasses: number;
+}
+export declare const EVENT_DROP_REASONS: readonly EventDropReason[];
+/** the legacy execution flags with their defaults and replacements (deprecated; removed no earlier than 0.20) */
+export declare const LEGACY_EXECUTION_FLAGS: Readonly<Record<'use_deferred_actions' | 'refreshAncestorsOnTriggers' | 'refreshAncestorsOnActions' | 'ensureUniqueExecutionAndActionCall' | 'ensureNodeSingleExecution' | 'ensureNodeSingleAction' | 'preventAncestorRecalculation', { value: boolean; replacement: string }>>;
 
 /** One drawn link segment (see LiteGraph.linkRouters, LiteGraph.linkStyles). */
 export declare class RenderLink {

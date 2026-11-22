@@ -5,6 +5,18 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 Plan: `agents/plans/2026-11-22-events-execution.md`.
 
+## Changed
+
+* **New graphs run under the `ancestors` execution model.** A graph created in code (`new LGraph()`) or a new document in the editor delivers actions immediately and pulls ON_REQUEST data before them. **The one behaviour change:** an action reaches a node that has an `onExecute` at once, not at its next turn in the step. Opt out with one line: `LiteGraph.default_execution_model = "legacy";`. Projects that assign any legacy flag (`use_deferred_actions`, `refreshAncestorsOnActions`, …) get `legacy` automatically.
+* **Documents keep their behaviour:** a document saved without `config.execution` loads as `legacy` and is saved without the field. New documents save the model they run under.
+
+## Added
+
+* **Execution models** (`src/execution.js`): `ancestors`, `step`, `strict`, `event` and `legacy`, chosen per document in `config.execution`. `graph.executionModel`, `graph.setExecutionModel(name)` (one undo step), `LiteGraph.registerExecutionModel(name, rules)`, `getExecutionModel`, `listExecutionModels`, `LiteGraph.ExecutionEngine`.
+* **`event-dropped {node, path, reason, setting?, message}`** on the root graph for every refused event (`reentry`, `refreshing`, `no-handler`, `mode`, `stopped-queue`, `max-passes`, `max-depth`, `cycle`, `once-per-frame`), plus one warning per node and reason.
+* Settings `LiteGraph.Execution.MaxEventDepth` (256) and `LiteGraph.Execution.MaxEventPasses` (64, was a fixed 64 in the function node); reaching either is reported and names the setting.
+* `graph.stop({dropQueued: true})` clears actions waiting for deferred delivery.
+
 ## Fixed
 
 * **Errors in event chains are reported (B9):** an action, trigger or execution that throws outside a step emits `node-error {error, node, path}` on the root graph and sets the failing node's execution state to `error`, as `runStep` does. The error is still rethrown to the caller.
@@ -13,6 +25,7 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 * **ForEach `break` stops the loop (B5),** and ForEach no longer reads its `do` action input as data.
 * **Payload and call options are forwarded (B15)** by WaitAll (the completing event's payload), Semaphore, Once and Stepper. Sequence no longer changes its caller's `options` object.
 * **Six `html/*` nodes start in ON_EVENT mode (B11)** (`event_listener`, `event_listener_remove`, `create_element`, `append_child`, `remove_element`, `apply_element_css`); they set the undefined `LiteGraph.ON_ACTION` and so ran every step.
+* **Subgraph nodes in any mode deliver inner events (B6)** under the `step` and `strict` models (and `ancestors` / `event`, which deliver immediately); events entering a subgraph see fresh interface data.
 * A forced pull (`getInputData(slot, true, true)`) no longer logs a "CHECK THIS" warning on every call; the unused `LiteGraph.allowMultiOutputForEvents` flag is gone (B16; `allow_multi_output_for_events` is the real one).
 
 # 0.18.0-dev.1 (2026-11-22): first dev pre-release

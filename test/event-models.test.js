@@ -10,8 +10,28 @@ import '../src/nodes/logic.js';
 
 const FLAGS = ['use_deferred_actions', 'refreshAncestorsOnActions', 'refreshAncestorsOnTriggers', 'ensureUniqueExecutionAndActionCall', 'throw_errors'];
 const PRESETS = {
+    // legacy: documents and projects that use the flags
     defaults: {},
     event_based: { use_deferred_actions: false, refreshAncestorsOnActions: true, refreshAncestorsOnTriggers: true, ensureUniqueExecutionAndActionCall: true },
+    // execution models (config.execution)
+    ancestors: { model: 'ancestors' },
+    step: { model: 'step' },
+    strict: { model: 'strict' },
+    event: { model: 'event' },
+};
+const DEFERRED = ['defaults', 'step', 'strict'];
+/** where each finding is still wrong; the test is `test.failing` there */
+const KNOWN = {
+    B1: ['defaults', 'step', 'strict'],
+    B2: ['defaults', 'step', 'strict'],
+    B4: ['defaults', 'step', 'strict'],
+    B6: ['defaults'],
+    B7: ['defaults', 'event_based', 'ancestors', 'step', 'strict', 'event'],
+    B8: ['defaults', 'event_based', 'step', 'strict'],
+    B14: ['defaults', 'event_based', 'ancestors', 'step', 'strict', 'event'],
+    A1: ['defaults', 'event_based', 'step', 'strict', 'event'],
+    A2: ['defaults', 'event_based'],
+    A3: ['event_based'],
 };
 const TIMER_TICKS = 5; // 250 ms at 100 ms, plus a double tick at start: time stays 0 after the first tick
 let saved;
@@ -45,10 +65,13 @@ beforeEach(() => {
 });
 afterEach(() => { Object.assign(LiteGraph, saved); jest.restoreAllMocks(); });
 
-/** a fresh graph under a flag preset (flags are assigned, as a project does) */
+/** a fresh graph under a flag preset (flags are assigned, as a project does) or an execution model */
 function setup(preset) {
-    Object.assign(LiteGraph, saved, PRESETS[preset]);
-    return new LGraph();
+    const { model, ...flags } = PRESETS[preset];
+    Object.assign(LiteGraph, saved, flags);
+    const graph = new LGraph();
+    if (model) graph.config.execution = model;
+    return graph;
 }
 function make(graph, type, props = {}, mode) {
     const node = LiteGraph.createNode(type);
@@ -78,7 +101,8 @@ function whileGraph(preset) {
     const src = make(g, 'evm/src');
     const w = make(g, 'logic/CycleWHILE');
     const c = make(g, 'events/counter');
-    const lt = make(g, 'evm/lt');
+    // under the ancestors model, the condition is a pure ON_REQUEST node that the loop pulls
+    const lt = make(g, 'evm/lt', {}, preset === 'ancestors' ? LiteGraph.ON_REQUEST : undefined);
     src.connect(0, w, 0); w.connect(0, c, 0); c.connect(1, lt, 0); lt.connect(0, w, 1);
     step(g);
     return { g, src, w, c };
@@ -97,11 +121,11 @@ function sequenceGraph(preset) {
     return { g, src, seq };
 }
 
-describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
-    const deferred = preset === 'defaults';
-    const known = (finding, wrongHere) => (wrongHere ? test.failing : test);
+describe.each(Object.keys(PRESETS))('configuration %s', (preset) => {
+    const deferred = DEFERRED.includes(preset);
+    const known = (finding) => (KNOWN[finding]?.includes(preset) ? test.failing : test);
 
-    known('B1', deferred)('B1: FOR delivers its body with each index, during the trigger', () => {
+    known('B1')('B1: FOR delivers its body with each index, during the trigger', () => {
         const { g, src, r } = forGraph(preset);
         src.triggerSlot(0);
         step(g); step(g);
@@ -117,13 +141,13 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         else { expect(during).toEqual([0, 1, 2]); expect(r.log).toEqual([0, 1, 2]); }
     });
 
-    test.failing('B8: FOR in ON_TRIGGER mode runs its body', () => {
+    known('B8')('B8: FOR in ON_TRIGGER mode runs its body', () => {
         const { src, r } = forGraph(preset, 'evm/recNoExec', LiteGraph.ON_TRIGGER);
         src.triggerSlot(0);
         expect(r.log.length).toBe(3);
     });
 
-    known('B2', deferred)('B2: WHILE stops on its condition', () => {
+    known('B2')('B2: WHILE stops on its condition', () => {
         const { g, src, c } = whileGraph(preset);
         src.triggerSlot(0);
         step(g);
@@ -155,7 +179,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(seen).toEqual([1, 2]);
     });
 
-    known('B4', deferred)('B4: Sequence fires its outputs in slot order', () => {
+    known('B4')('B4: Sequence fires its outputs in slot order', () => {
         const { g, src } = sequenceGraph(preset);
         src.triggerSlot(0);
         step(g);
@@ -181,7 +205,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(r.params).toEqual(['payload']);
     });
 
-    test.failing('B7: Delay in ON_EVENT mode delivers (or is refused as a mode)', () => {
+    known('B7')('B7: Delay in ON_EVENT mode delivers (or is refused as a mode)', () => {
         const g = setup(preset);
         const src = make(g, 'evm/src');
         const d = make(g, 'events/delay', { time_in_ms: 1 }, LiteGraph.ON_EVENT);
@@ -213,7 +237,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(c.num).toBe(2);
     });
 
-    known('A3', !deferred)('A3/B3: an action does not re-run a stateful ALWAYS ancestor', () => {
+    known('A3')('A3/B3: an action does not re-run a stateful ALWAYS ancestor', () => {
         const g = setup(preset);
         const src = make(g, 'evm/src');
         const c = make(g, 'events/counter', { doCountExecution: true });
@@ -239,7 +263,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect([yes.log.length, no.log.length]).toEqual([1, 0]);
     });
 
-    test.failing('B14: logic/IF in ALWAYS mode does not fire every step', () => {
+    known('B14')('B14: logic/IF in ALWAYS mode does not fire every step', () => {
         const g = setup(preset);
         const iff = make(g, 'logic/IF', {}, LiteGraph.ALWAYS);
         const no = make(g, 'evm/recNoExec');
@@ -300,7 +324,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(outs.map((r) => r.log.length)).toEqual([2, 1, 1]);
     });
 
-    test.failing('B14: Switch in ALWAYS mode does not fire every step', () => {
+    known('B14')('B14: Switch in ALWAYS mode does not fire every step', () => {
         const g = setup(preset);
         const sw = make(g, 'events/switch');
         const r = make(g, 'evm/recNoExec');
@@ -309,7 +333,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(r.log.length).toBeLessThanOrEqual(1);
     });
 
-    known('B6', deferred)('B6: a subgraph node in ON_EVENT mode delivers inner actions', () => {
+    known('B6')('B6: a subgraph node in ON_EVENT mode delivers inner actions', () => {
         const g = setup(preset);
         const sg = make(g, 'graph/subgraph');
         const gi = LiteGraph.createNode('graph/input');
@@ -327,7 +351,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(r.log.length).toBe(1);
     });
 
-    test.failing('A1: an ALWAYS consumer sees the value of an ON_REQUEST producer', () => {
+    known('A1')('A1: an ALWAYS consumer sees the value of an ON_REQUEST producer', () => {
         const g = setup(preset);
         const c = make(g, 'basic/const', { value: 5 });
         const p = make(g, 'evm/pure', {}, LiteGraph.ON_REQUEST);
@@ -337,7 +361,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(s.seen).toEqual([6, 6, 6]);
     });
 
-    test.failing('A2: two consumers pulling one ON_REQUEST node run it once per frame', () => {
+    known('A2')('A2: two consumers pulling one ON_REQUEST node run it once per frame', () => {
         const g = setup(preset);
         const c = make(g, 'basic/const', { value: 1 });
         const p = make(g, 'evm/pure', {}, LiteGraph.ON_REQUEST);
