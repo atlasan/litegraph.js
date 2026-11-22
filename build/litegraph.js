@@ -1993,7 +1993,11 @@ for (const name of Object.keys(LEGACY_EXECUTION_FLAGS)) {
         },
         set(value) {
             this._legacy_flag_values[name] = value;
-            this._legacy_flags_assigned.add(name);
+            if (!this._legacy_flags_assigned.has(name)) {
+                this._legacy_flags_assigned.add(name);
+                // deprecated: said once per flag (removal no earlier than 0.20)
+                this.log_warn?.("deprecated", `LiteGraph.${name} is deprecated (removal no earlier than 0.20); use ${LEGACY_EXECUTION_FLAGS[name].replacement}. Assigning it makes new graphs run under the "legacy" execution model unless LiteGraph.default_execution_model is set.`);
+            }
         },
     });
 }

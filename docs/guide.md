@@ -70,51 +70,59 @@ LiteGraph.registerNodeType("math/my_sum", Sum);
 
 ## Execution
 
-`graph.runStep()` runs one cycle; `graph.start(interval)` runs cycles continuously.
+`graph.runStep()` runs one cycle (a **frame**); `graph.start(interval)` runs frames continuously. Nodes run in topological order: nodes with no inputs first, ties broken by `priority`. Data written with `setOutputData` is stored on the link and read with `getInputData`.
 
-**Order:** topological. Nodes with no inputs run first; ties are broken by `priority`.
-
-**What runs depends on `node.mode`:**
+**Modes** (`node.mode`) say when a node runs:
 
 | Mode | Runs |
 |---|---|
-| `ALWAYS` (0) | Every step |
+| `ALWAYS` (0) | Every frame |
 | `ON_EVENT` (1) | Only when an action reaches it |
-| `NEVER` (2) | Never |
-| `ON_TRIGGER` (3) | When an event arrives on its trigger input |
-| `ON_REQUEST` (4) | Only when a downstream node asks for fresh input: `getInputData(slot, true, true)` (`force_update` re-runs the producer, `refresh_tree` first refreshes its ancestors) |
+| `NEVER` (2) | Never (muted) |
+| `ON_TRIGGER` (3) | When an event arrives on its trigger input (`onTrigger`) |
+| `ON_REQUEST` (4) | Only when a node downstream needs its value (a pull) |
 
 Mode 4 means ON_REQUEST here, and BYPASS in ComfyUI. `comfy_interop.js` maps between the two.
 
-**Execution models.** How events are delivered and when ON_REQUEST nodes run is chosen per document, in `graph.config.execution` (the root's; it applies to all subgraphs):
+### Execution models
 
-| Model | What it does |
-|---|---|
-| `ancestors` | **Default for new graphs.** Events are delivered immediately. Before an action, a trigger or an ALWAYS node's turn in the step, the target's ON_REQUEST inputs are pulled; each pure node runs at most once per frame or call, and again only when one of its inputs has newer data. ALWAYS nodes are never re-run by a pull |
-| `step` | Actions to nodes that have an `onExecute` wait for the node's turn in the next step (the old core default) |
-| `strict` | Like `step`, and each node executes at most once per frame |
-| `event` | Events are delivered immediately, without refreshing data |
-| `legacy` | Documents saved without the field: the old global flags (`use_deferred_actions`, `refreshAncestorsOn*`, …) decide, exactly as before |
+How events are delivered and when ON_REQUEST nodes run is chosen **per document**, in the root graph's `config.execution` (it applies to all subgraphs):
+
+| Model | Delivery | Data refresh | Use it for |
+|---|---|---|---|
+| `ancestors` | immediate | before an action, a trigger and an ALWAYS node's turn, the target's ON_REQUEST inputs are pulled | **The default for new graphs.** Loops, logic and event flows with a steady frame |
+| `step` | actions to nodes that have an `onExecute` wait for the node's turn in the next frame | none | The old core default |
+| `strict` | like `step` | none | Each node executes at most once per frame |
+| `event` | immediate | none | Pure push wiring |
+| `legacy` | from the global flags | from the global flags | Documents saved without the field, exactly as before |
 
 ```js
 graph.executionModel;                 // "ancestors"
 graph.setExecutionModel("step");      // one undo step
 graph.applyExecutionModelModes();     // the model's declared default modes, one more undo step
-LiteGraph.default_execution_model = "legacy";  // opt out for new graphs
 LiteGraph.registerExecutionModel("mine", { delivery: "immediate", refresh: "ancestors", frame_pull: true });
 ```
 
-**Graph info:** with `LiteGraph.showCanvasOptions` (on in the Editor) the canvas menu offers "Options (execution: <model>)": an "Execution model" combo (one undo step) and, when nodes differ from the model's declared defaults, an "Apply the model's node modes (N)" button (another undo step; never automatic). The Editor pages set `LiteGraph.default_execution_model = "ancestors"` instead of the old flags.
+**The ancestors frame.** In each frame, before an ALWAYS node runs, its ON_REQUEST inputs are pulled. A pulled node runs **at most once per frame or call** (an event chain started outside a step is one call), and again only when one of its inputs has newer data: `setOutputData` stamps a data version on the links. So two consumers of one pure node run it once, and a loop body re-runs exactly the pure nodes that depend on the index. ALWAYS nodes are never re-run by a pull; they give this frame's value (an ALWAYS node that never ran yet gives its first value). A pulled node gets no `param`, and an event fired while it is pulled is dropped (`refreshing`): event emitters cannot be ON_REQUEST. `getInputData(slot, true)` is a pull too: memoized for ON_REQUEST origins; under the other models it runs the origin once per frame or call. A node that changes an output object in place must call `setOutputData` again, or consumers keep their memo.
 
-A project that assigns any legacy flag gets `legacy` for new graphs too, unless it sets `default_execution_model`. Refused events emit `event-dropped {node, path, reason, setting?}`.
+**Where the model comes from.**
+- A document with `config.execution` runs under that model; a document without it loads as `legacy` and is saved without it.
+- `new LGraph()` and new Editor documents use `LiteGraph.default_execution_model` (`"ancestors"`) and save it.
+- A project that assigns any legacy flag (`use_deferred_actions`, `refreshAncestorsOnActions`, `refreshAncestorsOnTriggers`, `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`) gets `legacy` for new graphs, unless it sets `default_execution_model` itself. The flags are deprecated: each logs once when assigned, and they are removed no earlier than 0.20.
+- **Opt out** with one line: `LiteGraph.default_execution_model = "legacy";`.
 
-**Declaring a node's execution needs** (optional; undeclared types are valid everywhere and start ALWAYS):
+**Graph info:** with `LiteGraph.showCanvasOptions` (on in the Editor) the canvas menu offers "Options (execution: <model>)": an "Execution model" combo (one undo step) and, when nodes differ from the model's declared defaults, "Apply the model's node modes (N)" (another undo step; never automatic).
+
+### Declaring a node's execution needs
+
+Optional; undeclared types are valid everywhere and start ALWAYS.
 
 ```js
 class MyLoop {
   static def = { execution: {
     emit: "immediate",            // its events are delivered now, with a refresh, in every model but legacy
     immediate_inputs: ["break"],  // these action inputs are never queued
+    loop: true,                   // checkExecution reports it without a body
     modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER],  // valid modes (NEVER always is)
     models: { strict: false },    // not valid under "strict"
     default_mode: LiteGraph.ON_EVENT,  // the mode new nodes get outside legacy
@@ -124,14 +132,39 @@ LiteGraph.declareNodeExecution(["my/add", "my/mul"], { pure: true });  // ON_REQ
 LiteGraph.getNodeDefinition("events/timer").execution;  // { ticks: true, modes: [0, 2], ... }
 ```
 
-- `ticks: true` marks nodes that need the step loop (Timer, Delay); a pull never re-runs them.
-- `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse a mode the type declares invalid; the refusal (`node.mode_refusal`) names `LiteGraph.Execution.AllowAnyMode`, the setting that lifts it. A group lists the nodes it skipped.
-- A new node of a declared type gets its model's default mode when it is added; a loaded node keeps its stored mode. `graph.applyExecutionModelModes()` applies the defaults to a whole document in one undo step.
-- `graph.checkExecution()` returns `{model, issues}` (invalid model or mode, a `ticks` node that is not stepped, an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS). A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
+- `pure: true`: safe to re-run; new nodes are ON_REQUEST under `ancestors`. The math, logic and string packs declare their pure nodes.
+- `ticks: true`: needs the step loop (Timer, Delay); a pull never re-runs it.
+- `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse a mode the type declares invalid. The refusal (`node.mode_refusal`) names `LiteGraph.Execution.AllowAnyMode`, the setting that lifts it; a group lists the nodes it skipped. `LiteGraph.getValidNodeModes(node)`.
+- A new node of a declared type gets its model's default mode when it is added; a loaded node keeps its stored mode.
+- `graph.checkExecution()` returns `{model, issues}`: an invalid model or mode, a `ticks` node that is not stepped (also inside a non-ALWAYS subgraph node), an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS. A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
 
-**Loops.** FOR, ForEach and WHILE deliver their body immediately in every model but legacy, fire `completed` when done, and stop within the loop on `break`. Under `ancestors`, make the loop's data (index arithmetic, the WHILE condition) pure ON_REQUEST nodes: they re-run only when the loop changed their inputs. A WHILE that reaches `properties.cycleLimit` with its condition still true reports it (`event-dropped`, setting `properties.cycleLimit`). WHILE is not valid under `strict`, which forbids re-running the condition in a frame.
+### Loops
 
-Data written with `setOutputData` is stored on the link and read with `getInputData`.
+FOR, ForEach and WHILE deliver their body immediately in every model but `legacy`, fire `completed` when done, and stop within the loop on `break`. Under `ancestors`, compute the loop's data with pure ON_REQUEST nodes: they re-run only when the loop changed their inputs.
+
+```js
+const graph = new LGraph();                                  // ancestors
+const add = (type, props = {}) => {
+  const node = LiteGraph.createNode(type);
+  Object.assign(node.properties, props);
+  graph.add(node);
+  return node;
+};
+const start = add("basic/const", { value: 0 });
+const count = add("basic/const", { value: 3 });
+const loop = add("logic/CycleFOR");                          // ON_EVENT (declared default)
+const double = add("math/operation", { OP: "*", B: 2 });     // pure: ON_REQUEST
+const store = add("basic/data_store");
+start.connect(0, loop, 0);  count.connect(0, loop, 1);
+loop.connect(1, double, 0);                                  // index -> A
+double.connect(0, store, 0);                                 // pulled before each body action
+loop.connect(0, store, 1);                                   // body: assign
+graph.runStep();                                             // the constants get their values
+loop.onAction("do");                                         // or wire a button or a Timer to "do": stores 0, 2, 4
+store.properties.data;                                       // 4; double ran once per index
+```
+
+A WHILE that reaches `properties.cycleLimit` with its condition still true reports it (`event-dropped`, setting `properties.cycleLimit`). WHILE is not valid under `strict`, which forbids re-running the condition in a frame.
 
 **Readiness:** `await graph.whenReady()` waits for every node that is still loading its dependencies.
 
@@ -154,7 +187,12 @@ class Player {
 }
 ```
 
-Built-in `events/*` nodes delay, count, filter and sequence events.
+- **Delivery** follows the document's model: immediate under `ancestors` and `event` (the target's ON_REQUEST inputs pulled first under `ancestors`); under `step` and `strict`, an action to a node that has an `onExecute` waits for its turn in the next frame (`graph.stop({dropQueued: true})` clears that queue). An input named `onTrigger` (or an ON_TRIGGER node without `onAction`) runs the node's `onExecute`.
+- **Subgraphs:** an event entering a subgraph node sees fresh interface data, and a subgraph node in any mode but NEVER delivers its inner events (bounded by `LiteGraph.Execution.MaxEventPasses` and `LiteGraph.subgraph_max_depth`).
+- **Refused events** emit `event-dropped {node, path, reason, setting?, message}` on the root graph (when someone listens) and warn once per node: `reentry`, `refreshing`, `no-handler`, `mode` (a NEVER target), `stopped-queue`, `max-passes`, `max-depth` (`LiteGraph.Execution.MaxEventDepth`, 256), `cycle`, `once-per-frame`.
+- **Errors** in an event chain outside a step are reported like errors in a step (`node-error` with the path, an `error` state); outside `legacy` they are rethrown only when `LiteGraph.throw_errors`.
+
+Built-in `events/*` nodes delay, count, filter and sequence events; Sequence fires its outputs in slot order in every model but `legacy`.
 
 ## Widgets
 

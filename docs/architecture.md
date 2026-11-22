@@ -55,6 +55,8 @@ Events travel along links:
 - An `ON_REQUEST` node runs only when a node downstream needs its value. Under `ancestors` that is a pull before an action, a trigger or an ALWAYS node's turn; it runs again only when an input has newer data (`setOutputData` stamps a data version on the links).
 - A refused event (re-entry, a NEVER target, no handler, a limit) emits `event-dropped` with its reason; limits name their setting (`LiteGraph.Execution.MaxEventDepth`, `MaxEventPasses`).
 
+Node types may declare what they need (`static def.execution`: valid models and modes, a default mode, `emit: "immediate"` for loops, `ticks` for timers, `pure` for nodes that are ON_REQUEST under `ancestors`). Mode changes check the declarations; `graph.checkExecution()` reports what does not fit. The model is shown and changed in the graph info (canvas menu "Options"). See [decision 0002](../agents/memories/decisions/0002-execution-models.md).
+
 Mode 4 is ON_REQUEST here; ComfyUI's BYPASS is mapped explicitly by the interop extension.
 
 ## Subgraphs

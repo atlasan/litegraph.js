@@ -1,6 +1,6 @@
 # Events and execution: execution models, with ancestors as the default
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `12ef719`
+> **Date** 2026-11-22 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `12ef719`
 
 The fork has seven overlapping event and execution mechanisms, switched by process-wide flags that are not saved with the graph. Because of this, one workflow behaves differently in the editor, on the `event_based` page, in the runner and inside subgraphs. Under the core defaults, the loop nodes and the order of Sequence break silently.
 
@@ -249,3 +249,4 @@ Proposed as **Wave 6**, on branches `LG/wave6<x>_<topic>` cut from `LG/dev`. Eve
 - 2026-11-22: proposed (read-only audit at `12ef719`).
 - 2026-11-22: revised after the user's review: `ancestors` is the default model, the other models are opt-in, nodes may declare per-model validity, the model is in the graph info, and compatibility is kept through `legacy`.
 - 2026-11-22: accepted.
+- 2026-11-22: done. Implemented as Wave 6a–6e and merged into `LG/dev` ([summary](../executions/2026-11-22-wave6e-polish.md)); open decisions 3–8 adopted as recommended; forced pulls memoized (decision 4 vs the A2 check, settled by the user); [decision 0002](../memories/decisions/0002-execution-models.md).

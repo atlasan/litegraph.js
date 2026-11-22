@@ -596,3 +596,40 @@ describe('graph info, reporting and runner parity (steps 15-17)', () => {
             .toEqual({ 'FOR result': expected['FOR result'], 'WHILE result': expected['WHILE result'] });
     });
 });
+
+describe('deprecations (step 18)', () => {
+    test('each legacy flag logs once on assignment, naming its replacement', () => {
+        const warn = LiteGraph.log_warn; // mocked in beforeEach
+        LiteGraph.refreshAncestorsOnActions = true;
+        LiteGraph.refreshAncestorsOnActions = false;
+        LiteGraph.ensureNodeSingleExecution = false;
+        const messages = warn.mock.calls.filter(([scope]) => scope === 'deprecated').map(([, message]) => message);
+        expect(messages).toHaveLength(2);
+        expect(messages[0]).toMatch(/LiteGraph\.refreshAncestorsOnActions is deprecated \(removal no earlier than 0\.20\); use the "ancestors" execution model/);
+        expect(messages[1]).toMatch(/ensureNodeSingleExecution .*"strict" execution model/);
+        expect(LiteGraph.refreshAncestorsOnActions).toBe(false); // still readable and writable
+    });
+});
+
+test('the guide\'s loop example runs as documented', () => {
+    const g = new LGraph();
+    expect(g.executionModel).toBe('ancestors');
+    const add = (type, props = {}) => { const node = LiteGraph.createNode(type); Object.assign(node.properties, props); g.add(node); return node; };
+    const start = add('basic/const', { value: 0 });
+    const count = add('basic/const', { value: 3 });
+    const loop = add('logic/CycleFOR');
+    const double = add('math/operation', { OP: '*', B: 2 });
+    const store = add('basic/data_store');
+    start.connect(0, loop, 0); count.connect(0, loop, 1);
+    loop.connect(1, double, 0);
+    double.connect(0, store, 0);
+    loop.connect(0, store, 1);
+    expect([loop.mode, double.mode]).toEqual([LiteGraph.ON_EVENT, LiteGraph.ON_REQUEST]);
+    const stored = [];
+    const assign = store.onAction.bind(store);
+    store.onAction = (...args) => { assign(...args); stored.push(store.properties.data); };
+    g.runStep();
+    loop.onAction('do');
+    expect(stored).toEqual([0, 2, 4]);
+    expect(store.properties.data).toBe(4);
+});

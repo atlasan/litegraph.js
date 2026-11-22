@@ -55,5 +55,5 @@ grep -ohE '\.processCallbackHandlers\(\s*"\w+"' src/*.js
 
 | Target | Events |
 |---|---|
-| Graph | `configuring` (cancelable), `configured`, `node-added`, `node-removed`, `changed`, `link-connected`, `link-removed`, `reroute-added`, `reroute-removed`, `node-property-changed`, `widget-changed`, `execution-step`, `node-error`, `execution-state`, `event-dropped` (a refused event: `{node, path, reason, setting?, message}`; reasons `reentry`, `refreshing`, `no-handler`, `mode`, `stopped-queue`, `max-passes`, `max-depth`, `cycle`, `once-per-frame`), `execution-model-changed` |
+| Graph | `configuring` (cancelable), `configured`, `node-added`, `node-removed`, `changed`, `link-connected`, `link-removed`, `reroute-added`, `reroute-removed`, `node-property-changed`, `widget-changed`, `execution-step`, `node-error`, `execution-state`, `event-dropped` (a refused event: `{node, path, reason, setting?, message}`; reasons `reentry`, `refreshing`, `no-handler`, `mode`, `stopped-queue`, `max-passes`, `max-depth`, `cycle`, `once-per-frame`), `execution-model-changed`, `execution-check` (after a root load: `{report: {model, issues}, reason}`) |
 | Canvas | `link-dropped-on-empty` (cancelable), `selection-changed`, `subgraph-opened`, `subgraph-closed`, `disposed` |

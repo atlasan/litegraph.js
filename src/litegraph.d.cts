@@ -405,19 +405,40 @@ export interface LiteGraphAPI extends CallbackHost {
     /** registers the optional libraries the core loads on demand (dagre) */
     registerBuiltinLibraries(): void;
     use_uuids: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "step" execution model (graph.setExecutionModel("step")); removal no earlier than 0.20
+     */
     use_deferred_actions: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "strict" execution model; removal no earlier than 0.20
+     */
     ensureNodeSingleExecution: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "strict" execution model; removal no earlier than 0.20
+     */
     ensureNodeSingleAction: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model (memo per frame and call); removal no earlier than 0.20
+     */
     ensureUniqueExecutionAndActionCall: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model; removal no earlier than 0.20
+     */
     refreshAncestorsOnActions: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model; removal no earlier than 0.20
+     */
     refreshAncestorsOnTriggers: boolean;
-    /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model (memo per frame and call); removal no earlier than 0.20
+     */
     preventAncestorRecalculation: boolean;
     /** the canvas menu offers "Options" (graph info: the execution model; canvas switches) */
     showCanvasOptions: boolean;
