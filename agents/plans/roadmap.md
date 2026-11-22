@@ -31,7 +31,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 3 | Subgraph v2 and components | **Done**: 3a definitions, function node, interop ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [probe](../executions/2026-11-20-wave3a-schema-probe.md)); 3b authoring ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)); 3c components, blueprints, SA port ([record](../executions/2026-11-20-wave3c-components.md)); merged into `LG/dev` and `master` ([PR #10](https://github.com/atlasan/litegraph.js/pull/10)). See the [plan](2026-11-20-wave3-subgraph-system.md). |
 | 4 | Ecosystem and workspace features | **Done**: 4a packs and missing nodes ([record](../executions/2026-11-20-wave4a-packs.md)), 4b workspace state and execution ([record](../executions/2026-11-20-wave4b-workspace.md)), 4c links and view ([record](../executions/2026-11-20-wave4c-links-view.md)), 4d layout and palette ([record](../executions/2026-11-20-wave4d-layout-palette.md)), 4e catalog and boundaries ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)), all merged into `LG/dev`. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
-| 6 | Events and execution models | **In progress** ([plan](2026-11-22-events-execution.md), accepted 2026-11-22): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-in-progress) |
+| 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -146,7 +146,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 [Plan](2026-11-20-pre-release-0.18.0-dev.1.md) (accepted 2026-11-20): Waves 4 and 5, D7 and the loose ends are **done**, and the version is bumped on `LG/release_0.18.0-dev.1` ([record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)). Push, the release PR and the tag `v0.18.0-dev.1` wait for approval.
 
-## Wave 6: events and execution models (in progress)
+## Wave 6: events and execution models (done)
 
 [Plan](2026-11-22-events-execution.md) (accepted 2026-11-22; open decisions 3–8 adopted as recommended; forced pulls are memoized per frame and call). One branch per part, merged into `LG/dev`:
 
@@ -156,7 +156,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 6b | `src/execution.js` engine and model registry; `config.execution`; the `ancestors` semantics; boundaries; `event-dropped`; `strict` and `event` | **Done** on `LG/wave6b_engine`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6b-engine.md)) |
 | 6c | `static def.execution`; mode validity; flow-node rewrites; `checkExecution` and the badge | **Done** on `LG/wave6c_declarations`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6c-declarations.md)) |
 | 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | **Done** on `LG/wave6d_graphinfo`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6d-graphinfo-runner.md)) |
-| 6e | Deprecations; docs; decision record | Planned |
+| 6e | Deprecations; docs; decision record | **Done** on `LG/wave6e_polish`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)) |
 
 ## Deferred (each needs its own proposal)
 
