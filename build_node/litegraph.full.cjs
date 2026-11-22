@@ -45,6 +45,365 @@ function getRuntime() {
 }
 
 /**
+ * The listener core shared by typed events (LGraphEventTarget) and hooks (CallbackHandler).
+ *
+ *   const off = graph.events.on("node-added", (event) => console.log(event.detail.node));
+ *   off(); // unsubscribe
+ *
+ * Listeners receive {type, detail, target, cancelable, defaultPrevented, preventDefault()}.
+ * A throwing listener is logged and does not stop the others (safe in headless runners).
+ * Design after Comfy-Org/litegraph.js CustomEventTarget (MIT); runtime-independent implementation.
+ */
+
+/**
+ * An ordered list of listeners: highest `priority` first, then registration order.
+ * Copy-on-write: every change replaces `handlers`, so a dispatch in progress keeps iterating the
+ * list it started with (a listener added meanwhile runs from the next dispatch).
+ * Entries are `{id, priority, callback, data}`; `data` holds the options given at registration.
+ */
+class ListenerList {
+    /** @type {{id: number, priority: number, callback: Function, data: object}[]} never mutated */
+    handlers = [];
+    last_id = 0;
+
+    /**
+     * @param {Function} callback
+     * @param {{priority?: number, signal?: AbortSignal}} [data] - kept on the entry
+     * @returns {number} the entry id
+     */
+    add(callback, data = {}) {
+        const entry = {
+            id: this.last_id++,
+            priority: Number(data.priority) || 0,
+            callback,
+            data
+        };
+        if (data.signal?.aborted) return entry.id;
+        this.handlers = [...this.handlers, entry].sort((a, b) => b.priority - a.priority);
+        data.signal?.addEventListener?.("abort", () => this.remove(entry.id), {
+            once: true
+        });
+        return entry.id;
+    }
+
+    /** @returns {boolean} true if the entry was there */
+    remove(id) {
+        const next = this.handlers.filter((entry) => entry.id !== id);
+        if (next.length === this.handlers.length) return false;
+        this.handlers = next;
+        return true;
+    }
+
+    find(callback) {
+        return this.handlers.find((entry) => entry.callback === callback);
+    }
+
+    get size() {
+        return this.handlers.length;
+    }
+}
+
+class LGraphEvent {
+    constructor(type, detail, target, cancelable = false) {
+        this.type = type;
+        this.detail = detail;
+        this.target = target;
+        this.cancelable = cancelable;
+        this.defaultPrevented = false;
+    }
+
+    preventDefault() {
+        if (this.cancelable) this.defaultPrevented = true;
+    }
+}
+
+class LGraphEventTarget {
+    /**
+     * @param {object} [owner] - reported as event.target
+     * @param {(error: unknown, event: LGraphEvent) => void} [onError] - listener error reporter
+     */
+    constructor(owner, onError) {
+        this.owner = owner;
+        this.onError = onError;
+        /** @type {Map<string, ListenerList>} */
+        this._listeners = new Map();
+    }
+
+    /**
+     * Subscribes to an event type; `"*"` receives every event of this target (after its own listeners).
+     * @param {string} type
+     * @param {(event: LGraphEvent) => void} listener
+     * @param {{once?: boolean, signal?: AbortSignal, priority?: number}} [options]
+     * @returns {() => void} unsubscribe
+     */
+    on(type, listener, options = {}) {
+        if (typeof listener !== "function") throw new TypeError("listener must be a function");
+        if (options.signal?.aborted) return () => {};
+        let list = this._listeners.get(type);
+        if (!list) this._listeners.set(type, list = new ListenerList());
+        const id = list.add(listener, options);
+        return () => {
+            list.remove(id);
+        };
+    }
+
+    /** subscribes for a single event */
+    once(type, listener, options = {}) {
+        return this.on(type, listener, {
+            ...options,
+            once: true
+        });
+    }
+
+    /** removes a listener added with on() */
+    off(type, listener) {
+        const list = this._listeners.get(type);
+        const entry = list?.find(listener);
+        if (entry) list.remove(entry.id);
+    }
+
+    /** true when anything listens to type (a "*" listener counts) */
+    has(type) {
+        return !!(this._listeners.get(type)?.size || this._listeners.get("*")?.size);
+    }
+
+    /**
+     * Dispatches an event to the current listeners (by priority, then subscription order),
+     * then to the "*" listeners.
+     * @returns {LGraphEvent} check defaultPrevented for cancelable events
+     */
+    dispatch(type, detail, options = {}) {
+        const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
+        this._deliver(this._listeners.get(type), event);
+        if (type !== "*") this._deliver(this._listeners.get("*"), event);
+        return event;
+    }
+
+    _deliver(list, event) {
+        if (!list?.size) return;
+        for (const entry of list.handlers) {
+            if (entry.data.once) list.remove(entry.id);
+            try {
+                entry.callback.call(this.owner, event);
+            } catch (error) {
+                if (this.onError) this.onError(error, event);
+                else console.error?.("[LG] event listener failed", event.type, error);
+            }
+        }
+    }
+}
+
+/**
+ * Prioritised, vetoable hooks around the classic `onX` callbacks.
+ *
+ * Assigning `node.onExecute = fn` (or a prototype method) keeps working: it is the *default*
+ * callback of the chain. Registered handlers run by priority (highest first); the default runs
+ * after those with priority >= 0 and before the negative ones.
+ *
+ *   const off = node.onHook("onExecute", (info, param) => ({ return_value: 42, result_priority: 1 }), { priority: 1 });
+ *   off(); // or node.unregisterCallbackHandler("onExecute", id) with the id registerCallbackHandler returns
+ *
+ * A handler result may be a plain value or `{return_value, result_priority, prevent_default, stop_replication}`.
+ * Hooks are synchronous (a Promise result is not awaited). A handler that throws does not stop
+ * the others: the chain completes and the first error is then rethrown to the caller.
+ * Listener storage, ordering and copy-on-write come from ListenerList (shared with typed events).
+ */
+class CallbackHandler {
+
+    debug = false;
+
+    constructor(ref) {
+        /** @type {Record<string, ListenerList>} per hook name: `{handlers, last_id}` */
+        this.callbacks_handlers = {};
+        this.ob_ref = ref;
+    }
+
+    /**
+     * Subscribes a handler to a hook.
+     * @param {string} name hook name, e.g. "onExecute"
+     * @param {Function} callback called as `callback.call(owner, info, ...args)`
+     * @param {object} [opts]
+     * @param {number} [opts.priority=0] higher runs first; the default callback runs between >= 0 and < 0
+     * @param {boolean} [opts.is_default=false] skipped when another handler prevents the default
+     * @param {boolean} [opts.call_once=false] unregister after the first call (alias: `once`)
+     * @param {AbortSignal} [opts.signal] unregister on abort
+     * @returns {number|false} the handler id for this name, false for an invalid callback
+     */
+    registerCallbackHandler(name, callback, opts) {
+        if (typeof callback !== "function") {
+            LiteGraph?.log_warn?.("registerCallbackHandler", "invalid callback for", name);
+            return false;
+        }
+        const data = {
+            priority: 0,
+            is_default: false,
+            call_once: false,
+            ...(opts && typeof opts === "object" ? opts : {})
+        };
+        if (data.once) data.call_once = true;
+        return (this.callbacks_handlers[name] ??= new ListenerList()).add(callback, data);
+    }
+
+    /** @returns {boolean} true if the handler was registered */
+    unregisterCallbackHandler(name, h_id) {
+        return this.callbacks_handlers[name]?.remove(h_id) ?? false;
+    }
+
+    /** true when a handler is registered for name */
+    hasCallbackHandlers(name) {
+        return !!this.callbacks_handlers[name]?.size;
+    }
+
+    /**
+     * Runs the handlers registered for name and the default callback.
+     * @param {string} name
+     * @param {{def_cb?: Function|false, on_result?: (result: any) => void}} [opts] def_cb is the classic `onX`
+     * @param {...any} args passed after `info` to handlers, and alone to the default callback
+     * @returns {any} null when nothing returned a value; otherwise the winning plain value or result object
+     */
+    processCallbackHandlers(name, opts, ...args) {
+        return CallbackHandler.run(this.ob_ref, this, name, opts, args);
+    }
+
+    /**
+     * The chain behind processCallbackHandlers (also used directly by hook hosts, see installHooks).
+     * With no registered handler it only calls the default callback.
+     */
+    static run(owner, handler, name, opts, args) {
+        const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
+        const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
+        if (!handlers?.length) {
+            if (!def_cb) return null;
+            const ret = def_cb.apply(owner, args);
+            opts.on_result?.(ret);
+            return ret ?? null;
+        }
+
+        const results = [];
+        let value = null;
+        let valuePriority = 0;
+        let prevented = false;
+        let stopped = false;
+        let defaultDone = false;
+        let failure = null;
+
+        // a result replaces the kept one when its result_priority (plain values: 0) is not lower
+        const call = (fn, info) => {
+            let ret;
+            try {
+                ret = info ? fn.call(owner, info, ...args) : fn.apply(owner, args);
+            } catch (error) {
+                if (failure) LiteGraph?.log_error?.("hook", name, "handler failed", error);
+                else failure = {
+                    error
+                };
+                return;
+            }
+            results.push(ret);
+            opts?.on_result?.(ret);
+            if (ret !== null && typeof ret === "object") {
+                if (ret.prevent_default) prevented = true;
+                const priority = typeof ret.result_priority === "number" && !isNaN(ret.result_priority) ? ret.result_priority : 0;
+                if (value === null || priority >= valuePriority) {
+                    value = ret;
+                    valuePriority = priority;
+                }
+                if (ret.stop_replication) stopped = true;
+            } else if (ret !== null && ret !== undefined && (value === null || valuePriority <= 0)) {
+                value = ret;
+                valuePriority = 0;
+            }
+        };
+        const runDefault = () => {
+            defaultDone = true;
+            if (def_cb && !prevented) call(def_cb, null);
+        };
+
+        for (const entry of handlers) {
+            if (prevented && entry.data.is_default) continue;
+            if (entry.priority < 0 && !defaultDone) {
+                runDefault();
+                if (stopped) break;
+            }
+            // unregistered before the call, so a re-entrant dispatch cannot run it again
+            if (entry.data.call_once) handler.unregisterCallbackHandler(name, entry.id);
+            call(entry.callback, {
+                name,
+                id: entry.id,
+                current_return_value: value,
+                data: entry.data,
+                results_chain: results
+            });
+            if (stopped) break;
+        }
+        // stop_replication stops everything after it, the default callback included
+        if (!defaultDone && !stopped) runDefault();
+
+        if (failure) throw failure.error;
+        return value;
+    }
+
+    /** The value a hook settled on: `return_value` of an object result, otherwise the result itself. */
+    static valueOf(result) {
+        return result !== null && typeof result === "object" ? result.return_value : result;
+    }
+
+    /** true when the result is `value`, plain or as `{return_value: value}` (e.g. a `false` veto). */
+    static is(result, value) {
+        return result === value || (result !== null && typeof result === "object" && result.return_value === value);
+    }
+
+    /** The pointer hooks' "handled": `true`, or an object result with a truthy `return_value`. */
+    static handled(result) {
+        return result === true || (result !== null && typeof result === "object" && !!result.return_value);
+    }
+}
+
+/**
+ * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
+ * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
+ * The CallbackHandler is created on first registration; dispatching without one only calls `onX`.
+ * @param {Function} Class
+ */
+function installHooks(Class) {
+    const methods = {
+        /** @returns {CallbackHandler} this object's handler registry (created once) */
+        callbackhandler_setup() {
+            return (this.cb_handler ||= new CallbackHandler(this));
+        },
+        registerCallbackHandler(name, callback, opts) {
+            return this.callbackhandler_setup().registerCallbackHandler(name, callback, opts);
+        },
+        unregisterCallbackHandler(name, h_id) {
+            return this.cb_handler ? this.cb_handler.unregisterCallbackHandler(name, h_id) : false;
+        },
+        processCallbackHandlers(name, opts, ...args) {
+            return CallbackHandler.run(this, this.cb_handler, name, opts, args);
+        },
+        hasCallbackHandlers(name) {
+            return !!this.cb_handler?.hasCallbackHandlers(name);
+        },
+        /**
+         * Registers a hook handler and returns its disposer.
+         * @returns {() => boolean} unregisters the handler
+         */
+        onHook(name, callback, opts) {
+            const id = this.registerCallbackHandler(name, callback, opts);
+            if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
+            return () => this.unregisterCallbackHandler(name, id);
+        },
+    };
+    for (const [key, value] of Object.entries(methods)) {
+        Object.defineProperty(Class.prototype, key, {
+            value,
+            writable: true,
+            configurable: true
+        });
+    }
+    return Class;
+}
+
+/**
  * @class LiteGraph
  *
  * @NOTE:
@@ -387,32 +746,18 @@ class LiteGraphClass {
         }
     }
 
-    callbackhandler_setup() {
-        if (this.cb_handler) return;
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        this.registerCallbackHandler = function() {
-            return this.cb_handler.registerCallbackHandler(...arguments);
-        };
-        this.unregisterCallbackHandler = function() {
-            return this.cb_handler.unregisterCallbackHandler(...arguments);
-        };
-        this.processCallbackHandlers = function() {
-            return this.cb_handler.processCallbackHandlers(...arguments);
-        };
+    /**
+     * Typed library events: node-type-registered, node-type-replaced, node-type-unregistered,
+     * graph-created, canvas-created ("*" receives all). See LGraphEventTarget.
+     */
+    get events() {
+        return this._events ??= new LGraphEventTarget(this, (error, event) =>
+            this.log_error("litegraph", "event listener failed", event.type, error));
     }
 
-    registerCallbackHandler() {
-        this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
+    /** dispatch only when someone listens (no allocation otherwise) */
+    _emit(type, detail) {
+        return this._events?.has(type) ? this._events.dispatch(type, detail) : null;
     }
 
     /**
@@ -1067,11 +1412,21 @@ class LiteGraphClass {
         this.processCallbackHandlers("onNodeTypeRegistered", {
             def_cb: this.onNodeTypeRegistered
         }, type, base_class);
+        this._emit("node-type-registered", {
+            type,
+            ctor: base_class,
+            previous: prev ?? null
+        });
 
         if (prev) {
             this.processCallbackHandlers("onNodeTypeReplaced", {
                 def_cb: this.onNodeTypeReplaced
             }, type, base_class, prev);
+            this._emit("node-type-replaced", {
+                type,
+                ctor: base_class,
+                previous: prev
+            });
         }
 
         // warnings
@@ -1121,6 +1476,10 @@ class LiteGraphClass {
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
         }
+        this._emit("node-type-unregistered", {
+            type: base_class.type,
+            ctor: base_class
+        });
     }
 
     /**
@@ -1940,6 +2299,9 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
         });
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LiteGraphClass);
+
 // if(typeof(root) == "undefined" || !root){
 //     var root = getGlobalObject();
 // }
@@ -2562,382 +2924,6 @@ ExecutionEngine.registerModel("event", {
 });
 
 /**
- * WIP
- * intended to replace direct (single) assignment of callbacks [ event entrypoint ]
- */
-class CallbackHandler {
-
-    debug = false;
-
-    constructor(ref) {
-        this.callbacks_handlers = {};
-        this.ob_ref = ref;
-        if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("CallbackHandler Initialize callbacks", ref);
-    }
-
-    /**
-     * subscribe callbacks for events
-     * @method registerCallbackHandler
-     * @param {string} name event name to register to
-     * @param {function} callback function to call when processing the event name
-     * @param {object} opts options for registerCallBackHandler
-     * @param {number} opts.priority default handler as 0, lesser value executes after, greater value will be execute before but their value eventually overridden in case if not stopping the chain
-     * @param {boolean} opts.is_default original library handlers would have true, while custom registered has choice to be eventually treathed as such
-     * @returns {number} the id of the handler for the specified name
-     */
-    registerCallbackHandler = function(name, callback, opts) {
-        if (!opts || typeof(opts) !== "object") opts = {};
-        const def_opts = {
-            priority: 0,
-            is_default: false,
-            call_once: false
-        };
-        opts = Object.assign(def_opts, opts);
-
-        if (typeof(callback) !== "function") {
-            if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_error("registerCallbackHandler", "Invalid callback");
-            return false;
-        }
-
-        if (typeof(this.callbacks_handlers[name]) === "undefined") {
-            this.callbacks_handlers[name] = {
-                last_id: 0,
-                handlers: []
-            };
-        }
-        const h_id = this.callbacks_handlers[name].last_id++;
-
-        if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("registerCallbackHandler", "new callback handler", name, h_id);
-
-        this.callbacks_handlers[name].handlers.push({
-            id: h_id,
-            priority: opts.priority,
-            callback: callback,
-            data: opts, // enqueue passed options, can store info in here
-        });
-
-        // sort descending
-        this.callbacks_handlers[name].handlers.sort((a, b) => b.priority - a.priority);
-
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("registerCallbackHandler","sorted",this.callbacks_handlers[name]);
-
-        return h_id; // return the cbhandle id
-    };
-    /**
-     * 
-     * @param {string} name event name to unregister from
-     * @param {number} h_id the handler pointer, need to be saved when registering the callback
-     * @returns {boolean} true if found
-     */
-    unregisterCallbackHandler(name, h_id) {
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("unregisterCallbackHandler","Checking in handlers",this.callbacks_handlers,name,h_id);
-        if (typeof(this.callbacks_handlers[name]) !== "undefined") {
-            const nHandlers = this.callbacks_handlers[name].handlers.length;
-            this.callbacks_handlers[name].handlers = this.callbacks_handlers[name].handlers.filter(function(obj) {
-                // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("unregisterCallbackHandler","Checking handle",obj.id,h_id);
-                if (obj.id === h_id) {
-                    LiteGraph.log_info("unregisterCallbackHandler", name, h_id);
-                }
-                return obj.id !== h_id;
-            });
-            if (this.callbacks_handlers[name].handlers.length < nHandlers) {
-                return true;
-            }
-        }
-        LiteGraph.log_warn("unregisterCallbackHandler", "no handlers for", name, h_id);
-        return false;
-    }
-
-    /**
-     * Executes the callbacks and cache their result
-     * execution if from higher priority down
-     * handler data is passed as first argument, than all the additional pars passed to this
-     * @param {string} name the event name for which execute the callbacks registered to
-     * @param {object} opts specify the option here
-     * @param {object} opts.def_cb can specify a callback here to be treated as default callback, executed after the >= 0, eventually prevented
-     * @returns {null|boolean|object} get back default result, and along the chain
-     */
-    processCallbackHandlers(name, opts /*, .. arguments */ ) {
-        if (!opts || typeof(opts) !== "object") opts = {};
-        const def_opts = {
-            // WIP :: think try and implement options
-            // process: "all", return: "first_result", skip_null_return: true, append_last_return: false
-            // min_piority: false, max_priority: false
-            def_cb: false // the [default] callback : in LG this is the previous(current) function called when an event is executed, can be undefined or null
-        };
-        opts = Object.assign(def_opts, opts);
-        var cbHandle = this;
-
-        if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("**processCallbackHandlers**", ...arguments);
-
-        // ensure callback name is present on this
-        if (typeof(this.callbacks_handlers[name]) == "undefined") {
-            this.callbacks_handlers[name] = {
-                last_id: 0,
-                handlers: []
-            };
-        }
-
-        var aArgs = ([].slice.call(arguments)).slice(2);
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("Cleaned arguments (slice 2)",aArgs,"original",arguments);
-
-        // previous implementation of converting arguments
-        // using shorter ([].slice.call(arguments)).slice(2)
-        // can clean when checked works fine
-        // function clean_args(args) {
-        //     let aRet = [];
-        //     for(let iA=2; iA<args.length; iA++) {
-        //         // if(typeof(args[iA])!=="undefined")
-        //         aRet.push(args[iA]);
-        //     }
-        //     return aRet;
-        // }
-        // var aArgs = clean_args(arguments);
-
-        var stepRet = null; // temp step specific result 
-        var cbRet = null; // progressive final result
-        var aResChain = []; // progressive results chain
-        var oCbInfo = {}; // info passed to the callback
-        var cbResPriority = 0; // incremental result priority
-        var defCbChecked = false; // flag activated when executed the [default] callback
-        var preventDefCb = false; // if to prevent the [default] callback execution (set eventually by some callback result)
-        var breakCycle = false; // if to stop callback execution (set eventually by some callback result)
-
-        var executeDefaultCb = function() {
-            if (!preventDefCb && typeof(opts.def_cb) == "function") {
-                // execute default callback
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_verbose("Calling DEFAULT w Args", ...aArgs);
-                // stepRet = opts.def_cb(...aArgs); // OLD, not working because of bas THIS 
-                // call method on ref object (LiteGraph, LGraphNode, LGraphCanvas, ...) in othe method `this` will than correctly set
-                stepRet = opts.def_cb.call(cbHandle.ob_ref, ...aArgs); // could pass more data
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "default callback executed", stepRet);
-                checkStepRet();
-            } else {
-                if (typeof(opts.def_cb) == "function") {
-                    if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "preventing default passed", opts.def_cb);
-                } else {
-                    // not passed
-                }
-            }
-            defCbChecked = true;
-        }
-        // results should be structured a object (to try to return a final value or change chain execution behavior)
-        /**
-         * @prop {*} return_value assign the return ( could be overriden )
-         * @prop {number} result_priority assign proper values to allow handlers with higher priority to have not their return_value overridden 
-         * @prop {boolean} prevent_default stop default execution ( force only when really needed )
-         * @prop {boolean} stop_replication stop the execution chain
-         */
-        var buildRetObj = function() {
-            // TODO: implement object return construction :: THAN replace all result checking in the libs to easier object ensured checks
-        }
-        /**
-         * called for each callback to push and merge results
-         * void
-         */
-        // a result replaces the current one only when its result_priority (default 0) is not lower
-        // than the priority of the result currently held
-        var acceptResult = function(value, priority) {
-            if (typeof(priority) !== "number" || isNaN(priority)) priority = 0;
-            if (cbRet === null || priority >= cbResPriority) {
-                cbRet = value;
-                cbResPriority = priority;
-            }
-        }
-        var checkStepRet = function() {
-            aResChain.push(stepRet); // cache result
-            opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
-            // check result for structured object
-            if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stepRet check", stepRet);
-            if (stepRet !== null && typeof(stepRet) == "object") {
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "result is object", stepRet);
-                if (typeof(stepRet.prevent_default) !== "undefined" && stepRet.prevent_default) {
-                    preventDefCb = true;
-                }
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "object result", stepRet, oCbInfo);
-                acceptResult(stepRet, stepRet.result_priority);
-                if (typeof(stepRet.stop_replication) !== "undefined" && stepRet.stop_replication) {
-                    if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stop_replication", oCbInfo);
-                    breakCycle = true;
-                    return; // will break;
-                }
-            } else {
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "result NOT object", stepRet);
-                // ? save current result if not null or undefined (?)
-                if (stepRet !== null && stepRet !== undefined) {
-                    acceptResult(stepRet, 0); // plain values count as result_priority 0
-                }
-            }
-        }
-        for (let cbhX of this.callbacks_handlers[name].handlers) {
-
-            // eventually prevent cb marked as default
-            if (preventDefCb && cbhX.data.is_default) {
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers", "preventing default registered", cbhX);
-                continue;
-            }
-
-            // execute default if already processed the ones >= 0
-            if (cbhX.priority < 0 && !defCbChecked) {
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers", "process default passed", "nextCb:", cbhX);
-                executeDefaultCb();
-                if (breakCycle) break;
-            }
-
-            if (cbhX.data.call_once) {
-                this.unregisterCallbackHandler(name, cbhX.id);
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "unregistered call_once", cbhX.id);
-            }
-
-            oCbInfo = {
-                name: name // name of the handler
-                    ,
-                id: cbhX.id // id of the handler for the name
-                    ,
-                current_return_value: cbRet // current temporary value (if >= second call and previous return a value) 
-                    ,
-                data: cbhX.data // pass the priority and the additional data passed
-                    ,
-                results_chain: aResChain
-                // opts: def_opts
-            };
-
-            // execute callback
-            // OLD, not working because of bas THIS : stepRet = cbhX.callback(oCbInfo,...aArgs);
-            // call method on ref object (LiteGraph, LGraphNode, LGraphCanvas, ...) in the method `this` will than correctly set
-            stepRet = cbhX.callback.call(this.ob_ref, oCbInfo, ...aArgs);
-
-            if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "callback executed", stepRet, oCbInfo);
-
-            // push result
-            checkStepRet();
-            if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "result checked", "cbRet", cbRet, "aResChain", aResChain, "cbResPriority", cbResPriority, "defCbChecked", defCbChecked, "preventDefCb", preventDefCb, "breakCycle", breakCycle);
-            if (breakCycle) break;
-
-        } // end cycle
-
-        // run the default callback if no handler ran it yet, unless the chain was stopped
-        // (stop_replication stops everything after it, the default callback included)
-        if (!defCbChecked && !breakCycle) {
-            executeDefaultCb();
-        }
-
-        // if(cbRet===null){
-        //     // return default true if no callbacks specified a return value
-        //     // [ some original LG callback execution checks for boolean return ]
-        //     cbRet = true;
-        // }
-        return cbRet;
-
-        // could return obj instead and there check for values, etc ..
-        // TODO would be probably better to always return an object to than check for result and make easier code in implementation
-    }
-}
-/**
- * Typed events for graphs and canvases, alongside CallbackHandler hooks.
- *
- *   const off = graph.events.on("node-added", (event) => console.log(event.detail.node));
- *   off(); // unsubscribe
- *
- * Listeners receive {type, detail, target, cancelable, defaultPrevented, preventDefault()}.
- * A throwing listener is logged and does not stop the others (safe in headless runners).
- * Design after Comfy-Org/litegraph.js CustomEventTarget (MIT); runtime-independent implementation.
- */
-class LGraphEvent {
-    constructor(type, detail, target, cancelable = false) {
-        this.type = type;
-        this.detail = detail;
-        this.target = target;
-        this.cancelable = cancelable;
-        this.defaultPrevented = false;
-    }
-
-    preventDefault() {
-        if (this.cancelable) this.defaultPrevented = true;
-    }
-}
-
-class LGraphEventTarget {
-    /**
-     * @param {object} [owner] - reported as event.target
-     * @param {(error: unknown, event: LGraphEvent) => void} [onError] - listener error reporter
-     */
-    constructor(owner, onError) {
-        this.owner = owner;
-        this.onError = onError;
-        this._listeners = new Map();
-    }
-
-    /**
-     * Subscribes to an event type.
-     * @param {string} type
-     * @param {(event: LGraphEvent) => void} listener
-     * @param {{once?: boolean, signal?: AbortSignal}} [options]
-     * @returns {() => void} unsubscribe
-     */
-    on(type, listener, options = {}) {
-        if (typeof listener !== "function") throw new TypeError("listener must be a function");
-        if (options.signal?.aborted) return () => {};
-        if (!this._listeners.has(type)) this._listeners.set(type, []);
-        const entry = {
-            listener,
-            once: !!options.once
-        };
-        this._listeners.get(type).push(entry);
-        const off = () => this._remove(type, entry);
-        options.signal?.addEventListener?.("abort", off, {
-            once: true
-        });
-        return off;
-    }
-
-    /** subscribes for a single event */
-    once(type, listener, options = {}) {
-        return this.on(type, listener, {
-            ...options,
-            once: true
-        });
-    }
-
-    /** removes a listener added with on() */
-    off(type, listener) {
-        const entry = this._listeners.get(type)?.find((item) => item.listener === listener);
-        if (entry) this._remove(type, entry);
-    }
-
-    /** true when anything listens to type */
-    has(type) {
-        return !!this._listeners.get(type)?.length;
-    }
-
-    /**
-     * Dispatches an event to the current listeners (in subscription order).
-     * @returns {LGraphEvent} check defaultPrevented for cancelable events
-     */
-    dispatch(type, detail, options = {}) {
-        const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
-        const entries = this._listeners.get(type);
-        if (!entries?.length) return event;
-        for (const entry of entries.slice()) {
-            if (entry.once) this._remove(type, entry);
-            try {
-                entry.listener.call(this.owner, event);
-            } catch (error) {
-                if (this.onError) this.onError(error, event);
-                else console.error?.("[LG] event listener failed", type, error);
-            }
-        }
-        return event;
-    }
-
-    _remove(type, entry) {
-        const entries = this._listeners.get(type);
-        const index = entries?.indexOf(entry) ?? -1;
-        if (index !== -1) entries.splice(index, 1);
-    }
-}
-
-/**
  * Named, reusable operations shared by keybindings, menus, search and extensions.
  *
  * A command is `{id, run(ctx), label?, category?, when?(ctx), mutatesGraph?}`.
@@ -3518,6 +3504,7 @@ class MenuRegistry {
  *     setup(ctx) {
  *         ctx.on("onNodeTypeRegistered", (info, type) => ...);           // LiteGraph-level hook
  *         ctx.onCanvas((canvas, c) => c.on("onKeyDown", (info, e) => ...)); // every canvas, now and later
+ *         ctx.listen(LiteGraph, "node-type-registered", (event) => ...);     // hooks or typed events, by name
  *         return () => { ... };                                            // optional extra cleanup
  *     },
  * });
@@ -3639,6 +3626,13 @@ class ExtensionRegistry {
             },
             /** Hook on any object with a CallbackHandler (graph, node, canvas). */
             onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
+            /**
+             * One way to listen to both kinds, removed on dispose: hook names (`onX`, `on_x`,
+             * `getXMenuOptions`) register a hook handler, other names ("node-added", "*") a typed listener.
+             */
+            listen: (target, name, fn, opts) => /^(on|get)[A-Z_]/.test(name) ?
+                hookOn(target, name, fn, opts) :
+                ctx.onEvent(target, name, fn, opts),
             /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
             onCanvas: (fn) => {
                 const apply = (canvas) => {
@@ -5562,8 +5556,6 @@ class LGraph {
         /** number of saved changes to this document */
         this.revision = 0;
 
-        this.callbackhandler_setup();
-
         this.clear();
 
         if (o) {
@@ -5573,20 +5565,9 @@ class LGraph {
         LiteGraph.processCallbackHandlers("on_lgraph_construct", {
             def_cb: LiteGraph.on_lgraph_construct
         }, this);
-    }
-
-    callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler() {
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        return this.cb_handler.processCallbackHandlers(...arguments);
+        LiteGraph._emit?.("graph-created", {
+            graph: this
+        });
     }
 
     /**
@@ -6568,6 +6549,9 @@ class LGraph {
                 action: "groupAdd",
                 doSave: opts.doProcessChange
             });
+            this._emit("group-added", {
+                group: node
+            });
             return;
         }
 
@@ -6671,6 +6655,9 @@ class LGraph {
             node.graph = null;
             this.onGraphChanged({
                 action: "groupRemove"
+            });
+            this._emit("group-removed", {
+                group: node
             });
             this.setDirtyCanvas(true, true);
             this.change();
@@ -9098,6 +9085,9 @@ class LGraph {
     }
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraph);
+
 /**
  * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
  * Valid callbacks are: onNodeSelected, onNodeDeselected, onShowNodePanel, onNodeDblClicked
@@ -9130,9 +9120,6 @@ class LGraphCanvas {
 
         };
         this.options = options;
-
-        // register CallbackHandler methods on this
-        this.callbackhandler_setup();
 
         // if(graph === undefined)
         //	throw new Error("No graph assigned");
@@ -9260,34 +9247,14 @@ class LGraphCanvas {
             this.startRendering();
         }
 
-        // (the CallbackHandler was created at the top of the constructor; creating it again here
-        // would drop every handler registered while constructing)
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct", {
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
+        LiteGraph._emit?.("canvas-created", {
+            canvas: this
+        });
         // extensions registered through LiteGraph.registerExtension see every canvas
         LiteGraph.extensions?.attachCanvas(this);
-    }
-
-    callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        // this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        // this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        // this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
-    }
-
-    registerCallbackHandler() {
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     /**
@@ -10111,10 +10078,10 @@ class LGraphCanvas {
         //     return;
 
         // TAG callback graphrenderer event entrypoint
-        var cbRet = this.processCallbackHandlers("onClear", {
+        var cbRet = this.processCallbackHandlers("onMouse", {
             def_cb: this.onMouse
         }, e);
-        if ((typeof(cbRet) != "undefined" && cbRet !== null) && (cbRet === false || (typeof(cbRet) == "object" && cbRet.return_value === false))) {
+        if (CallbackHandler.is(cbRet, false)) {
             LiteGraph.log_info("lgraphcanvas", "processMouseDown", "callback prevents continue");
             return;
         }
@@ -10395,7 +10362,7 @@ class LGraphCanvas {
                         cbRet = node.processCallbackHandlers("onDblClick", {
                             def_cb: node.onDblClick
                         }, e, pos, this);
-                        if (cbRet !== null && (cbRet === true || (typeof(cbRet) == "object" && cbRet.return_value))) {
+                        if (CallbackHandler.handled(cbRet)) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onDblClick", cbRet);
                         } else {
                             this.processNodeDblClicked(node);
@@ -10409,7 +10376,7 @@ class LGraphCanvas {
                     }, e, pos, this);
 
                     // if do not capture mouse
-                    if (cbRet !== null && (cbRet === true || (typeof(cbRet) == "object" && cbRet.return_value))) {
+                    if (CallbackHandler.handled(cbRet)) {
                         LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onMouseDownCbRet", cbRet);
                         block_drag_node = true;
                     } else {
@@ -11504,7 +11471,7 @@ class LGraphCanvas {
                         def_cb: this.selected_nodes[i].onKeyDown
                     }, e);
                     // could a node stop replicating to the others ?
-                    if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+                    if (CallbackHandler.is(r, true)) {
                         LiteGraph.log_debug("lgraphcanvas", "processKey", "onKeyDown has been processed with result true, prevent event bubbling");
                         block_default = true;
                     }
@@ -11516,7 +11483,7 @@ class LGraphCanvas {
             r = this.processCallbackHandlers("onKeyDown", {
                 def_cb: this.onKeyDown
             }, e);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 LiteGraph.log_debug("lgraphcanvas", "processKey", "onKeyDown has been processed with result true, prevent event bubbling");
                 block_default = true;
             } else {
@@ -11775,10 +11742,10 @@ class LGraphCanvas {
             r = this.processCallbackHandlers("onDropItem", {
                 def_cb: this.onDropItem
             }, e);
-            if (r === null || !r || (typeof(r) == "object" && !r.return_value)) {
+            if (!CallbackHandler.valueOf(r)) {
                 LiteGraph.log_verbose("lgraphcanvas", "processDrop", "running default implementation", e);
                 this.checkDropItem(e);
-                return r === null ? r : (typeof(r) == "object" ? r.return_value : r); // this is probably ignored
+                return CallbackHandler.valueOf(r); // this is probably ignored
             } else {
                 return r; // this is probably ignored
             }
@@ -11802,7 +11769,7 @@ class LGraphCanvas {
                     }, file);
 
                     // if not getting a positive result, process file as data and call onDropData
-                    if (!r || (typeof(r) == "object" && !r.return_value)) {
+                    if (!CallbackHandler.valueOf(r)) {
 
                         // prepare reader
                         var reader = new FileReader();
@@ -11835,7 +11802,7 @@ class LGraphCanvas {
                 def_cb: node.onDropItem
             }, e);
             // if getting a positive result, return
-            if (r === true || (typeof(r) == "object" && r.return_value)) {
+            if (CallbackHandler.handled(r)) {
                 return true;
             }
 
@@ -11844,7 +11811,7 @@ class LGraphCanvas {
                 def_cb: this.onDropItem
             }, e);
             // if getting a positive result, return
-            if (r === true || (typeof(r) == "object" && r.return_value)) {
+            if (CallbackHandler.handled(r)) {
                 return true;
             }
 
@@ -12068,6 +12035,9 @@ class LGraphCanvas {
         if (!this._selected_items.has(item)) {
             this._selected_items.add(item);
             item.selected = true;
+            this.processCallbackHandlers("onSelectionChange", {
+                def_cb: this.onSelectionChange
+            }, this.selected_nodes);
             this._emit?.("selection-changed", {
                 nodes: Object.values(this.selected_nodes),
                 items: this.selectedItems
@@ -12085,6 +12055,9 @@ class LGraphCanvas {
         }
         if (this._selected_items.delete(item)) {
             item.selected = false;
+            this.processCallbackHandlers("onSelectionChange", {
+                def_cb: this.onSelectionChange
+            }, this.selected_nodes);
             this._emit?.("selection-changed", {
                 nodes: Object.values(this.selected_nodes),
                 items: this.selectedItems
@@ -13425,7 +13398,7 @@ class LGraphCanvas {
         let r = this.processCallbackHandlers("onRenderBackground", {
             def_cb: this.onRenderBackground
         }, canvas, ctx);
-        if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+        if (CallbackHandler.is(r, true)) {
             bg_already_painted = true;
         }
 
@@ -13590,7 +13563,7 @@ class LGraphCanvas {
             let r = node.processCallbackHandlers("onDrawCollapsed", {
                 def_cb: node.onDrawCollapsed
             }, ctx, this);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 return;
             }
         }
@@ -14071,7 +14044,7 @@ class LGraphCanvas {
         let r = this.processCallbackHandlers("onDrawLinkTooltip", {
             def_cb: this.onDrawLinkTooltip
         }, ctx, link, this);
-        if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+        if (CallbackHandler.is(r, true)) {
             return;
         }
 
@@ -14195,7 +14168,7 @@ class LGraphCanvas {
             r = node.processCallbackHandlers("onDrawTitleBar", {
                 def_cb: node.onDrawTitleBar
             }, ctx, title_height, size, this.ds.scale, fgcolor);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 // managed
             } else if (
                 title_mode != LiteGraph.TRANSPARENT_TITLE &&
@@ -14252,7 +14225,7 @@ class LGraphCanvas {
             r = node.processCallbackHandlers("onDrawTitleBox", {
                 def_cb: node.onDrawTitleBox
             }, ctx, title_height, size, this.ds.scale);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 // managed
             } else if (
                 shape == LiteGraph.ROUND_SHAPE ||
@@ -17550,7 +17523,7 @@ class LGraphCanvas {
                 let r = that.processCallbackHandlers("onSearchBoxSelection", {
                     def_cb: that.onSearchBoxSelection
                 }, name, event, graphcanvas);
-                if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+                if (CallbackHandler.is(r, true)) {
                     // managed
                 } else {
                     var extra = LiteGraph.searchbox_extras[name.toLowerCase()];
@@ -18076,7 +18049,7 @@ class LGraphCanvas {
             let r = node.processCallbackHandlers("onPropertyChanged", {
                 def_cb: node.onPropertyChanged
             }, property, value, prevValue);
-            if (r === false || (r !== null && (typeof(r) == "object" && r.return_value === false))) {
+            if (CallbackHandler.is(r, false)) {
                 node.properties[property] = prevValue;
                 LiteGraph.log_debug("lgraphcanvas", "showEditPropertyValue", "setValue", "prevent property set by cbHandler", property, value, prevValue, r);
             }
@@ -18668,7 +18641,10 @@ class LGraphCanvas {
                 let type = info && info !== null ? info.type : "string";
 
                 // in case the user wants control over the side panel widget
-                if (node.onAddPropertyToPanel && node.onAddPropertyToPanel(pName, panel, value, info, fUpdate)) {
+                const handled = node.processCallbackHandlers("onAddPropertyToPanel", {
+                    def_cb: node.onAddPropertyToPanel
+                }, pName, panel, value, info, fUpdate);
+                if (CallbackHandler.valueOf(handled)) {
                     continue;
                 }
                 panel.addWidget(info.widget || type, pName, value, info, fUpdate);
@@ -18676,8 +18652,9 @@ class LGraphCanvas {
 
             panel.addSeparator();
 
-            if (node.onShowCustomPanelInfo)
-                node.onShowCustomPanelInfo(panel);
+            node.processCallbackHandlers("onShowCustomPanelInfo", {
+                def_cb: node.onShowCustomPanelInfo
+            }, panel);
 
             panel.footer.innerHTML = ""; // clear
             panel.addButton("Delete", function() {
@@ -19169,7 +19146,7 @@ class LGraphCanvas {
         let r = this.processCallbackHandlers("getMenuOptions", {
             def_cb: this.getMenuOptions
         });
-        if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+        if (CallbackHandler.is(r, true)) {
             // managed
         } else {
 
@@ -19813,6 +19790,9 @@ class LGraphCanvas {
 
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphCanvas);
+
 /* LGraphCanvas render */
 var temp = new Float32Array(4);
 var temp_vec2 = new Float32Array(2);
@@ -19846,24 +19826,6 @@ class LGraphGroup {
         this._nodes = [];
         this._groups = [];
         this.graph = null;
-        this.callbackhandler_setup();
-    }
-
-    callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -20073,6 +20035,9 @@ class LGraphGroup {
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphGroup);
+
 // src/lgraphnode.js
 /*
 title: string
@@ -20182,7 +20147,6 @@ class LGraphNode {
             LGraphNode._default_sizes.add(this.size);
         }
         this.size_basic ??= this.size;
-        this.callbackhandler_setup();
     }
 
     validateExecutionEnvironment() {
@@ -20250,23 +20214,6 @@ class LGraphNode {
 
     loadRequiredLibraries() {
         return this.loadLibraries(this.requiredLibraries || []);
-    }
-
-    callbackhandler_setup() {
-        if (!this.cb_handler) this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -20599,7 +20546,7 @@ class LGraphNode {
         let r = this.processCallbackHandlers("onPropertyChanged", {
             def_cb: this.onPropertyChanged
         }, name, value, prevValue);
-        if (r === false || (r !== null && (typeof(r) == "object" && r.return_value === false))) {
+        if (CallbackHandler.is(r, false)) {
             this.properties[name] = prevValue;
             LiteGraph.log_debug("lgraphnode", "setProperty", "prevent property set by cbHandler", name, value, prevValue, r);
         }
@@ -22741,7 +22688,7 @@ class LGraphNode {
         r = target_node.processCallbackHandlers("onBeforeConnectInput", {
             def_cb: target_node.onBeforeConnectInput
         }, target_slot);
-        var redirect = r !== null && typeof(r) == "object" ? r.return_value : r;
+        var redirect = CallbackHandler.valueOf(r);
         if (redirect === false) {
             LiteGraph.log_debug("lgraphnode", "connect", "Node onBeforeConnectInput refused the connection", target_slot);
             return null;
@@ -22760,7 +22707,7 @@ class LGraphNode {
         r = this.processCallbackHandlers("onConnectOutput", {
             def_cb: this.onConnectOutput
         }, slot, input.type, input, target_node, target_slot);
-        if (r !== null && (r === false || (typeof(r) == "object" && r.return_value === false))) {
+        if (CallbackHandler.is(r, false)) {
             LiteGraph.log_debug("lgraphnode", "connect", "Node onConnectOutput stopping connection", r.return_value);
             return null;
         }
@@ -22780,7 +22727,7 @@ class LGraphNode {
         r = target_node.processCallbackHandlers("onConnectInput", {
             def_cb: target_node.onConnectInput
         }, target_slot, output.type, output, this, slot);
-        if (r !== null && (r === false || (typeof(r) == "object" && r.return_value === false))) {
+        if (CallbackHandler.is(r, false)) {
             LiteGraph.log_debug("lgraphnode", "connect", "targetNode onConnectInput stopping connection", r.return_value);
             return null;
         }
@@ -23636,6 +23583,9 @@ class LGraphNode {
         };
     }
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphNode);
 
 
 /**
@@ -57416,11 +57366,12 @@ const ComfyInterop = {
         return data;
     },
 };
-exports.LiteGraphClass = LiteGraphClass;
-exports.ExecutionEngine = ExecutionEngine;
-exports.CallbackHandler = CallbackHandler;
+exports.ListenerList = ListenerList;
 exports.LGraphEvent = LGraphEvent;
 exports.LGraphEventTarget = LGraphEventTarget;
+exports.CallbackHandler = CallbackHandler;
+exports.LiteGraphClass = LiteGraphClass;
+exports.ExecutionEngine = ExecutionEngine;
 exports.CommandRegistry = CommandRegistry;
 exports.KeybindingRegistry = KeybindingRegistry;
 exports.SettingsRegistry = SettingsRegistry;
@@ -57482,6 +57433,7 @@ exports.isBrowser = isBrowser;
 exports.isNode = isNode;
 exports.isBun = isBun;
 exports.getRuntime = getRuntime;
+exports.installHooks = installHooks;
 exports.defaultWidgetTypes = defaultWidgetTypes;
 exports.widgetImplementation = widgetImplementation;
 exports.evaluateMathExpression = evaluateMathExpression;
