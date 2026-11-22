@@ -5,7 +5,7 @@ LiteGraph.setupPlatform();
 LiteGraph.packs.open({ id: "litegraph/geometry", version: LiteGraph.VERSION, title: "Geometry", builtin: true });
 
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
-// import { GL } from "../../editor/js/libs/litegl.js";
+// import { GL } from "../../vendor/litegl.js";
 
 // Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
 function polarToCartesian(out, azimuth, inclination, radius) {

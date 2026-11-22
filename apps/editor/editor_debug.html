@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <title>LiteGraph - DEBUG</title>
-    <link rel="stylesheet" type="text/css" href="../css/litegraph.css">
-    <link rel="stylesheet" type="text/css" href="../css/litegraph-editor.css">
+    <link rel="stylesheet" type="text/css" href="../../css/litegraph.css">
+    <link rel="stylesheet" type="text/css" href="../../css/litegraph-editor.css">
     <link rel="stylesheet" type="text/css" href="style.css">
     
 </head>
@@ -11,60 +11,60 @@
 	<div id="main"></div>
 
  	<!-- <script type="text/javascript" src="https://unpkg.com/codeflask/build/codeflask.min.js"></script> -->
-	<script type="text/javascript" src="js/libs/gl-matrix-min.js"></script>
-    <script type="text/javascript" src="js/libs/audiosynth.js"></script>
-    <script type="text/javascript" src="js/libs/midi-parser.js"></script>
+	<script type="text/javascript" src="../../vendor/gl-matrix-min.js"></script>
+    <script type="text/javascript" src="../../vendor/audiosynth.js"></script>
+    <script type="text/javascript" src="../../vendor/midi-parser.js"></script>
 
-    <script type="module" src="../src/litegraph.js"></script>
-    <script type="module" src="../src/litegraph-editor.js"></script>
-    <script type="module" src="js/defaults_debug.js"></script>
+    <script type="module" src="../../src/litegraph.js"></script>
+    <script type="module" src="../../src/litegraph-editor.js"></script>
+    <script type="module" src="js/defaults.js?preset=debug"></script>
 	<script type="module" src="js/code.js"></script>
 
-	<script type="module" src="../src/nodes/libraries.js"></script>
+	<script type="module" src="../../src/nodes/libraries.js"></script>
 
-    <script type="module" src="../src/nodes/base.js"></script>
-    <script type="module" src="../src/nodes/logic.js"></script>
-    <script type="module" src="../src/nodes/events.js"></script>
-    <script type="module" src="../src/nodes/math.js"></script>
-    <script type="module" src="../src/nodes/math3d.js"></script>
-    <script type="module" src="../src/nodes/strings.js"></script>
-    <script type="module" src="../src/nodes/interface.js"></script>
-    <script type="module" src="../src/nodes/geometry.js"></script>
-    <script type="module" src="../src/nodes/graphics.js"></script>
-    <script type="module" src="../src/nodes/input.js"></script>
-    <script type="module" src="../src/nodes/midi.js"></script>
-    <script type="module" src="../src/nodes/audio.js"></script>
-    <script type="module" src="../src/nodes/network.js"></script>
-    <script type="module" src="../src/nodes/objects.js"></script>
-    <script type="module" src="../src/nodes/watch.js"></script>
+    <script type="module" src="../../src/nodes/base.js"></script>
+    <script type="module" src="../../src/nodes/logic.js"></script>
+    <script type="module" src="../../src/nodes/events.js"></script>
+    <script type="module" src="../../src/nodes/math.js"></script>
+    <script type="module" src="../../src/nodes/math3d.js"></script>
+    <script type="module" src="../../src/nodes/strings.js"></script>
+    <script type="module" src="../../src/nodes/interface.js"></script>
+    <script type="module" src="../../src/nodes/geometry.js"></script>
+    <script type="module" src="../../src/nodes/graphics.js"></script>
+    <script type="module" src="../../src/nodes/input.js"></script>
+    <script type="module" src="../../src/nodes/midi.js"></script>
+    <script type="module" src="../../src/nodes/audio.js"></script>
+    <script type="module" src="../../src/nodes/network.js"></script>
+    <script type="module" src="../../src/nodes/objects.js"></script>
+    <script type="module" src="../../src/nodes/watch.js"></script>
 	
-	<script type="module" src="../src/nodes/html.js"></script>
-	<link rel="stylesheet" type="text/css" href="../src/nodes/html.css">
+	<script type="module" src="../../src/nodes/html.js"></script>
+	<link rel="stylesheet" type="text/css" href="../../src/nodes/html.css">
 
-	<script type="module" src="../src/nodes/device.js"></script>
+	<script type="module" src="../../src/nodes/device.js"></script>
 
-	<script type="module" src="../src/nodes/litegraph_nodes.js"></script>
+	<script type="module" src="../../src/nodes/litegraph_nodes.js"></script>
 	
-	<script type="module" src="../src/nodes/libraries/osc.js"></script>
-	<script type="module" src="../src/nodes/libraries/socketio.js"></script>
-	<script type="module" src="../src/nodes/libraries/udp.js"></script>
-	<script type="module" src="../src/nodes/threejs.js"></script>
+	<script type="module" src="../../src/nodes/libraries/osc.js"></script>
+	<script type="module" src="../../src/nodes/libraries/socketio.js"></script>
+	<script type="module" src="../../src/nodes/libraries/udp.js"></script>
+	<script type="module" src="../../src/nodes/threejs.js"></script>
 	
-	<script type="module" src="../src/nodes/nodejs_only/nodejs_network.js"></script>
-	<script type="module" src="../src/nodes/nodejs_only/nodejs_sys.js"></script>	
+	<script type="module" src="../../src/nodes/nodejs_only/nodejs_network.js"></script>
+	<script type="module" src="../../src/nodes/nodejs_only/nodejs_sys.js"></script>	
 
-	<script type="module" src="../src/nodes/others.js"></script>
+	<script type="module" src="../../src/nodes/others.js"></script>
 
     <script type="module" src="js/demos.js"></script>
 
-	<script type="module" src="../src/extensions/renamer.js"></script>
-	<script type="module" src="../src/extensions/autoconnect.js"></script>
-	<script type="module" src="../src/extensions/keyboard_helper.js"></script>
-	<script type="module" src="../src/extensions/quick_connect.js"></script>
-	<script type="module" src="../src/extensions/subgraph_tools.js"></script>
+	<script type="module" src="../../src/extensions/renamer.js"></script>
+	<script type="module" src="../../src/extensions/autoconnect.js"></script>
+	<script type="module" src="../../src/extensions/keyboard_helper.js"></script>
+	<script type="module" src="../../src/extensions/quick_connect.js"></script>
+	<script type="module" src="../../src/extensions/subgraph_tools.js"></script>
 
 	<script type="module">
-		import { LiteGraph } from "../src/litegraph.js";
+		import { LiteGraph } from "../../src/litegraph.js";
 
 		window.addEventListener("load", (event) => {
 
@@ -255,7 +255,7 @@
 	<!--  htmlConsole use to debug on mobile, include and set editorUseHtmlConsole in defaults.js -->
 	<!-- enable console style, html, js enabling/disabling this comment here->  -->
 		
-	    <link rel="stylesheet" href="../external/console.css">
+	    <link rel="stylesheet" href="../../external/console.css">
 	    <style>
 	    	.invisible{ display: none; }
 	    	.console__row{
@@ -288,7 +288,7 @@
 			</div>
 		</div>
 		
-		<script type="module" src="../external/console.js"></script>
+		<script type="module" src="../../external/console.js"></script>
 		<script type="module" src="js/web_console.js"></script>
 	<!--  -->
 

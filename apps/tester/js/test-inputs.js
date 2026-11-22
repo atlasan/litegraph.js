@@ -1,4 +1,4 @@
-import { LiteGraph } from '../../build/litegraph.js';
+import { LiteGraph } from '../../../build/litegraph.js';
 
 // Feed a real link so getInputData follows the same path as an ordinary graph.
 const sources = new WeakMap();

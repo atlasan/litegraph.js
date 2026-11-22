@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TestFramework } from '../../editor_tester/js/test-framework.js';
-import { TestRunner } from '../../editor_tester/js/test-runner.js';
+import { TestFramework } from '../../apps/tester/js/test-framework.js';
+import { TestRunner } from '../../apps/tester/js/test-runner.js';
 import { LiteGraph } from '../../build/litegraph.js';
 
 const config = { execution: { timeout: 200, maxConcurrent: 2 } };
@@ -39,7 +39,7 @@ test('runner Stop cancels every generated case in a concurrent batch', async () 
 
 test('tester statistics preserve execution progress and do not label skipped nodes passed', async () => {
     const { JSDOM } = await import('jsdom');
-    const { UIManager } = await import('../../editor_tester/js/ui-manager.js');
+    const { UIManager } = await import('../../apps/tester/js/ui-manager.js');
     const dom = new JSDOM('<div data-node-type="basic/const"><span class="node-status"></span></div>');
     const previous = globalThis.document; globalThis.document = dom.window.document;
     try {
@@ -91,7 +91,7 @@ test('framework coverage and reports contain only the current executed selection
 });
 
 test('HTML, CSV, JSON, and JUnit reports preserve text and skipped outcomes', async () => {
-    const { TestReporter } = await import('../../editor_tester/js/test-reporter.js');
+    const { TestReporter } = await import('../../apps/tester/js/test-reporter.js');
     const { JSDOM } = await import('jsdom');
     const reporter = new TestReporter(); const framework = new TestFramework();
     const result = { testId:'=bad,"<img src=x>"', nodeType:'fixture/<script>bad()</script>', status:'skipped', duration:1, errors:[{type:'fixture',message:'bad ]]> <img src=x>'}], warnings:['"quoted",\nnext'] };

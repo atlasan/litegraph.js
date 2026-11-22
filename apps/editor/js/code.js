@@ -1,6 +1,6 @@
 
-import { LiteGraph } from "../../src/litegraph.js";
-import { Editor } from "../../src/litegraph-editor.js";
+import { LiteGraph } from "../../../src/litegraph.js";
+import { Editor } from "../../../src/litegraph-editor.js";
 
 export var gl = null; // webgl_canvas
 
@@ -168,12 +168,12 @@ function enableWebGL() {
 async function setupWebGL() {
 	// gl-matrix is a classic script every editor page loads before the modules
 	if( typeof glMatrix == "undefined" ) {
-		LiteGraph.log_warn("Editor:","WebGL needs gl-matrix (js/libs/gl-matrix-min.js) loaded first");
+		LiteGraph.log_warn("Editor:","WebGL needs gl-matrix (vendor/gl-matrix-min.js) loaded first");
 		return null;
 	}
 	let GL;
 	try {
-		({ GL } = await import("./libs/litegl.js"));
+		({ GL } = await import("../../../vendor/litegl.js"));
 	} catch (error) {
 		LiteGraph.log_error("Editor:","could not load litegl",error);
 		return null;
@@ -217,10 +217,10 @@ async function setupWebGL() {
 
 	// module paths resolve from this file (editor/js/)
 	for( const lib of [
-		"../../src/nodes/gltextures.js",
-		"../../src/nodes/glfx.js",
-		"../../src/nodes/glshaders.js",
-		"../../src/nodes/geometry.js",
+		"../../../src/nodes/gltextures.js",
+		"../../../src/nodes/glfx.js",
+		"../../../src/nodes/glshaders.js",
+		"../../../src/nodes/geometry.js",
 	] ) {
 		try {
 			await import(lib);

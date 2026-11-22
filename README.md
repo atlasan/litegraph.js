@@ -31,7 +31,7 @@ To run locally:
 
 ```sh
 npm ci --ignore-scripts
-npm run editor        # http://127.0.0.1:8000/editor/editor_build.html
+npm run editor        # http://127.0.0.1:8000/editor/editor_build.html (apps/editor)
 npm run graphrunner   # http://127.0.0.1:3000/
 ```
 
@@ -54,7 +54,7 @@ npm run graphrunner   # http://127.0.0.1:3000/
   - Reroutes, transactional undo, and pointer gestures.
   - Callback handlers that accept several prioritised handlers per hook.
 - **Runner:**
-  - `headless/graphrunner` runs each graph in its own worker.
+  - `apps/runner` runs each graph in its own worker.
   - It checks Origin and Host, refuses dangerous node types, and keeps scripts locked unless explicitly allowed.
 - **Subgraphs:**
   - Definitions in ComfyUI's document form, shared by linked instances.

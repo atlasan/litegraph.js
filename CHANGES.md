@@ -70,9 +70,15 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 * The runner checks the type an automatic replacement loads as against its denylist (`assertAllowedGraph(..., {replacedType})`).
 
-# Unreleased (0.18.0-dev): pre-release work, Wave 5a–5b
+# Unreleased (0.18.0-dev): pre-release work, Wave 5
 
 ## Changed
+
+* **Apps:**
+  * The editor, tester and runner moved to `apps/editor`, `apps/tester` and `apps/runner`. Old URLs (`/editor/…`, `/editor_tester/…`) and `node headless/graphrunner/server/index.js` keep working.
+  * Third-party browser libraries moved to `vendor/`.
+  * The editor pages share one defaults module (`js/defaults.js?preset=…`).
+* **Runner:** old type prefixes in `RUNNER_ALLOW_TYPES` / `RUNNER_DENY_TYPES` cover exactly the types they covered before the catalog cleanup.
 
 * **Packaging:**
   * The package has no required dependencies. Network and system integrations (`socket.io`, `socket.io-client`, `ws`, `osc-js`, `ps-list`, `diskusage`, `node-os-utils`, `node-windows`, `chalk`, `node-fetch`) are `optionalDependencies`. A node that needs a missing one names it and the install command.

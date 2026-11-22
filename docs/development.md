@@ -48,7 +48,7 @@ graph.runStep();
 
 **Versions:** `LiteGraph.VERSION` equals the package version (`0.10.10`); `build.py --update-version` keeps them in step. Identify development builds by branch and commit. A release needs an explicit version decision.
 
-**Scripts:** `LiteGraph.allow_scripts` is off in the core, but the `*.full*` bundles include `editor/js/defaults_debug.js`, which turns it on. The runner turns it off again. Removing the debug defaults from library builds is planned for Wave 5.
+**Scripts:** `LiteGraph.allow_scripts` is off in every bundle (since Wave 5a no library build includes editor defaults; `check:build` enforces it). The editor app turns it on for its own pages; the runner keeps it off unless `RUNNER_ALLOW_SCRIPTS=1`.
 
 ## Contracts
 
@@ -93,7 +93,7 @@ Introduced in Wave 1:
 
 ## Graph runner
 
-`headless/graphrunner` executes graphs pushed from its browser page. Each graph runs in its own worker. The runner binds to loopback by default. Settings are in `.env.example`: `WORKFLOWS_DIR`, `RUNNER_ALLOWED_HOSTS`, `RUNNER_DENY_TYPES`, `RUNNER_ALLOW_SYS`.
+`apps/runner` (formerly `headless/graphrunner`) executes graphs pushed from its browser page. Each graph runs in its own worker. The runner binds to loopback by default. Settings are in `.env.example`: `WORKFLOWS_DIR`, `RUNNER_ALLOWED_HOSTS`, `RUNNER_DENY_TYPES`, `RUNNER_ALLOW_SYS`.
 
 **Security:**
 - **Connections:** the WebSocket accepts only same-origin pages and the runner's own host names.
@@ -121,6 +121,6 @@ Edits are applied in memory only; nothing is written back to the workflow file.
 
 | Page | Notes |
 |---|---|
-| `editor/index.html` | Loads `src/` modules without the extensions |
-| `editor/editor_build.html` | Loads the built bundle with extensions, commands and key bindings |
-| `editor_tester/` | Generates per-node scenarios, with optional performance and stress runs. Coverage counts node types, not code |
+| `apps/editor/index.html` | Loads `src/` modules without the extensions |
+| `apps/editor/editor_build.html` | Loads the built bundle with extensions, commands and key bindings |
+| `apps/tester/` | Generates per-node scenarios, with optional performance and stress runs. Coverage counts node types, not code |

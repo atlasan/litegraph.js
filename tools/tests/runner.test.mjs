@@ -20,7 +20,7 @@ fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'invalid.json'), '{}');
 fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'file-node.json'), JSON.stringify({ ...workflow, nodes: [{ id: 1, type: 'sys/fileRead', properties: { filePath: '' } }] }));
 fs.writeFileSync(path.join(temp, 'outside.json'), JSON.stringify(workflow));
 fs.symlinkSync(path.join(temp, 'outside.json'), path.join(process.env.WORKFLOWS_DIR, 'escape.json'));
-const manager = await import('../../headless/graphrunner/server/graphManager.js');
+const manager = await import('../../apps/runner/server/graphManager.js');
 const logger = { error() {}, info() {}, warn() {} };
 
 test('worker lifecycle, execution updates, validation, and unload', async () => {
@@ -165,7 +165,7 @@ test('unexpected worker exit rejects an outstanding command and permits reopenin
 });
 
 test('HTTP and WebSocket protocol on an ephemeral port', async () => {
-  const { createRunnerServer } = await import('../../headless/graphrunner/server/index.js');
+  const { createRunnerServer } = await import('../../apps/runner/server/index.js');
   const runner = createRunnerServer();
   runner.server.listen(0, '127.0.0.1');
   await once(runner.server, 'listening');

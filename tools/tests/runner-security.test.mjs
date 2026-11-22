@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isAllowedHost, isAllowedUpgrade, upgradeRefusal } from '../../headless/graphrunner/server/security.js';
-import { assertAllowedGraph, DEFAULT_DENIED_TYPES, DENIED_FAMILIES, deniedTypes, scriptsAllowed, graphPolicyNotes, describePolicy } from '../../headless/graphrunner/nodePolicy.js';
+import { isAllowedHost, isAllowedUpgrade, upgradeRefusal } from '../../apps/runner/server/security.js';
+import { assertAllowedGraph, DEFAULT_DENIED_TYPES, DENIED_FAMILIES, deniedTypes, scriptsAllowed, graphPolicyNotes, describePolicy } from '../../apps/runner/nodePolicy.js';
 
 const env = { HOST: '127.0.0.1' };
 

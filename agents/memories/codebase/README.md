@@ -12,9 +12,10 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
 | `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
-| `editor/` | Demo editor. `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions |
-| `editor_tester/` | Browser tester that generates per-node scenarios |
-| `headless/graphrunner/` | WebSocket runner: Express + `ws`, one worker per graph |
+| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module |
+| `apps/tester/` | Browser tester that generates per-node scenarios (also served at `/editor_tester/`) |
+| `apps/runner/` | WebSocket runner: Express + `ws`, one worker per graph; `headless/graphrunner/server/index.js` is a shim that starts it |
+| `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
 | `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures |

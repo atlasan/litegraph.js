@@ -9,8 +9,8 @@
     "scripts": {
         "build": "python3 build.py",
         "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs/api -r --verbose --debug",
-        "editor": "nodemon editor.js",
-        "graphrunner": "nodemon --exec node headless/graphrunner/server/index.js",
+        "editor": "nodemon apps/editor/server.js",
+        "graphrunner": "nodemon --exec node apps/runner/server/index.js",
         "start": "concurrently \"npm run editor\" \"npm run graphrunner\"",
         "test": "node --experimental-vm-modules node_modules/jest-cli/bin/jest.js",
         "lint": "eslint src",

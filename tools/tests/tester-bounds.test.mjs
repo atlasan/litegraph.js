@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TestRunner } from '../../editor_tester/js/test-runner.js';
+import { TestRunner } from '../../apps/tester/js/test-runner.js';
 
 const runner = new TestRunner({});
 const signal = () => new AbortController().signal;

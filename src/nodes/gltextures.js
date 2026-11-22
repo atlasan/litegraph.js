@@ -1,6 +1,6 @@
 import { LiteGraph } from "../litegraph.js";
-import { GL, Shader } from "../../editor/js/libs/litegl.js";
-import { gl } from "../../editor/js/code.js";
+import { GL, Shader } from "../../vendor/litegl.js";
+// `gl` is the global WebGL context that litegl's GL.create sets (the bundles use it the same way)
 import { CurveEditor } from "../curveeditor.js";
 
 // built-in pack: node types registered below belong to "litegraph/gltextures" (see LiteGraph.packs)

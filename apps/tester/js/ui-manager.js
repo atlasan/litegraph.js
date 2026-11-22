@@ -1,4 +1,4 @@
-import { escapeMarkup, escapeReportResult } from './report-utils.js';
+import { escapeMarkup, escapeReportResult, nodeCategory } from './report-utils.js';
 /**
  * UI Manager
  * Handles all UI interactions and test case management interface
@@ -1516,21 +1516,7 @@ export class UIManager {
      * Extract category from node type
      */
     extractCategory(nodeType) {
-        // Try to extract category from node type name
-        const parts = nodeType.split('/');
-        if (parts.length > 1) {
-            return parts[0];
-        }
-        
-        // Fallback to common prefixes
-        const prefixes = ['Math', 'Logic', 'String', 'Array', 'Object', 'Time', 'File', 'Network', 'UI'];
-        for (const prefix of prefixes) {
-            if (nodeType.startsWith(prefix)) {
-                return prefix;
-            }
-        }
-        
-        return 'Other';
+        return nodeCategory(nodeType);
     }
 
     /**

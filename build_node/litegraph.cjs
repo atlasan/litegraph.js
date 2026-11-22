@@ -35247,6 +35247,7 @@ LiteGraph.declareCapabilities("graphics/", ["browser", "dom"]);
 
 LiteGraph.packs.close("litegraph/graphics");
 
+// `gl` is the global WebGL context that litegl's GL.create sets (the bundles use it the same way)
 // built-in pack: node types registered below belong to "litegraph/gltextures" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
 LiteGraph.packs.open({
@@ -41180,6 +41181,7 @@ LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
 
 LiteGraph.packs.close("litegraph/gltextures");
 
+// `gl` is the global WebGL context that litegl's GL.create sets (the bundles use it the same way)
 // built-in pack: node types registered below belong to "litegraph/glshaders" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
 LiteGraph.packs.open({
@@ -43328,7 +43330,7 @@ LiteGraph.packs.open({
 });
 
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
-// var { GL } = require('../../editor/js/libs/litegl.js');
+// var { GL } = require('../../vendor/litegl.js');
 
 // Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
 function polarToCartesian(out, azimuth, inclination, radius) {
@@ -45322,6 +45324,8 @@ globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, {
 LiteGraph.declareCapabilities("geometry/", ["browser", "webgl"]);
 
 LiteGraph.packs.close("litegraph/geometry");
+
+// `gl` is the global WebGL context that litegl's GL.create sets (the bundles use it the same way)
 
 // built-in pack: node types registered below belong to "litegraph/glfx" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
