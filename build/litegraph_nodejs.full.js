@@ -21218,7 +21218,13 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
-        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.actionDo(action, param, options, action_slot));
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
+            // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
+            return this._dispatchEvent(() => {
+                if (this.mode !== LiteGraph.NEVER && ExecutionEngine.rulesFor(this.graph).refresh === "ancestors") ExecutionEngine.pull(this);
+                return this.actionDo(action, param, options, action_slot);
+            });
+        }
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
@@ -30580,6 +30586,18 @@ LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
 LiteGraph.declareNodeExecution(["basic/array_length", "basic/array[]", "basic/table[][]", "basic/cast", "basic/CompareValues"], {
     pure: true
 });
+// declaration pass (flows track): constants and conversions are pure; alert only reacts to events
+LiteGraph.declareNodeExecution(["basic/const", "basic/boolean", "basic/string", "basic/data", "basic/array", "basic/length", "basic/not"], {
+    pure: true
+});
+LiteGraph.declareNodeExecution(["basic/alert"], {
+    default_mode: LiteGraph.ON_EVENT
+});
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// basic/time, basic/variable, basic/object, basic/script, basic/file.
+// Side effects or state, kept ALWAYS (a mode change would stop them): basic/set_array, basic/array_append,
+// basic/console, basic/download, basic/jsonparse, basic/data_store, basic/watch.
 
 LiteGraph.packs.close("litegraph/basic");
 
@@ -31310,6 +31328,13 @@ class EventSwitch {
     }
 }
 LiteGraph.registerNodeType("events/switch", EventSwitch);
+
+// declaration pass (flows track): nodes that only react to events (no onExecute)
+LiteGraph.declareNodeExecution(["events/once", "events/waitAll", "events/filter", "events/log"], {
+    default_mode: LiteGraph.ON_EVENT
+});
+// Kept ALWAYS: counter, semaphore, stepper, switch and branch read data or count steps in onExecute,
+// and basic/data_store mirrors its value there; ON_EVENT would stop that.
 
 LiteGraph.packs.close("litegraph/events");
 
@@ -32189,6 +32214,10 @@ class WidgetPanel {
 }
 LiteGraph.registerNodeType("widget/panel", WidgetPanel);
 
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// every widget/* node (its value comes from the UI). widget/progress, widget/text and widget/panel only display.
+
 LiteGraph.packs.close("litegraph/interface");
 
 // built-in pack: node types registered below belong to "litegraph/input" (see LiteGraph.packs)
@@ -32580,6 +32609,10 @@ GamepadInput.UP = 4;
 GamepadInput.DOWN = 8;
 
 LiteGraph.registerNodeType("input/gamepad", GamepadInput);
+
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// input/gamepad.
 
 LiteGraph.packs.close("litegraph/input");
 
@@ -34088,9 +34121,17 @@ LiteGraph.declareNodeExecution([
     "math/frac", "math/smoothstep", "math/scale", "math/gate", "math/operation", "math/compare", "math/condition",
     "math/branch", "math/trigonometry", "math3d/vec2-to-xy", "math3d/xy-to-vec2", "math3d/vec3-to-xyz",
     "math3d/xyz-to-vec3", "math3d/vec4-to-xyzw", "math3d/xyzw-to-vec4",
+    "math/noise", // a noise table filled once: the same input gives the same output
 ], {
     pure: true
 });
+// declaration pass (flows track): time- or history-based nodes advance once per step, never by a pull
+LiteGraph.declareNodeExecution(["math/average", "math/tendTo", "math/spikes", "math/accumulate"], {
+    ticks: true
+});
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// math/rand, math/formula (its TIME variable).
 
 LiteGraph.packs.close("litegraph/math");
 
@@ -34765,6 +34806,16 @@ if (typeof(glMatrix) !== "undefined") {
     console.warn?.("No glmatrix found, some Math3D nodes may not work");
 }
 
+// declaration pass (flows track): vector, quaternion and matrix math is pure (the gl-matrix types
+// exist only when glMatrix is loaded; declareNodeExecution skips unregistered types)
+LiteGraph.declareNodeExecution([
+    "math3d/mat4", "math3d/operation", "math3d/vec3-scale", "math3d/vec3-length", "math3d/vec3-normalize", "math3d/vec3-lerp",
+    "math3d/vec3-dot", "math3d/quaternion", "math3d/rotation", "math3d/euler_to_quat", "math3d/quat_to_euler",
+    "math3d/rotate_vec3", "math3d/mult-quat", "math3d/quat-slerp", "math3d/remap_range",
+], {
+    pure: true
+});
+
 LiteGraph.packs.close("litegraph/math3d");
 
 // built-in pack: node types registered below belong to "litegraph/strings" (see LiteGraph.packs)
@@ -35400,7 +35451,7 @@ class logicWhile {
 LiteGraph.registerNodeType("logic/CycleWHILE", logicWhile);
 
 // execution needs (Wave 6): pure nodes run on request in the ancestors model
-LiteGraph.declareNodeExecution(["logic/selector", "logic/AND", "logic/OR", "logic/NOT", "logic/CompareBool"], {
+LiteGraph.declareNodeExecution(["logic/selector", "logic/AND", "logic/OR", "logic/NOT", "logic/CompareBool", "logic/sequence"], {
     pure: true
 });
 
@@ -42364,6 +42415,13 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
+
+// declaration pass (flows track), conservative for a media pack: only the frame-history smoothers tick
+LiteGraph.declareNodeExecution(["texture/temporal_smooth", "texture/linear_avg_smooth"], {
+    ticks: true
+});
+// The filters (color, gradient, mix, edges, blur, ...) are deterministic but not declared pure until they are
+// checked in a browser. Volatile (FLW-02), ALWAYS: texture/operation, texture/shader, texture/canvas2D, texture/average, texture/webcam.
 
 LiteGraph.packs.close("litegraph/gltextures");
 
@@ -50592,6 +50650,13 @@ LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);
 
+// declaration pass (flows track): the envelope follows the audio clock every step
+LiteGraph.declareNodeExecution(["audio/adsr"], {
+    ticks: true
+});
+// Volatile (FLW-02), ALWAYS: audio/analyser. The other audio nodes are wired as a Web Audio graph in
+// onConnectionsChange and run outside the engine (audit finding 9); they declare nothing yet.
+
 LiteGraph.packs.close("litegraph/audio");
 
 // built-in pack: node types registered below belong to "litegraph/network" (see LiteGraph.packs)
@@ -52153,6 +52218,13 @@ class ObjectEditorNode {
 }
 
 LiteGraph.registerNodeType("objects/json_editor", ObjectEditorNode);
+
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// objects/evaluate, objects/event_function, objects/method_widget, objects/property_widget, objects/json_editor.
+// Pure-ish, left undeclared: objects/get_property, objects/object_keys, objects/properties read an object
+// that another node may mutate in place without a new data stamp (audit §2).
+// Side effects, kept ALWAYS: objects/set_property, objects/merge_objects.
 
 LiteGraph.packs.close("litegraph/objects");
 

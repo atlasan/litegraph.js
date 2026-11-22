@@ -21218,7 +21218,13 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
-        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.actionDo(action, param, options, action_slot));
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
+            // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
+            return this._dispatchEvent(() => {
+                if (this.mode !== LiteGraph.NEVER && ExecutionEngine.rulesFor(this.graph).refresh === "ancestors") ExecutionEngine.pull(this);
+                return this.actionDo(action, param, options, action_slot);
+            });
+        }
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;

@@ -133,8 +133,11 @@ LiteGraph.declareNodeExecution(["my/add", "my/mul"], { pure: true });  // ON_REQ
 LiteGraph.getNodeDefinition("events/timer").execution;  // { ticks: true, modes: [0, 2], ... }
 ```
 
-- `pure: true`: safe to re-run; new nodes are ON_REQUEST under `ancestors`. The math, logic and string packs declare their pure nodes.
-- `ticks: true`: needs the step loop (Timer, Delay); a pull never re-runs it.
+- `pure: true`: safe to re-run; new nodes are ON_REQUEST under `ancestors`. Declared by the math, math3d, logic and string packs, and the basic constants and conversions (`basic/const`, `boolean`, `string`, `data`, `array`, `length`, `not`).
+- `ticks: true`: needs the step loop; a pull never re-runs it. Declared by Timer, Delay, `math/average`, `tendTo`, `spikes`, `accumulate`, `audio/adsr` and the two texture smoothers.
+- Nodes that only react to events default to ON_EVENT outside `legacy`: `events/once`, `waitAll`, `filter`, `log`, `basic/alert`.
+- **Volatile nodes stay undeclared, so ALWAYS:** nodes that read the time, randomness, outside state or a widget (`basic/time`, `math/rand`, `widget/*`, …). ON_REQUEST would keep one value per frame or call; a `volatile` kind is planned (FLW-02). The node reference (`npm run docs:nodes`) shows every type's declaration.
+- **Host calls:** `node.actionDo(action)` from your code is an event entry. Under `ancestors` it pulls the node's ON_REQUEST inputs first, as a delivered event does. Calling `node.onAction(...)` directly bypasses the engine.
 - `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse a mode the type declares invalid. The refusal (`node.mode_refusal`) names `LiteGraph.Execution.AllowAnyMode`, the setting that lifts it; a group lists the nodes it skipped. `LiteGraph.getValidNodeModes(node)`.
 - A new node of a declared type gets its model's default mode when it is added; a loaded node keeps its stored mode.
 - `graph.checkExecution()` returns `{model, issues}`: an invalid model or mode, a `ticks` node that is not stepped (also inside a non-ALWAYS subgraph node), an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS. A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
@@ -160,8 +163,7 @@ start.connect(0, loop, 0);  count.connect(0, loop, 1);
 loop.connect(1, double, 0);                                  // index -> A
 double.connect(0, store, 0);                                 // pulled before each body action
 loop.connect(0, store, 1);                                   // body: assign
-graph.runStep();                                             // the constants get their values
-loop.onAction("do");                                         // or wire a button or a Timer to "do": stores 0, 2, 4
+loop.actionDo("do");                                         // or wire a button or a Timer to "do": stores 0, 2, 4
 store.properties.data;                                       // 4; double ran once per index
 ```
 

@@ -1529,4 +1529,9 @@ LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);
 
+// declaration pass (flows track): the envelope follows the audio clock every step
+LiteGraph.declareNodeExecution(["audio/adsr"], { ticks: true });
+// Volatile (FLW-02), ALWAYS: audio/analyser. The other audio nodes are wired as a Web Audio graph in
+// onConnectionsChange and run outside the engine (audit finding 9); they declare nothing yet.
+
 LiteGraph.packs.close("litegraph/audio");
