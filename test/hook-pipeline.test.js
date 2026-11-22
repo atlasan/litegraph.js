@@ -48,15 +48,46 @@ describe('legacy onX assignment stays the default callback', () => {
         expect(seen).toEqual(['hooks/late']);
     });
 
-    test('no handler registry is created until a handler is registered', () => {
+    test('the handler registry is created when first needed, and cb_handler stays readable and assignable', () => {
         const node = LiteGraph.createNode('hooks/box');
-        expect(node.cb_handler).toBeFalsy();
         node.onResize = () => 7;
         expect(node.processCallbackHandlers('onResize', { def_cb: node.onResize })).toBe(7);
-        expect(node.cb_handler).toBeFalsy();
+        expect(node._cb_handler).toBeFalsy(); // dispatching alone allocates nothing
         node.onHook('onResize', () => {});
-        expect(node.cb_handler).toBeInstanceOf(CallbackHandler);
-        expect(new LGraph().cb_handler).toBeFalsy();
+        expect(node._cb_handler).toBeInstanceOf(CallbackHandler);
+        // direct reads, as before: every host has a CallbackHandler on cb_handler
+        for (const host of [new LGraph(), LiteGraph.createNode('hooks/box'), new LGraphGroup('G'), LiteGraph]) {
+            expect(host.cb_handler).toBeInstanceOf(CallbackHandler);
+            expect(host.cb_handler.ob_ref).toBe(host);
+            expect(host.cb_handler.callbacks_handlers).toEqual(expect.any(Object));
+        }
+        // the old setup pattern still works: assigning a handler and registering on it directly
+        const graph = new LGraph();
+        graph.cb_handler = new CallbackHandler(graph);
+        const seen = [];
+        graph.cb_handler.registerCallbackHandler('onNodeAdded', (info, added) => seen.push(added.type));
+        graph.add(LiteGraph.createNode('hooks/box'));
+        expect(seen).toEqual(['hooks/box']);
+    });
+
+    test('an overridden processCallbackHandlers on the handler (a tracing wrapper) still runs', () => {
+        const node = LiteGraph.createNode('hooks/box');
+        const traced = [];
+        const original = node.cb_handler.processCallbackHandlers;
+        node.cb_handler.processCallbackHandlers = function (name, ...rest) { traced.push(name); return original.call(this, name, ...rest); };
+        node.onResize = () => 'r';
+        expect(node.processCallbackHandlers('onResize', { def_cb: node.onResize })).toBe('r');
+        expect(traced).toEqual(['onResize']);
+    });
+
+    test('a handler list replaced by a plain {last_id, handlers} object keeps working', () => {
+        const h = make();
+        const fn = jest.fn();
+        h.callbacks_handlers.ev = { last_id: 3, handlers: [] };
+        expect(h.registerCallbackHandler('ev', fn)).toBe(3);
+        expect(h.hasCallbackHandlers('ev')).toBe(true);
+        h.processCallbackHandlers('ev', {});
+        expect(fn).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -122,6 +153,43 @@ describe('robustness (E1, E2)', () => {
 });
 
 describe('disposers, signal, once, introspection', () => {
+    test('a re-entrant dispatch does not run a once handler twice (hooks and typed events)', () => {
+        const h = make();
+        const runs = { a: 0, b: 0 };
+        h.registerCallbackHandler('ev', () => { runs.a++; h.processCallbackHandlers('ev', {}); }, { priority: 1, once: true });
+        h.registerCallbackHandler('ev', () => { runs.b++; }, { once: true });
+        h.processCallbackHandlers('ev', {});
+        expect(runs).toEqual({ a: 1, b: 1 });
+        const graph = new LGraph();
+        const typed = { a: 0, b: 0 };
+        graph.events.once('changed', () => { typed.a++; graph.events.dispatch('changed', {}); }, { priority: 1 });
+        graph.events.once('changed', () => { typed.b++; });
+        graph.events.dispatch('changed', {});
+        expect(typed).toEqual({ a: 1, b: 1 });
+    });
+
+    test('removing a listener detaches it from its AbortSignal', () => {
+        let added = 0;
+        let removed = 0;
+        const signal = { aborted: false, addEventListener: () => { added++; }, removeEventListener: () => { removed++; } };
+        const graph = new LGraph();
+        for (let i = 0; i < 5; i++) graph.events.on('changed', () => {}, { signal })();
+        const node = LiteGraph.createNode('hooks/box');
+        for (let i = 0; i < 5; i++) node.onHook('onResize', () => {}, { signal })();
+        expect([added, removed]).toEqual([10, 10]);
+    });
+
+    test('changing the options object after on() does not change the listener', () => {
+        const graph = new LGraph();
+        const options = { once: false };
+        const fn = jest.fn();
+        graph.events.on('changed', fn, options);
+        options.once = true;
+        graph.events.dispatch('changed', {});
+        graph.events.dispatch('changed', {});
+        expect(fn).toHaveBeenCalledTimes(2);
+    });
+
     test('onHook returns a disposer; signal and once unregister', () => {
         const node = LiteGraph.createNode('hooks/box');
         const calls = [];
@@ -280,6 +348,18 @@ describe('canvas fixes', () => {
         canvas.deselectItem(group);
         expect(hook).toHaveBeenCalledTimes(2);
         expect(event).toHaveBeenCalledTimes(2);
+    });
+
+    test('a legacy onAddPropertyToPanel returning an element still replaces the default widget', () => {
+        const { canvas, node } = setup();
+        node.properties = { label: 'x' };
+        node.onAddPropertyToPanel = jest.fn(() => document.createElement('div')); // truthy object, no return_value
+        const added = [];
+        const panel = { addWidget: (...args) => added.push(args[1]), addHTML() {}, addSeparator() {}, addButton() { return {}; }, footer: {}, content: {}, id: '', classList: { add() {} }, close() {}, onClose: null };
+        jest.spyOn(canvas, 'createPanel').mockReturnValue(panel);
+        try { canvas.showShowNodePanel(node); } catch { /* the rest of the panel needs more DOM */ }
+        expect(node.onAddPropertyToPanel).toHaveBeenCalledWith('label', panel, 'x', expect.anything(), expect.any(Function));
+        expect(added).not.toContain('label');
     });
 
     test('registered node classes receive the hook API from LGraphNode', () => {

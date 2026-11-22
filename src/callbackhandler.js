@@ -44,7 +44,17 @@ export class CallbackHandler {
         }
         const data = { priority: 0, is_default: false, call_once: false, ...(opts && typeof opts === "object" ? opts : {}) };
         if (data.once) data.call_once = true;
-        return (this.callbacks_handlers[name] ??= new ListenerList()).add(callback, data);
+        let list = this.callbacks_handlers[name];
+        // code that replaced an entry with a plain {last_id, handlers} object keeps working
+        if (!(list instanceof ListenerList)) list = this.callbacks_handlers[name] = Object.assign(new ListenerList(), list);
+        return list.add(callback, data);
+    }
+
+    /** Registers a handler and returns its disposer. */
+    onHook(name, callback, opts) {
+        const id = this.registerCallbackHandler(name, callback, opts);
+        if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
+        return () => this.unregisterCallbackHandler(name, id);
     }
 
     /** @returns {boolean} true if the handler was registered */
@@ -126,8 +136,8 @@ export class CallbackHandler {
                 runDefault();
                 if (stopped) break;
             }
-            // unregistered before the call, so a re-entrant dispatch cannot run it again
-            if (entry.data.call_once) handler.unregisterCallbackHandler(name, entry.id);
+            // unregistered before the call; skipped when a re-entrant dispatch already ran it
+            if (entry.data.call_once && !handler.unregisterCallbackHandler(name, entry.id)) continue;
             call(entry.callback, { name, id: entry.id, current_return_value: value, data: entry.data, results_chain: results });
             if (stopped) break;
         }
@@ -157,39 +167,50 @@ export class CallbackHandler {
 /**
  * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
  * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
- * The CallbackHandler is created on first registration; dispatching without one only calls `onX`.
+ * The CallbackHandler is created when first needed: reading `cb_handler` or registering a handler.
+ * Dispatching while there is none only calls `onX`.
  * @param {Function} Class
  */
 export function installHooks(Class) {
+    const proto = Class.prototype;
+    Object.defineProperty(proto, "cb_handler", {
+        configurable: true,
+        /** this object's CallbackHandler (created on first read; assignable, as before) */
+        get() { return (this._cb_handler ||= new CallbackHandler(this)); },
+        set(handler) { this._cb_handler = handler; },
+    });
     const methods = {
         /** @returns {CallbackHandler} this object's handler registry (created once) */
         callbackhandler_setup() {
-            return (this.cb_handler ||= new CallbackHandler(this));
+            return this.cb_handler;
         },
         registerCallbackHandler(name, callback, opts) {
-            return this.callbackhandler_setup().registerCallbackHandler(name, callback, opts);
+            return this.cb_handler.registerCallbackHandler(name, callback, opts);
         },
         unregisterCallbackHandler(name, h_id) {
-            return this.cb_handler ? this.cb_handler.unregisterCallbackHandler(name, h_id) : false;
+            return this._cb_handler ? this._cb_handler.unregisterCallbackHandler(name, h_id) : false;
         },
         processCallbackHandlers(name, opts, ...args) {
-            return CallbackHandler.run(this, this.cb_handler, name, opts, args);
+            const handler = this._cb_handler;
+            // an overridden processCallbackHandlers on the handler (e.g. a tracing wrapper) still runs
+            if (handler && handler.processCallbackHandlers !== CallbackHandler.prototype.processCallbackHandlers) {
+                return handler.processCallbackHandlers(name, opts, ...args);
+            }
+            return CallbackHandler.run(handler ? handler.ob_ref : this, handler, name, opts, args);
         },
         hasCallbackHandlers(name) {
-            return !!this.cb_handler?.hasCallbackHandlers(name);
+            return !!this._cb_handler?.hasCallbackHandlers(name);
         },
         /**
          * Registers a hook handler and returns its disposer.
          * @returns {() => boolean} unregisters the handler
          */
         onHook(name, callback, opts) {
-            const id = this.registerCallbackHandler(name, callback, opts);
-            if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
-            return () => this.unregisterCallbackHandler(name, id);
+            return this.cb_handler.onHook(name, callback, opts);
         },
     };
     for (const [key, value] of Object.entries(methods)) {
-        Object.defineProperty(Class.prototype, key, { value, writable: true, configurable: true });
+        Object.defineProperty(proto, key, { value, writable: true, configurable: true });
     }
     return Class;
 }

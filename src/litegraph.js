@@ -283,7 +283,6 @@ export class LiteGraphClass {
 
     log_methods = ['error', 'warn', 'info', 'log', 'debug'];
 
-    cb_handler = false;
     debug = true; // enable/disable logging :: in this.debug_level is stored the actual numeric value
     debug_level = 2; // set via this.logging_set_level
 

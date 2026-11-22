@@ -9200,10 +9200,11 @@ export class LGraphCanvas {
                 let type = info && info!==null ? info.type : "string";
 
                 // in case the user wants control over the side panel widget
-                const handled = node.processCallbackHandlers("onAddPropertyToPanel", {
+                const r = node.processCallbackHandlers("onAddPropertyToPanel", {
                     def_cb: node.onAddPropertyToPanel
                 }, pName, panel, value, info, fUpdate);
-                if (CallbackHandler.valueOf(handled)) {
+                // any truthy legacy result (an element, too) means handled; a {return_value} object counts by its value
+                if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) {
                     continue;
                 }
                 panel.addWidget( info.widget || type, pName, value, info, fUpdate);

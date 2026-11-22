@@ -27,17 +27,24 @@ export class ListenerList {
      */
     add(callback, data = {}) {
         const entry = { id: this.last_id++, priority: Number(data.priority) || 0, callback, data };
-        if (data.signal?.aborted) return entry.id;
+        const signal = data.signal;
+        if (signal?.aborted) return entry.id;
+        if (signal?.addEventListener) {
+            const onAbort = () => this.remove(entry.id);
+            signal.addEventListener("abort", onAbort, { once: true });
+            // detached on removal, so a long-lived signal does not keep removed listeners alive
+            entry.detach = () => signal.removeEventListener?.("abort", onAbort);
+        }
         this.handlers = [...this.handlers, entry].sort((a, b) => b.priority - a.priority);
-        data.signal?.addEventListener?.("abort", () => this.remove(entry.id), { once: true });
         return entry.id;
     }
 
     /** @returns {boolean} true if the entry was there */
     remove(id) {
-        const next = this.handlers.filter((entry) => entry.id !== id);
-        if (next.length === this.handlers.length) return false;
-        this.handlers = next;
+        const entry = this.handlers.find((item) => item.id === id);
+        if (!entry) return false;
+        this.handlers = this.handlers.filter((item) => item !== entry);
+        entry.detach?.();
         return true;
     }
 
@@ -88,7 +95,7 @@ export class LGraphEventTarget {
         if (options.signal?.aborted) return () => {};
         let list = this._listeners.get(type);
         if (!list) this._listeners.set(type, list = new ListenerList());
-        const id = list.add(listener, options);
+        const id = list.add(listener, { ...options });
         return () => { list.remove(id); };
     }
 
@@ -124,7 +131,8 @@ export class LGraphEventTarget {
     _deliver(list, event) {
         if (!list?.size) return;
         for (const entry of list.handlers) {
-            if (entry.data.once) list.remove(entry.id);
+            // a re-entrant dispatch may already have delivered (and removed) a once listener
+            if (entry.data.once && !list.remove(entry.id)) continue;
             try {
                 entry.callback.call(this.owner, event);
             } catch (error) {

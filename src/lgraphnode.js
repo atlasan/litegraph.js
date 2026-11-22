@@ -76,7 +76,6 @@ export class LGraphNode {
         return LGraphNode._default_sizes.has(this.size);
     }
 
-    cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
 

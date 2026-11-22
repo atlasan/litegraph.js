@@ -1390,6 +1390,7 @@ export declare class LGraphEventTarget<TMap = Record<string, unknown>, TOwner = 
     on<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: ListenerOptions): () => void;
     on(type: "*", listener: (this: TOwner, event: LGraphEvent<TMap[keyof TMap], TOwner>) => void, options?: ListenerOptions): () => void;
     once<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: Omit<ListenerOptions, "once">): () => void;
+    once(type: "*", listener: (this: TOwner, event: LGraphEvent<TMap[keyof TMap], TOwner>) => void, options?: Omit<ListenerOptions, "once">): () => void;
     off<K extends keyof TMap & string>(type: K | "*", listener: (event: LGraphEvent<TMap[K], TOwner>) => void): void;
     has(type: (keyof TMap & string) | "*"): boolean;
     dispatch<K extends keyof TMap & string>(type: K, detail: TMap[K], options?: { cancelable?: boolean }): LGraphEvent<TMap[K], TOwner>;
@@ -2125,6 +2126,8 @@ export interface CallbackHost {
     /** runs the handlers and the default callback (def_cb, the legacy onX); synchronous; rethrows the first handler error after the chain */
     processCallbackHandlers(name: string, options?: { def_cb?: Function | false; on_result?: (result: any) => void }, ...args: any[]): any;
     hasCallbackHandlers(name: string): boolean;
+    /** the handler registry, created on first read */
+    cb_handler: CallbackHandler;
     /** registers a handler and returns its disposer */
     onHook(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => boolean;
 }
@@ -2139,7 +2142,10 @@ export declare class CallbackHandler {
     /** true for true, or an object result with a truthy return_value */
     static handled(result: any): boolean;
 }
-export interface CallbackHandler extends CallbackHost {}
+export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
+    /** per hook name */
+    callbacks_handlers: Record<string, ListenerList>;
+}
 /** The listener core shared by hooks and typed events: ordered by priority, copy-on-write. */
 export declare class ListenerList {
     /** never mutated; replaced on every change */
