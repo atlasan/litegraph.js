@@ -37,4 +37,5 @@ These are not part of any accepted plan:
 
 ## History
 
+- 2026-11-22: steps 1–6 done and the version bumped ([record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)); step 7 (push, PR, tag) waits for the user. The single tester controller is deferred.
 - 2026-11-20: proposed and accepted. The user asked to finish the planned actions and cut a first dev pre-release, and chose the version `0.18.0-dev.1`, a tag only, and the apps move included last.
