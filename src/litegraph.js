@@ -17,6 +17,8 @@ import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
 import { MenuRegistry } from "./menus.js";
 import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
+import { ValueTypeRegistry } from "./valuetypes.js";
+import { PanelBuilder, defaultPanelEditors } from "./panels.js";
 import { NodeSearch } from "./nodesearch.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
@@ -569,6 +571,67 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers a value type: how values of that type are edited on the canvas (widget) and in
+     * panels (editor), with default options, coercion, validation and help (see ValueTypeRegistry).
+     * @param {string} name
+     * @param {object} def
+     * @param {{replace?: boolean}} [options] - replace: allow replacing a registered type
+     * @returns {() => void} disposer (restores a replaced definition)
+     */
+    registerValueType(name, def, options) {
+        this.setupPlatform();
+        return this.valueTypes.register(name, def, options);
+    }
+
+    /** @returns {object|null} the resolved value type for a name or alias */
+    getValueType(name) {
+        this.setupPlatform();
+        return this.valueTypes.get(name);
+    }
+
+    /**
+     * Registers (or replaces) a panel editor: how a value is edited in side panels.
+     * `editor.create(ctx)` returns `{element, set(value), focus?(), destroy?()}`; ctx has
+     * {doc, name, value, options, info, type, readonly, row, label, panel, target, commit(v), preview(v)}.
+     * Value types name their editor (`editor`), and property info can name one (`editor` / `widget`).
+     * @param {string} name
+     * @param {{create: Function}} editor
+     * @returns {() => void} disposer (restores the previous editor)
+     */
+    registerPanelEditor(name, editor) {
+        this.setupPlatform();
+        if (typeof name !== "string" || !name) throw new TypeError("panel editor name must be a non-empty string");
+        if (!editor || typeof editor.create !== "function") throw new TypeError(`panel editor ${name}: needs create(ctx)`);
+        const previous = this.panel_editors[name];
+        this.panel_editors[name] = editor;
+        return () => {
+            if (this.panel_editors[name] !== editor) return;
+            if (previous) this.panel_editors[name] = previous; else delete this.panel_editors[name];
+        };
+    }
+
+    /**
+     * Adds a section to a side panel: `panel` "node" (node details) or "options" (graph options;
+     * `tab` "graph", "canvas", "settings" (default) or a new tab id with `tabTitle`).
+     * `render(section, ctx)` fills it: ctx = {panel, section, node?, graph, canvas, tab?}; use
+     * ctx.panel.addRow / addWidget / addNote, which add to this section.
+     * @param {{id: string, panel: "node"|"options", title?: string, tab?: string, tabTitle?: string,
+     *   order?: number, collapsed?: boolean, when?: Function, render: Function}} def
+     * @returns {() => void} disposer
+     */
+    registerPanelSection(def) {
+        this.setupPlatform();
+        if (!def || typeof def.id !== "string" || !def.id) throw new TypeError("panel section id must be a non-empty string");
+        if (def.panel !== "node" && def.panel !== "options") throw new TypeError(`panel section ${def.id}: panel must be "node" or "options"`);
+        if (typeof def.render !== "function") throw new TypeError(`panel section ${def.id}: needs render(section, ctx)`);
+        const entry = { ...def };
+        this.panel_sections.set(def.id, entry);
+        return () => {
+            if (this.panel_sections.get(def.id) === entry) this.panel_sections.delete(def.id);
+        };
+    }
+
+    /**
      * Registers (or replaces) the class implementing a canvas widget type.
      * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
      * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
@@ -616,6 +679,18 @@ export class LiteGraphClass {
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
         this.widget_types ??= defaultWidgetTypes();
+        this.valueTypes ??= new ValueTypeRegistry();
+        this.panel_editors ??= { ...defaultPanelEditors(), ...PanelBuilder.extraEditors() };
+        this.panel_sections ??= new Map();
+        if (!this.settings.has("LiteGraph.Panel.Side")) {
+            // side panels (options, node details): where they dock, their width, remembered state
+            this.settings.define({ id: "LiteGraph.Panel.Side", name: "Side panels dock on the", type: "combo", options: ["left", "right"], default: "left", tooltip: "Where the options and node panels open. The ⇆ button in a panel switches it." });
+            this.settings.define({ id: "LiteGraph.Panel.Width", name: "Side panel width (px)", type: "number", default: null, hidden: true });
+            this.settings.define({ id: "LiteGraph.Panel.Collapsed", type: "json", name: "Collapsed panel sections", default: () => ({}), hidden: true });
+            this.settings.define({ id: "LiteGraph.Panel.FollowSelection", name: "The node panel follows the selection", default: false, tooltip: "Selecting another node shows it in the open node panel. The ⌖ button in the panel toggles it." });
+            this.settings.define({ id: "LiteGraph.Panel.PropertySort", name: "Node panel property order", type: "combo", options: ["declared", "az", "modified"], default: "declared", tooltip: "declared: as the node type lists them; az: alphabetical; modified: changed values first." });
+            this.settings.define({ id: "LiteGraph.Canvas.Defaults", type: "json", name: "Canvas option defaults", default: () => ({}), hidden: true, tooltip: "Written by \"Save canvas as defaults\" in the options panel; applied to new canvases." });
+        }
         if (!this.nodeSearch) {
             this.nodeSearch = new NodeSearch();
             // definition filters: deprecated nodes are hidden unless a setting shows them

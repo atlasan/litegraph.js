@@ -201,6 +201,17 @@ Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open
 
 Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, profiles, flow docs) stay proposed. Step 5 can now build on Wave 7's listener core (in `LG/dev`).
 
+## Panels and widgets track
+
+[Plan](2026-11-22-panels-options-node-details.md) accepted 2026-11-22; done on `LG/dev_panel_and_widget` and **merged into `LG/dev`**. It is parallel work, so it has no wave number ([record](../executions/2026-11-22-panels-and-widgets.md)):
+- value types ("widget for type");
+- `ColorWidget` and `VectorWidget`;
+- the options panel (Graph, Canvas and Settings tabs);
+- the node details panel;
+- panel editors and sections.
+
+Follow-ups: movable, dockable and configurable panels (X-13), multi-node editing, property presets (X-11), settings profiles (X-12).
+
 ## Deferred (each needs its own proposal)
 
 Virtual/broadcast links, link routing as default, app mode / published parameters, graph tabs, remote pack registry, TypeScript migration, renderer change, async workflow scheduler.

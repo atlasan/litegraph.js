@@ -124,6 +124,9 @@ export class Editor {
 
     /** Adds the "Nodes" button and opens the palette if it was open last time. */
     setupPalette() {
+        // in the Editor the node panel follows the selection unless the user turned it off (decision P3)
+        const follow = LiteGraph.settings?.getDefinition?.("LiteGraph.Panel.FollowSelection");
+        if (follow) follow.default = true;
         const settings = LiteGraph.settings;
         if (settings && !settings.has("LiteGraph.Editor.Palette")) {
             settings.define({ id: "LiteGraph.Editor.Palette", name: "Show the node palette in the Editor", default: false });

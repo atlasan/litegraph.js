@@ -201,11 +201,14 @@ export class NumberWidget extends BaseWidget {
         const old_value = env.old_value;
         if (event.type == "pointermove") {
             const deltaX = event.deltaX || event.deltax || 0;
-            if (deltaX) this.value += deltaX * 0.1 * (options.step || 1);
-            this.value = BaseWidget.clampToOptions(this.value, options);
+            // drag on an unrounded copy, so rounded types (int) still move with small steps
+            const raw = (typeof this._drag_raw === "number" ? this._drag_raw : this.value) + deltaX * 0.1 * (options.step || 1);
+            this._drag_raw = BaseWidget.clampToOptions(raw, options);
+            this.value = options.round ? BaseWidget.clampToOptions(Math.round(this._drag_raw / options.round) * options.round, options) : this._drag_raw;
         } else if (event.type == "pointerdown") {
             const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
             this.value = BaseWidget.clampToOptions(this.value + delta * (options.step || 1), options);
+            this._drag_raw = this.value;
         } else if (event.type == "pointerup") {
             const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
             if (event.click_time < 200 && delta == 0) {
@@ -313,6 +316,145 @@ export class TextWidget extends BaseWidget {
     }
 }
 
+/** Draws the label on the left of a pill; returns the x where the value area starts. */
+function drawWidgetLabel(widget, ctx, y, H, env) {
+    const margin = env.margin;
+    const label = widget.label || widget.name;
+    if (label == null || !env.show_label || !env.show_text) return margin * 2;
+    ctx.fillStyle = env.colors.secondary;
+    ctx.textAlign = "left";
+    ctx.fillText(String(label), margin * 2, y + H * 0.7);
+    return margin * 3 + ctx.measureText(String(label)).width;
+}
+
+/**
+ * A colour value ("#rrggbb", "#rrggbbaa" or any CSS colour): a swatch with its text. Clicking the
+ * swatch opens the browser's colour picker (the alpha suffix is kept); clicking the label lets you
+ * type any CSS colour.
+ */
+export class ColorWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        const margin = env.margin;
+        BaseWidget.drawPill(ctx, widget_width, y, H, env);
+        if (env.show_text && !this.disabled) ctx.stroke();
+        const swatch_w = Math.min(48, widget_width * 0.3);
+        const sx = widget_width - margin * 2 - swatch_w;
+        ctx.save();
+        ctx.fillStyle = "#555";
+        ctx.fillRect(sx, y + 3, swatch_w, H - 6);
+        ctx.fillStyle = this.value ? String(this.value) : "transparent";
+        ctx.fillRect(sx, y + 3, swatch_w, H - 6);
+        ctx.restore();
+        if (!env.show_text) return;
+        const start = drawWidgetLabel(this, ctx, y, H, env);
+        ctx.fillStyle = env.colors.text;
+        ctx.textAlign = "right";
+        const room = sx - margin - start;
+        ctx.fillText(LGraphCanvas.fitText(ctx, String(this.value ?? ""), room), sx - margin, y + H * 0.7);
+    }
+
+    onPointer(event, env) {
+        if (event.type !== "pointerdown" || this.options.read_only) return;
+        const old_value = env.old_value;
+        const swatch_w = Math.min(48, env.widget_width * 0.3);
+        const onSwatch = env.x > env.widget_width - swatch_w - 40;
+        const doc = env.ref_window?.document ?? (typeof document !== "undefined" ? document : null);
+        const hex = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.exec(String(this.value ?? ""));
+        if (onSwatch && doc) {
+            const input = doc.createElement("input");
+            input.type = "color";
+            input.value = hex ? String(this.value).slice(0, 7) : "#ffffff";
+            Object.assign(input.style, { position: "fixed", left: (event.clientX ?? 0) + "px", top: (event.clientY ?? 0) + "px", opacity: "0", width: "1px", height: "1px", pointerEvents: "none" });
+            const alpha = hex?.[1] ?? "";
+            const apply = () => env.changed(this, input.value + alpha, old_value);
+            input.addEventListener("input", apply);
+            input.addEventListener("change", () => { apply(); input.remove(); });
+            input.addEventListener("blur", () => input.remove());
+            doc.body.appendChild(input);
+            ColorWidget.lastPicker = input;
+            if (typeof input.showPicker === "function") {
+                try { input.showPicker(); } catch { input.click(); }
+            } else {
+                input.click();
+            }
+            return;
+        }
+        env.canvas.prompt("Colour", this.value ?? "", (typed) => env.changed(this, typed, old_value), event);
+    }
+}
+
+/**
+ * A vector of numbers (vec2, vec3, vec4; `options.size`): one draggable field per component.
+ * Drag a field to change that component, click it to type it, click the label to type them all.
+ */
+export class VectorWidget extends BaseWidget {
+    static size(widget) {
+        return widget.options.size ?? (Array.isArray(widget.value) ? widget.value.length : 3);
+    }
+
+    static layout(widget, ctx, widget_width, env) {
+        const margin = env.margin;
+        const size = VectorWidget.size(widget);
+        const label = widget.label || widget.name;
+        const label_w = env.show_label && label != null ? Math.min(widget_width * 0.35, 12 + (ctx?.measureText?.(String(label)).width ?? String(label).length * 7)) : 0;
+        const start = margin * 2 + label_w;
+        const cell = (widget_width - margin * 2 - start) / size;
+        return { size, start, cell };
+    }
+
+    draw(ctx, node, widget_width, y, H, env) {
+        BaseWidget.drawPill(ctx, widget_width, y, H, env);
+        if (env.show_text && !this.disabled) ctx.stroke();
+        if (!env.show_text) return;
+        drawWidgetLabel(this, ctx, y, H, env);
+        const { size, start, cell } = VectorWidget.layout(this, ctx, widget_width, env);
+        const values = Array.isArray(this.value) ? this.value : [];
+        const precision = this.options.precision ?? 3;
+        for (let i = 0; i < size; ++i) {
+            const x = start + i * cell;
+            ctx.fillStyle = "rgba(0,0,0,0.25)";
+            ctx.fillRect(x + 1, y + 3, cell - 2, H - 6);
+            ctx.fillStyle = env.colors.text;
+            ctx.textAlign = "center";
+            ctx.fillText(LGraphCanvas.fitText(ctx, LiteGraph.formatNumber(Number(values[i] ?? 0), precision), cell - 4), x + cell * 0.5, y + H * 0.7);
+        }
+    }
+
+    onPointer(event, env) {
+        if (this.options.read_only) return;
+        const old_value = env.old_value;
+        const { size, start, cell } = VectorWidget.layout(this, null, env.widget_width, { margin: env.margin ?? 15, show_label: true });
+        const current = Array.from({ length: size }, (_, i) => Number((Array.isArray(this.value) ? this.value[i] : 0) ?? 0));
+        if (event.type == "pointerdown") {
+            this._drag_index = env.x < start ? -1 : Math.max(0, Math.min(size - 1, Math.floor((env.x - start) / cell)));
+            this._drag_raw = current[this._drag_index];
+            this._drag_moved = false;
+        } else if (event.type == "pointermove" && this._drag_index >= 0) {
+            const deltaX = event.deltaX || event.deltax || 0;
+            if (!deltaX) return;
+            this._drag_moved = true;
+            this._drag_raw = BaseWidget.clampToOptions(this._drag_raw + deltaX * 0.1 * (this.options.step || 0.1), this.options);
+            const next = current.slice();
+            next[this._drag_index] = this.options.round ? Math.round(this._drag_raw / this.options.round) * this.options.round : this._drag_raw;
+            this.value = next;
+            setTimeout(() => env.changed(this, next, old_value), 20);
+            env.canvas.dirty_canvas = true;
+        } else if (event.type == "pointerup" && !this._drag_moved) {
+            const index = this._drag_index;
+            if (index === -1 || index === undefined) {
+                env.canvas.prompt("Value", current.join(", "), (typed) => env.changed(this, typed, old_value), event);
+            } else {
+                env.canvas.prompt(`Component ${index + 1}`, current[index], (typed) => {
+                    const next = current.slice();
+                    const computed = evaluateMathExpression(typed);
+                    next[index] = Number.isFinite(computed) ? computed : Number(typed);
+                    env.changed(this, next, old_value);
+                }, event);
+            }
+        }
+    }
+}
+
 /** The built-in widget types (several type names share a class). */
 export function defaultWidgetTypes() {
     return {
@@ -325,20 +467,48 @@ export function defaultWidgetTypes() {
         enum: ComboWidget,
         text: TextWidget,
         string: TextWidget,
+        color: ColorWidget,
+        vector: VectorWidget,
     };
 }
 
+/** Widget types that existed before value types: a plain object of these types never kept its own draw. */
+const LEGACY_WIDGET_TYPES = new Set(["button", "toggle", "boolean", "slider", "number", "combo", "enum", "text", "string"]);
+
 /**
- * The behaviour to use for a widget: its own class methods when it is a BaseWidget, otherwise the
- * registered class for its type (applied to the plain object), otherwise null (legacy draw/mouse).
- * @returns {BaseWidget|null} an object whose draw/onPointer should be called with the widget as `this`
+ * The behaviour to use for a widget, as an object whose draw/onPointer are called with the widget
+ * as `this`, or null for the legacy custom hooks (`w.draw` / `w.mouse`):
+ * - a BaseWidget instance uses its own class, except a built-in class whose `type` was changed after
+ *   creation (`w.type = "toggle"`), which uses the class of its new type;
+ * - a plain object uses the registered class for its type; a type that resolves only through value
+ *   types (LiteGraph.valueTypes), or a type added with them (color, vector), keeps the object's own
+ *   draw/mouse when it has them, as unknown types always did.
+ * @returns {BaseWidget|null}
  */
 export function widgetImplementation(widget, types = LiteGraph.widget_types) {
     if (!widget) return null;
-    if (widget instanceof BaseWidget) return widget;
-    const cls = types?.[widget.type];
+    const resolve = (type) => {
+        if (typeof type !== "string" || !type) return null;
+        return types?.[type] ?? LiteGraph.valueTypes?.resolveWidgetClass(type, types ?? {})?.cls ?? null;
+    };
+    if (widget instanceof BaseWidget) {
+        if (BUILTIN_WIDGET_CLASSES.has(widget.constructor)) {
+            const cls = resolve(widget.type);
+            if (cls && !(widget instanceof cls)) return cls.prototype;
+        }
+        return widget;
+    }
+    // own properties only: a widget made by another copy of the library (a bundle next to the src
+    // modules) inherits draw from its class and must still get the class behaviour
+    const ownHooks = (Object.hasOwn(widget, "draw") && typeof widget.draw === "function")
+        || (Object.hasOwn(widget, "mouse") && typeof widget.mouse === "function");
+    if (ownHooks && !LEGACY_WIDGET_TYPES.has(widget.type)) return null;
+    const cls = resolve(widget.type);
     return cls ? cls.prototype : null;
 }
+
+/** The classes defaultWidgetTypes() registers (a changed `type` on their instances is followed). */
+const BUILTIN_WIDGET_CLASSES = new Set([ButtonWidget, ToggleWidget, SliderWidget, NumberWidget, ComboWidget, TextWidget, ColorWidget, VectorWidget]);
 
 /**
  * Evaluates arithmetic typed into a number field: numbers, + - * / % **, parentheses, unary signs,

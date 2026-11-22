@@ -28,6 +28,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | X-10 | Runner health and metrics endpoint (runs, step time, worker memory) | P8 | proto | S | — | seed | Fold into X-01 `/features` |
 | X-11 | Node property presets: named value sets per node type, stored as a setting | P10 | ext | S | — | seed | 2025 improvements ledger |
 | X-12 | Settings export, import and profiles on `LiteGraph.settings` | P10 | ext | S | — | seed | 2025 improvements ledger |
+| X-13 | Movable, dockable and configurable panels: floating and docked panels, stacks and tabs, saved layouts, built on `PanelHost` | P10 | core | M | ref | seed | Follow-up of the [panels and widgets plan](../plans/2026-11-22-panels-options-node-details.md); CFY-47 |
 
 ## Census of litegraph users (`USE`)
 

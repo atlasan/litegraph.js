@@ -1836,9 +1836,15 @@ export class LGraphNode {
             callback: callback,
             options: options || {},
         };
-        // an instance of the registered widget class (src/widgets.js), or a plain object for unknown types
-        const WidgetClass = LiteGraph.widget_types?.[fields.type];
-        var w = WidgetClass ? new WidgetClass(fields) : fields;
+        // an instance of the registered widget class (src/widgets.js); a type that is not a widget type
+        // resolves through value types ("int" -> number widget with step 1, "color", "vec3", ...) and
+        // keeps its own name; anything else stays a plain object (legacy w.draw / w.mouse)
+        const resolved = LiteGraph.valueTypes
+            ? LiteGraph.valueTypes.resolveWidgetClass(fields.type, LiteGraph.widget_types ?? {})
+            : (LiteGraph.widget_types?.[fields.type] ? { cls: LiteGraph.widget_types[fields.type], options: {} } : null);
+        if (resolved && Object.keys(resolved.options).length) fields.options = { ...resolved.options, ...fields.options };
+        if (resolved?.valueType && fields.value === undefined) fields.value = LiteGraph.valueTypes.defaultValue(fields.type, fields.options);
+        var w = resolved ? new resolved.cls(fields) : fields;
 
         if (w.options.y !== undefined) {
             w.y = w.options.y;

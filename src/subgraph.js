@@ -1263,26 +1263,47 @@ export class GraphInput {
         }
         this.properties.type = type;
 
-        // update widget
-        if (type == "number") {
-            this.value_widget.type = "number";
-            this.value_widget.value = Number(); // 0
-        } else if (type == "boolean") {
-            this.value_widget.type = "toggle";
-            this.value_widget.value = this.value_widget.value&&(this.value_widget.value+"").toLocaleLowerCase()!=="false"&&this.value_widget.value!==""?true:false; // "true"
-        } else if (type == "string") {
-            this.value_widget.type = "text";
-            this.value_widget.value = this.value_widget.value+""; // ""
-        } else {
-            this.value_widget.type = null;
-            // this.value_widget.value = null;
-        }
+        // update widget: the value widget becomes the widget of the input's value type (any registered
+        // type: number, int, boolean, string, color, vec3, ...); its value is kept, converted to the type
+        this.setValueWidgetType(type);
         this.properties.value = this.value_widget.value;
 
         // update graph
         if (this.graph && this.name_in_graph) {
             this.graph.changeInputType(this.name_in_graph, type);
         }
+    }
+
+    /**
+     * Replaces the value widget by the widget of a value type (LiteGraph.valueTypes), keeping the
+     * value when the type can convert it, else the type's default. Unknown types keep the widget
+     * with a null type, as before.
+     */
+    setValueWidgetType(type) {
+        const old = this.value_widget;
+        const types = LiteGraph.valueTypes;
+        const resolved = type !== LiteGraph.EVENT && types?.has(type) ? types.resolveWidgetClass(String(type), LiteGraph.widget_types ?? {}) : null;
+        if (!resolved) {
+            old.type = null;
+            return old;
+        }
+        const options = { ...resolved.options };
+        let value = old.value;
+        try {
+            value = types.coerce(type, value, options);
+            if (types.validate(type, value, options)) value = types.defaultValue(type, options);
+        } catch {
+            value = types.defaultValue(type, options);
+        }
+        if (old.constructor === resolved.cls && old.type === String(type).toLowerCase()) {
+            old.value = value;
+            return old;
+        }
+        const widget = new resolved.cls({ type: String(type).toLowerCase(), name: old.name, value, callback: old.callback, options });
+        const index = this.widgets.indexOf(old);
+        if (index >= 0) this.widgets[index] = widget;
+        this.value_widget = widget;
+        return widget;
     }
 
     // this is executed AFTER the property has changed

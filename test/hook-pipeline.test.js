@@ -350,16 +350,27 @@ describe('canvas fixes', () => {
         expect(event).toHaveBeenCalledTimes(2);
     });
 
-    test('a legacy onAddPropertyToPanel returning an element still replaces the default widget', () => {
+    test('a legacy onAddPropertyToPanel returning an element still replaces the default row', () => {
         const { canvas, node } = setup();
-        node.properties = { label: 'x' };
-        node.onAddPropertyToPanel = jest.fn(() => document.createElement('div')); // truthy object, no return_value
-        const added = [];
-        const panel = { addWidget: (...args) => added.push(args[1]), addHTML() {}, addSeparator() {}, addButton() { return {}; }, footer: {}, content: {}, id: '', classList: { add() {} }, close() {}, onClose: null };
-        jest.spyOn(canvas, 'createPanel').mockReturnValue(panel);
-        try { canvas.showShowNodePanel(node); } catch { /* the rest of the panel needs more DOM */ }
-        expect(node.onAddPropertyToPanel).toHaveBeenCalledWith('label', panel, 'x', expect.anything(), expect.any(Function));
-        expect(added).not.toContain('label');
+        node.properties = { label: 'x', other: 'y' };
+        node.onAddPropertyToPanel = jest.fn((name) => name === 'label' ? document.createElement('div') : undefined); // truthy object, no return_value
+        const panel = canvas.showShowNodePanel(node);
+        try {
+            expect(node.onAddPropertyToPanel).toHaveBeenCalledWith('label', panel, 'x', expect.anything(), expect.any(Function));
+            expect(panel.querySelector('.lg-row[data-property="label"]')).toBeNull();
+            expect(panel.querySelector('.lg-row[data-property="other"]')).not.toBeNull();
+        } finally { panel.close(); }
+    });
+
+    test('a registered onAddPropertyToPanel handler counts by its return_value', () => {
+        const { canvas, node } = setup();
+        node.properties = { label: 'x', other: 'y' };
+        const off = node.onHook('onAddPropertyToPanel', (info, name) => ({ return_value: name === 'label' }));
+        const panel = canvas.showShowNodePanel(node);
+        try {
+            expect(panel.querySelector('.lg-row[data-property="label"]')).toBeNull();
+            expect(panel.querySelector('.lg-row[data-property="other"]')).not.toBeNull();
+        } finally { panel.close(); off(); }
     });
 
     test('registered node classes receive the hook API from LGraphNode', () => {
