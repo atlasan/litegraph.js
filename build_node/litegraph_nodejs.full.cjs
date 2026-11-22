@@ -94,7 +94,7 @@ function createNodeBadgeRegistry() {
 
 class LiteGraphClass {
 
-    VERSION = "0.10.10";
+    VERSION = "0.18.0-dev.1";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
     /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
