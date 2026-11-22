@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/midi" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/midi", version: LiteGraph.VERSION, title: "MIDI", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/midi", version: LiteGraph.VERSION, title: "MIDI", description: "Web MIDI: device input and output, events, filters, generators and playback.", builtin: true });
 
 // TODO :: MIDI WORKS WITH ACTIONS SLOTS REVISE: (CANT ASSIGN MULTIPLE, WHEN IT SHOULD WITH THIS DATA TYPE, AND DATA SEEMS NOT PASSED BY (eg. MIDI Show using his input does not seems to work))
 

@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/watch" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/watch", version: LiteGraph.VERSION, title: "Watch", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/watch", version: LiteGraph.VERSION, title: "Watch", description: "The value, text and tree displays of the basic/watch node (registers no node types).", builtin: true });
 
 class WatchValue {
 

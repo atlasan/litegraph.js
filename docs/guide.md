@@ -49,7 +49,8 @@ class Sum {
 LiteGraph.registerNodeType("math/my_sum", Sum);
 ```
 
-- **`static def`** feeds the search box and `LiteGraph.getNodeDefinition(type)`. It accepts `display_name`, `description`, `category`, `search_aliases`, `capabilities`, `deprecated`, `experimental`, `hidden`, `inputs` and `outputs`.
+- **`static def`** feeds the search box and `LiteGraph.getNodeDefinition(type)`. It accepts `display_name`, `description`, `usage` (a short how-to), `category`, `search_aliases`, `capabilities`, `deprecated`, `experimental`, `hidden`, `inputs`, `outputs` and `execution`.
+- **Node reference:** `npm run docs:nodes` writes `docs/nodes/` from the registry: a README with the packs, one page per pack (type, title, description, slots as `name:type`, execution declarations, usage) and `nodes.json` for tools. The pages are generated locally and not committed (roadmap decision D9). Run `npm run build` first, because the tool reads `build/litegraph_nodejs.full.js`.
 - **Classic statics** still work: `title`, `desc`, `title_color`, `shape`, `priority`, `skip_list`.
 - **`LiteGraph.wrapFunctionAsNode(type, fn, inputTypes, outputType)`** turns a plain function into a node.
 - **Optional libraries:** list them in `this.libraries` / `this.requiredLibraries`. The node's `ready` promise settles once they are loaded.
@@ -450,7 +451,7 @@ LiteGraph.getNodeDefinition("acme/filter").pack; // { id: "acme-audio", version:
 LiteGraph.packs.index([{ id: "far", version: "3.0.0", nodes: ["far/thing"] }]); // known, not installed
 ```
 
-- **Built-in packs:** every built-in node file is a builtin pack `litegraph/<family>` (`litegraph/math`, …).
+- **Built-in packs:** every built-in node file is a builtin pack `litegraph/<family>` (`litegraph/math`, …), with a `description`.
 - **Provenance:** new nodes of non-builtin packs get `properties.pack` and `properties.pack_ver`; a loaded node keeps what it was saved with.
 - **Missing types:** a node of an unregistered type loads as a placeholder that saves back unchanged. `graph.getMissingNodes()` lists them by type, with the pack they come from (stamp, index, or ComfyUI's `cnr_id`) and a registered replacement. The root graph emits `missing-nodes {report, reason}` after loading, and the Editor shows the report.
 - **Replacements as data:**

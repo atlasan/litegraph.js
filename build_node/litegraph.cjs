@@ -734,6 +734,7 @@ class LiteGraphClass {
             id: "litegraph/core",
             version: this.VERSION,
             title: "Subgraphs",
+            description: "Subgraphs and functions: the subgraph node, its graph inputs and outputs, and the function node that runs an inner graph per call.",
             builtin: true
         });
         try {
@@ -763,7 +764,7 @@ class LiteGraphClass {
     /**
      * Builds the metadata of a node type without creating a node.
      * Sources, in order: an optional `static def = {...}` on the class, then the classic static
-     * fields (`title`, `desc`/`description`, `search_aliases`, `capabilities`, `deprecated`,
+     * fields (`title`, `desc`/`description`, `usage`, `search_aliases`, `capabilities`, `deprecated`,
      * `experimental`, `skip_list`), then capability rules from {@link declareCapabilities}.
      * `def.inputs` / `def.outputs` describe the slots when the class declares them (otherwise null:
      * slots are only known after construction).
@@ -785,6 +786,8 @@ class LiteGraphClass {
             type,
             title: own.display_name ?? own.title ?? base_class.title ?? type,
             description: own.description ?? base_class.desc ?? base_class.description ?? "",
+            // how to use the node: a short how-to for the node reference (docs/nodes) and tooltips
+            usage: own.usage ?? base_class.usage ?? "",
             category: own.category ?? base_class.category ?? "",
             search_aliases: Object.freeze([...list(own.search_aliases), ...list(base_class.search_aliases)]),
             capabilities: Object.freeze([...capabilities]),
@@ -25970,8 +25973,9 @@ class NodeFunction extends Subgraph {
     static def = {
         execution: {
             default_mode: 1
-        }
-    }; // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
+        }, // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
+        usage: "Pick a subgraph definition; each event on call pushes the inputs, runs the inner graph once and fires done with the outputs set.",
+    };
 
     constructor() {
         super();
@@ -29162,6 +29166,7 @@ LiteGraph.packs.open({
     id: "litegraph/basic",
     version: LiteGraph.VERSION,
     title: "Basic",
+    description: "Constants, variables, watches, arrays, JSON and console helpers, scripts: the everyday data nodes.",
     builtin: true
 });
 
@@ -30550,6 +30555,7 @@ LiteGraph.packs.open({
     id: "litegraph/events",
     version: LiteGraph.VERSION,
     title: "Events",
+    description: "Execution flow: triggers, sequences, timers, delays, counters, gates and filters that pass events between nodes.",
     builtin: true
 });
 
@@ -30622,7 +30628,8 @@ class EvSequence {
     static def = {
         execution: {
             emit: "immediate"
-        }
+        },
+        usage: "Connect one event to an input; its outputs fire one after the other, top to bottom, before the next node runs.",
     };
     // @ BUG: fails to construct Node
 
@@ -30970,7 +30977,8 @@ class DelayEvent {
         execution: {
             ticks: true,
             modes: [LiteGraph.ALWAYS, LiteGraph.NEVER]
-        }
+        },
+        usage: "Send an event to the input; on_time fires time_in_ms later, while the graph is running.",
     };
 
     constructor() {
@@ -31032,7 +31040,8 @@ class TimerEvent {
         execution: {
             ticks: true,
             modes: [LiteGraph.ALWAYS, LiteGraph.NEVER]
-        }
+        },
+        usage: "Start the graph; on_tick fires every interval milliseconds. A start point for event flows.",
     };
 
     constructor() {
@@ -31276,6 +31285,7 @@ LiteGraph.packs.open({
     id: "litegraph/interface",
     version: LiteGraph.VERSION,
     title: "Interface widgets",
+    description: "Widgets drawn inside the node: buttons, toggles, sliders, knobs, combos, text and progress displays.",
     builtin: true
 });
 
@@ -31788,6 +31798,7 @@ LiteGraph.registerNodeType("widget/knob", WidgetKnob);
 
 // Show value inside the debug console
 class WidgetSliderGUI {
+    static desc = "A slider drawn across the whole node; outputs its value.";
 
     static title = "Inner Slider";
 
@@ -32152,6 +32163,7 @@ LiteGraph.packs.open({
     id: "litegraph/input",
     version: LiteGraph.VERSION,
     title: "Input devices",
+    description: "Input devices read every step (the gamepad).",
     builtin: true
 });
 
@@ -32543,6 +32555,7 @@ LiteGraph.packs.open({
     id: "litegraph/math",
     version: LiteGraph.VERSION,
     title: "Math",
+    description: "Number operations, comparisons, ranges, random and noise, formulas, interpolation and vector helpers.",
     builtin: true
 });
 
@@ -32877,6 +32890,8 @@ LiteGraph.registerNodeType("math/noise", MathNoise);
 
 // generates spikes every random time
 class MathSpikes {
+    static title = "Spikes";
+    static desc = "Outputs random pulses: a smooth spike up to 1 that lasts duration seconds, every min_time to max_time seconds.";
     constructor() {
         this.addOutput("out", "number");
         this.addProperty("min_time", 1);
@@ -34051,6 +34066,7 @@ LiteGraph.packs.open({
     id: "litegraph/math3d",
     version: LiteGraph.VERSION,
     title: "Math 3D",
+    description: "3D math on gl-matrix: vectors, quaternions, rotations and 4×4 matrices.",
     builtin: true
 });
 
@@ -34066,6 +34082,7 @@ function isNumberArray(value, minLength) {
 }
 
 class Math3DMat4 {
+    static desc = "Builds a 4×4 matrix from translation, rotation (Euler, in degrees by default) and scale.";
 
     static title = "mat4";
 
@@ -34722,6 +34739,7 @@ LiteGraph.packs.open({
     id: "litegraph/strings",
     version: LiteGraph.VERSION,
     title: "Strings",
+    description: "Text operations: compare, concatenate, split, convert and format strings.",
     builtin: true
 });
 
@@ -34879,6 +34897,7 @@ LiteGraph.packs.open({
     id: "litegraph/logic",
     version: LiteGraph.VERSION,
     title: "Logic",
+    description: "Boolean logic, branching (IF, selector, sequence) and loops (FOR, WHILE).",
     builtin: true
 });
 
@@ -35103,7 +35122,8 @@ class logicBranch {
     static def = {
         execution: {
             modes: [LiteGraph.ON_TRIGGER, LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER]
-        }
+        },
+        usage: "Send an event to onTrigger; true or false fires depending on condition.",
     };
 
     constructor() {
@@ -35165,7 +35185,8 @@ class logicFor {
     static title = "FOR";
     static desc = "Cycle FOR";
     static def = {
-        execution: LOOP_EXECUTION
+        execution: LOOP_EXECUTION,
+        usage: "Send an event to do; the do output fires nElements times with index counting from start, then completed fires. Nodes pulled from index see each value.",
     };
 
     onExecute(param) {
@@ -35220,7 +35241,8 @@ class logicForEach {
     static title = "ForEach";
     static desc = "Cycle for each element in array";
     static def = {
-        execution: LOOP_EXECUTION
+        execution: LOOP_EXECUTION,
+        usage: "Connect an array and send an event to do; the do output fires once per element with index and element set, then completed fires.",
     };
 
     onExecute(param) {
@@ -35292,7 +35314,8 @@ class logicWhile {
             models: {
                 strict: false
             }
-        }
+        },
+        usage: "Send an event to do; the do output fires while condition is true (at most cycleLimit times), then completed fires. Not valid under the strict model.",
     };
 
     onExecute() {
@@ -35355,6 +35378,7 @@ LiteGraph.packs.open({
     id: "litegraph/graphics",
     version: LiteGraph.VERSION,
     title: "Graphics",
+    description: "2D images and canvas drawing, colours, image fades and video or webcam frames.",
     builtin: true
 });
 
@@ -36381,6 +36405,7 @@ LiteGraph.packs.open({
     id: "litegraph/gltextures",
     version: LiteGraph.VERSION,
     title: "WebGL textures",
+    description: "WebGL texture nodes: load, filter, mix, blur, warp and preview textures on the GPU.",
     builtin: true
 });
 
@@ -42315,6 +42340,7 @@ LiteGraph.packs.open({
     id: "litegraph/glshaders",
     version: LiteGraph.VERSION,
     title: "WebGL shaders",
+    description: "Shader graph: nodes that generate GLSL code for a texture shader (constants, inputs, math, texture sampling, output).",
     builtin: true
 });
 
@@ -43240,6 +43266,7 @@ registerShaderNode("texture/sampler2D", LGraphShaderSampler2D);
 
 
 class LGraphShaderConstant {
+    static desc = "A shader constant of a chosen GLSL type.";
     constructor() {
         this.addOutput("", "float");
 
@@ -43427,6 +43454,7 @@ registerShaderNode("const/const", LGraphShaderConstant);
 
 
 class LGraphShaderVec2 {
+    static desc = "Builds or splits a vec2 in the shader graph.";
     constructor() {
         this.addInput("xy", "vec2");
         this.addInput("x", "float");
@@ -43490,6 +43518,7 @@ registerShaderNode("const/vec2", LGraphShaderVec2);
 
 
 class LGraphShaderVec3 {
+    static desc = "Builds or splits a vec3 in the shader graph.";
     constructor() {
         this.addInput("xyz", "vec3");
         this.addInput("x", "float");
@@ -43569,6 +43598,7 @@ registerShaderNode("const/vec3", LGraphShaderVec3);
 
 
 class LGraphShaderVec4 {
+    static desc = "Builds or splits a vec4 in the shader graph.";
     constructor() {
         this.addInput("xyzw", "vec4");
         this.addInput("xyz", "vec3");
@@ -43712,6 +43742,7 @@ registerShaderNode( "output/discard", LGraphShaderDiscard );
 
 
 class LGraphShaderOperation {
+    static desc = "An arithmetic operation between two values in the shader graph.";
     constructor() {
         this.addInput("A", LGShaders.ALL_TYPES);
         this.addInput("B", LGShaders.ALL_TYPES);
@@ -43801,6 +43832,7 @@ registerShaderNode("math/operation", LGraphShaderOperation);
 
 
 class LGraphShaderFunc {
+    static desc = "Applies a GLSL function (floor, sin, abs, ...) in the shader graph.";
     constructor() {
         this.addInput("A", LGShaders.ALL_TYPES);
         this.addInput("B", LGShaders.ALL_TYPES);
@@ -43925,6 +43957,7 @@ registerShaderNode("math/func", LGraphShaderFunc);
 
 
 class LGraphShaderSnippet {
+    static desc = "Runs a short GLSL expression on inputs A and B and writes C.";
     constructor() {
         this.addInput("A", LGShaders.ALL_TYPES);
         this.addInput("B", LGShaders.ALL_TYPES);
@@ -44024,6 +44057,7 @@ registerShaderNode("utils/snippet", LGraphShaderSnippet);
 
 
 class LGraphShaderRand {
+    static desc = "A random float per fragment in the shader graph.";
     constructor() {
         this.addOutput("out", "float");
     }
@@ -44053,6 +44087,7 @@ registerShaderNode("input/rand", LGraphShaderRand);
 // noise
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 class LGraphShaderNoise {
+    static desc = "Value or simplex noise of a coordinate in the shader graph.";
     constructor() {
         this.addInput("out", LGShaders.ALL_TYPES);
         this.addInput("scale", "float");
@@ -44263,6 +44298,7 @@ registerShaderNode("math/noise", LGraphShaderNoise);
 
 
 class LGraphShaderTime {
+    static desc = "The shader's time uniform, in seconds.";
     constructor() {
         this.addOutput("out", "float");
     }
@@ -44290,6 +44326,7 @@ registerShaderNode("input/time", LGraphShaderTime);
 
 
 class LGraphShaderDither {
+    static desc = "Ordered dithering of a value in the shader graph.";
     constructor() {
         this.addInput("in", "T");
         this.addOutput("out", "float");
@@ -44351,6 +44388,7 @@ registerShaderNode("math/dither", LGraphShaderDither);
 
 
 class LGraphShaderRemap {
+    static desc = "Remaps a value from one range to another in the shader graph.";
     constructor() {
         this.addInput("", LGShaders.ALL_TYPES);
         this.addOutput("", "");
@@ -44453,6 +44491,7 @@ LiteGraph.packs.open({
     id: "litegraph/geometry",
     version: LiteGraph.VERSION,
     title: "Geometry",
+    description: "WebGL geometry: points, primitives, polygons, extrusion, transforms and rendering of meshes.",
     builtin: true
 });
 
@@ -44955,6 +44994,7 @@ LiteGraph.registerNodeType("geometry/points3D", LGraphPoints3D);
 
 
 class LGraphPointsToInstances {
+    static desc = "Turns the vertices of a geometry into an array of instance matrices.";
     constructor() {
         this.addInput("points", "geometry");
         this.addOutput("instances", "[mat4]");
@@ -45092,6 +45132,7 @@ LiteGraph.registerNodeType("geometry/points_to_instances", LGraphPointsToInstanc
 
 
 class LGraphGeometryTransform {
+    static desc = "Transforms a geometry, or an array of instance matrices, by a 4×4 matrix.";
     constructor() {
         this.addInput("in", "geometry,[mat4]");
         this.addInput("mat4", "mat4");
@@ -45220,6 +45261,7 @@ LiteGraph.registerNodeType("geometry/transform", LGraphGeometryTransform);
 
 
 class LGraphGeometryPolygon {
+    static desc = "Builds a regular polygon geometry from a number of sides and a radius.";
     constructor() {
         this.addInput("sides", "number");
         this.addInput("radius", "number");
@@ -45291,6 +45333,7 @@ LiteGraph.registerNodeType("geometry/polygon", LGraphGeometryPolygon);
 
 
 class LGraphGeometryExtrude {
+    static desc = "Extrudes a 2D shape geometry along an offset, with optional top and bottom caps.";
     constructor() {
         this.addInput("", "geometry");
         this.addOutput("", "geometry");
@@ -46460,6 +46503,7 @@ LiteGraph.packs.open({
     id: "litegraph/glfx",
     version: LiteGraph.VERSION,
     title: "WebGL effects",
+    description: "WebGL post effects on textures: lens, depth of field, bokeh, vignette and a generic effect.",
     builtin: true
 });
 
@@ -47278,6 +47322,7 @@ LiteGraph.packs.open({
     id: "litegraph/midi",
     version: LiteGraph.VERSION,
     title: "MIDI",
+    description: "Web MIDI: device input and output, events, filters, generators and playback.",
     builtin: true
 });
 
@@ -48967,6 +49012,7 @@ LiteGraph.packs.open({
     id: "litegraph/audio",
     version: LiteGraph.VERSION,
     title: "Audio",
+    description: "Web Audio: sources, oscillators, filters, gain, delay, reverb, analysers and the destination, wired as an audio graph.",
     builtin: true
 });
 
@@ -50520,6 +50566,7 @@ LiteGraph.packs.open({
     id: "litegraph/network",
     version: LiteGraph.VERSION,
     title: "Network",
+    description: "Browser network clients: WebSocket, HTTP request and WebRTC.",
     builtin: true
 });
 
@@ -51105,6 +51152,7 @@ LiteGraph.packs.open({
     id: "litegraph/objects",
     version: LiteGraph.VERSION,
     title: "Objects",
+    description: "Plain JavaScript objects: read and set properties, keys, merge, evaluate and inspect.",
     builtin: true
 });
 
@@ -52080,6 +52128,7 @@ LiteGraph.packs.open({
     id: "litegraph/libraries",
     version: LiteGraph.VERSION,
     title: "Libraries",
+    description: "Load JavaScript libraries from a CDN and register them for other nodes.",
     builtin: true
 });
 
@@ -52437,6 +52486,7 @@ LiteGraph.packs.open({
     id: "litegraph/html",
     version: LiteGraph.VERSION,
     title: "HTML",
+    description: "DOM nodes: select elements, read and set attributes and content, listen to DOM events.",
     builtin: true
 });
 
@@ -54589,6 +54639,7 @@ LiteGraph.packs.open({
     id: "litegraph/watch",
     version: LiteGraph.VERSION,
     title: "Watch",
+    description: "The value, text and tree displays of the basic/watch node (registers no node types).",
     builtin: true
 });
 
@@ -55013,6 +55064,7 @@ LiteGraph.packs.open({
     id: "litegraph/meta",
     version: LiteGraph.VERSION,
     title: "LiteGraph",
+    description: "Nodes that expose LiteGraph itself to a graph: the library object and the current graph.",
     builtin: true
 });
 
@@ -55108,6 +55160,7 @@ LiteGraph.packs.open({
     id: "litegraph/socketio",
     version: LiteGraph.VERSION,
     title: "Socket.IO",
+    description: "Socket.IO client for the browser and Node.js.",
     builtin: true
 });
 
@@ -55334,6 +55387,7 @@ LiteGraph.packs.open({
     id: "litegraph/others",
     version: LiteGraph.VERSION,
     title: "Others",
+    description: "Default node suggestions per slot type for the search box (registers no node types).",
     builtin: true
 });
 

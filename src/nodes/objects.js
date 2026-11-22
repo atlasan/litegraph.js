@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/objects" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/objects", version: LiteGraph.VERSION, title: "Objects", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/objects", version: LiteGraph.VERSION, title: "Objects", description: "Plain JavaScript objects: read and set properties, keys, merge, evaluate and inspect.", builtin: true });
 
 // EG METHOD
 

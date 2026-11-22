@@ -20,3 +20,6 @@ coverage/*
 
 # Claude Code local settings
 .claude/
+
+# generated node reference (npm run docs:nodes); committing it is roadmap decision D9
+/docs/nodes/

@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/others" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/others", version: LiteGraph.VERSION, title: "Others", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/others", version: LiteGraph.VERSION, title: "Others", description: "Default node suggestions per slot type for the search box (registers no node types).", builtin: true });
 
 /* in types :: run in console :: var s=""; LiteGraph.slot_types_in.forEach(function(el){s+=el+"\n";}); console.log?.(s); */
 

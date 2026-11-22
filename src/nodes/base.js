@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/basic" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/basic", version: LiteGraph.VERSION, title: "Basic", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/basic", version: LiteGraph.VERSION, title: "Basic", description: "Constants, variables, watches, arrays, JSON and console helpers, scripts: the everyday data nodes.", builtin: true });
 
 class Time {
 

@@ -5,7 +5,7 @@ import { CurveEditor } from "../curveeditor.js";
 
 // built-in pack: node types registered below belong to "litegraph/gltextures" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/gltextures", version: LiteGraph.VERSION, title: "WebGL textures", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/gltextures", version: LiteGraph.VERSION, title: "WebGL textures", description: "WebGL texture nodes: load, filter, mix, blur, warp and preview textures on the GPU.", builtin: true });
 
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";

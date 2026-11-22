@@ -40,7 +40,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-03 | Streamed partial output into node bodies | P7 | widget | M | none | seed |
 | USE-04 | Publish a saved graph as an endpoint or MCP tool | P7 P8 | runtime | M | ref | sketched |
 | USE-05 | Editor / manager / runner application split | P8 | app | M | ref | seed |
-| USE-06 | Node reference generated from the registry, searchable by agents (→ FLW-23) | P9 P10 | ext | S | ref | seed |
+| USE-06 | Node reference generated from the registry, searchable by agents (→ FLW-23) | P9 P10 | ext | S | ref | promoted |
 | USE-07 | Recent-nodes palette | P10 | ext | S | ref | seed |
 | USE-08 | Code-generation targets (LangGraph, JS, server steps) | P6 P7 P8 | io | L | adapt | seed |
 | USE-09 | Headless-Chromium smoke test of built bundles in the gate | P10 | runtime | S | none | seed |
@@ -299,8 +299,8 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 | FLW-19 | Zones: paired frame nodes for loops, caches and per-frame state | P2 P3 | ext | L | ref | seed | Blender zones, vvvv regions |
 | FLW-20 | Completion and error side channel: Catch and Complete event nodes | P8 P5 | node | S | adapt | seed | Node-RED (Apache-2.0); `node-error` |
 | FLW-21 | Scheduled parameter automation: value + time ramps | P4 P2 | node | M | — | seed | Web Audio AudioParam |
-| FLW-22 | Examples library: a manifest with flow categories and profiles, a Demo menu built from it, a test that runs every example ([card](cards/FLW-22-node-reference-and-examples.md)) | P9 P10 | app | M | — | sketched | Audit finding 11; CFY-43 |
-| FLW-23 | Node reference per library, generated from `describeNodeType`, with pack descriptions and usage | P9 P10 | app | S | — | sketched | USE-06; audit finding 12 |
+| FLW-22 | Examples library: a manifest with flow categories and profiles, a Demo menu built from it, a test that runs every example ([card](cards/FLW-22-node-reference-and-examples.md)) | P9 P10 | app | M | — | promoted | Audit finding 11; CFY-43; [plan](../plans/2026-11-22-flows-reference-examples.md) |
+| FLW-23 | Node reference per library, generated from `describeNodeType`, with pack descriptions and usage | P9 P10 | app | S | — | promoted | USE-06; audit finding 12; [plan](../plans/2026-11-22-flows-reference-examples.md) |
 | FLW-24 | Profile-aware palette and new-graph templates | P10 P9 | ext | S | — | seed | `src/palette.js`; pack `templates[]` |
 
 ## Repository tooling (`DEV`)

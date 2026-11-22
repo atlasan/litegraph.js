@@ -18,7 +18,9 @@ Short operational notes for contributors and coding agents. Keep this file refer
 ## Workflow
 
 - **Branches:**
-  - `LG/dev` is the progressive integration branch; cut `LG/wave<N>_<topic>` branches from it and merge them back.
+  - `LG/dev` is the progressive integration branch.
+  - Parallel work runs on temporary `LG/dev_<topic>` branches cut from it and merged back; it gets a named track on the roadmap, not a wave number.
+  - Waves (`LG/wave<N>_<topic>`) are milestones with a build and verification pass.
   - `master` changes only through reviewed PRs.
 - **Gate:** run `npm run check` before every commit that touches code. It runs lint, all 12 builds, strict type consumers, Jest, the node:test integration tests and the package check.
 - **Generated output:** `build/` and `build_node/` are committed. Regenerate them with `npm run build` and commit them separately (`build: regenerate distributions ...`) after the `fix:` / `feat:` / `docs:` commit.

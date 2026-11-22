@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/math3d" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/math3d", version: LiteGraph.VERSION, title: "Math 3D", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/math3d", version: LiteGraph.VERSION, title: "Math 3D", description: "3D math on gl-matrix: vectors, quaternions, rotations and 4×4 matrices.", builtin: true });
 
 const MATH3D_DEG2RAD = Math.PI / 180;
 const MATH3D_RAD2DEG = 180 / Math.PI;
@@ -16,6 +16,7 @@ function isNumberArray(value, minLength) {
 }
 
 class Math3DMat4 {
+    static desc = "Builds a 4×4 matrix from translation, rotation (Euler, in degrees by default) and scale.";
 
     static title = "mat4";
 

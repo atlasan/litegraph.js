@@ -1,6 +1,6 @@
 // built-in pack: node types registered below belong to "litegraph/nodejs-network" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/nodejs-network", version: LiteGraph.VERSION, title: "Node.js network", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/nodejs-network", version: LiteGraph.VERSION, title: "Node.js network", description: "Node.js servers: WebSocket, Socket.IO, OSC and UDP (runner and Node.js only).", builtin: true });
 
 // -- server only libraries --
 LiteGraph.LibraryManager.registerLibrary({

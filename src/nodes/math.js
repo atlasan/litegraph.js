@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/math" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/math", version: LiteGraph.VERSION, title: "Math", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/math", version: LiteGraph.VERSION, title: "Math", description: "Number operations, comparisons, ranges, random and noise, formulas, interpolation and vector helpers.", builtin: true });
 
 // Converter
 class Converter {
@@ -331,6 +331,8 @@ LiteGraph.registerNodeType("math/noise", MathNoise);
 
 // generates spikes every random time
 class MathSpikes {
+    static title = "Spikes";
+    static desc = "Outputs random pulses: a smooth spike up to 1 that lasts duration seconds, every min_time to max_time seconds.";
     constructor() {
         this.addOutput("out", "number");
         this.addProperty("min_time", 1);

@@ -2412,6 +2412,8 @@ export interface NodeDefinition {
     type: string;
     title: string;
     description: string;
+    /** how to use the node (def.usage or a static usage); "" when not given */
+    usage: string;
     category: string;
     search_aliases: readonly string[];
     /** what the type needs from its runtime: "browser", "node", "webgl", "audio", "midi", "dom", "network", "sys", or custom */
