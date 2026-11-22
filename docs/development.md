@@ -113,7 +113,7 @@ Requests have the form `{type, data, requestId?}`. Replies echo `requestId`.
 | `unload_graph` | `graphId` | `graph_status: unloaded` |
 | `get_active_graphs` / `stop_all_graphs` | — | `active_graphs` |
 
-Broadcasts, without a request: `graph_status`, `active_graphs`, `console {graphId, level, message}`, and `execution_state {graphId, message}`. The message is the shared execution-state shape (`LiteGraph.ExecutionState`, protocol `v: 1`): `{v, kind: status | progress | error | reset, path, status, value?, max?, message?, time}`, one per change of a node's state; `path` is the node's path ("3:7" inside a subgraph). An editor applies one with `graph.applyExecutionState(message)`.
+Broadcasts, without a request: `graph_status`, `active_graphs`, `console {graphId, level, message}`, and `execution_state {graphId, message}`. The message is the shared execution-state shape (`LiteGraph.ExecutionState`, protocol `v: 1`): `{v, kind: status | progress | error | reset, path, status, value?, max?, message?, time}`, one per change of a node's state; `path` is the node's path ("3:7" inside a subgraph). An editor applies one with `graph.applyExecutionState(message)`; the runner page does so for the open workflow and keeps the states per workflow (`apps/runner/public/execution-view-state.js`), so a tab switch redraws them. Nodes run by actions or pulls send `running` then `done`.
 
 Edits are applied in memory only; nothing is written back to the workflow file.
 

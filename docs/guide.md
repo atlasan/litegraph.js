@@ -99,9 +99,12 @@ Mode 4 means ON_REQUEST here, and BYPASS in ComfyUI. `comfy_interop.js` maps bet
 ```js
 graph.executionModel;                 // "ancestors"
 graph.setExecutionModel("step");      // one undo step
+graph.applyExecutionModelModes();     // the model's declared default modes, one more undo step
 LiteGraph.default_execution_model = "legacy";  // opt out for new graphs
 LiteGraph.registerExecutionModel("mine", { delivery: "immediate", refresh: "ancestors", frame_pull: true });
 ```
+
+**Graph info:** with `LiteGraph.showCanvasOptions` (on in the Editor) the canvas menu offers "Options (execution: <model>)": an "Execution model" combo (one undo step) and, when nodes differ from the model's declared defaults, an "Apply the model's node modes (N)" button (another undo step; never automatic). The Editor pages set `LiteGraph.default_execution_model = "ancestors"` instead of the old flags.
 
 A project that assigns any legacy flag gets `legacy` for new graphs too, unless it sets `default_execution_model`. Refused events emit `event-dropped {node, path, reason, setting?}`.
 
@@ -342,7 +345,7 @@ node.reportProgress(2, 4);  node.setExecutionStatus("running");  node.setExecuti
 graph.applyExecutionState(messageFromRunner);
 ```
 
-`runStep` sends one `done` per node (not per step) and an `error` with the failing node's path; `start()` sends a `reset`. An error in an event chain outside a step (an action from a widget, the canvas or `trigger`) is reported the same way: `node-error {error, node, path}` on the root graph and an `error` state on the failing node; it is then rethrown to the caller. The runner broadcasts the same messages as `execution_state`. The canvas draws them: a coloured title box, an outline while running or failed, a progress bar, and the error text (setting `LiteGraph.Canvas.ExecutionOverlays`). A node or definition `icon` (a glyph or an image) is drawn before the title.
+`runStep` sends one `done` per node (not per step) and an `error` with the failing node's path; `start()` sends a `reset`. A node run by an action, a trigger or a pull (not its own turn in the step) sends `running` then `done`, once per change. An error in an event chain outside a step (an action from a widget, the canvas or `trigger`) is reported the same way: `node-error {error, node, path}` on the root graph and an `error` state on the failing node; it is then rethrown to the caller. The runner broadcasts the same messages as `execution_state`. The canvas draws them: a coloured title box, an outline while running or failed, a progress bar, and the error text (setting `LiteGraph.Canvas.ExecutionOverlays`). A node or definition `icon` (a glyph or an image) is drawn before the title.
 
 ## Links and the view
 

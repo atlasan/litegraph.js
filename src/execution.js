@@ -32,7 +32,7 @@ const RULE_DEFAULTS = Object.freeze({
 
 export class ExecutionEngine {
     static models = new Map();
-    static LEGACY = Object.freeze({ name: "legacy", legacy: true, title: "Legacy (global flags)" });
+    static LEGACY = Object.freeze({ name: "legacy", legacy: true, title: "Legacy (global flags)", description: "Documents saved without a model: the global flags (use_deferred_actions, refreshAncestorsOn*, ...) decide, as before Wave 6." });
 
     /** a global data version, stamped on links by setOutputData */
     static _version = 0;
@@ -170,7 +170,10 @@ export class ExecutionEngine {
 
     // ---- pull ------------------------------------------------------------------------------------
 
-    /** the ON_REQUEST nodes feeding a node's data inputs (direct origins) */
+    /**
+     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST nodes, and an
+     * ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
+     */
     static requestOrigins(node) {
         const graph = node.graph;
         const origins = [];
@@ -178,7 +181,9 @@ export class ExecutionEngine {
             if (input.link == null || input.type === LiteGraph.ACTION || input.type === LiteGraph.EVENT) continue;
             const link = graph.links[input.link];
             const origin = link && graph.getNodeById(link.origin_id);
-            if (origin && origin.mode === LiteGraph.ON_REQUEST && !origins.includes(origin)) origins.push(origin);
+            if (!origin || origins.includes(origin)) continue;
+            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks;
+            if (origin.mode === LiteGraph.ON_REQUEST || firstValue) origins.push(origin);
         }
         return origins;
     }

@@ -3,6 +3,7 @@ import { LiteGraph } from "../../build/litegraph.full.js";
 
 import { WebSocketClient } from './connection.js';
 import { selectGraphView } from './graph-view-state.js';
+import { recordExecutionState, applyExecutionStates } from './execution-view-state.js';
 
 /* =================== File Explorer =================== */
 class FileExplorer {
@@ -116,6 +117,7 @@ class TabManager {
       const nextId = Object.keys(this.tabs)[0];
       if (nextId && graphsStore[nextId]) {
         currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, nextId);
+        applyExecutionStates(graphViewer.graph, graphsStore[currentGraphId]);
         this.activateTab(nextId);
       } else {
         this.onLastTabClosed?.();
@@ -334,11 +336,13 @@ function handleWebSocketMessage(message) {
       graphsStore[graphId] = { serializedGraph, status };
       tabManager.addTab(graphId, graphId, status, () => {
         currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, graphId);
+        applyExecutionStates(graphViewer.graph, graphsStore[currentGraphId]);
         refreshControls();
       });
       tabManager.activateTab(graphId);
       if (currentGraphId === graphId) graphViewer.updateGraph(serializedGraph);
       else currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, graphId);
+      applyExecutionStates(graphViewer.graph, graphsStore[graphId]);
       break;
     }
     case "graph_status": {
@@ -366,8 +370,18 @@ function handleWebSocketMessage(message) {
       if (graphsStore[graphId]) graphsStore[graphId].serializedGraph = serializedGraph;
       if (currentGraphId === graphId) {
         graphViewer.updateGraph(serializedGraph);
+        applyExecutionStates(graphViewer.graph, graphsStore[graphId]);
       }
       break;
+    }
+    case "execution_state": {
+      // node status, progress and errors from the worker: drawn on the current view (title box, overlay)
+      const { graphId, message: state } = message.data;
+      if (recordExecutionState(graphsStore, graphId, state) && currentGraphId === graphId && graphViewer.graph) {
+        graphViewer.graph.applyExecutionState(state); // a reset clears every node
+        graphViewer.editor?.setDirty(true, true);
+      }
+      return; // a frequent stream: no notices or control refresh
     }
     case "console": {
       // Display console events with optional graphId filtering.
