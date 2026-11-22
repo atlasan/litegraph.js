@@ -93,18 +93,19 @@ Listed in build order (`build.py` `lib_js_files`):
   - **Declarations (Wave 6c):** `describeNodeType` normalizes `static def.execution` / `base_class.execution` (`ExecutionEngine.normalizeDeclaration`); packs declare in bulk with `LiteGraph.declareNodeExecution` at the end of their file. `ExecutionEngine.validModes` / `isModeValid` / `modeRefusal` back `changeMode` (sets `node.mode_refusal`), the panel and menus (`LiteGraph.getValidNodeModes`) and `LGraphGroup.setNodesMode` (non-enumerable `skipped`). `createNode` records `_constructed_mode`; `LGraph.add` (not while configuring) applies `declaredDefaultMode`. `emit: "immediate"` and `immediate_inputs` are honoured in `ExecutionEngine.triggerSlot`; `ticks` blocks forced re-runs. `ExecutionEngine.check` → `graph.checkExecution()` (cached on the root as `_execution_issues` for the badge provider in `setupPlatform`). `LGraphCanvas.showExecutionNotice` shows refusals.
   - **Graph info and event-run states (Wave 6d):** the canvas menu's "Options (execution: …)" (`LiteGraph.showCanvasOptions`) opens `showShowGraphOptionsPanel` with the model combo (`setExecutionModel`) and "Apply the model's node modes" (`applyExecutionModelModes`). `doExecute` (outside the node's own step turn, `graph._step_node`) and `actionDo` report `running` → `done` once per change (`_reportRunStart` / `_reportRunDone`). A pull also runs an ALWAYS origin that never ran (`requestOrigins`, first value).
   - **Reporting:** `ExecutionEngine.drop(node, reason, {setting})` emits `event-dropped` on the root (only with listeners) and warns once per node and reason. Errors from event entry points go through `LGraphNode._dispatchEvent` → `LGraph._reportNodeError` (Wave 6a).
-- **`runStep`** (`lgraph.js:472`) does three things per node, in execution order:
-  1. drains deferred actions (`executePendingActions`)
-  2. runs `doExecute()` for **ALWAYS** nodes only
-  3. emits `execution-step`
-  - On error it emits `node-error`, stops, and rethrows (`throw_errors` is true by default).
+- **`runStep`** (`lgraph.js`) increments `graph._frame`, sets `_stepping` and (outside legacy) a call id, then per node in execution order:
+  1. drains queued actions (`executePendingActions`): under `legacy` when `use_deferred_actions`, otherwise under a deferred model or when a queue exists
+  2. under `ancestors`, pulls the node's ON_REQUEST inputs (`ExecutionEngine.pull`)
+  3. runs `doExecute()` for **ALWAYS** nodes only (`graph._step_node` marks its own turn), reporting `done` once per change
+  4. emits `execution-step`
+  - On error it reports through `_reportNodeError` (`node-error` + `error` state), stops, and rethrows (`throw_errors` is true by default).
 - **Order:** topological levels, with ties broken by `priority`. Only nodes with an `onExecute` take part.
 - **Other modes:**
   - **ON_EVENT:** receives actions only.
   - **ON_TRIGGER:** executes when `triggerSlot` reaches it.
-  - **ON_REQUEST (4):** runs only through `refreshAncestors`, triggered by `getInputData(slot, true, true)` (a refresh needs `force_update`) or the `refreshAncestorsOn*` flags.
-- **Event and action slots:** `EVENT` and `ACTION` both equal -1. Actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off.
-- **Optional guards** (all off by default): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`.
+  - **ON_REQUEST (4):** under `legacy`, runs only through `refreshAncestors` (`getInputData(slot, true, true)` or the `refreshAncestorsOn*` flags); under the models, through the engine's pulls.
+- **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
+- **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
 - **Two hook systems coexist:** the CallbackHandler (about 100 hook names) and typed events. Merging them into one pipe is planned for Wave 2.
 
 ## Platform layer (Wave 1)
@@ -159,8 +160,8 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Minification:** `mini` builds are `uglifyjs -c`; the others are beautified. CJS is produced by a regex conversion in `build.py`.
 - **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
 - **Tests:**
-  - Jest: 25 files, 344 tests, in `test/`.
-  - node:test: 16 files, 88 tests, in `tools/tests/`; covers the runner, tester, network lifecycle, upstream issues and undeclared names.
+  - Jest: 43 files, 803 tests (26 golden snapshots), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
+  - node:test: 18 files, 99 tests, in `tools/tests/`; covers the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 
