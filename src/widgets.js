@@ -498,7 +498,10 @@ export function widgetImplementation(widget, types = LiteGraph.widget_types) {
         }
         return widget;
     }
-    const ownHooks = typeof widget.draw === "function" || typeof widget.mouse === "function";
+    // own properties only: a widget made by another copy of the library (a bundle next to the src
+    // modules) inherits draw from its class and must still get the class behaviour
+    const ownHooks = (Object.hasOwn(widget, "draw") && typeof widget.draw === "function")
+        || (Object.hasOwn(widget, "mouse") && typeof widget.mouse === "function");
     if (ownHooks && !LEGACY_WIDGET_TYPES.has(widget.type)) return null;
     const cls = resolve(widget.type);
     return cls ? cls.prototype : null;

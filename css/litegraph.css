@@ -751,6 +751,8 @@
     right: 10px;
 }
 .litegraph.dialog.lg-panel:focus { outline: none; }
+/* rows, sections and panes set their own display; hidden must still hide them */
+.litegraph.dialog.lg-panel [hidden] { display: none !important; }
 
 /* header */
 .litegraph.dialog.lg-panel .dialog-header {
@@ -822,7 +824,7 @@
 }
 .litegraph.dialog.lg-panel .lg-search { flex: 1 1 140px; min-width: 0; }
 .litegraph.dialog.lg-panel .lg-toolbar-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.litegraph.dialog.lg-panel .lg-sort { width: auto; }
+.litegraph.dialog.lg-panel .lg-input.lg-sort { width: auto; flex: none; }
 .litegraph.dialog.lg-panel .lg-toggle-chip {
     display: inline-flex;
     align-items: center;
@@ -974,7 +976,7 @@
     color: var(--lg-panel-muted);
     overflow: hidden;
 }
-.litegraph.dialog.lg-panel .property_name .lg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.litegraph.dialog.lg-panel .property_name .lg-label { overflow-wrap: anywhere; line-height: 1.25; }
 .litegraph.dialog.lg-panel .property:hover .property_name { color: var(--lg-panel-fg); }
 .litegraph.dialog.lg-panel .lg-modified .property_name .lg-label { color: var(--lg-panel-fg); }
 .litegraph.dialog.lg-panel .property_name .lg-scrub { cursor: ew-resize; }

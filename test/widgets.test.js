@@ -252,6 +252,10 @@ describe('widgets for value types', () => {
         expect(widgetImplementation({ type: 'color', draw() {} })).toBeNull();
         expect(widgetImplementation({ type: 'vec3', mouse() {} })).toBeNull();
         expect(widgetImplementation({ type: 'vec3' })).not.toBeNull();
+        // a widget from another copy of the library (not instanceof this BaseWidget) inherits draw: it still resolves
+        class Foreign { draw() {} onPointer() {} }
+        const foreign = Object.assign(new Foreign(), { type: 'int', options: {} });
+        expect(widgetImplementation(foreign)).toBe(NumberWidget.prototype);
         // pre-existing types keep the old rule: the class wins over an own draw
         expect(widgetImplementation({ type: 'number', draw() {} })).toBe(NumberWidget.prototype);
     });

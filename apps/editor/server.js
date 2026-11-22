@@ -16,4 +16,6 @@ app.use('/editor_tester', express.static('apps/tester'))
 app.use('/editor', express.static('apps/editor'))
 app.use('/', express.static('apps/editor'))
 
-app.listen(8000, '127.0.0.1', () => console.log('Simple server running on http://127.0.0.1:8000'))
+// PORT picks another port (for example when a second checkout already serves 8000)
+const port = Number(process.env.PORT) || 8000
+app.listen(port, '127.0.0.1', () => console.log(`Simple server running on http://127.0.0.1:${port}`))

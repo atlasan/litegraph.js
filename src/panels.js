@@ -640,10 +640,12 @@ export class PanelBuilder {
             const resolved = LiteGraph.valueTypes
                 ? LiteGraph.valueTypes.resolveEditor(info, spec.value, LiteGraph.panel_editors ?? {})
                 : { editor: "readonly", type: info.type ?? null, options: { ...info }, valueType: null };
-            const editorDef = LiteGraph.panel_editors?.[resolved.editor] ?? defaultPanelEditors()[resolved.editor] ?? defaultPanelEditors().readonly;
             const type = resolved.valueType?.name ?? resolved.type;
             const options = resolved.options;
             const readonly = !!(info.readonly || options.read_only || spec.readonly);
+            // a read-only value reads as text, not as a disabled field (switches and colours keep their look)
+            if (readonly && !["boolean", "color", "nodecolor", "readonly"].includes(resolved.editor) && !info.editor) resolved.editor = "readonly";
+            const editorDef = LiteGraph.panel_editors?.[resolved.editor] ?? defaultPanelEditors()[resolved.editor] ?? defaultPanelEditors().readonly;
 
             const row = panelEl(doc, "div", "property lg-row");
             row.dataset.property = spec.name;
@@ -1021,8 +1023,11 @@ export class PanelHost {
 /** The canvas switches and values the Canvas tab shows (keys of LGraphCanvas.optionInfo plus host additions). */
 function panelCanvasOptionKeys() {
     const listed = [...(LiteGraph.availableCanvasOptions || [])];
+    const order = Object.keys(LGraphCanvas.optionInfo ?? {});
     const extra = Object.entries(LGraphCanvas.optionInfo ?? {}).filter(([, info]) => info.always).map(([key]) => key);
-    return [...new Set([...listed, ...extra])];
+    // in the order of LGraphCanvas.optionInfo; options without metadata keep their listed order, last
+    const rank = (key) => (order.includes(key) ? order.indexOf(key) : order.length + listed.indexOf(key));
+    return [...new Set([...listed, ...extra])].sort((a, b) => rank(a) - rank(b));
 }
 
 function panelCanvasDefaults() {

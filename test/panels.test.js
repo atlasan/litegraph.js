@@ -488,8 +488,7 @@ describe('panel contributions', () => {
         });
         let panel = canvas.showShowNodePanel(node);
         expect(panel.querySelector('[data-section="x-stats"]')).toBeTruthy();
-        expect(input(rowOf(panel, 'inputs-count')).value).toBe('1');
-        expect(input(rowOf(panel, 'inputs-count')).readOnly).toBe(true);
+        expect(rowOf(panel, 'inputs-count').querySelector('.lg-readonly').textContent).toBe('1'); // read-only values read as text
         const options = canvas.showShowGraphOptionsPanel();
         expect(options.querySelector('.lg-tab-pane[data-tab="canvas"] [data-section="x-opt-extra"]')).toBeTruthy();
         dispose();
