@@ -8,7 +8,7 @@ import { SubgraphDefs } from "./subgraphdefs.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CallbackHandler, installHooks } from "./callbackhandler.js";
-import { LGraphEventTarget } from "./eventtarget.js";
+import { LGraphEventTarget, ListenerList } from "./eventtarget.js";
 import { getGlobalObject, setGlobalVariable, getGlobalVariable, isBrowser, isNode, isBun, getRuntime } from './global.js';
 import { LibraryManager } from "./librarymanager.js";
 import { CommandRegistry } from "./commands.js";
@@ -355,6 +355,21 @@ export class LiteGraphClass {
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
             this.log_error("litegraph", "event listener failed", event.type, error));
+    }
+
+    /**
+     * Sets the process-wide dispatch tap, for tracing and profiling (e.g. a per-node execution
+     * trace: phase "hook", name "onExecute", owner the node). `fn({owner, name, phase, ms, error})`
+     * runs after every hook dispatch (phase "hook", error: what the chain threw) and every typed
+     * event dispatch (phase "event", error: the first listener error). Dispatches made inside the
+     * tap are not reported, and a throwing tap is only logged. null removes it.
+     * @param {Function|null} fn
+     * @returns {Function|null} the previous tap
+     */
+    setDispatchTap(fn) {
+        const previous = ListenerList.tap;
+        ListenerList.tap = typeof fn === "function" ? fn : null;
+        return previous;
     }
 
     /** dispatch only when someone listens (no allocation otherwise) */

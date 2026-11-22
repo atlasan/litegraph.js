@@ -410,3 +410,42 @@ describe('fireHookThenEvent: hook chain, then the typed event', () => {
         expect(events).toEqual([2]);
     });
 });
+
+describe('dispatch tap (USE-34 base)', () => {
+    afterEach(() => LiteGraph.setDispatchTap(null));
+
+    test('reports hooks and typed events with owner, name, phase, ms and error', () => {
+        const graph = new LGraph();
+        const node = LiteGraph.createNode('hooks/box');
+        node.onExecute = () => {};
+        graph.add(node);
+        graph.events.on('node-added', () => { throw new Error('listener'); });
+        const records = [];
+        expect(LiteGraph.setDispatchTap((record) => records.push(record))).toBeNull();
+        graph.runStep(1);
+        graph.add(LiteGraph.createNode('hooks/box'));
+        LiteGraph.setDispatchTap(null);
+        node.processCallbackHandlers('onExecute', { def_cb: node.onExecute });
+        const execute = records.filter((r) => r.name === 'onExecute');
+        expect(execute).toHaveLength(1); // a per-node execution trace
+        expect(execute[0]).toMatchObject({ owner: node, phase: 'hook', error: null });
+        expect(typeof execute[0].ms).toBe('number');
+        const added = records.find((r) => r.name === 'node-added');
+        expect(added).toMatchObject({ owner: graph, phase: 'event' });
+        expect(added.error.message).toBe('listener');
+    });
+
+    test('a throwing hook is reported and still thrown; the tap\'s own dispatches and failures stay out', () => {
+        const node = LiteGraph.createNode('hooks/box');
+        node.onHook('onBoom', () => { throw new Error('boom'); });
+        const records = [];
+        LiteGraph.setDispatchTap((record) => {
+            records.push(record.name);
+            node.processCallbackHandlers('onInsideTap', {}); // not reported
+            throw new Error('tap failed'); // logged, never thrown to the dispatcher
+        });
+        expect(() => node.processCallbackHandlers('onBoom', {})).toThrow('boom');
+        expect(node.processCallbackHandlers('onQuiet', { def_cb: () => 3 })).toBe(3);
+        expect(records).toEqual(['onBoom', 'onQuiet']);
+    });
+});

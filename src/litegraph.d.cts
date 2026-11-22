@@ -394,6 +394,11 @@ export interface LiteGraphAPI extends CallbackHost {
     GraphInput: typeof GraphInput;
     GraphOutput: typeof GraphOutput;
     CallbackHandler: typeof CallbackHandler;
+    /**
+     * Sets the process-wide dispatch tap (null removes it): called after every hook dispatch and
+     * typed event dispatch. Dispatches made inside the tap are not reported. Returns the previous tap.
+     */
+    setDispatchTap(tap: DispatchTap | null): DispatchTap | null;
     ExecutionState: typeof ExecutionState;
     RenderLink: typeof RenderLink;
     /** link routers by name: "spline", "linear", "straight", and registered ones */
@@ -2153,8 +2158,23 @@ export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
     /** per hook name */
     callbacks_handlers: Record<string, ListenerList>;
 }
+/** One dispatch, as the dispatch tap sees it. */
+export interface DispatchRecord {
+    /** the hook host, or the event target's owner (LiteGraph, a graph, a canvas) */
+    owner: object;
+    /** the hook name or the event type */
+    name: string;
+    phase: "hook" | "event";
+    /** duration of the whole dispatch, handlers and legacy onX included */
+    ms: number;
+    /** hooks: what the chain threw; events: the first listener error; otherwise null */
+    error: unknown;
+}
+export type DispatchTap = (record: DispatchRecord) => void;
 /** The listener core shared by hooks and typed events: ordered by priority, copy-on-write. */
 export declare class ListenerList {
+    /** the process-wide dispatch tap; set it with LiteGraph.setDispatchTap */
+    static tap: DispatchTap | null;
     /** never mutated; replaced on every change */
     readonly handlers: ReadonlyArray<{ id: number; priority: number; callback: Function; data: Record<string, any> }>;
     last_id: number;

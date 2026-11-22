@@ -80,9 +80,22 @@ export class CallbackHandler {
 
     /**
      * The chain behind processCallbackHandlers (also used directly by hook hosts, see installHooks).
-     * With no registered handler it only calls the default callback.
+     * With no registered handler it only calls the default callback. A dispatch tap, when set,
+     * receives each dispatch with its duration (see ListenerList.tap).
      */
-    static run(owner, handler, name, opts, args) {
+    static run(owner, handler, name, opts, args, untapped) {
+        if (ListenerList.tap !== null && !untapped && !ListenerList.tapping) {
+            const tap = ListenerList.tap, start = ListenerList.now();
+            let error = null;
+            try {
+                return CallbackHandler.run(owner, handler, name, opts, args, true);
+            } catch (thrown) {
+                error = thrown;
+                throw thrown;
+            } finally {
+                ListenerList.report(tap, owner, name, "hook", start, error);
+            }
+        }
         const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
         const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
         if (!handlers?.length) {

@@ -16,6 +16,29 @@
  * Entries are `{id, priority, callback, data}`; `data` holds the options given at registration.
  */
 export class ListenerList {
+    /**
+     * The process-wide dispatch tap (set with `LiteGraph.setDispatchTap`): called after every hook
+     * dispatch and every typed event dispatch with `{owner, name, phase, ms, error}`. While none is
+     * set (the default), a dispatch pays one null check.
+     * @type {((record: {owner: object, name: string, phase: "hook"|"event", ms: number, error: unknown}) => void)|null}
+     */
+    static tap = null;
+    /** true while the tap runs: its own dispatches are not reported */
+    static tapping = false;
+    static now = typeof performance === "object" && typeof performance?.now === "function" ? () => performance.now() : () => Date.now();
+
+    /** Reports one dispatch to the tap. A failing tap is logged and never reaches the dispatcher. */
+    static report(tap, owner, name, phase, start, error) {
+        ListenerList.tapping = true;
+        try {
+            tap({ owner, name, phase, ms: ListenerList.now() - start, error: error ?? null });
+        } catch (tapError) {
+            console.error?.("[LG] dispatch tap failed", tapError);
+        } finally {
+            ListenerList.tapping = false;
+        }
+    }
+
     /** @type {{id: number, priority: number, callback: Function, data: object}[]} never mutated */
     handlers = [];
     last_id = 0;
@@ -123,22 +146,29 @@ export class LGraphEventTarget {
      */
     dispatch(type, detail, options = {}) {
         const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
-        this._deliver(this._listeners.get(type), event);
-        if (type !== "*") this._deliver(this._listeners.get("*"), event);
+        const tap = ListenerList.tap;
+        const start = tap !== null && !ListenerList.tapping ? ListenerList.now() : -1;
+        const error = this._deliver(this._listeners.get(type), event);
+        const wildcardError = type !== "*" ? this._deliver(this._listeners.get("*"), event) : undefined;
+        if (start >= 0) ListenerList.report(tap, this.owner, type, "event", start, error ?? wildcardError);
         return event;
     }
 
+    /** @returns {unknown} the first listener error (each one is reported through onError) */
     _deliver(list, event) {
-        if (!list?.size) return;
+        if (!list?.size) return undefined;
+        let first;
         for (const entry of list.handlers) {
             // a re-entrant dispatch may already have delivered (and removed) a once listener
             if (entry.data.once && !list.remove(entry.id)) continue;
             try {
                 entry.callback.call(this.owner, event);
             } catch (error) {
+                first ??= error;
                 if (this.onError) this.onError(error, event);
                 else console.error?.("[LG] event listener failed", event.type, error);
             }
         }
+        return first;
     }
 }
