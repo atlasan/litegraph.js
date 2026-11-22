@@ -652,10 +652,7 @@ export class LGraphNode {
             return link.data;
         }
 
-        // TODO Consider moving this out of here and use a single ancestorsCalculation (for each event?)
-        // CHECK THIS : used in logic/while , is ATM necessary? does this solve reading self value while executing loops ?
         if (refresh_tree) {
-            LiteGraph.log_warn("CHECK THIS", "lgraphnode", "getInputData","Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             LiteGraph.log_debug("lgraphnode", "getInputData","Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             let uIdRand = this.id+"_getInputData_forced_"+LiteGraph.uuidv4();
             let optsAncestors = {action: uIdRand, options: {action_call: uIdRand}};
@@ -989,6 +986,7 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
@@ -1023,6 +1021,28 @@ export class LGraphNode {
         }
     }
     /**
+     * Runs an event entry point (an action, a trigger or an execution started outside a step).
+     * An error that leaves the outermost entry is reported on the root graph as `node-error`, with
+     * an `error` execution state on the failing node, the same way `runStep` reports it (B9); it is
+     * then rethrown to the caller, as before.
+     */
+    _dispatchEvent(run) {
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
+        try {
+            return run();
+        } catch (error) {
+            if (error && typeof error === "object" && !error.node) {
+                try { error.node = this; } catch { /* a frozen error keeps its fields */ }
+            }
+            const root = this.graph?.rootGraph ?? this.graph;
+            try { root?._reportNodeError(error); } catch (reportError) { LiteGraph.log_error("lgraphnode", "event error report failed", reportError); }
+            throw error;
+        } finally {
+            LiteGraph._dispatch_depth--;
+        }
+    }
+
+    /**
      * retrocompatibility :: old doExecute
      * @method doExecute
      * @param {*} param
@@ -1040,6 +1060,7 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.actionDo(action, param, options, action_slot));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
@@ -1059,6 +1080,9 @@ export class LGraphNode {
             this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
+            if (error && typeof error === "object" && !error.node) {
+                try { error.node = this; } catch { /* a frozen error keeps its fields */ }
+            }
             throw error;
         } finally {
             graph.nodes_actioning[this.id] = previousAction || false;
@@ -1106,6 +1130,7 @@ export class LGraphNode {
         if (!this.outputs) {
             return;
         }
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));
         var output = null;
         if(slot === null) {
             LiteGraph.log_error("lgraphnode", "triggerSlot","wrong slot",slot);

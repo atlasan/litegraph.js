@@ -87,18 +87,11 @@ class EvSequence {
 
     onAction(action, param, options) {
         if (this.outputs) {
-            options = options || {};
+            // each output gets its own call id on a copy: the caller's options are not changed (B4)
+            const base = options?.action_call ?? this.id + "_" + (action ? action : "action");
             for (var i = 0; i < this.outputs.length; ++i) {
-                // console.debug(this.title, "step", i);
-                // needs more info about this...
-                if (options.action_call)
-                    // CREATE A NEW ID FOR THE ACTION
-                    options.action_call = options.action_call + "_seq_" + i + "_" + Math.floor(Math.random() * 9999);
-                else
-                    options.action_call =
-                        this.id + "_" + (action ? action : "action") +
-                        "_seq_" + i + "_" + Math.floor(Math.random() * 9999);
-                this.triggerSlot(i, param, null, options);
+                const call = { ...options, action_call: base + "_seq_" + i + "_" + Math.floor(Math.random() * 9999) };
+                this.triggerSlot(i, param, null, call);
             }
         }
     }
@@ -149,9 +142,9 @@ class WaitAll {
         for (var i = 0; i < this.ready.length; ++i)
             if (!this.ready[i])
                 return;
-        // pass
+        // pass, with the payload of the completing event (B15)
         this.reset();
-        this.triggerSlot(0);
+        this.triggerSlot(0, param, null, options);
     }
 
     reset() {
@@ -217,10 +210,10 @@ class Stepper {
         this.setOutputData(0, this.properties.index);
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (action == "reset") this.properties.index = 0;
         else if (action == "step") {
-            this.triggerSlot(this.properties.index + 1, param);
+            this.triggerSlot(this.properties.index + 1, param, null, options);
             var n = this.outputs ? this.outputs.length - 1 : 0;
             this.properties.index = (this.properties.index + 1) % n;
         }
@@ -521,8 +514,8 @@ class SemaphoreEvent {
         this.boxcolor = this._ready ? "#9F9" : "#FA5";
     }
 
-    onAction(action) {
-        if (action == "go") this.triggerSlot(this._ready ? 0 : 1);
+    onAction(action, param, options) {
+        if (action == "go") this.triggerSlot(this._ready ? 0 : 1, param, null, options);
         else if (action == "green") this._ready = true;
         else if (action == "red") this._ready = false;
     }
@@ -547,10 +540,10 @@ class OnceEvent {
         });
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (action == "in" && !this._once) {
             this._once = true;
-            this.triggerSlot(0, param);
+            this.triggerSlot(0, param, null, options);
         } else if (action == "reset") this._once = false;
     }
 }

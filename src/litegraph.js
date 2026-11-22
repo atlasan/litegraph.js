@@ -182,6 +182,7 @@ export class LiteGraphClass {
     throw_errors = true;
     allow_scripts = false; // nodes should be check this value before executing unsafe code :: does not prevent anything in the main library, implement in nodes :: if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits
     use_deferred_actions = true; // executes actions during the graph execution flow
+    _dispatch_depth = 0; // runtime: nesting of runStep and event entry points (node-error reporting)
     registered_node_types = {}; // nodetypes by string
     node_types_by_file_extension = {}; // used for dropping files in the canvas
     Nodes = {}; // node types by classname
@@ -271,7 +272,6 @@ export class LiteGraphClass {
     ensureNodeSingleAction = false; // OLD this will prevent nodes to be executed more than once for action call!
     preventAncestorRecalculation = false; // OLD(?) when calculating the ancestors, set a flag to prevent recalculate the subtree
 
-    allowMultiOutputForEvents = false; // being events, it is strongly reccomended to use them sequentually, one by one
 
     reprocess_slot_while_node_configure = false; // reprocess inputs and output node slots comparing by name, will fix index changes, works on dynamics
 

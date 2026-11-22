@@ -1,6 +1,20 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased: Wave 6 (events and execution models)
+
+Plan: `agents/plans/2026-11-22-events-execution.md`.
+
+## Fixed
+
+* **Errors in event chains are reported (B9):** an action, trigger or execution that throws outside a step emits `node-error {error, node, path}` on the root graph and sets the failing node's execution state to `error`, as `runStep` does. The error is still rethrown to the caller.
+* **`onStart` reaches every node that can run (B10),** not only ALWAYS nodes. NEVER nodes still get none.
+* **Inner graphs share their parent's clock (B13):** a subgraph's `starttime` is the root's, so `getTime()`-based nodes inside agree with the outside, and the first inner step no longer measures from the clock origin.
+* **ForEach `break` stops the loop (B5),** and ForEach no longer reads its `do` action input as data.
+* **Payload and call options are forwarded (B15)** by WaitAll (the completing event's payload), Semaphore, Once and Stepper. Sequence no longer changes its caller's `options` object.
+* **Six `html/*` nodes start in ON_EVENT mode (B11)** (`event_listener`, `event_listener_remove`, `create_element`, `append_child`, `remove_element`, `apply_element_css`); they set the undefined `LiteGraph.ON_ACTION` and so ran every step.
+* A forced pull (`getInputData(slot, true, true)`) no longer logs a "CHECK THIS" warning on every call; the unused `LiteGraph.allowMultiOutputForEvents` flag is gone (B16; `allow_multi_output_for_events` is the real one).
+
 # 0.18.0-dev.1 (2026-11-22): first dev pre-release
 
 This is a pre-release for testers, tagged `v0.18.0-dev.1`; nothing is published to npm. It contains roadmap Waves 0–5 (sections below, newest first):

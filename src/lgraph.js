@@ -490,7 +490,8 @@ export class LGraph {
             this.processCallbackHandlers("onPlayEvent",{
                 def_cb: this.onPlayEvent
             });
-            this.sendEventToAllNodes("onStart");
+            // every node that can run gets onStart, not only ALWAYS nodes (B10)
+            this.sendEventToAllNodes("onStart", undefined, [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST]);
         } catch (error) {
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph start cleanup failed", cleanupError); }
             throw error;
@@ -499,6 +500,7 @@ export class LGraph {
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
+        this._shareTiming();
         if (!this._subgraph_node) this.reportExecutionState(null, "reset");
 
         const onAnimationFrame = () => {
@@ -528,6 +530,31 @@ export class LGraph {
                     def_cb: this.onAfterStep
                 });
             }, interval);
+        }
+    }
+
+    /**
+     * Reports a node error: `node-error {error, node, path}` on this graph and an `error` execution
+     * state on the failing node. The innermost failing node travels with the error (`error.node`,
+     * set by doExecute and actionDo), so outer graphs report it with its path. Used by `runStep`
+     * and by event entry points outside a step.
+     */
+    _reportNodeError(error) {
+        const failing = typeof error?.node?.getPath === "function" ? error.node : null;
+        this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
+        if (failing?.graph && failing.execution_state?.status !== "error") {
+            failing.graph.reportExecutionState(failing, "error", { message: error?.message ?? String(error) });
+        }
+    }
+
+    /** gives the inner graphs of subgraph and function nodes this graph's clock origin (B13) */
+    _shareTiming() {
+        for (const node of this._nodes) {
+            const inner = node.subgraph;
+            if (!inner || inner === this) continue;
+            inner.starttime = this.starttime;
+            inner.last_update_time = this.last_update_time;
+            inner._shareTiming();
         }
     }
 
@@ -614,6 +641,12 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        // an inner graph keeps its parent's clock origin (B13)
+        const parent = this._subgraph_node?.graph;
+        if (parent && this.starttime !== parent.starttime) {
+            this.starttime = parent.starttime;
+            this.last_update_time = Math.max(this.last_update_time, parent.last_update_time);
+        }
         const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
         const resetExecutionState = () => {
@@ -622,6 +655,7 @@ export class LGraph {
             this.node_ancestorsCalculated = [];
             this.nodes_executedAction = [];
         };
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         try {
             for (let step = 0; step < num; step++) {
                 // Changes made during one cycle take effect in the following cycle.
@@ -647,16 +681,12 @@ export class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
-            // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
-            const failing = typeof error?.node?.getPath === "function" ? error.node : null;
-            this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
-            if (failing?.graph && failing.execution_state?.status !== "error") {
-                failing.graph.reportExecutionState(failing, "error", { message: error?.message ?? String(error) });
-            }
+            this._reportNodeError(error);
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
         } finally {
+            LiteGraph._dispatch_depth--;
             const now = LiteGraph.getTime();
             this.execution_time = 0.001 * Math.max(1, now - start);
             this.globaltime += this.execution_time;
@@ -1000,7 +1030,8 @@ export class LGraph {
         const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
         const errors = [];
         for (const node of nodes) {
-            if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
+            if (node.graph !== this) continue;
+            if (Array.isArray(mode) ? !mode.includes(node.mode) : (mode != null && node.mode !== mode)) continue;
             try {
                 if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
                     try { node.sendEventToAllNodes(eventname, params, mode); }

@@ -82,7 +82,7 @@ LiteGraph.registerNodeType("math/my_sum", Sum);
 | `ON_EVENT` (1) | Only when an action reaches it |
 | `NEVER` (2) | Never |
 | `ON_TRIGGER` (3) | When an event arrives on its trigger input |
-| `ON_REQUEST` (4) | Only when a downstream node asks for fresh input: `getInputData(slot, false, true)` |
+| `ON_REQUEST` (4) | Only when a downstream node asks for fresh input: `getInputData(slot, true, true)` (`force_update` re-runs the producer, `refresh_tree` first refreshes its ancestors) |
 
 Mode 4 means ON_REQUEST here, and BYPASS in ComfyUI. `comfy_interop.js` maps between the two.
 
@@ -300,7 +300,7 @@ node.reportProgress(2, 4);  node.setExecutionStatus("running");  node.setExecuti
 graph.applyExecutionState(messageFromRunner);
 ```
 
-`runStep` sends one `done` per node (not per step) and an `error` with the failing node's path; `start()` sends a `reset`. The runner broadcasts the same messages as `execution_state`. The canvas draws them: a coloured title box, an outline while running or failed, a progress bar, and the error text (setting `LiteGraph.Canvas.ExecutionOverlays`). A node or definition `icon` (a glyph or an image) is drawn before the title.
+`runStep` sends one `done` per node (not per step) and an `error` with the failing node's path; `start()` sends a `reset`. An error in an event chain outside a step (an action from a widget, the canvas or `trigger`) is reported the same way: `node-error {error, node, path}` on the root graph and an `error` state on the failing node; it is then rethrown to the caller. The runner broadcasts the same messages as `execution_state`. The canvas draws them: a coloured title box, an outline while running or failed, a progress bar, and the error text (setting `LiteGraph.Canvas.ExecutionOverlays`). A node or definition `icon` (a glyph or an image) is drawn before the title.
 
 ## Links and the view
 

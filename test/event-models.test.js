@@ -137,7 +137,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(c.num).toBe(deferred ? 999 : 3);
     });
 
-    test.failing('B5: ForEach break stops the loop', () => {
+    test('B5: ForEach break stops the loop', () => {
         const g = setup(preset);
         const src = make(g, 'evm/src');
         const arr = make(g, 'basic/const');
@@ -162,7 +162,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(LiteGraph.registered_node_types['evm/tag'].order).toEqual([0, 1, 2]);
     });
 
-    test.failing('B4: Sequence does not mutate its caller options', () => {
+    test('B4: Sequence does not mutate its caller options', () => {
         const { seq } = sequenceGraph(preset);
         const options = { action_call: 'caller' };
         seq.onAction('', null, options);
@@ -276,7 +276,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(r.log.length).toBe(1);
     });
 
-    test.failing('B15: WaitAll forwards the payload of the completing event', () => {
+    test('B15: WaitAll forwards the payload of the completing event', () => {
         const g = setup(preset);
         const a = make(g, 'evm/src');
         const b = make(g, 'evm/src');
@@ -359,7 +359,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(r.log.length).toBe(0);
     });
 
-    test.failing('B9: an action that throws outside a step reports node-error', () => {
+    test('B9: an action that throws outside a step reports node-error', () => {
         LiteGraph.throw_errors = true;
         const g = setup(preset);
         LiteGraph.use_deferred_actions = false;
@@ -373,7 +373,7 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         expect(b.execution_state?.status).toBe('error');
     });
 
-    test.failing('B10: onStart reaches every node that is not NEVER', () => {
+    test('B10: onStart reaches every node that is not NEVER', () => {
         const g = setup(preset);
         for (const mode of [0, 1, 2, 3, 4]) make(g, 'evm/starter', {}, mode);
         g.start(1000); g.stop();
@@ -390,10 +390,56 @@ describe.each(Object.keys(PRESETS))('flag preset %s', (preset) => {
         else expect(r.log.length).toBe(1);
     });
 
-    test.failing('B13: an inner graph shares its parent timing', () => {
+    test('B13: an inner graph shares its parent timing', () => {
         const g = setup(preset);
         const sg = make(g, 'graph/subgraph');
         g.start(1000); g.stop();
         expect(sg.subgraph.starttime).toBe(g.starttime);
+    });
+});
+
+describe('reporting and flag-independent fixes', () => {
+    test('B9: an event error inside a subgraph is reported once on the root, with the inner path', () => {
+        const g = setup('event_based');
+        const errors = [];
+        g.events.on('node-error', (e) => errors.push(e.detail.path));
+        const sg = make(g, 'graph/subgraph');
+        const gi = LiteGraph.createNode('graph/input');
+        sg.subgraph.add(gi);
+        gi.setProperty('name', 'go'); gi.setProperty('type', 'action');
+        const boom = LiteGraph.createNode('evm/boom');
+        sg.subgraph.add(boom);
+        gi.connect(0, boom, 0);
+        const src = make(g, 'evm/src');
+        src.connect(0, sg, sg.findInputSlot('go'));
+        expect(() => src.triggerSlot(0)).toThrow('boom');
+        expect(errors).toEqual([boom.getPath()]);
+        expect(boom.execution_state?.status).toBe('error');
+        expect(LiteGraph._dispatch_depth).toBe(0);
+    });
+
+    test('B9: an error inside a step is reported once', () => {
+        const g = setup('event_based');
+        LiteGraph.throw_errors = false;
+        const errors = [];
+        g.events.on('node-error', (e) => errors.push(e.detail.path));
+        const timer = make(g, 'events/timer');
+        const boom = make(g, 'evm/boom');
+        timer.connect(0, boom, 0);
+        g.runStep(1);
+        expect(errors).toEqual([boom.getPath()]);
+        expect(LiteGraph._dispatch_depth).toBe(0);
+    });
+
+    test('B16: the unused allowMultiOutputForEvents flag is gone and a forced pull does not warn', () => {
+        expect('allowMultiOutputForEvents' in LiteGraph).toBe(false);
+        const warn = jest.spyOn(LiteGraph, 'log_warn');
+        const g = setup('defaults');
+        const c = make(g, 'basic/const', { value: 2 });
+        const s = make(g, 'evm/pullsink');
+        c.connect(0, s, 0);
+        step(g);
+        expect(s.seen).toEqual([2]);
+        expect(warn).not.toHaveBeenCalled();
     });
 });

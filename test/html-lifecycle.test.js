@@ -80,3 +80,8 @@ test('HTML overlays retain a visible content area and align below scaled slots',
     expect(node._el.style.left).toBe('50px');
     expect(node._el.style.height).toBe('50px');
 });
+
+test.each(['html/event_listener', 'html/event_listener_remove', 'html/create_element', 'html/append_child', 'html/remove_element', 'html/apply_element_css'])('B11: %s starts in ON_EVENT mode', (type) => {
+    expect(LiteGraph.ON_ACTION).toBeUndefined();
+    expect(LiteGraph.createNode(type).mode).toBe(LiteGraph.ON_EVENT);
+});
