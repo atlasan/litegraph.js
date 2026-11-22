@@ -78,19 +78,26 @@ class ListenerList {
             callback,
             data
         };
-        if (data.signal?.aborted) return entry.id;
+        const signal = data.signal;
+        if (signal?.aborted) return entry.id;
+        if (signal?.addEventListener) {
+            const onAbort = () => this.remove(entry.id);
+            signal.addEventListener("abort", onAbort, {
+                once: true
+            });
+            // detached on removal, so a long-lived signal does not keep removed listeners alive
+            entry.detach = () => signal.removeEventListener?.("abort", onAbort);
+        }
         this.handlers = [...this.handlers, entry].sort((a, b) => b.priority - a.priority);
-        data.signal?.addEventListener?.("abort", () => this.remove(entry.id), {
-            once: true
-        });
         return entry.id;
     }
 
     /** @returns {boolean} true if the entry was there */
     remove(id) {
-        const next = this.handlers.filter((entry) => entry.id !== id);
-        if (next.length === this.handlers.length) return false;
-        this.handlers = next;
+        const entry = this.handlers.find((item) => item.id === id);
+        if (!entry) return false;
+        this.handlers = this.handlers.filter((item) => item !== entry);
+        entry.detach?.();
         return true;
     }
 
@@ -141,7 +148,9 @@ class LGraphEventTarget {
         if (options.signal?.aborted) return () => {};
         let list = this._listeners.get(type);
         if (!list) this._listeners.set(type, list = new ListenerList());
-        const id = list.add(listener, options);
+        const id = list.add(listener, {
+            ...options
+        });
         return () => {
             list.remove(id);
         };
@@ -182,7 +191,8 @@ class LGraphEventTarget {
     _deliver(list, event) {
         if (!list?.size) return;
         for (const entry of list.handlers) {
-            if (entry.data.once) list.remove(entry.id);
+            // a re-entrant dispatch may already have delivered (and removed) a once listener
+            if (entry.data.once && !list.remove(entry.id)) continue;
             try {
                 entry.callback.call(this.owner, event);
             } catch (error) {
@@ -241,7 +251,17 @@ class CallbackHandler {
             ...(opts && typeof opts === "object" ? opts : {})
         };
         if (data.once) data.call_once = true;
-        return (this.callbacks_handlers[name] ??= new ListenerList()).add(callback, data);
+        let list = this.callbacks_handlers[name];
+        // code that replaced an entry with a plain {last_id, handlers} object keeps working
+        if (!(list instanceof ListenerList)) list = this.callbacks_handlers[name] = Object.assign(new ListenerList(), list);
+        return list.add(callback, data);
+    }
+
+    /** Registers a handler and returns its disposer. */
+    onHook(name, callback, opts) {
+        const id = this.registerCallbackHandler(name, callback, opts);
+        if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
+        return () => this.unregisterCallbackHandler(name, id);
     }
 
     /** @returns {boolean} true if the handler was registered */
@@ -325,8 +345,8 @@ class CallbackHandler {
                 runDefault();
                 if (stopped) break;
             }
-            // unregistered before the call, so a re-entrant dispatch cannot run it again
-            if (entry.data.call_once) handler.unregisterCallbackHandler(name, entry.id);
+            // unregistered before the call; skipped when a re-entrant dispatch already ran it
+            if (entry.data.call_once && !handler.unregisterCallbackHandler(name, entry.id)) continue;
             call(entry.callback, {
                 name,
                 id: entry.id,
@@ -362,39 +382,54 @@ class CallbackHandler {
 /**
  * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
  * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
- * The CallbackHandler is created on first registration; dispatching without one only calls `onX`.
+ * The CallbackHandler is created when first needed: reading `cb_handler` or registering a handler.
+ * Dispatching while there is none only calls `onX`.
  * @param {Function} Class
  */
 function installHooks(Class) {
+    const proto = Class.prototype;
+    Object.defineProperty(proto, "cb_handler", {
+        configurable: true,
+        /** this object's CallbackHandler (created on first read; assignable, as before) */
+        get() {
+            return (this._cb_handler ||= new CallbackHandler(this));
+        },
+        set(handler) {
+            this._cb_handler = handler;
+        },
+    });
     const methods = {
         /** @returns {CallbackHandler} this object's handler registry (created once) */
         callbackhandler_setup() {
-            return (this.cb_handler ||= new CallbackHandler(this));
+            return this.cb_handler;
         },
         registerCallbackHandler(name, callback, opts) {
-            return this.callbackhandler_setup().registerCallbackHandler(name, callback, opts);
+            return this.cb_handler.registerCallbackHandler(name, callback, opts);
         },
         unregisterCallbackHandler(name, h_id) {
-            return this.cb_handler ? this.cb_handler.unregisterCallbackHandler(name, h_id) : false;
+            return this._cb_handler ? this._cb_handler.unregisterCallbackHandler(name, h_id) : false;
         },
         processCallbackHandlers(name, opts, ...args) {
-            return CallbackHandler.run(this, this.cb_handler, name, opts, args);
+            const handler = this._cb_handler;
+            // an overridden processCallbackHandlers on the handler (e.g. a tracing wrapper) still runs
+            if (handler && handler.processCallbackHandlers !== CallbackHandler.prototype.processCallbackHandlers) {
+                return handler.processCallbackHandlers(name, opts, ...args);
+            }
+            return CallbackHandler.run(handler ? handler.ob_ref : this, handler, name, opts, args);
         },
         hasCallbackHandlers(name) {
-            return !!this.cb_handler?.hasCallbackHandlers(name);
+            return !!this._cb_handler?.hasCallbackHandlers(name);
         },
         /**
          * Registers a hook handler and returns its disposer.
          * @returns {() => boolean} unregisters the handler
          */
         onHook(name, callback, opts) {
-            const id = this.registerCallbackHandler(name, callback, opts);
-            if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
-            return () => this.unregisterCallbackHandler(name, id);
+            return this.cb_handler.onHook(name, callback, opts);
         },
     };
     for (const [key, value] of Object.entries(methods)) {
-        Object.defineProperty(Class.prototype, key, {
+        Object.defineProperty(proto, key, {
             value,
             writable: true,
             configurable: true
@@ -669,7 +704,6 @@ class LiteGraphClass {
 
     log_methods = ['error', 'warn', 'info', 'log', 'debug'];
 
-    cb_handler = false;
     debug = true; // enable/disable logging :: in this.debug_level is stored the actual numeric value
     debug_level = 2; // set via this.logging_set_level
 
@@ -18644,10 +18678,11 @@ class LGraphCanvas {
                 let type = info && info !== null ? info.type : "string";
 
                 // in case the user wants control over the side panel widget
-                const handled = node.processCallbackHandlers("onAddPropertyToPanel", {
+                const r = node.processCallbackHandlers("onAddPropertyToPanel", {
                     def_cb: node.onAddPropertyToPanel
                 }, pName, panel, value, info, fUpdate);
-                if (CallbackHandler.valueOf(handled)) {
+                // any truthy legacy result (an element, too) means handled; a {return_value} object counts by its value
+                if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) {
                     continue;
                 }
                 panel.addWidget(info.widget || type, pName, value, info, fUpdate);
@@ -20113,7 +20148,6 @@ class LGraphNode {
         return LGraphNode._default_sizes.has(this.size);
     }
 
-    cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
 
