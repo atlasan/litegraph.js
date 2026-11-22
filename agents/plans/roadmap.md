@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 core done in `LG/dev`; flows track done in `LG/dev`
+> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs (deferred items on `LG/dev_events_deferred`); flows track done in `LG/dev`
 
 This is the single place for the current status of planned work.
 
@@ -34,7 +34,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
-| 7 | Event integration (one core, two faces) | **Core done**, merged into `LG/dev` from `LG/wave7_events` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API; ordering helper, tap and hook typing deferred; see [Wave 7](#wave-7-event-integration-core-done) |
+| 7 | Event integration (one core, two faces) | **Core done**, merged into `LG/dev` from `LG/wave7_events` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-core-done) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -181,11 +181,11 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 | Part | Items | Status |
 |---|---|---|
-| 7a | Characterization: hook semantics, results with and without handlers, E1/E2 regressions, a benchmark baseline (`test/hook-pipeline.test.js`) | **Done**; the per-site snapshot and the order golden are deferred |
+| 7a | Characterization: hook semantics, results with and without handlers, E1/E2 regressions, a benchmark baseline (`test/hook-pipeline.test.js`); the per-site result snapshot (`test/hook-results.test.js`) and the order golden (`test/hook-order.test.js`) | **Done** (snapshot and golden on `LG/dev_events_deferred`) |
 | 7b | `ListenerList` (the plan's `ListenerStore`) and the `installHooks` mixin; copy-on-write, error isolation, fast path, disposers | **Done** |
-| 7c | `CallbackHandler.is` / `handled` / `valueOf` (the plan's `hookResult`) on 21 sites, each keeping its rule; panel hook bypasses; E12 and E13 fixed | **Done**; the menu-array sites are unchanged |
-| 7d | Selection parity; `LiteGraph.events`; group events. The hook → `onX` → event helper and skipping events after a veto are not done | **Partly done** |
-| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md). The tap, typed hook maps and generated tables are not done | **Partly done** |
+| 7c | `CallbackHandler.is` / `handled` / `valueOf` (the plan's `hookResult`) on 21 sites, each keeping its rule; panel hook bypasses; E12 and E13 fixed; `objectOf` on the 8 menu-array sites | **Done** (menu sites on `LG/dev_events_deferred`) |
+| 7d | Selection parity; `LiteGraph.events`; group events; `fireHookThenEvent` (hook → `onX` → event, event skipped after a veto) | **Done** (helper on `LG/dev_events_deferred`) |
+| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md); the dispatch tap; typed hook maps and the declared-hooks check. Generated doc tables and deprecation logs are not done | **Mostly done** (tap and typing on `LG/dev_events_deferred`) |
 
 Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
 
@@ -216,5 +216,5 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
 | D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
 | D7 | Upgrading the remaining runtime dependencies with advisories | Upgrade to releases at least 2 weeks old, after a changelog review |
-| D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | **Error policy decided (2026-11-22):** a handler error never stops the chain, and the first one is always rethrown after it (independent of `throw_errors`, so `runStep` still reports `node-error`). `"*"` per target, observe only: done. Still open, with the plan's recommendations: making "handled" uniform in 0.20, skipping events after a veto, no `node.events`, no async hooks |
+| D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | **Error policy decided (2026-11-22):** a handler error never stops the chain, and the first one is always rethrown after it (independent of `throw_errors`, so `runStep` still reports `node-error`). `"*"` per target, observe only: done. **Events after a veto decided (2026-11-22, as recommended):** a vetoing hook skips its typed event (`fireHookThenEvent`). Still open, with the plan's recommendations: making "handled" uniform in 0.20, no `node.events`, no async hooks |
 | D9 | Generated node reference `docs/nodes/`: commit it (GitHub renders it, `check:fresh` guards it) or generate it in CI only ([plan](2026-11-22-flows-reference-examples.md#user-decisions-2026-11-22)) | **Postponed (user, 2026-11-22):** generated locally with `npm run docs:nodes` and git-ignored; no CI. Propose again when the reference has settled |

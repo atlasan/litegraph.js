@@ -54,25 +54,58 @@ To read a result the way the library does:
 | `CallbackHandler.is(r, value)` | `value`, or `{return_value: value}`. Vetoes use `is(r, false)`; `onKeyDown`, the drawing hooks and `onSearchBoxSelection` use `is(r, true)` |
 | `CallbackHandler.handled(r)` | `true`, or an object with a truthy `return_value`. Used by `onMouseDown`, `onDblClick` and `onDropItem` on nodes |
 | `CallbackHandler.valueOf(r)` | Returns the `return_value` of an object result, otherwise the result itself. Used for slot redirects and for `onDropItem`, `onDropFile` and `onAddPropertyToPanel` |
+| `CallbackHandler.objectOf(r, fallback, arrays)` | Returns the `return_value` of an object result when it is an object (`null` included), with `arrays` also a plain array result; otherwise `fallback`. Used by the menu and slot-list hooks: `getMenuOptions`, `getExtraMenuOptions`, `getSlotMenuOptions`, `onMenuNodeInputs`, `onMenuNodeOutputs`, and (with `arrays`) `onGetInputs`, `onGetOutputs` and the node's `getExtraMenuOptions` |
+
+What each site makes of `true`, `1`, `{return_value: true}`, `{return_value: 1}`, `false` and list results is recorded in `test/__snapshots__/hook-results.test.js.snap`. For example, `onMouseDown` counts `1` as handled and `onKeyDown` does not; a node's `getMenuOptions` uses only `{return_value: [...]}`, not a plain array.
+
+## Hooks and typed events at the same point
+
+Where a point has both a hook and a typed event, they fire in one order: the handlers with priority ≥ 0, the legacy `onX`, the handlers with negative priority, and then the typed event. When the hook can veto and does (a `false` result, plain or as `{return_value: false}`), the event does not fire.
+
+| Hook | Event | Veto |
+|---|---|---|
+| `onPropertyChanged` (`setProperty`, the property dialog) | `node-property-changed` | `false` reverts the value; no event, and the dialog records no history entry |
+| `onConnectOutput`, `onConnectInput` | `link-connected` | `false` refuses the link; no event |
+| `onSelectionChange` | `selection-changed` | none |
+| `onNodeTypeRegistered`, `onNodeTypeReplaced` | `node-type-registered`, `node-type-replaced` | none |
+| `on_lgraph_construct`, `on_lgraphcanvas_construct` | `graph-created`, `canvas-created` | none |
+| `onNodeAdded`, `onNodeRemoved` | `node-added`, `node-removed` | none; the event follows the history record (`changed`, `graph-changed`) |
+| `onConfigure` | `configured` | none |
+| `onWidgetChanged` | `widget-changed` | none; the event follows the bound property and the history record |
+| `onOpenSubgraph`, `onCloseSubgraph` | `subgraph-opened`, `subgraph-closed` | none; the event follows the canvas switch |
+| `onExecuteStep` | `execution-step` | none |
+
+The order is pinned by `test/hook-order.test.js`. Library code fires an adjacent pair with `CallbackHandler.fireHookThenEvent(owner, name, args, emitter, type, detail, {veto})`.
+
+## Dispatch tap
+
+`LiteGraph.setDispatchTap(fn)` sets one process-wide observer, for tracing and profiling. After every hook dispatch and every typed event dispatch it receives `{owner, name, phase, ms, error}`:
+- `phase` is `"hook"` or `"event"`, and `ms` is the duration of the whole dispatch (handlers and `onX` included);
+- `error` is what the hook chain threw, or the first listener error of an event, otherwise `null`.
+
+```js
+const trace = [];
+LiteGraph.setDispatchTap((r) => { if (r.name === "onExecute") trace.push([r.owner.id, r.ms]); }); // a per-node execution trace
+graph.runStep(1);
+LiteGraph.setDispatchTap(null);
+```
+
+Dispatches made inside the tap are not reported, and a throwing tap is only logged. With no tap set, a dispatch pays one null check. `setDispatchTap` returns the previous tap.
 
 **Extensions** can register both kinds with `ctx.listen(target, name, fn, opts)`. A hook name (`onX`, `on_x`, `getXMenuOptions`) registers a hook handler; any other name registers a typed listener. Both are removed when the extension is disposed.
 
 ## Hooks by class
 
-Generated from the `processCallbackHandlers("…")` call sites in `src/`. Regenerate with:
-
-```sh
-grep -ohE '\.processCallbackHandlers\(\s*"\w+"' src/*.js
-```
+The hook names and their arguments are declared per class in `src/litegraph.d.cts` (`LiteGraphHooks`, `LGraphHooks`, `LGraphNodeHooks`, `LGraphCanvasHooks`, `LGraphGroupHooks`). In TypeScript, `registerCallbackHandler` and `onHook` infer the handler arguments from them; an unknown name still compiles. `npm run check:types` fails when a hook dispatched in `src/` is missing from the maps.
 
 | Class | Hooks |
 |---|---|
 | `LiteGraph` | `onNodeTypeRegistered`, `onNodeTypeReplaced`, `on_lgraph_construct`, `on_lgraphnode_construct`, `on_lgraphcanvas_construct` |
 | `LGraph` | Lifecycle: `onConfigure`, `onSerialize`, `on_change`, `onBeforeChange`, `onAfterChange`<br>Execution: `onBeforeStep`, `onExecuteStep`, `onAfterStep`, `onAfterExecute`, `onPlayEvent`, `onStopEvent`, `onTrigger`, `onNodeTrace`<br>Nodes and links: `onNodeAdded`, `onNodeRemoved`, `onConnectionChange`, `onNodeConnectionChange`<br>Graph I/O: `onInputAdded`, `onInputRemoved`, `onInputRenamed`, `onInputTypeChanged`, `onOutputAdded`, `onOutputRemoved`, `onOutputRenamed`, `onOutputTypeChanged`, `onInputsOutputsChange`<br>Menus: `onGetNodeMenuOptions` |
-| `LGraphNode` | Lifecycle: `onNodeCreated`, `onPostConstruct`, `onAdded`, `onRemoved`, `onConfigure`, `onSerialize`, `onResize`, `onBounding`, `onPropertyChanged`, `onGetPropertyInfo`<br>Execution: `onExecute`, `onAction`, `onAfterExecuteNode`, `onAfterActionedNode`<br>Slots: `onInputAdded`, `onInputRemoved`, `onOutputAdded`, `onOutputRemoved`, `onBeforeConnectInput`, `onConnectInput`, `onConnectOutput`, `onConnectionsChange`, `onGetInputs`, `onGetOutputs`, `onNodeInputAdd`, `onNodeOutputAdd`<br>Pointer and keys: `onMouseDown`, `onMouseUp`, `onMouseMove`, `onMouseEnter`, `onMouseLeave`, `onDblClick`, `onDrag`, `onMoved`, `onSelected`, `onDeselected`, `onInputClick`, `onInputDblClick`, `onOutputClick`, `onOutputDblClick`, `onKeyDown`, `onKeyUp`, `onDropItem`, `onDropFile`, `onDropData`, `onWidgetChanged`, `onTitleButtonClick`<br>Panel: `onAddPropertyToPanel`, `onShowCustomPanelInfo`<br>Drawing: `onDrawBackground`, `onDrawForeground`, `onDrawCollapsed`, `onDrawTitle`, `onDrawTitleBar`, `onDrawTitleBox`, `onDrawTitleText`<br>Menus: `getMenuOptions`, `getExtraMenuOptions`, `getSlotMenuOptions`, `onMenuNodeInputs`, `onMenuNodeOutputs` |
+| `LGraphNode` | Lifecycle: `onNodeCreated`, `onPostConstruct`, `onAdded`, `onRemoved`, `onConfigure`, `onSerialize`, `onResize`, `onBounding`, `onPropertyChanged`, `onGetPropertyInfo`<br>Execution: `onExecute`, `onAction`, `onAfterExecuteNode`, `onAfterActionedNode`, `onStart`, `onStop` (through `graph.sendEventToAllNodes`)<br>Slots: `onInputAdded`, `onInputRemoved`, `onOutputAdded`, `onOutputRemoved`, `onBeforeConnectInput`, `onConnectInput`, `onConnectOutput`, `onConnectionsChange`, `onGetInputs`, `onGetOutputs`, `onNodeInputAdd`, `onNodeOutputAdd`<br>Pointer and keys: `onMouseDown`, `onMouseUp`, `onMouseMove`, `onMouseEnter`, `onMouseLeave`, `onDblClick`, `onDrag`, `onMoved`, `onSelected`, `onDeselected`, `onInputClick`, `onInputDblClick`, `onOutputClick`, `onOutputDblClick`, `onKeyDown`, `onKeyUp`, `onDropItem`, `onDropFile`, `onDropData`, `onWidgetChanged`, `onTitleButtonClick`<br>Panel: `onAddPropertyToPanel`, `onShowCustomPanelInfo`<br>Drawing: `onDrawBackground`, `onDrawForeground`, `onDrawCollapsed`, `onDrawTitle`, `onDrawTitleBar`, `onDrawTitleBox`, `onDrawTitleText`<br>Menus: `getMenuOptions`, `getExtraMenuOptions`, `getSlotMenuOptions`, `onMenuNodeInputs`, `onMenuNodeOutputs` |
 | `LGraphCanvas` | Lifecycle: `onClear`, `onOpenSubgraph`, `onCloseSubgraph`, `onShowNodePanel`, `onSearchBoxSelection`<br>Drawing: `onRender`, `onRenderBackground`, `onDrawBackground`, `onDrawForeground`, `onDrawOverlay`, `onDrawLinkTooltip`<br>Input: `onMouse`, `onMouseDown`, `onKeyDown`, `onDropItem`<br>Selection and moves: `onNodeSelected`, `onNodeDeselected`, `onSelectionChange`, `onNodeMoved`, `onNodeDblClicked`, `onGroupMoving`, `onGroupMoved`, `onGroupResized`<br>Menus: `getMenuOptions`, `getExtraMenuOptions` |
 
-`LGraphGroup` has a handler registry but fires no hooks of its own.
+`LGraphGroup`: `onMoved`, dispatched on a group after it is dragged.
 
 ## Typed events
 

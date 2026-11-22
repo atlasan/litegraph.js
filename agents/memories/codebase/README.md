@@ -31,7 +31,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `global.js` | Global object access; runtime detection: `isBrowser`, `isNode`, `isBun` |
 | `litegraph.js` | `LiteGraphClass`: constants, node registry, factory, platform setup; the global singleton (`:1504`) |
 | `callbackhandler.js` | Prioritised, vetoable hooks around the `onX` callbacks; `installHooks(Class)` gives LiteGraph, graphs, nodes, groups and canvases the hook API ([callbacks](../../../docs/callbacks.md)) |
-| `eventtarget.js` | `ListenerList` (the listener core: priority order, copy-on-write, `signal`) and `LGraphEventTarget` (typed events: `on` / `once` / `off` / `dispatch`, `"*"`) |
+| `eventtarget.js` | `ListenerList` (the listener core: priority order, copy-on-write, `signal`; the dispatch tap) and `LGraphEventTarget` (typed events: `on` / `once` / `off` / `dispatch`, `"*"`) |
 | `commands.js`, `keybindings.js`, `settings.js`, `menus.js`, `extensionregistry.js` | Wave 1 platform registries |
 | `nodesearch.js` | `NodeSearch` (`LiteGraph.nodeSearch`): query parsing (`i:` `o:` `c:` `s:`), ranking, definition filters; used by the search box |
 | `contextmenu.js`, `curveeditor.js` | DOM menus; curve widget helper |
@@ -107,8 +107,10 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
 - **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
 - **Hooks and typed events share one core (Wave 7):**
-  - **Hooks intercept.** About 100 `onX` names; the assigned `onX` is the default handler. `CallbackHandler.run` calls only `onX` when no handler is registered, isolates handler errors and rethrows the first one after the chain. Read results with `CallbackHandler.is` / `handled` / `valueOf`.
+  - **Hooks intercept.** About 100 `onX` names; the assigned `onX` is the default handler. `CallbackHandler.run` calls only `onX` when no handler is registered, isolates handler errors and rethrows the first one after the chain. Read results with `CallbackHandler.is` / `handled` / `valueOf` / `objectOf` (menus); `test/hook-results.test.js` pins each site's rule. Hook names and arguments per host are declared in the `*Hooks` maps of `litegraph.d.cts` (`check:types` fails on an undeclared dispatched name).
   - **Typed events observe.** `LiteGraph.events`, `graph.events` and `canvas.events`.
+  - **Points with both** fire the hook chain, then the event; `CallbackHandler.fireHookThenEvent` does it where the two are adjacent (selection, property changes, type registration, construct hooks) and skips the event after a veto. `test/hook-order.test.js` is the order golden.
+  - **Dispatch tap:** `LiteGraph.setDispatchTap(fn)` (stored as `ListenerList.tap`) sees every hook and event dispatch with its duration.
   - Both are built on `ListenerList`. See the [event handling audit](../../audits/2026-11-22-event-handling.md) and the [event integration plan](../../plans/2026-11-22-event-integration.md).
 
 ## Platform layer (Wave 1)

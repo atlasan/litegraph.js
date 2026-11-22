@@ -68,7 +68,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-31 | Share a graph through a compressed URL | P9 | ext | S | adapt | seed |
 | USE-32 | Pub/sub nodes between users' graphs | P9 | node | M | adapt | seed |
 | USE-33 | Optimistic save conflicts (ETag / If-Match) | P10 | runtime | S | adapt | seed |
-| USE-34 | Per-node execution trace (→ FLW-16) | P10 | runtime | M | adapt | seed |
+| USE-34 | Per-node execution trace (→ FLW-16; base: the dispatch tap, `LiteGraph.setDispatchTap`) | P10 | runtime | M | adapt | seed |
 | USE-35 | Runaway-node watchdog and deployment limits | P8 | runtime | M | adapt | seed |
 | USE-36 | Portable-format conformance fixtures for other runtimes | P10 | proto | M | adapt | seed |
 | USE-37 | Graph lint before run | P10 | ext | M | ref | seed |

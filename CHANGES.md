@@ -12,12 +12,21 @@ Hooks (CallbackHandler) and typed events now run on one listener core (`Listener
 * **A throwing hook handler no longer stops the chain.** The remaining handlers and the default `onX` still run, then the first error is rethrown to the caller; later errors are logged. Before, the chain stopped at the throw and the default did not run.
 * **Registering a handler during a dispatch takes effect from the next dispatch.** Before, it re-ran earlier handlers, and a handler that registered on every call never returned.
 * **Groups and reroutes:** selecting or deselecting one now also fires the canvas `onSelectionChange` hook, as `selection-changed` already did.
+* **Ordering changes** (the order golden, `test/hook-order.test.js`, pins the rest; every point that has a hook and a typed event fires the hook chain, then the legacy `onX` in its place, then the event):
+  * **The node property dialog** (`showEditPropertyValue`) now fires `node-property-changed` after `onPropertyChanged`, as `setProperty` does; it fired no event before.
+  * **The property dialog records its history entry after `onPropertyChanged`, and none when the hook vetoes** (returns `false`). Before, the entry was recorded before the hook, so a vetoed edit left an undo step, and `changed` / `graph-changed` fired before the hook.
+* **A vetoable hook that vetoes skips its typed event** (open decision 3): `setProperty` and the property dialog (`onPropertyChanged` → `node-property-changed`), and `connect` (`onConnectInput` / `onConnectOutput` → `link-connected`), which already behaved so. Hooks whose result is not a veto (`onSelectionChange`, `onOpenSubgraph`, `onNodeAdded`, ...) always fire their event.
+* **`selection-changed` always carries `items`** (nodes, groups and reroutes); before, only group and reroute selection set it.
 * **Hosts share one hook implementation** (`installHooks`). The handler registry is created when first needed: reading `cb_handler` (still a `CallbackHandler`, still assignable) or registering a handler. Nodes and graphs that nobody hooks no longer allocate one. A dispatch with no handler only calls `onX`: about 4× faster than before (`runStep` on `benchmark.json` about 15% faster). `callbacks_handlers[name]` exists only for names that had a handler registered; before, every dispatched name created an empty entry.
 
 ## Added
 
 * `obj.onHook(name, fn, opts)` returns a disposer; `hasCallbackHandlers(name)`; handler options `once` (alias of `call_once`) and `signal` (unregister on abort).
 * `CallbackHandler.is(result, value)`, `CallbackHandler.handled(result)` and `CallbackHandler.valueOf(result)` read hook results the way the library does.
+* `CallbackHandler.objectOf(result, fallback, arrays)`: the rule of the menu and slot-list hooks (`getMenuOptions`, `getExtraMenuOptions`, `getSlotMenuOptions`, `onGetInputs`, `onGetOutputs`, `onMenuNodeInputs`, `onMenuNodeOutputs`); those sites use it, unchanged in behaviour (`test/hook-results.test.js` pins every result-reading site).
+* `CallbackHandler.fireHookThenEvent(owner, name, args, emitter, type, detail, {veto})`: fires a hook and then its typed event in the documented order, skipping the event after a veto.
+* **Dispatch tap:** `LiteGraph.setDispatchTap(fn)` calls `fn({owner, name, phase, ms, error})` after every hook dispatch (`phase: "hook"`) and typed event dispatch (`"event"`), for tracing and profiling (a per-node execution trace: `name === "onExecute"`). Unset, a dispatch pays one null check.
+* **Typed hook names** in `litegraph.d.cts`: `LiteGraphHooks`, `LGraphHooks`, `LGraphNodeHooks`, `LGraphCanvasHooks`, `LGraphGroupHooks`. `registerCallbackHandler` and `onHook` infer the handler arguments per host; unknown names still compile. `npm run check:types` fails when a hook dispatched in `src/` is not declared.
 * **`LiteGraph.events`:** `node-type-registered`, `node-type-replaced`, `node-type-unregistered`, `graph-created`, `canvas-created`.
 * Graph events `group-added` and `group-removed`.
 * Typed events: a `priority` option, and `"*"` listeners that receive every event of a target.
