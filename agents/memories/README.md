@@ -24,6 +24,7 @@ Template: [research](../_templates/research.md). Research that yields *ideas* go
 
 | Date | Record |
 |---|---|
+| 2026-11-22 | [Call scopes and pure nodes](research/2026-11-22-call-scopes-and-pure-nodes.md): when an on-request value is computed again; three options compared, scoped and versioned recommended, with tests |
 | 2026-11-19 | [Upstream issue triage](research/2026-11-19-upstream-issue-triage.md): 50 upstream defects checked against this fork |
 | 2026-11-01 → 11-19 | [Ecosystem study](research/ecosystem-study/README.md) (series): ComfyUI, LiteGraph-TSX, plugin UIs, the relationship with Comfy |
 | 2026-10-30 | [Fork investigation](research/2026-10-30-fork-investigation.md): history, upstream and forks, branch choice, baseline defects |
