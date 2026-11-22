@@ -1,6 +1,6 @@
 # Flows track: node reference, declaration pass, examples library
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `b6bcc1d`
+> **Date** 2026-11-22 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `b6bcc1d`
 
 This plan delivers steps 1 to 3 of the [flows direction](2026-11-22-flows-direction.md):
 - a node reference generated from the registry;
@@ -77,4 +77,5 @@ They come first because the user wants new engine features (call scopes, lifecyc
 
 ## History
 
+- 2026-11-22: done. Records: [reference](../executions/2026-11-22-flows-reference.md), [declarations](../executions/2026-11-22-flows-declarations.md), [examples](../executions/2026-11-22-flows-examples.md).
 - 2026-11-22: accepted; promoted from the flows direction plan (steps 1–3). The user chose a named track instead of a wave number, deferred committing `docs/nodes/`, and chose examples from the manifest and the pack templates.

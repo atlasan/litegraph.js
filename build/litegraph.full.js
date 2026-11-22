@@ -2633,10 +2633,18 @@ export class ExecutionEngine {
             const link = graph.links[input.link];
             const origin = link && graph.getNodeById(link.origin_id);
             if (!origin || origins.includes(origin)) continue;
-            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks;
+            // not a ticking node, and not one with a connected event output: run in a pull, its events
+            // would be dropped as "refreshing" (audit finding 10); both give their value at their turn
+            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks &&
+                !this.emitsEvents(origin);
             if (origin.mode === LiteGraph.ON_REQUEST || firstValue) origins.push(origin);
         }
         return origins;
+    }
+
+    /** true when a node has an event output with links (its events cannot fire inside a pull) */
+    static emitsEvents(node) {
+        return (node.outputs ?? []).some((o) => (o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION) && o.links?.length);
     }
 
     /**
@@ -27826,6 +27834,44 @@ export class PackRegistry {
                 types: [...manifest.nodes]
             }));
         return [...installed, ...indexed];
+    }
+
+    /**
+     * The templates (example graphs) of the active packs, from each manifest's `templates[]`, in the
+     * shape of the editor's examples manifest: `{pack, id, title, description, category, profile,
+     * flow, tags, packs, level, url, data}`. An entry needs a string `id` and either a `url`
+     * (relative, http or https) or an inline `data` graph; other entries are skipped.
+     * @returns {ReadonlyArray<Readonly<object>>}
+     */
+    listTemplates() {
+        const text = (value, fallback = null) => (typeof value === "string" && value ? value : fallback);
+        const out = [];
+        for (const entry of this._packs.values()) {
+            if (entry.state !== "active") continue;
+            const id = entry.manifest.id;
+            for (const t of entry.manifest.templates) {
+                if (!t || typeof t !== "object" || !text(t.id)) continue;
+                const url = text(t.url);
+                const safeUrl = url && (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^https?:/i.test(url)) ? url : null;
+                const data = t.data && typeof t.data === "object" ? t.data : null;
+                if (!safeUrl && !data) continue;
+                out.push(Object.freeze({
+                    pack: id,
+                    id: t.id,
+                    title: text(t.title, t.id),
+                    description: text(t.description, ""),
+                    category: text(t.category, "packs"),
+                    profile: text(t.profile),
+                    flow: text(t.flow),
+                    tags: Object.freeze(packStringList(t.tags)),
+                    packs: Object.freeze(packStringList(t.packs).length ? packStringList(t.packs) : [id]),
+                    level: text(t.level),
+                    url: safeUrl,
+                    data,
+                }));
+            }
+        }
+        return out;
     }
 
     /**

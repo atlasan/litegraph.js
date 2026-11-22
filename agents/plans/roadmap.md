@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 core done in `LG/dev`; flows track in progress
+> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 core done in `LG/dev`; flows track done in `LG/dev`
 
 This is the single place for the current status of planned work.
 
@@ -33,7 +33,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 4 | Ecosystem and workspace features | **Done**: 4a packs and missing nodes ([record](../executions/2026-11-20-wave4a-packs.md)), 4b workspace state and execution ([record](../executions/2026-11-20-wave4b-workspace.md)), 4c links and view ([record](../executions/2026-11-20-wave4c-links-view.md)), 4d layout and palette ([record](../executions/2026-11-20-wave4d-layout-palette.md)), 4e catalog and boundaries ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)), all merged into `LG/dev`. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
-| Track | Flows: node reference, declarations, examples | **In progress** ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
+| Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Core done**, merged into `LG/dev` from `LG/wave7_events` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API; ordering helper, tap and hook typing deferred; see [Wave 7](#wave-7-event-integration-core-done) |
 
 ## Wave 0: safety and correctness (done)
@@ -197,9 +197,9 @@ Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open
 |---|---|---|---|
 | Reference | `LG/dev_flows_reference` | `npm run docs:nodes` (`tools/node-reference.mjs`) → `docs/nodes/` (local, not committed: D9); pack descriptions; `def.usage`; catalog test | **Done** ([record](../executions/2026-11-22-flows-reference.md)) |
 | Declarations | `LG/dev_flows_declarations` | `pure` / `ticks` / default modes for the undeclared types; volatile nodes stay ALWAYS until FLW-02 | **Done** ([record](../executions/2026-11-22-flows-declarations.md)) |
-| Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | planned |
+| Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | **Done** ([record](../executions/2026-11-22-flows-examples.md)) |
 
-Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, profiles, flow docs) stay proposed. Step 5 waits for Wave 7's listener engine.
+Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, profiles, flow docs) stay proposed. Step 5 can now build on Wave 7's listener core (in `LG/dev`).
 
 ## Deferred (each needs its own proposal)
 

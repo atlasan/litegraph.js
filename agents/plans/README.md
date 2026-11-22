@@ -23,7 +23,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
-| 2026-11-22 | [Flows track: node reference, declarations, examples](2026-11-22-flows-reference-examples.md): `docs:nodes` reference from the registry, pack descriptions and `def.usage`, a catalog test, the declaration pass, the examples manifest and Demo menu, an examples test (steps 1–3 of the flows direction) | accepted |
+| 2026-11-22 | [Flows track: node reference, declarations, examples](2026-11-22-flows-reference-examples.md): `docs:nodes` reference from the registry, pack descriptions and `def.usage`, a catalog test, the declaration pass, the examples manifest and Demo menu, an examples test (steps 1–3 of the flows direction) | done |
 | 2026-11-22 | [Flows direction](2026-11-22-flows-direction.md): node reference, declarations, examples, call scopes, lifecycle and custom events, graph profiles (from the event flows audit) | proposed; steps 1–3 promoted |
 | 2026-11-22 | [Event integration](2026-11-22-event-integration.md): one listener engine for hooks (intercept) and typed events (observe), with a fixed order, compatible API and new event targets (Wave 7) | accepted; core done |
 | 2026-11-22 | [Panels: graph options and node details](2026-11-22-panels-options-node-details.md): shared panel shell and property editors, a Graph/Canvas/Settings options panel with search, categories and sorting, a node details panel with sections, tooltips and one undo step per edit (proposed Wave 7) | proposed |

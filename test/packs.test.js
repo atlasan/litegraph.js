@@ -314,3 +314,24 @@ test('a placeholder shows its missing type as title and saves without one', () =
     expect(graph.getNodeById(4).title).toBe('far/thing');
     expect(graph.serialize().nodes[0].title).toBeUndefined();
 });
+
+describe('pack templates (flows track, examples)', () => {
+    test('listTemplates returns the valid templates of active packs, in the examples manifest shape', () => {
+        disposers.push(LiteGraph.packs.register(acme({ templates: [
+            { id: 'synth', title: 'Synth', description: 'A small synth', category: 'flows/realtime', profile: 'realtime', flow: 'realtime', tags: ['audio'], level: 'basic', url: 'templates/synth.json' },
+            { id: 'inline', data: { nodes: [], links: [] } },
+            'not an object', { title: 'no id', url: 'x.json' }, { id: 'no-source' }, { id: 'bad-url', url: 'javascript:alert(1)' },
+        ] })));
+        LiteGraph.settings.set('LiteGraph.Packs.Disabled', ['muted']);
+        disposers.push(LiteGraph.packs.register({ id: 'muted', version: '1.0.0', templates: [{ id: 'hidden', url: 'h.json' }] }));
+        expect(LiteGraph.packs.describe().find((p) => p.id === 'muted').state).toBe('disabled');
+        const list = LiteGraph.packs.listTemplates().filter((t) => ['acme', 'muted'].includes(t.pack));
+        expect(list.map((t) => `${t.pack}:${t.id}`)).toEqual(['acme:synth', 'acme:inline']);
+        expect(list[0]).toEqual({
+            pack: 'acme', id: 'synth', title: 'Synth', description: 'A small synth', category: 'flows/realtime',
+            profile: 'realtime', flow: 'realtime', tags: ['audio'], packs: ['acme'], level: 'basic', url: 'templates/synth.json', data: null,
+        });
+        expect(list[1]).toMatchObject({ title: 'inline', category: 'packs', profile: null, tags: [], url: null, data: { nodes: [], links: [] } });
+        expect(Object.isFrozen(list[0])).toBe(true);
+    });
+});

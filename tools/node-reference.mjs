@@ -48,6 +48,15 @@ for (const name of ['createGain', 'createOscillator', 'createBiquadFilter', 'cre
 }
 FakeAudioContext.prototype.decodeAudioData = function () { return Promise.resolve(anything('buffer')); };
 
+/** An XMLHttpRequest that never sends: asset loads started while a node is configured stay pending. */
+class FakeXMLHttpRequest {
+    open() {}
+    send() {}
+    abort() {}
+    setRequestHeader() {}
+    addEventListener() {}
+}
+
 let dom = null;
 async function browserStubs() {
     if (!dom) {
@@ -70,11 +79,12 @@ async function browserStubs() {
  */
 export async function withBrowserStubs(run) {
     const stubs = await browserStubs();
-    const keys = ['window', 'document', 'AudioContext'];
+    const keys = ['window', 'document', 'AudioContext', 'XMLHttpRequest'];
     const saved = Object.fromEntries(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
     globalThis.window = stubs.window;
     globalThis.document = stubs.document;
     globalThis.AudioContext = FakeAudioContext; // audio.js calls the global constructor
+    globalThis.XMLHttpRequest = FakeXMLHttpRequest; // asset loads (sound files) never complete
     try { return run(); } finally {
         for (const [key, desc] of Object.entries(saved)) {
             if (desc) Object.defineProperty(globalThis, key, desc); else delete globalThis[key];

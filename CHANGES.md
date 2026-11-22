@@ -38,6 +38,8 @@ Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
 
 ## Changed
 
+* **An ALWAYS node with a connected event output is no longer pulled for its first value** (`ancestors`). Running it inside a pull dropped its events as `refreshing`; it now runs at its turn (audit finding 10).
+* **`ancestors/check_subgraph.JSON`:** its root counter was saved in ON_REQUEST mode with connected event outputs. It is now ALWAYS, so the example checks clean and drops no events. The golden tests read frozen copies of their examples (`test/fixtures/golden-examples/`), so their snapshots are unchanged.
 * **New constants are ON_REQUEST under `ancestors`:** a new `basic/const`, `boolean`, `string`, `data` or `array` node, like the pure math nodes, runs when a consumer pulls it. `legacy` documents and loaded nodes keep their modes; "Apply the model's node modes" converts an old document.
 * **A ticking node is never re-run by a pull:** this covers `math/accumulate` and `math/average`, among others. Before, under the `event` and `step` models, a forced pull from an event re-ran them, so they advanced more than once per step.
 * **`node.actionDo(action)` called from host code pulls the node's ON_REQUEST inputs first under `ancestors`**, as a delivered event does. The guide's loop example now calls `loop.actionDo("do")`.
@@ -53,6 +55,9 @@ Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
   * ON_EVENT by default: `events/once`, `waitAll`, `filter`, `log`, `basic/alert`.
 
   Volatile nodes (time, random, widgets) stay ALWAYS, with a comment, until FLW-02.
+* **Examples library:** `apps/editor/examples/index.json` describes all 34 example files: `id`, `file`, `title`, `description`, `category`, `profile`, `flow`, `tags`, `packs`, `level`, plus `needs` for network and audio. The editor's Demo menu is built from it, with one group per category (flows, subgraphs, editor and widgets, audio, graphics, network); `wip` examples are hidden. The example files keep their paths.
+* **`LiteGraph.packs.listTemplates()`:** the templates of the active packs (manifest `templates[]`, with a `url` or inline `data`). The Demo menu lists them in their category.
+* **Examples test** (`tools/tests/examples.test.mjs`): every non-wip example loads without missing nodes and checks clean under `ancestors` after the model's modes are applied. It runs 5 steps without errors or dropped events, and its link data matches `tools/fixtures/examples-outputs.json`. Network and audio examples load and check only.
 * **Catalog test** (`tools/tests/node-catalog.test.mjs`): every bundled type is created (browser types with jsdom, Web Audio and WebGL stand-ins), described, in a described pack, and listed once in the reference.
 
 # Unreleased: Wave 6 (events and execution models)

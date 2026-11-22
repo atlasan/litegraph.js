@@ -182,10 +182,18 @@ export class ExecutionEngine {
             const link = graph.links[input.link];
             const origin = link && graph.getNodeById(link.origin_id);
             if (!origin || origins.includes(origin)) continue;
-            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks;
+            // not a ticking node, and not one with a connected event output: run in a pull, its events
+            // would be dropped as "refreshing" (audit finding 10); both give their value at their turn
+            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks
+                && !this.emitsEvents(origin);
             if (origin.mode === LiteGraph.ON_REQUEST || firstValue) origins.push(origin);
         }
         return origins;
+    }
+
+    /** true when a node has an event output with links (its events cannot fire inside a pull) */
+    static emitsEvents(node) {
+        return (node.outputs ?? []).some((o) => (o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION) && o.links?.length);
     }
 
     /**

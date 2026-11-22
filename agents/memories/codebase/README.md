@@ -12,7 +12,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
 | `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
-| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module |
+| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu from it and `LiteGraph.packs.listTemplates()` |
 | `apps/tester/` | Browser tester that generates per-node scenarios (also served at `/editor_tester/`) |
 | `apps/runner/` | WebSocket runner: Express + `ws`, one worker per graph; `headless/graphrunner/server/index.js` is a shim that starts it |
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
@@ -163,8 +163,8 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Minification:** `mini` builds are `uglifyjs -c`; the others are beautified. CJS is produced by a regex conversion in `build.py`.
 - **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
 - **Tests:**
-  - Jest: 43 files, 803 tests (26 golden snapshots), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
-  - node:test: 18 files, 99 tests, in `tools/tests/`; covers the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
+  - Jest: 45 files, 856 tests (26 golden snapshots, documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
+  - node:test: 20 files, 125 tests, in `tools/tests/`; covers the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 
