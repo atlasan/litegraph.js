@@ -95,7 +95,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 **Carried over to Wave 2** (they belong with the standalone ports):
 - Moving node, group and link dragging onto the gesture pattern (with the `LinkConnector` port).
 - Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
-- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Now proposed as [Wave 7](#wave-7-event-integration-proposed).**
+- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Core done in [Wave 7](#wave-7-event-integration-core-done).**
 
 ## Wave 2: authoring core (done)
 
