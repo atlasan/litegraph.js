@@ -1,76 +1,25 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
-# Unreleased (0.10.x): Wave 4e, catalog and boundaries
+# 0.18.0-dev.1 (2026-11-22): first dev pre-release
 
-## Changed
+This is a pre-release for testers, tagged `v0.18.0-dev.1`; nothing is published to npm. It contains roadmap Waves 0–5 (sections below, newest first):
+- the runner lockdown;
+- the platform layer;
+- authoring ports from the MIT standalone;
+- the subgraph system;
+- packs and the workspace;
+- packaging and the apps layout.
 
-* One watch node: `basic/watch` with a `display` property (`value`, `text`, `tree`); `basic/watch_advanced` and `watch/value` load as it.
-* Network and process type names: servers under `network/server/*`, `network/socketio`, `sys/processInfo`; the old names load through automatic replacement mappings, and the runner's `RUNNER_ALLOW_TYPES` / `RUNNER_DENY_TYPES` still accept them.
-* Converting to a subgraph and unpacking keep reroutes on both sides of the boundary.
-* A node replacement keeps the node's size (grown if the new type needs more room).
+**Upgrade notes:**
+- **Saved documents:** subgraphs are saved as ComfyUI-style definitions (`LiteGraph.subgraph_format = "definitions"`). Set `"inline"` if older builds must read the files.
+- **Full bundles:** they no longer enable `LiteGraph.allow_scripts`, debug logging or the editor's UX flags. Set them yourself if you relied on them.
+- **Dependencies:** the package has no required dependencies. Network and system integrations are optional, and a missing one is reported with its install command.
+- **Exports:** they list each bundle by its path; the `./build/*` wildcards are gone.
+- **Apps:** they live in `apps/`. Old URLs and the old runner path keep working.
+- **Node types:** some were renamed (watch nodes, `network/server/*`). Old documents load through automatic replacements.
 
-## Removed
-
-* `src/nodes/jquery.js` (never in a build); `jquery/select` is offered as `html/dom_selector`.
-
-## Fixed
-
-* A document whose missing types were all replaced automatically no longer reports a load error (`configure` returned true, so the runner refused it).
-
-# Unreleased (0.10.x): Wave 4d, layout and palette
-
-## Added
-
-* `graph.autoLayout({engine, nodes, direction, spacing})`: one undo step; engines in `LiteGraph.layout` (`dagre`, loaded on demand; `layered`, built in; `LayoutRegistry.elkEngine` for elkjs); setting `LiteGraph.Layout.Engine`; command `litegraph.layout.auto` in the canvas menu.
-* `LiteGraph.palette` (`NodePalette`): groups by pack and category, search, favourites (`LiteGraph.Palette.Favorites`), recent types, previews, `insert`; dropping `LGraphCanvas.NODE_DRAG_MIME` data on the canvas inserts a node.
-* The Editor's node palette panel ("Nodes" button, `NodePalettePanel`, setting `LiteGraph.Editor.Palette`).
-* Development dependency `@dagrejs/dagre` 3.1.3 (MIT) for the Node layout test; the library is registered as an optional LibraryManager library.
-
-# Unreleased (0.10.x): Wave 4c, links and view
-
-## Added
-
-* `RenderLink`, link routers (`LiteGraph.linkRouters`, `canvas.link_router`; "spline", "linear", "straight" built in) and link styles (`LiteGraph.linkStyles`, setting `LiteGraph.Canvas.LinkStyles`: `spotlight`, `dim-by-type`, `hidden`, `labelled`; `LiteGraph.Canvas.HiddenLinkTypes`).
-* `MiniMap` (`canvas.showMinimap` / `hideMinimap` / `toggleMinimap`) with decoration layers, redrawn on events only.
-* The `view_tools` extension: `litegraph.canvas.toggleMinimap` (Alt+M, setting `LiteGraph.Canvas.Minimap`) and `litegraph.links.spotlight` / `dimByType` / `labels` / `hidden`, also in the canvas menu.
-* `DragAndScale.unbindEvents()`.
-
-## Changed
-
-* `renderLink` draws through the active router and styles; the three render modes draw the same paths as before. Hidden links are not hit-testable.
-* Panning the canvas is a `CanvasPointer` gesture.
-
-# Unreleased (0.10.x): Wave 4b, workspace state and execution
-
-## Added
-
-* `graph-changed {kind, kinds, action, revision}` (one per recorded change, code edits coalesced; bubbles from subgraphs with kind `subgraph`) and the canvas event `viewport-changed`.
-* `graph.isModified`, `markSaved()`, `markModified()` and `modified-changed`; the Editor shows "• modified".
-* Draft autosave in the Editor (`DraftAutosave`, settings `LiteGraph.Editor.Autosave` / `AutosaveDelay`) with a restore offer after a reload.
-* The execution-state protocol `LiteGraph.ExecutionState` (v1), `graph.reportExecutionState`, `graph.applyExecutionState`, `node.reportProgress`, `node.setExecutionStatus`, the `execution-state` event; the runner broadcasts `execution_state`.
-* Canvas overlays for node status, progress and errors (setting `LiteGraph.Canvas.ExecutionOverlays`); node and definition `icon` drawn before the title (`drawNodeTitleText`).
-
-## Changed
-
-* A widget bound to a property writes the property before the change is recorded, so the history entry includes it.
-
-# Unreleased (0.10.x): Wave 4a, packs and missing nodes
-
-## Added
-
-* `LiteGraph.packs` (`PackRegistry`): pack manifests (`id`, `version`, `requires.litegraph`, `nodes`, `extensions`, `libraries`, …), attribution of node types registered in a pack's `setup`, an index of known packs that are not installed, version ranges, and the settings `LiteGraph.Packs.AllowIncompatible` and `LiteGraph.Packs.Disabled`. `getNodeDefinition(type).pack`.
-* Built-in node files declare builtin packs `litegraph/<family>`.
-* Provenance stamping: `properties.pack` / `properties.pack_ver` on new nodes of non-builtin packs (setting `LiteGraph.Packs.Stamp`).
-* `graph.getMissingNodes()` and the `missing-nodes` event; placeholders show their missing type as the title.
-* `LiteGraph.registerNodeReplacement(mapping)`, `graph.replaceNode(node, mapping)` and `graph.replaceNodes()` (one undo step); `auto` mappings apply while loading (setting `LiteGraph.Packs.AutoReplace`); `node-replaced` event.
-* The `node_packs` extension: the missing-nodes panel (opened by the Editor after a load), commands `litegraph.nodes.showMissing`, `litegraph.nodes.replaceMissing`, `litegraph.nodes.replace`, and "Replace with …" in the node menu.
-
-## Changed
-
-* The runner checks the type an automatic replacement loads as against its denylist (`assertAllowedGraph(..., {replacedType})`).
-
-# Unreleased (0.18.0-dev): pre-release work, Wave 5
+# 0.18.0-dev.1: Wave 5 and pre-release fixes
 
 ## Changed
 
@@ -96,7 +45,76 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 * Runtime dependency advisories (12, 10 of them high) are resolved: `engine.io`, `engine.io-client`, `socket.io-adapter`, `socket.io-parser`, nested `ws`, `brace-expansion`, `cross-spawn`, `js-cookie`.
 
-# Unreleased (0.10.x): Wave 3c, components and blueprints
+# 0.18.0-dev.1: Wave 4e, catalog and boundaries
+
+## Changed
+
+* One watch node: `basic/watch` with a `display` property (`value`, `text`, `tree`); `basic/watch_advanced` and `watch/value` load as it.
+* Network and process type names: servers under `network/server/*`, `network/socketio`, `sys/processInfo`; the old names load through automatic replacement mappings, and the runner's `RUNNER_ALLOW_TYPES` / `RUNNER_DENY_TYPES` still accept them.
+* Converting to a subgraph and unpacking keep reroutes on both sides of the boundary.
+* A node replacement keeps the node's size (grown if the new type needs more room).
+
+## Removed
+
+* `src/nodes/jquery.js` (never in a build); `jquery/select` is offered as `html/dom_selector`.
+
+## Fixed
+
+* A document whose missing types were all replaced automatically no longer reports a load error (`configure` returned true, so the runner refused it).
+
+# 0.18.0-dev.1: Wave 4d, layout and palette
+
+## Added
+
+* `graph.autoLayout({engine, nodes, direction, spacing})`: one undo step; engines in `LiteGraph.layout` (`dagre`, loaded on demand; `layered`, built in; `LayoutRegistry.elkEngine` for elkjs); setting `LiteGraph.Layout.Engine`; command `litegraph.layout.auto` in the canvas menu.
+* `LiteGraph.palette` (`NodePalette`): groups by pack and category, search, favourites (`LiteGraph.Palette.Favorites`), recent types, previews, `insert`; dropping `LGraphCanvas.NODE_DRAG_MIME` data on the canvas inserts a node.
+* The Editor's node palette panel ("Nodes" button, `NodePalettePanel`, setting `LiteGraph.Editor.Palette`).
+* Development dependency `@dagrejs/dagre` 3.1.3 (MIT) for the Node layout test; the library is registered as an optional LibraryManager library.
+
+# 0.18.0-dev.1: Wave 4c, links and view
+
+## Added
+
+* `RenderLink`, link routers (`LiteGraph.linkRouters`, `canvas.link_router`; "spline", "linear", "straight" built in) and link styles (`LiteGraph.linkStyles`, setting `LiteGraph.Canvas.LinkStyles`: `spotlight`, `dim-by-type`, `hidden`, `labelled`; `LiteGraph.Canvas.HiddenLinkTypes`).
+* `MiniMap` (`canvas.showMinimap` / `hideMinimap` / `toggleMinimap`) with decoration layers, redrawn on events only.
+* The `view_tools` extension: `litegraph.canvas.toggleMinimap` (Alt+M, setting `LiteGraph.Canvas.Minimap`) and `litegraph.links.spotlight` / `dimByType` / `labels` / `hidden`, also in the canvas menu.
+* `DragAndScale.unbindEvents()`.
+
+## Changed
+
+* `renderLink` draws through the active router and styles; the three render modes draw the same paths as before. Hidden links are not hit-testable.
+* Panning the canvas is a `CanvasPointer` gesture.
+
+# 0.18.0-dev.1: Wave 4b, workspace state and execution
+
+## Added
+
+* `graph-changed {kind, kinds, action, revision}` (one per recorded change, code edits coalesced; bubbles from subgraphs with kind `subgraph`) and the canvas event `viewport-changed`.
+* `graph.isModified`, `markSaved()`, `markModified()` and `modified-changed`; the Editor shows "• modified".
+* Draft autosave in the Editor (`DraftAutosave`, settings `LiteGraph.Editor.Autosave` / `AutosaveDelay`) with a restore offer after a reload.
+* The execution-state protocol `LiteGraph.ExecutionState` (v1), `graph.reportExecutionState`, `graph.applyExecutionState`, `node.reportProgress`, `node.setExecutionStatus`, the `execution-state` event; the runner broadcasts `execution_state`.
+* Canvas overlays for node status, progress and errors (setting `LiteGraph.Canvas.ExecutionOverlays`); node and definition `icon` drawn before the title (`drawNodeTitleText`).
+
+## Changed
+
+* A widget bound to a property writes the property before the change is recorded, so the history entry includes it.
+
+# 0.18.0-dev.1: Wave 4a, packs and missing nodes
+
+## Added
+
+* `LiteGraph.packs` (`PackRegistry`): pack manifests (`id`, `version`, `requires.litegraph`, `nodes`, `extensions`, `libraries`, …), attribution of node types registered in a pack's `setup`, an index of known packs that are not installed, version ranges, and the settings `LiteGraph.Packs.AllowIncompatible` and `LiteGraph.Packs.Disabled`. `getNodeDefinition(type).pack`.
+* Built-in node files declare builtin packs `litegraph/<family>`.
+* Provenance stamping: `properties.pack` / `properties.pack_ver` on new nodes of non-builtin packs (setting `LiteGraph.Packs.Stamp`).
+* `graph.getMissingNodes()` and the `missing-nodes` event; placeholders show their missing type as the title.
+* `LiteGraph.registerNodeReplacement(mapping)`, `graph.replaceNode(node, mapping)` and `graph.replaceNodes()` (one undo step); `auto` mappings apply while loading (setting `LiteGraph.Packs.AutoReplace`); `node-replaced` event.
+* The `node_packs` extension: the missing-nodes panel (opened by the Editor after a load), commands `litegraph.nodes.showMissing`, `litegraph.nodes.replaceMissing`, `litegraph.nodes.replace`, and "Replace with …" in the node menu.
+
+## Changed
+
+* The runner checks the type an automatic replacement loads as against its denylist (`assertAllowedGraph(..., {replacedType})`).
+
+# 0.18.0-dev.1: Wave 3c, components and blueprints
 
 ## Added
 
@@ -108,7 +126,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 * Loaded subgraph definitions with empty `linkIds` or without `version`, `name`, `widgets` or IO boxes are completed on load.
 
-# Unreleased (0.10.x): Wave 3b, subgraph authoring
+# 0.18.0-dev.1: Wave 3b, subgraph authoring
 
 ## Added
 
@@ -127,7 +145,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 * `node-error` named no node (`node` was `false`); it now names the innermost failing node, also from inside subgraphs.
 * The subgraph path at the top of the canvas never showed.
 
-# Unreleased (0.10.x): Wave 3a, subgraph definitions
+# 0.18.0-dev.1: Wave 3a, subgraph definitions
 
 ## Added
 
@@ -151,7 +169,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 * `input.hard_coded_value` / `output.hard_coded_output`, only used by the old function node.
 
-# Unreleased (0.10.x): Wave 2b, links and pointer
+# 0.18.0-dev.1: Wave 2b, links and pointer
 
 ## Added
 
@@ -176,7 +194,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 * Reroute drags lost the movement inside the click tolerance.
 * The group corner handle did not work when the canvas options omitted its size.
 
-# Unreleased (0.10.x): Wave 2a, authoring operations
+# 0.18.0-dev.1: Wave 2a, authoring operations
 
 ## Added
 
@@ -205,7 +223,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 * `registerNodeAndSlotType` stored `undefined` when it was given a class or a type string.
 * "Add Group" can now be undone.
 
-# Unreleased (0.10.x): Wave 1, platform layer
+# 0.18.0-dev.1: Wave 1, platform layer
 
 ## Added
 
@@ -249,7 +267,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 * The canvas receiving key events becomes `LGraphCanvas.active_canvas`, and `prompt()` uses its own canvas. F2 and Shift+→ no longer fail before the first pointer input.
 * Runner (found in the Wave 0 review): script nodes are disabled unless `RUNNER_ALLOW_SYS=1`, `geometry/eval` is refused, and the Host check accepts IPv6 `HOST` and default-port origins.
 
-# Unreleased (0.10.x): Wave 0, safety and correctness
+# 0.18.0-dev.1: Wave 0, safety and correctness
 
 ## Security
 

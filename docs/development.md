@@ -46,7 +46,7 @@ await graph.whenReady();
 graph.runStep();
 ```
 
-**Versions:** `LiteGraph.VERSION` equals the package version (`0.10.10`); `build.py --update-version` keeps them in step. Identify development builds by branch and commit. A release needs an explicit version decision.
+**Versions:** `LiteGraph.VERSION` equals the package version (`0.18.0-dev.1`); `build.py --update-version` keeps them in step. Identify development builds by branch and commit. A release needs an explicit version decision.
 
 **Scripts:** `LiteGraph.allow_scripts` is off in every bundle (since Wave 5a no library build includes editor defaults; `check:build` enforces it). The editor app turns it on for its own pages; the runner keeps it off unless `RUNNER_ALLOW_SCRIPTS=1`.
 
