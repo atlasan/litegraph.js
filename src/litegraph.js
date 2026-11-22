@@ -403,7 +403,29 @@ export class LiteGraphClass {
             pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
+            // execution needs (Wave 6): models, modes, emit, ticks, pure (see ExecutionEngine.normalizeDeclaration)
+            execution: ExecutionEngine.normalizeDeclaration(own.execution ?? base_class.execution),
         });
+    }
+
+    /**
+     * Declares the execution needs of registered node types without editing their classes
+     * (`static def.execution` is the in-class form). Recomputes their definitions.
+     * @param {string|string[]} types
+     * @param {object} execution - {models, modes, default_mode, emit, ticks, pure, loop, immediate_inputs}
+     */
+    declareNodeExecution(types, execution) {
+        for (const type of Array.isArray(types) ? types : [types]) {
+            const base_class = this.registered_node_types[type];
+            if (!base_class) continue;
+            base_class.execution = { ...(base_class.execution ?? {}), ...execution };
+            this.refreshNodeDefinition(type);
+        }
+    }
+
+    /** @returns {number[]} the modes a node may use under its graph's execution model */
+    getValidNodeModes(node) {
+        return ExecutionEngine.validModes(node, ExecutionEngine.modelNameFor(node?.graph));
     }
 
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
@@ -617,6 +639,21 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });
+            this.settings.define({ id: "LiteGraph.Execution.AllowAnyMode", name: "Allow node modes their type declares invalid", default: false });
+            this.settings.define({ id: "LiteGraph.Node.ExecutionBadge", name: "Show execution problems (graph.checkExecution) as node badges", default: false });
+            // execution problems (graph.checkExecution), refreshed at most twice a second per document
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.ExecutionBadge")) return null;
+                const root = node.graph?.rootGraph;
+                if (!root?.checkExecution) return null;
+                const now = Date.now();
+                if (!root._execution_issues || now - (root._execution_issues_time ?? 0) > 500) {
+                    root.checkExecution();
+                    root._execution_issues_time = now;
+                }
+                const issue = root._execution_issues.get(node);
+                return issue ? { text: "⚠ exec", title: issue.message, fgColor: "#FED", bgColor: "rgba(150,80,20,0.85)" } : null;
+            });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
@@ -1121,6 +1158,8 @@ export class LiteGraphClass {
         node.size ??= node.computeSize();
         node.pos ??= LiteGraph.DEFAULT_POSITION.concat();
         node.mode ??= LiteGraph.ALWAYS;
+        // the constructor's mode: when still unchanged at graph.add, a declared type gets its model's default
+        node._constructed_mode = node.mode;
 
         // provenance: nodes of non-builtin packs remember their pack (a loaded node keeps its stored stamp)
         const stamp = this.packs?.stampFor(type);

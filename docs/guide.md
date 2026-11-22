@@ -105,6 +105,29 @@ LiteGraph.registerExecutionModel("mine", { delivery: "immediate", refresh: "ance
 
 A project that assigns any legacy flag gets `legacy` for new graphs too, unless it sets `default_execution_model`. Refused events emit `event-dropped {node, path, reason, setting?}`.
 
+**Declaring a node's execution needs** (optional; undeclared types are valid everywhere and start ALWAYS):
+
+```js
+class MyLoop {
+  static def = { execution: {
+    emit: "immediate",            // its events are delivered now, with a refresh, in every model but legacy
+    immediate_inputs: ["break"],  // these action inputs are never queued
+    modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER],  // valid modes (NEVER always is)
+    models: { strict: false },    // not valid under "strict"
+    default_mode: LiteGraph.ON_EVENT,  // the mode new nodes get outside legacy
+  } };
+}
+LiteGraph.declareNodeExecution(["my/add", "my/mul"], { pure: true });  // ON_REQUEST by default under "ancestors"
+LiteGraph.getNodeDefinition("events/timer").execution;  // { ticks: true, modes: [0, 2], ... }
+```
+
+- `ticks: true` marks nodes that need the step loop (Timer, Delay); a pull never re-runs them.
+- `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse a mode the type declares invalid; the refusal (`node.mode_refusal`) names `LiteGraph.Execution.AllowAnyMode`, the setting that lifts it. A group lists the nodes it skipped.
+- A new node of a declared type gets its model's default mode when it is added; a loaded node keeps its stored mode. `graph.applyExecutionModelModes()` applies the defaults to a whole document in one undo step.
+- `graph.checkExecution()` returns `{model, issues}` (invalid model or mode, a `ticks` node that is not stepped, an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS). A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
+
+**Loops.** FOR, ForEach and WHILE deliver their body immediately in every model but legacy, fire `completed` when done, and stop within the loop on `break`. Under `ancestors`, make the loop's data (index arithmetic, the WHILE condition) pure ON_REQUEST nodes: they re-run only when the loop changed their inputs. A WHILE that reaches `properties.cycleLimit` with its condition still true reports it (`event-dropped`, setting `properties.cycleLimit`). WHILE is not valid under `strict`, which forbids re-running the condition in a frame.
+
 Data written with `setOutputData` is stored on the link and read with `getInputData`.
 
 **Readiness:** `await graph.whenReady()` waits for every node that is still loading its dependencies.

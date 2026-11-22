@@ -30,6 +30,9 @@ export class Editor {
 
         // keep settings and user key bindings across reloads (embedders may opt out)
         if (!options.skip_persistence) LiteGraph.persistPlatformState?.();
+        // the Editor shows execution problems as badges by default (a stored choice wins)
+        const badgeSetting = LiteGraph.settings?.getDefinition("LiteGraph.Node.ExecutionBadge");
+        if (badgeSetting) badgeSetting.default = true;
 
         const canvas = this.canvas = root.querySelector(".graphcanvas");
         const graph = this.graph = new LGraph();

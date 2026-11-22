@@ -39,6 +39,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 | 4e Catalog and boundaries | `LG/wave4e_catalog` | [execution](2026-11-21-wave4e-catalog-boundaries.md), [plan](../plans/2026-11-20-wave4-ecosystem-workspace.md) |
 | 6a Event characterization and fixes | `LG/wave6a_ensure` | [execution](2026-11-22-wave6a-ensure.md), [plan](../plans/2026-11-22-events-execution.md) |
 | 6b Execution engine and models | `LG/wave6b_engine` | [execution](2026-11-22-wave6b-engine.md), [plan](../plans/2026-11-22-events-execution.md) |
+| 6c Node execution declarations | `LG/wave6c_declarations` | [execution](2026-11-22-wave6c-declarations.md), [plan](../plans/2026-11-22-events-execution.md) |
 
 From Wave 2 on, each wave gets a dated execution record: what changed, the gate result, browser checks, and what was left open.
 

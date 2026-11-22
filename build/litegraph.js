@@ -450,7 +450,32 @@ export class LiteGraphClass {
             pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
+            // execution needs (Wave 6): models, modes, emit, ticks, pure (see ExecutionEngine.normalizeDeclaration)
+            execution: ExecutionEngine.normalizeDeclaration(own.execution ?? base_class.execution),
         });
+    }
+
+    /**
+     * Declares the execution needs of registered node types without editing their classes
+     * (`static def.execution` is the in-class form). Recomputes their definitions.
+     * @param {string|string[]} types
+     * @param {object} execution - {models, modes, default_mode, emit, ticks, pure, loop, immediate_inputs}
+     */
+    declareNodeExecution(types, execution) {
+        for (const type of Array.isArray(types) ? types : [types]) {
+            const base_class = this.registered_node_types[type];
+            if (!base_class) continue;
+            base_class.execution = {
+                ...(base_class.execution ?? {}),
+                ...execution
+            };
+            this.refreshNodeDefinition(type);
+        }
+    }
+
+    /** @returns {number[]} the modes a node may use under its graph's execution model */
+    getValidNodeModes(node) {
+        return ExecutionEngine.validModes(node, ExecutionEngine.modelNameFor(node?.graph));
     }
 
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
@@ -733,6 +758,34 @@ export class LiteGraphClass {
                 id: "LiteGraph.Execution.MaxEventPasses",
                 name: "Passes that deliver queued inner events at a subgraph or function boundary",
                 default: 64
+            });
+            this.settings.define({
+                id: "LiteGraph.Execution.AllowAnyMode",
+                name: "Allow node modes their type declares invalid",
+                default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.ExecutionBadge",
+                name: "Show execution problems (graph.checkExecution) as node badges",
+                default: false
+            });
+            // execution problems (graph.checkExecution), refreshed at most twice a second per document
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.ExecutionBadge")) return null;
+                const root = node.graph?.rootGraph;
+                if (!root?.checkExecution) return null;
+                const now = Date.now();
+                if (!root._execution_issues || now - (root._execution_issues_time ?? 0) > 500) {
+                    root.checkExecution();
+                    root._execution_issues_time = now;
+                }
+                const issue = root._execution_issues.get(node);
+                return issue ? {
+                    text: "⚠ exec",
+                    title: issue.message,
+                    fgColor: "#FED",
+                    bgColor: "rgba(150,80,20,0.85)"
+                } : null;
             });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
@@ -1309,6 +1362,8 @@ export class LiteGraphClass {
         node.size ??= node.computeSize();
         node.pos ??= LiteGraph.DEFAULT_POSITION.concat();
         node.mode ??= LiteGraph.ALWAYS;
+        // the constructor's mode: when still unchanged at graph.add, a declared type gets its model's default
+        node._constructed_mode = node.mode;
 
         // provenance: nodes of non-builtin packs remember their pack (a loaded node keeps its stored stamp)
         const stamp = this.packs?.stampFor(type);
@@ -2213,6 +2268,8 @@ export class ExecutionEngine {
     static triggerSlot(node, slot, param, link_id, options, rules) {
         const graph = node.graph;
         const output = node.outputs[slot];
+        // a node that declares emit: "immediate" (loops, Sequence) delivers now, with a refresh, in every model
+        const emitNow = this.declarationOf(node)?.emit === "immediate";
         if (this._pulling > 0) return this.drop(node, "refreshing", {
             message: `${node.type} ${node.id}: an event fired while its data was pulled is dropped (event emitters cannot be ON_REQUEST)`
         });
@@ -2243,11 +2300,12 @@ export class ExecutionEngine {
                     });
                     continue;
                 }
-                if (rules.refresh === "ancestors") this.pull(target);
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
                 target.doExecute(param, call);
             } else if (target.onAction) {
                 call.action_call ??= `${node.id}_act_${LiteGraph.uuidv4()}`;
-                if (rules.delivery === "deferred" && target.onExecute) {
+                const immediateInput = this.declarationOf(target)?.immediate_inputs?.includes(input.name);
+                if (rules.delivery === "deferred" && target.onExecute && !emitNow && !immediateInput) {
                     target._waiting_actions ??= [];
                     target._waiting_actions.push([input.name, param, call, link.target_slot]);
                     if (target.graph.status !== target.graph.constructor.STATUS_RUNNING && !target._stopped_queue_reported) {
@@ -2258,7 +2316,7 @@ export class ExecutionEngine {
                     }
                     continue;
                 }
-                if (rules.refresh === "ancestors") this.pull(target);
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
                 target.actionDo(input.name, param, call, link.target_slot);
             } else {
                 this.drop(target, "no-handler", {
@@ -2327,11 +2385,144 @@ export class ExecutionEngine {
         }
     }
 
-    // ---- model changes ----------------------------------------------------------------------------
+    // ---- node declarations (static def.execution) -------------------------------------------------
 
-    /** the mode a new node of an undeclared type gets under a model */
-    static defaultModeFor(rules) {
-        return rules?.legacy ? null : rules?.default_mode ?? LiteGraph.ALWAYS;
+    /**
+     * Normalizes a node type's execution declaration:
+     * `{models: {<model>: false | {default_mode, modes}}, modes, default_mode, emit: "immediate", ticks, pure, loop, immediate_inputs}`.
+     * @returns {Readonly<object>|null}
+     */
+    static normalizeDeclaration(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const modes = (value) => Array.isArray(value) ? Object.freeze(value.filter((m) => Number.isInteger(m))) : undefined;
+        const models = {};
+        for (const [name, entry] of Object.entries(raw.models ?? {})) {
+            models[name] = entry === false ? false : Object.freeze({
+                default_mode: entry?.default_mode,
+                modes: modes(entry?.modes)
+            });
+        }
+        return Object.freeze({
+            models: Object.freeze(models),
+            modes: modes(raw.modes),
+            default_mode: Number.isInteger(raw.default_mode) ? raw.default_mode : undefined,
+            emit: raw.emit === "immediate" ? "immediate" : undefined,
+            ticks: !!raw.ticks,
+            pure: !!raw.pure,
+            loop: !!raw.loop,
+            immediate_inputs: Object.freeze(Array.isArray(raw.immediate_inputs) ? [...raw.immediate_inputs] : []),
+        });
+    }
+
+    /** the execution declaration of a node or type (from its definition), or null */
+    static declarationOf(nodeOrType) {
+        const type = typeof nodeOrType === "string" ? nodeOrType : nodeOrType?.type;
+        if (!type) return null;
+        return LiteGraph.getNodeDefinition?.(type)?.execution ?? null;
+    }
+
+    static get allowAnyMode() {
+        return !!this.setting("LiteGraph.Execution.AllowAnyMode", false);
+    }
+
+    /** the modes a node (or type) may use under a model; NEVER is always allowed */
+    static validModes(nodeOrType, modelName) {
+        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST];
+        const decl = this.declarationOf(nodeOrType);
+        if (!decl) return all;
+        const per = decl.models?.[modelName];
+        if (per === false) return [LiteGraph.NEVER];
+        const modes = per?.modes ?? decl.modes ?? all;
+        return modes.includes(LiteGraph.NEVER) ? [...modes] : [...modes, LiteGraph.NEVER];
+    }
+
+    /** true when the node may use the mode under its graph's model (or LiteGraph.Execution.AllowAnyMode is on) */
+    static isModeValid(node, mode, graph = node?.graph) {
+        if (this.allowAnyMode) return true;
+        return this.validModes(node, this.modelNameFor(graph)).includes(mode);
+    }
+
+    /** the refusal message for an invalid mode; names the setting that lifts it */
+    static modeRefusal(node, mode, graph = node?.graph) {
+        const model = this.modelNameFor(graph);
+        const name = (m) => LiteGraph.NODE_MODES[m] ?? String(m);
+        const valid = this.validModes(node, model).map(name).join(", ");
+        return `${node?.type ?? "node"}: mode "${name(mode)}" is not valid for this node under the "${model}" execution model (valid: ${valid}); set LiteGraph.Execution.AllowAnyMode to allow any mode`;
+    }
+
+    /** the mode a newly added node of a declared type gets under a model, or null to keep its own */
+    static declaredDefaultMode(node, rules) {
+        if (!rules || rules.legacy) return null;
+        const decl = this.declarationOf(node);
+        if (!decl) return null;
+        const per = decl.models?.[rules.name];
+        if (per && per.default_mode != null) return per.default_mode;
+        if (decl.pure && rules.refresh === "ancestors") return LiteGraph.ON_REQUEST;
+        if (decl.default_mode != null) return decl.default_mode;
+        return null;
+    }
+
+    /** the mode each node would get under a model (for "Apply the model's node modes") */
+    static modelModes(graph, rules = this.rulesFor(graph)) {
+        const out = [];
+        const visit = (g) => {
+            for (const node of g._nodes) {
+                const mode = this.declaredDefaultMode(node, rules);
+                if (mode != null && mode !== node.mode && node.mode !== LiteGraph.NEVER) out.push({
+                    node,
+                    mode
+                });
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph);
+            }
+        };
+        visit(graph);
+        return out;
+    }
+
+    // ---- diagnostics ---------------------------------------------------------------------------------
+
+    /**
+     * Checks a graph (and its subgraphs) against the model and the node declarations.
+     * @returns {{model: string, issues: Array<{node, path, code, message}>}}
+     */
+    static check(graph) {
+        const root = graph.rootGraph ?? graph;
+        const model = this.modelNameFor(root);
+        const issues = [];
+        const add = (node, code, message) => issues.push({
+            node,
+            path: node.getPath?.() ?? null,
+            code,
+            message
+        });
+        const hasEventOutput = (node) => (node.outputs ?? []).some((o) => o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION);
+        const visit = (g, parentMode) => {
+            for (const node of g._nodes) {
+                const decl = this.declarationOf(node);
+                if (node.mode !== LiteGraph.NEVER) {
+                    if (decl?.models?.[model] === false) add(node, "invalid-model", `${node.type}: not valid under the "${model}" execution model`);
+                    else if (!this.validModes(node, model).includes(node.mode)) add(node, "invalid-mode", this.modeRefusal(node, node.mode, root));
+                    if (decl?.ticks && (node.mode !== LiteGraph.ALWAYS || (parentMode != null && parentMode !== LiteGraph.ALWAYS))) {
+                        add(node, "ticks-not-stepped", `${node.type}: needs the step loop (ALWAYS mode${parentMode != null ? ", in an ALWAYS subgraph node" : ""}); it keeps its events until stepped`);
+                    }
+                    if (node.mode === LiteGraph.ON_REQUEST && hasEventOutput(node) && node.outputs.some((o) => (o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION) && o.links?.length)) {
+                        add(node, "on-request-emitter", `${node.type}: an event emitter in ON_REQUEST mode never fires (events are dropped while data is pulled)`);
+                    }
+                    if (decl?.loop && !node.outputs?.find((o) => o.name === "do")?.links?.length) {
+                        add(node, "loop-without-body", `${node.type}: the loop body ("do" output) is not connected`);
+                    }
+                    if (decl?.pure && model === "ancestors" && node.mode === LiteGraph.ALWAYS) {
+                        add(node, "pure-always", `${node.type}: a pure node in ALWAYS mode runs every frame; ON_REQUEST runs it only when needed`);
+                    }
+                }
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, node.mode === LiteGraph.NEVER ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
+            }
+        };
+        visit(root, null);
+        return {
+            model,
+            issues
+        };
     }
 }
 
@@ -6367,6 +6558,15 @@ export class LGraph {
         // Directly constructed registered nodes need the same setup as createNode.
         node.post_constructor?.();
 
+        // a new node of a declared type gets its execution model's default mode (a loaded node keeps its own)
+        if (node._constructed_mode !== undefined) {
+            if (!this.isConfiguring && node.mode === node._constructed_mode) {
+                const mode = ExecutionEngine.declaredDefaultMode(node, ExecutionEngine.rulesFor(this));
+                if (mode != null) node.mode = mode;
+            }
+            delete node._constructed_mode;
+        }
+
         // nodes
         if (node.id != -1 && this._nodes_by_id[node.id] != null) {
             LiteGraph.log_debug("lgraph", "add", "there is already a node with this ID, changing it", node);
@@ -8096,6 +8296,40 @@ export class LGraph {
         return true;
     }
 
+    /**
+     * Checks the document against its execution model and the node declarations: invalid model or
+     * mode, a `ticks` node that is not stepped, an ON_REQUEST event emitter, a loop without a body.
+     * @returns {{model: string, issues: Array<{node: object, path: string|null, code: string, message: string}>}}
+     */
+    checkExecution() {
+        const report = ExecutionEngine.check(this);
+        const root = this.rootGraph;
+        // badges read the last report (LiteGraph.Node.ExecutionBadge)
+        root._execution_issues = new Map(report.issues.map((issue) => [issue.node, issue]));
+        return report;
+    }
+
+    /**
+     * Applies the model's default modes to the nodes of declared types (one undo step).
+     * @returns {number} the nodes changed
+     */
+    applyExecutionModelModes() {
+        const root = this.rootGraph;
+        const changes = ExecutionEngine.modelModes(root);
+        if (!changes.length) return 0;
+        root.transact("executionModelModes", () => {
+            for (const {
+                    node,
+                    mode
+                }
+                of changes) node.mode = mode;
+            root.onGraphChanged({
+                action: "executionModelModes"
+            });
+        });
+        return changes.length;
+    }
+
     /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
     get rootGraph() {
         let graph = this;
@@ -8524,6 +8758,14 @@ export class LGraph {
         if (!this._subgraph_node && this._events?.has("missing-nodes")) {
             const report = this.getMissingNodes();
             if (report.length) this._emit("missing-nodes", {
+                report,
+                reason: this._configureReason ?? "load"
+            });
+        }
+        // execution diagnostics of the loaded document (only when someone listens)
+        if (!this._subgraph_node && this._events?.has("execution-check")) {
+            const report = this.checkExecution();
+            this._emit("execution-check", {
                 report,
                 reason: this._configureReason ?? "load"
             });
@@ -18255,6 +18497,45 @@ export class LGraphCanvas {
         graphcanvas.canvas.parentNode.appendChild(panel);
     }
 
+    /**
+     * Shows a short notice over the canvas (execution refusals: invalid modes, skipped nodes).
+     * Without a DOM it only logs. The element has the class "litegraph-execution-notice".
+     */
+    showExecutionNotice(message, ms = 6000) {
+        LiteGraph.log_warn("lgraphcanvas", "execution", message);
+        const host = this.canvas?.parentNode;
+        const doc = this.canvas?.ownerDocument;
+        if (!host || !doc) return null;
+        this._executionNotice?.remove();
+        const notice = doc.createElement("div");
+        notice.className = "litegraph-execution-notice";
+        notice.textContent = message;
+        Object.assign(notice.style, {
+            position: "absolute",
+            left: "50%",
+            top: "48px",
+            transform: "translateX(-50%)",
+            maxWidth: "70%",
+            padding: "6px 10px",
+            background: "rgba(60,30,20,0.92)",
+            color: "#FDB",
+            border: "1px solid #A64",
+            borderRadius: "4px",
+            font: "12px Arial, sans-serif",
+            zIndex: 20,
+            pointerEvents: "none",
+        });
+        host.appendChild(notice);
+        this._executionNotice = notice;
+        setTimeout(() => {
+            if (this._executionNotice === notice) {
+                notice.remove();
+                this._executionNotice = null;
+            }
+        }, ms);
+        return notice;
+    }
+
     showShowNodePanel(node) {
         this.SELECTED_NODE = node;
         this.closePanels();
@@ -18295,7 +18576,7 @@ export class LGraphCanvas {
                     case "Mode":
                         var kV = Object.values(LiteGraph.NODE_MODES).indexOf(value);
                         if (kV >= 0 && LiteGraph.NODE_MODES[kV]) {
-                            node.changeMode(kV);
+                            if (node.changeMode(kV) === false && node.mode_refusal) graphcanvas.showExecutionNotice(node.mode_refusal);
                         } else {
                             LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected mode", value, kV);
                         }
@@ -18318,8 +18599,10 @@ export class LGraphCanvas {
 
             panel.addWidget("string", "Title", node.title, {}, fUpdate);
 
+            // only the modes the node's type declares valid under the document's execution model
+            const validModes = LiteGraph.getValidNodeModes?.(node) ?? LiteGraph.NODE_MODES.map((_, i) => i);
             panel.addWidget("combo", "Mode", LiteGraph.NODE_MODES[node.mode], {
-                values: LiteGraph.NODE_MODES
+                values: LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i))
             }, fUpdate);
 
             var nodeCol = "";
@@ -18594,8 +18877,9 @@ export class LGraphCanvas {
     }
 
     static onMenuNodeMode(value, options, e, menu, node) {
+        const validModes = node && LiteGraph.getValidNodeModes ? LiteGraph.getValidNodeModes(node) : LiteGraph.NODE_MODES.map((_, i) => i);
         LiteGraph.ContextMenu(
-            LiteGraph.NODE_MODES, {
+            LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i)), {
                 event: e,
                 callback: inner_clicked,
                 parentMenu: menu,
@@ -18609,9 +18893,9 @@ export class LGraphCanvas {
             }
             var kV = Object.values(LiteGraph.NODE_MODES).indexOf(v);
             const fApplyMultiNode = (node) => {
-                if (kV >= 0 && LiteGraph.NODE_MODES[kV])
-                    node.changeMode(kV);
-                else {
+                if (kV >= 0 && LiteGraph.NODE_MODES[kV]) {
+                    if (node.changeMode(kV) === false && node.mode_refusal) LGraphCanvas.active_canvas?.showExecutionNotice(node.mode_refusal);
+                } else {
                     LiteGraph.log_warn("lgraphcanvas", "onMenuNodeMode", "unexpected mode", v, kV);
                     node.changeMode(LiteGraph.ALWAYS);
                 }
@@ -19116,11 +19400,16 @@ export class LGraphCanvas {
                     options: modes,
                     callback: (entry) => {
                         if (!group?.graph) return;
+                        let skipped = [];
                         group.graph.transact("groupNodesMode", () => {
-                            if (group.setNodesMode(entry.mode).length) group.graph.onGraphChanged({
+                            const changed = group.setNodesMode(entry.mode);
+                            skipped = changed.skipped ?? [];
+                            if (changed.length) group.graph.onGraphChanged({
                                 action: "groupNodesMode"
                             });
                         });
+                        // nodes whose type refuses the mode keep theirs: say which, and the setting that lifts it
+                        if (skipped.length) canvas.showExecutionNotice?.(`${skipped.length} node(s) kept their mode (${skipped.map((n) => n.title || n.type).join(", ")}): their type does not allow "${entry.content}". Setting LiteGraph.Execution.AllowAnyMode allows any mode.`);
                         canvas.setDirty(true, true);
                     },
                 },
@@ -19659,13 +19948,25 @@ export class LGraphGroup {
 
     /**
      * Sets the execution mode of every node inside the group (LiteGraph.ALWAYS, NEVER, ...).
-     * @returns {Array<object>} the nodes changed
+     * Nodes whose type declares the mode invalid keep theirs: they are listed in `changed.skipped`.
+     * @returns {Array<object>} the nodes changed, with `skipped` (the nodes that refused the mode)
      */
     setNodesMode(mode) {
-        if (!this.graph) return [];
+        const changed = [];
+        // the nodes that refused the mode (not enumerable: the result stays a plain list)
+        Object.defineProperty(changed, "skipped", {
+            value: [],
+            enumerable: false
+        });
+        if (!this.graph) return changed;
         this.recomputeInsideNodes();
-        const changed = this._nodes.filter((node) => node.mode !== mode);
-        for (const node of changed) node.changeMode ? node.changeMode(mode) : (node.mode = mode);
+        for (const node of this._nodes.filter((n) => n.mode !== mode)) {
+            const ok = node.changeMode ? node.changeMode(mode) !== false : ((node.mode = mode), true);
+            (ok ? changed : changed.skipped).push(node);
+        }
+        if (changed.skipped.length) {
+            LiteGraph.log_warn("lgraphgroup", "setNodesMode", `${changed.skipped.length} node(s) kept their mode: ${changed.skipped.map((n) => n.mode_refusal ?? n.type).join("; ")}`);
+        }
         return changed;
     }
 
@@ -20392,7 +20693,8 @@ export class LGraphNode {
         if (!rules.legacy) {
             // a forced pull runs the origin once per frame or call (or again on newer input data); under
             // the ancestors model only ON_REQUEST origins: ALWAYS nodes give this frame's value
-            if (node.mode === LiteGraph.ON_REQUEST || rules.refresh !== "ancestors") ExecutionEngine.ensureFresh(node);
+            // a node that ticks (Timer, Delay) is never re-run by a pull
+            if (node.mode === LiteGraph.ON_REQUEST || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
             return link.data;
         }
 
@@ -20694,6 +20996,13 @@ export class LGraphNode {
     }
 
     changeMode(modeTo) {
+        // a declared type refuses modes it cannot run in (LiteGraph.Execution.AllowAnyMode lifts this)
+        if (this.type && !ExecutionEngine.isModeValid(this, modeTo)) {
+            this.mode_refusal = ExecutionEngine.modeRefusal(this, modeTo);
+            LiteGraph.log_warn("lgraphnode", "changeMode", this.mode_refusal);
+            return false;
+        }
+        this.mode_refusal = null;
         switch (modeTo) {
 
             case LiteGraph.ON_TRIGGER:
@@ -25632,6 +25941,12 @@ export class NodeFunction extends Subgraph {
 
     static title = "Function";
     static desc = "Calls a subgraph definition";
+    // runs only on call: ON_EVENT for new nodes outside legacy (Wave 6)
+    static def = {
+        execution: {
+            default_mode: 1
+        }
+    }; // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
 
     constructor() {
         super();
@@ -30197,6 +30512,11 @@ class GenericCompare {
 }
 LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
 
+// execution needs (Wave 6): pure readers run on request in the ancestors model
+LiteGraph.declareNodeExecution(["basic/array_length", "basic/array[]", "basic/table[][]", "basic/cast", "basic/CompareValues"], {
+    pure: true
+});
+
 LiteGraph.packs.close("litegraph/basic");
 
 // built-in pack: node types registered below belong to "litegraph/events" (see LiteGraph.packs)
@@ -30231,6 +30551,12 @@ class TriggerEvent {
 
     static title = "TriggerEvent";
     static desc = "Triggers event if input evaluates to true";
+    // an event emitter cannot be ON_REQUEST: triggers are dropped while data is pulled (A4)
+    static def = {
+        execution: {
+            modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.NEVER]
+        }
+    };
 
     constructor() {
         this.size = [60, 30];
@@ -30267,6 +30593,12 @@ class EvSequence {
 
     static title = "Sequence";
     static desc = "Triggers a sequence of events when an event arrives";
+    // its outputs fire now, in slot order, in every model (B4)
+    static def = {
+        execution: {
+            emit: "immediate"
+        }
+    };
     // @ BUG: fails to construct Node
 
     constructor() {
@@ -30608,6 +30940,13 @@ class DelayEvent {
 
     static title = "Delay";
     static desc = "Delays one event";
+    // counts time in the step loop: ALWAYS only (B7)
+    static def = {
+        execution: {
+            ticks: true,
+            modes: [LiteGraph.ALWAYS, LiteGraph.NEVER]
+        }
+    };
 
     constructor() {
         this.size = [60, 30];
@@ -30664,6 +31003,12 @@ class TimerEvent {
 
     static title = "Timer";
     static desc = "Sends an event every N milliseconds";
+    static def = {
+        execution: {
+            ticks: true,
+            modes: [LiteGraph.ALWAYS, LiteGraph.NEVER]
+        }
+    };
 
     constructor() {
         this.addProperty("interval", 1000);
@@ -30817,7 +31162,8 @@ class DataStore {
     }
 
     onAction() {
-        this.properties.data = this._last_value;
+        // the value on the input when the event arrives, not the one of the previous step (B15)
+        this.properties.data = this.isInputConnected(0) ? this.getInputData(0) : this._last_value;
     }
 
     onSerialize(o) {
@@ -30867,6 +31213,9 @@ class EventSwitch {
     onExecute() {
         // var sel = this.getInputData("in");
         const sel = String(this.getInputOrProperty("in"));
+        // fires when the selection changes, not on every step (B14)
+        if (sel === this._last_selection) return;
+        this._last_selection = sel;
         let found = false;
         for (let iS in this.outputs) {
             let outSlot = this.outputs[iS];
@@ -30874,14 +31223,12 @@ class EventSwitch {
                 this.selected = outSlot.name; //iS;
                 found = true;
                 this.triggerSlot(outSlot.name); //iS);
-                console.debug("SWITCH FoundAndTrigger", sel, outSlot.name);
                 break;
             }
         }
         if (!found) {
             this.selected = 0;
             this.triggerSlot("default");
-            console.debug("SWITCH NotFound", sel);
         }
     }
 
@@ -33660,6 +34007,17 @@ class Math3DXYZWToVec4 {
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
+// execution needs (Wave 6): pure nodes run on request in the ancestors model; rand, noise, spikes,
+// average, tendTo, accumulate and formula keep ALWAYS (state, time or scripts)
+LiteGraph.declareNodeExecution([
+    "math/converter", "math/bypass", "math/to_number", "math/range", "math/clamp", "math/lerp", "math/abs", "math/floor",
+    "math/frac", "math/smoothstep", "math/scale", "math/gate", "math/operation", "math/compare", "math/condition",
+    "math/branch", "math/trigonometry", "math3d/vec2-to-xy", "math3d/xy-to-vec2", "math3d/vec3-to-xyz",
+    "math3d/xyz-to-vec3", "math3d/vec4-to-xyzw", "math3d/xyzw-to-vec4",
+], {
+    pure: true
+});
+
 LiteGraph.packs.close("litegraph/math");
 
 // built-in pack: node types registered below belong to "litegraph/math3d" (see LiteGraph.packs)
@@ -34483,6 +34841,11 @@ class StringToTable {
 }
 LiteGraph.registerNodeType("string/toTable", StringToTable);
 
+// execution needs (Wave 6): every string node is pure
+LiteGraph.declareNodeExecution(Object.keys(LiteGraph.registered_node_types).filter((type) => type.startsWith("string/")), {
+    pure: true
+});
+
 LiteGraph.packs.close("litegraph/strings");
 
 // built-in pack: node types registered below belong to "litegraph/logic" (see LiteGraph.packs)
@@ -34711,6 +35074,12 @@ class logicBranch {
 
     static title = "Branch";
     static desc = "Branch execution on condition";
+    // a trigger node; in ALWAYS mode it branches only when the condition changes (B14)
+    static def = {
+        execution: {
+            modes: [LiteGraph.ON_TRIGGER, LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER]
+        }
+    };
 
     constructor() {
         this.properties = {};
@@ -34723,8 +35092,13 @@ class logicBranch {
 
     onExecute(_param, _options) {
         var conditition = this.getInputData(1);
+        // run by the step loop (ALWAYS mode, not triggered): only a changed condition branches (B14)
+        const stepped = this.mode === LiteGraph.ALWAYS && (!_options?.action_call || String(_options.action_call).startsWith(`${this.id}_exec_`));
+        if (stepped) {
+            if (conditition === this._last_condition) return;
+            this._last_condition = conditition;
+        }
         if (conditition) {
-            console.debug(this, conditition);
             this.triggerSlot(0, _param, null, _options);
         } else {
             this.triggerSlot(1, _param, null, _options);
@@ -34733,6 +35107,20 @@ class logicBranch {
 }
 LiteGraph.registerNodeType("logic/IF", logicBranch);
 
+
+/** loops deliver their body now in every model (emit: "immediate"), and "break" reaches them during the loop */
+const LOOP_EXECUTION = Object.freeze({
+    emit: "immediate",
+    loop: true,
+    immediate_inputs: ["break"],
+    default_mode: LiteGraph.ON_EVENT,
+    modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.NEVER],
+});
+/** fires a loop's "completed" output (nodes saved before Wave 6 do not have it) */
+function loopCompleted(node, param) {
+    const slot = node.findOutputSlot("completed");
+    if (slot >= 0) node.triggerSlot(slot, param);
+}
 
 class logicFor {
     constructor() {
@@ -34744,28 +35132,29 @@ class logicFor {
         // this.addInput("reset", LiteGraph.ACTION);
         this.addOutput("do", LiteGraph.EVENT);
         this.addOutput("index", "number");
+        this.addOutput("completed", LiteGraph.EVENT);
         this.started = false;
         this.stopped = false;
     }
 
     static title = "FOR";
     static desc = "Cycle FOR";
+    static def = {
+        execution: LOOP_EXECUTION
+    };
 
     onExecute(param) {
         if (!this.started) return;
-        var iI = this.getInputData(0);
-        var num = this.getInputData(1);
+        var iI = this.getInputData(0) ?? 0;
+        var num = this.getInputData(1) ?? 0;
         for (var k = iI; k < iI + num; k++) {
-            console.debug?.("for cycle " + k);
             this.setOutputData(1, k);
             this.triggerSlot(0, param);
-            if (this.stopped) {
-                console.debug?.("for cycle stopped on index " + k);
-                break;
-            }
+            if (this.stopped) break;
         }
         this.started = false;
         this.stopped = true;
+        loopCompleted(this, param);
     }
 
     onAction(action) {
@@ -34798,12 +35187,16 @@ class logicForEach {
         this.addOutput("do", LiteGraph.EVENT);
         this.addOutput("index", "number");
         this.addOutput("element", 0);
+        this.addOutput("completed", LiteGraph.EVENT);
         this.started = false;
         this.stopped = false;
     }
 
     static title = "ForEach";
     static desc = "Cycle for each element in array";
+    static def = {
+        execution: LOOP_EXECUTION
+    };
 
     onExecute(param) {
         if (!this.started) return;
@@ -34821,6 +35214,7 @@ class logicForEach {
         }
         this.started = false;
         this.stopped = true;
+        loopCompleted(this, param);
     }
 
     onAction(action) {
@@ -34856,6 +35250,7 @@ class logicWhile {
         this.addInput("break", LiteGraph.ACTION);
         this.addOutput("do", LiteGraph.EVENT);
         this.addOutput("index", "number");
+        this.addOutput("completed", LiteGraph.EVENT);
         this.started = false;
         this.stopped = false;
         this.k = 0;
@@ -34865,6 +35260,15 @@ class logicWhile {
 
     static title = "WHILE";
     static desc = "Cycle WHILE";
+    // re-evaluating the condition re-runs its nodes in the frame, which the "strict" model refuses
+    static def = {
+        execution: {
+            ...LOOP_EXECUTION,
+            models: {
+                strict: false
+            }
+        }
+    };
 
     onExecute() {
         this.setOutputData(1, this.k);
@@ -34886,27 +35290,37 @@ class logicWhile {
                 this.k = 0;
                 var cycleLimit = this.properties.cycleLimit || 999;
                 while (this.cond && this.k < cycleLimit) {
-                    console.debug?.("while cycle " + this.k);
                     this.setOutputData(1, this.k);
                     this.triggerSlot(0, param);
                     // done
-                    if (this.stopped) {
-                        console.debug?.("while cycle stopped on index " + this.k);
-                        break;
-                    }
+                    if (this.stopped) break;
                     this.k++;
-                    this.cond = this.getInputData(1, true, true); // CHECK THIS : USING FORCE ANCESTOR REFRESH ( ?!? getInputData refresh_tree )
+                    // a pull: the condition's ON_REQUEST ancestors run again when the body changed their inputs
+                    this.cond = this.getInputData(1, true, true);
+                }
+                if (this.cond && !this.stopped && this.k >= cycleLimit) {
+                    // stopped by the limit, not by the condition: say so, and what lifts it
+                    LiteGraph.ExecutionEngine?.drop(this, "max-passes", {
+                        setting: "properties.cycleLimit",
+                        message: `WHILE ${this.id}: stopped after ${cycleLimit} iterations with the condition still true; raise properties.cycleLimit to allow more`
+                    });
                 }
                 this.k = 0;
                 this.setOutputData(1, this.k);
                 this.cond = this.getInputData(1);
                 this.started = false;
                 this.stopped = true;
+                loopCompleted(this, param);
                 break;
         }
     }
 }
 LiteGraph.registerNodeType("logic/CycleWHILE", logicWhile);
+
+// execution needs (Wave 6): pure nodes run on request in the ancestors model
+LiteGraph.declareNodeExecution(["logic/selector", "logic/AND", "logic/OR", "logic/NOT", "logic/CompareBool"], {
+    pure: true
+});
 
 LiteGraph.packs.close("litegraph/logic");
 

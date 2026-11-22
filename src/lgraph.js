@@ -1134,6 +1134,15 @@ export class LGraph {
         // Directly constructed registered nodes need the same setup as createNode.
         node.post_constructor?.();
 
+        // a new node of a declared type gets its execution model's default mode (a loaded node keeps its own)
+        if (node._constructed_mode !== undefined) {
+            if (!this.isConfiguring && node.mode === node._constructed_mode) {
+                const mode = ExecutionEngine.declaredDefaultMode(node, ExecutionEngine.rulesFor(this));
+                if (mode != null) node.mode = mode;
+            }
+            delete node._constructed_mode;
+        }
+
         // nodes
         if (node.id != -1 && this._nodes_by_id[node.id] != null) {
             LiteGraph.log_debug("lgraph", "add", "there is already a node with this ID, changing it", node);
@@ -2582,6 +2591,34 @@ export class LGraph {
         return true;
     }
 
+    /**
+     * Checks the document against its execution model and the node declarations: invalid model or
+     * mode, a `ticks` node that is not stepped, an ON_REQUEST event emitter, a loop without a body.
+     * @returns {{model: string, issues: Array<{node: object, path: string|null, code: string, message: string}>}}
+     */
+    checkExecution() {
+        const report = ExecutionEngine.check(this);
+        const root = this.rootGraph;
+        // badges read the last report (LiteGraph.Node.ExecutionBadge)
+        root._execution_issues = new Map(report.issues.map((issue) => [issue.node, issue]));
+        return report;
+    }
+
+    /**
+     * Applies the model's default modes to the nodes of declared types (one undo step).
+     * @returns {number} the nodes changed
+     */
+    applyExecutionModelModes() {
+        const root = this.rootGraph;
+        const changes = ExecutionEngine.modelModes(root);
+        if (!changes.length) return 0;
+        root.transact("executionModelModes", () => {
+            for (const { node, mode } of changes) node.mode = mode;
+            root.onGraphChanged({ action: "executionModelModes" });
+        });
+        return changes.length;
+    }
+
     /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
     get rootGraph() {
         let graph = this;
@@ -2942,6 +2979,11 @@ export class LGraph {
         if (!this._subgraph_node && this._events?.has("missing-nodes")) {
             const report = this.getMissingNodes();
             if (report.length) this._emit("missing-nodes", { report, reason: this._configureReason ?? "load" });
+        }
+        // execution diagnostics of the loaded document (only when someone listens)
+        if (!this._subgraph_node && this._events?.has("execution-check")) {
+            const report = this.checkExecution();
+            this._emit("execution-check", { report, reason: this._configureReason ?? "load" });
         }
         return error;
     }
