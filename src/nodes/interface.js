@@ -829,4 +829,8 @@ class WidgetPanel {
 }
 LiteGraph.registerNodeType("widget/panel", WidgetPanel);
 
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// every widget/* node (its value comes from the UI). widget/progress, widget/text and widget/panel only display.
+
 LiteGraph.packs.close("litegraph/interface");

@@ -445,6 +445,6 @@ class logicWhile {
 LiteGraph.registerNodeType("logic/CycleWHILE", logicWhile);
 
 // execution needs (Wave 6): pure nodes run on request in the ancestors model
-LiteGraph.declareNodeExecution(["logic/selector", "logic/AND", "logic/OR", "logic/NOT", "logic/CompareBool"], { pure: true });
+LiteGraph.declareNodeExecution(["logic/selector", "logic/AND", "logic/OR", "logic/NOT", "logic/CompareBool", "logic/sequence"], { pure: true });
 
 LiteGraph.packs.close("litegraph/logic");

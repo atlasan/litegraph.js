@@ -1438,6 +1438,12 @@ LiteGraph.declareNodeExecution([
     "math/frac", "math/smoothstep", "math/scale", "math/gate", "math/operation", "math/compare", "math/condition",
     "math/branch", "math/trigonometry", "math3d/vec2-to-xy", "math3d/xy-to-vec2", "math3d/vec3-to-xyz",
     "math3d/xyz-to-vec3", "math3d/vec4-to-xyzw", "math3d/xyzw-to-vec4",
+    "math/noise", // a noise table filled once: the same input gives the same output
 ], { pure: true });
+// declaration pass (flows track): time- or history-based nodes advance once per step, never by a pull
+LiteGraph.declareNodeExecution(["math/average", "math/tendTo", "math/spikes", "math/accumulate"], { ticks: true });
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// math/rand, math/formula (its TIME variable).
 
 LiteGraph.packs.close("litegraph/math");

@@ -91,7 +91,7 @@ describe('execution declarations (Wave 6c)', () => {
         expect(exec).toMatchObject({ pure: true, modes: [0, 4], models: { strict: false, event: { default_mode: 1 } } });
         expect(Object.isFrozen(exec)).toBe(true);
         expect(constructed).toBe(0);
-        expect(LiteGraph.getNodeDefinition('basic/const').execution).toBeNull();
+        expect(LiteGraph.getNodeDefinition('basic/time').execution).toBeNull(); // volatile: undeclared (basic/const is pure since the declaration pass)
         expect(LiteGraph.getNodeDefinition('logic/CycleFOR').execution).toMatchObject({ emit: 'immediate', loop: true, immediate_inputs: ['break'] });
         expect(LiteGraph.getNodeDefinition('events/timer').execution).toMatchObject({ ticks: true, modes: [0, 2] });
         expect(LiteGraph.getNodeDefinition('math/operation').execution.pure).toBe(true);

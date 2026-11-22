@@ -5750,4 +5750,9 @@ LGraphTexture.guardRegisteredWebGLNodes();
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
 
+// declaration pass (flows track), conservative for a media pack: only the frame-history smoothers tick
+LiteGraph.declareNodeExecution(["texture/temporal_smooth", "texture/linear_avg_smooth"], { ticks: true });
+// The filters (color, gradient, mix, edges, blur, ...) are deterministic but not declared pure until they are
+// checked in a browser. Volatile (FLW-02), ALWAYS: texture/operation, texture/shader, texture/canvas2D, texture/average, texture/webcam.
+
 LiteGraph.packs.close("litegraph/gltextures");

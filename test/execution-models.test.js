@@ -611,6 +611,19 @@ describe('deprecations (step 18)', () => {
     });
 });
 
+test('a host actionDo pulls the node\'s ON_REQUEST data under ancestors, not under event', () => {
+    for (const [model, expected] of [['ancestors', [5]], ['event', [undefined]]]) { // event: no refresh, no data yet
+        const g = new LGraph();
+        g.config.execution = model;
+        const c = LiteGraph.createNode('basic/const'); c.properties.value = 5; g.add(c);
+        c.mode = LiteGraph.ON_REQUEST;
+        const rec = LiteGraph.createNode('exm/rec'); g.add(rec);
+        c.connect(0, rec, 1);
+        rec.actionDo('in');
+        expect([model, rec.log.map(([v]) => v)]).toEqual([model, expected]);
+    }
+});
+
 test('the guide\'s loop example runs as documented', () => {
     const g = new LGraph();
     expect(g.executionModel).toBe('ancestors');
@@ -629,7 +642,7 @@ test('the guide\'s loop example runs as documented', () => {
     const assign = store.onAction.bind(store);
     store.onAction = (...args) => { assign(...args); stored.push(store.properties.data); };
     g.runStep();
-    loop.onAction('do');
+    loop.actionDo('do'); // a host call pulls the pure constants first, like a delivered event
     expect(stored).toEqual([0, 2, 4]);
     expect(store.properties.data).toBe(4);
 });

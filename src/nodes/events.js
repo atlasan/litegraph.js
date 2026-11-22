@@ -665,4 +665,9 @@ class EventSwitch {
 }
 LiteGraph.registerNodeType("events/switch", EventSwitch);
 
+// declaration pass (flows track): nodes that only react to events (no onExecute)
+LiteGraph.declareNodeExecution(["events/once", "events/waitAll", "events/filter", "events/log"], { default_mode: LiteGraph.ON_EVENT });
+// Kept ALWAYS: counter, semaphore, stepper, switch and branch read data or count steps in onExecute,
+// and basic/data_store mirrors its value there; ON_EVENT would stop that.
+
 LiteGraph.packs.close("litegraph/events");

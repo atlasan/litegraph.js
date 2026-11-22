@@ -5,11 +5,23 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
 
+## Changed
+
+* **New constants are ON_REQUEST under `ancestors`:** a new `basic/const`, `boolean`, `string`, `data` or `array` node, like the pure math nodes, runs when a consumer pulls it. `legacy` documents and loaded nodes keep their modes; "Apply the model's node modes" converts an old document.
+* **A ticking node is never re-run by a pull:** this covers `math/accumulate` and `math/average`, among others. Before, under the `event` and `step` models, a forced pull from an event re-ran them, so they advanced more than once per step.
+* **`node.actionDo(action)` called from host code pulls the node's ON_REQUEST inputs first under `ancestors`**, as a delivered event does. The guide's loop example now calls `loop.actionDo("do")`.
+
 ## Added
 
 * **Node reference:** `npm run docs:nodes` (`tools/node-reference.mjs`) writes `docs/nodes/README.md`, one page per pack and `nodes.json` from the registry. The pages are generated locally and git-ignored; committing them is an open decision (D9).
 * **`def.usage`** (or a static `usage`): a short how-to for a node type, returned by `getNodeDefinition(type).usage`. The FOR, ForEach, WHILE, IF, Sequence, Timer, Delay and Function nodes have one.
 * **Every builtin pack has a `description`**, and every bundled node type has a description. New titles: Spikes, Process info, File read/write/delete/exists/list.
+* **Declaration pass:** 36 more node types declare their execution needs (86 of 273 bundled types):
+  * pure: the basic constants and conversions, `logic/sequence`, `math/noise`, the math3d nodes;
+  * ticks: `math/average`, `tendTo`, `spikes`, `accumulate`, `audio/adsr`, `texture/temporal_smooth`, `linear_avg_smooth`;
+  * ON_EVENT by default: `events/once`, `waitAll`, `filter`, `log`, `basic/alert`.
+
+  Volatile nodes (time, random, widgets) stay ALWAYS, with a comment, until FLW-02.
 * **Catalog test** (`tools/tests/node-catalog.test.mjs`): every bundled type is created (browser types with jsdom, Web Audio and WebGL stand-ins), described, in a described pack, and listed once in the reference.
 
 # Unreleased: Wave 6 (events and execution models)

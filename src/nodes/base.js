@@ -1330,5 +1330,13 @@ LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
 
 // execution needs (Wave 6): pure readers run on request in the ancestors model
 LiteGraph.declareNodeExecution(["basic/array_length", "basic/array[]", "basic/table[][]", "basic/cast", "basic/CompareValues"], { pure: true });
+// declaration pass (flows track): constants and conversions are pure; alert only reacts to events
+LiteGraph.declareNodeExecution(["basic/const", "basic/boolean", "basic/string", "basic/data", "basic/array", "basic/length", "basic/not"], { pure: true });
+LiteGraph.declareNodeExecution(["basic/alert"], { default_mode: LiteGraph.ON_EVENT });
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// basic/time, basic/variable, basic/object, basic/script, basic/file.
+// Side effects or state, kept ALWAYS (a mode change would stop them): basic/set_array, basic/array_append,
+// basic/console, basic/download, basic/jsonparse, basic/data_store, basic/watch.
 
 LiteGraph.packs.close("litegraph/basic");

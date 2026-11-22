@@ -944,4 +944,11 @@ class ObjectEditorNode {
 
 LiteGraph.registerNodeType("objects/json_editor", ObjectEditorNode);
 
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// objects/evaluate, objects/event_function, objects/method_widget, objects/property_widget, objects/json_editor.
+// Pure-ish, left undeclared: objects/get_property, objects/object_keys, objects/properties read an object
+// that another node may mutate in place without a new data stamp (audit §2).
+// Side effects, kept ALWAYS: objects/set_property, objects/merge_objects.
+
 LiteGraph.packs.close("litegraph/objects");
