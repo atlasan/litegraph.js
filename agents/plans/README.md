@@ -23,6 +23,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
+| 2026-11-22 | [Flows direction](2026-11-22-flows-direction.md): node reference, declarations, examples, call scopes, lifecycle and custom events, graph profiles (from the event flows audit) | proposed |
 | 2026-11-22 | [Event integration](2026-11-22-event-integration.md): one listener engine for hooks (intercept) and typed events (observe), with a fixed order, compatible API and new event targets (proposed Wave 7) | proposed |
 | 2026-11-22 | [Panels: graph options and node details](2026-11-22-panels-options-node-details.md): shared panel shell and property editors, a Graph/Canvas/Settings options panel with search, categories and sorting, a node details panel with sections, tooltips and one undo step per edit (proposed Wave 7) | proposed |
 | 2026-11-22 | [Events and execution](2026-11-22-events-execution.md): audit of the event mechanisms; execution models per document with `ancestors` as the default, node execution declarations, `legacy` compatibility (proposed Wave 6) | accepted |
