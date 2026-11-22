@@ -195,7 +195,7 @@ Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open
 
 | Part | Branch | Items | Status |
 |---|---|---|---|
-| Reference | `LG/dev_flows_reference` | `npm run docs:nodes` (`tools/node-reference.mjs`) → `docs/nodes/` (local, not committed: D9); pack descriptions; `def.usage`; catalog test | in progress |
+| Reference | `LG/dev_flows_reference` | `npm run docs:nodes` (`tools/node-reference.mjs`) → `docs/nodes/` (local, not committed: D9); pack descriptions; `def.usage`; catalog test | **Done** ([record](../executions/2026-11-22-flows-reference.md)) |
 | Declarations | `LG/dev_flows_declarations` | `pure` / `ticks` / default modes for the undeclared types; volatile nodes stay ALWAYS until FLW-02 | planned |
 | Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | planned |
 

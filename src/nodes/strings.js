@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/strings" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/strings", version: LiteGraph.VERSION, title: "Strings", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/strings", version: LiteGraph.VERSION, title: "Strings", description: "Text operations: compare, concatenate, split, convert and format strings.", builtin: true });
 
 function toString(a) {
     if (a && a.constructor === Object) {

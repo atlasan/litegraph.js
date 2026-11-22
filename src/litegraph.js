@@ -337,7 +337,7 @@ export class LiteGraphClass {
     }
 
     includeBasicNodes(){
-        this.packs.open({ id: "litegraph/core", version: this.VERSION, title: "Subgraphs", builtin: true });
+        this.packs.open({ id: "litegraph/core", version: this.VERSION, title: "Subgraphs", description: "Subgraphs and functions: the subgraph node, its graph inputs and outputs, and the function node that runs an inner graph per call.", builtin: true });
         try {
             this.registerNodeType("graph/subgraph", Subgraph);
             this.registerNodeType("graph/input", GraphInput);
@@ -373,7 +373,7 @@ export class LiteGraphClass {
     /**
      * Builds the metadata of a node type without creating a node.
      * Sources, in order: an optional `static def = {...}` on the class, then the classic static
-     * fields (`title`, `desc`/`description`, `search_aliases`, `capabilities`, `deprecated`,
+     * fields (`title`, `desc`/`description`, `usage`, `search_aliases`, `capabilities`, `deprecated`,
      * `experimental`, `skip_list`), then capability rules from {@link declareCapabilities}.
      * `def.inputs` / `def.outputs` describe the slots when the class declares them (otherwise null:
      * slots are only known after construction).
@@ -393,6 +393,8 @@ export class LiteGraphClass {
             type,
             title: own.display_name ?? own.title ?? base_class.title ?? type,
             description: own.description ?? base_class.desc ?? base_class.description ?? "",
+            // how to use the node: a short how-to for the node reference (docs/nodes) and tooltips
+            usage: own.usage ?? base_class.usage ?? "",
             category: own.category ?? base_class.category ?? "",
             search_aliases: Object.freeze([...list(own.search_aliases), ...list(base_class.search_aliases)]),
             capabilities: Object.freeze([...capabilities]),

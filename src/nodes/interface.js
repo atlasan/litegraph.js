@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/interface" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/interface", version: LiteGraph.VERSION, title: "Interface widgets", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/interface", version: LiteGraph.VERSION, title: "Interface widgets", description: "Widgets drawn inside the node: buttons, toggles, sliders, knobs, combos, text and progress displays.", builtin: true });
 
 class WidgetButton {
 
@@ -498,6 +498,7 @@ LiteGraph.registerNodeType("widget/knob", WidgetKnob);
 
 // Show value inside the debug console
 class WidgetSliderGUI {
+    static desc = "A slider drawn across the whole node; outputs its value.";
 
     static title = "Inner Slider";
 

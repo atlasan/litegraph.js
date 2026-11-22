@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/network" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/network", version: LiteGraph.VERSION, title: "Network", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/network", version: LiteGraph.VERSION, title: "Network", description: "Browser network clients: WebSocket, HTTP request and WebRTC.", builtin: true });
 
 class LGWebSocket {
     static title = "WS Client";

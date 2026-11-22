@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/audio" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/audio", version: LiteGraph.VERSION, title: "Audio", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/audio", version: LiteGraph.VERSION, title: "Audio", description: "Web Audio: sources, oscillators, filters, gain, delay, reverb, analysers and the destination, wired as an audio graph.", builtin: true });
 
 class LGAudio {
 

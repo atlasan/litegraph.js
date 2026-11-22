@@ -1,6 +1,6 @@
 // built-in pack: node types registered below belong to "litegraph/socketio" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/socketio", version: LiteGraph.VERSION, title: "Socket.IO", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/socketio", version: LiteGraph.VERSION, title: "Socket.IO", description: "Socket.IO client for the browser and Node.js.", builtin: true });
 
 // src/nodes/libraries/socket.io.js
 

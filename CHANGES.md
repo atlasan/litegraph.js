@@ -1,6 +1,17 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased: flows track (node reference, declarations, examples)
+
+Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
+
+## Added
+
+* **Node reference:** `npm run docs:nodes` (`tools/node-reference.mjs`) writes `docs/nodes/README.md`, one page per pack and `nodes.json` from the registry. The pages are generated locally and git-ignored; committing them is an open decision (D9).
+* **`def.usage`** (or a static `usage`): a short how-to for a node type, returned by `getNodeDefinition(type).usage`. The FOR, ForEach, WHILE, IF, Sequence, Timer, Delay and Function nodes have one.
+* **Every builtin pack has a `description`**, and every bundled node type has a description. New titles: Spikes, Process info, File read/write/delete/exists/list.
+* **Catalog test** (`tools/tests/node-catalog.test.mjs`): every bundled type is created (browser types with jsdom, Web Audio and WebGL stand-ins), described, in a described pack, and listed once in the reference.
+
 # Unreleased: Wave 6 (events and execution models)
 
 Plan: `agents/plans/2026-11-22-events-execution.md`.

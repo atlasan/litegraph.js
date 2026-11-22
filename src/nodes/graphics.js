@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/graphics" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/graphics", version: LiteGraph.VERSION, title: "Graphics", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/graphics", version: LiteGraph.VERSION, title: "Graphics", description: "2D images and canvas drawing, colours, image fades and video or webcam frames.", builtin: true });
 
 
 class GraphicsPlot {

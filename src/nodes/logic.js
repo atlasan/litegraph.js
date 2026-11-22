@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/logic" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/logic", version: LiteGraph.VERSION, title: "Logic", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/logic", version: LiteGraph.VERSION, title: "Logic", description: "Boolean logic, branching (IF, selector, sequence) and loops (FOR, WHILE).", builtin: true });
 
 class Selector {
 
@@ -214,7 +214,10 @@ class logicBranch {
     static title = "Branch";
     static desc = "Branch execution on condition";
     // a trigger node; in ALWAYS mode it branches only when the condition changes (B14)
-    static def = { execution: { modes: [LiteGraph.ON_TRIGGER, LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER] } };
+    static def = {
+        execution: { modes: [LiteGraph.ON_TRIGGER, LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER] },
+        usage: "Send an event to onTrigger; true or false fires depending on condition.",
+    };
 
     constructor() {
         this.properties = {};
@@ -271,7 +274,10 @@ class logicFor {
 
     static title = "FOR";
     static desc = "Cycle FOR";
-    static def = { execution: LOOP_EXECUTION };
+    static def = {
+        execution: LOOP_EXECUTION,
+        usage: "Send an event to do; the do output fires nElements times with index counting from start, then completed fires. Nodes pulled from index see each value.",
+    };
 
     onExecute(param) {
         if (!this.started) return;
@@ -324,7 +330,10 @@ class logicForEach {
 
     static title = "ForEach";
     static desc = "Cycle for each element in array";
-    static def = { execution: LOOP_EXECUTION };
+    static def = {
+        execution: LOOP_EXECUTION,
+        usage: "Connect an array and send an event to do; the do output fires once per element with index and element set, then completed fires.",
+    };
 
     onExecute(param) {
         if (!this.started) return;
@@ -386,7 +395,10 @@ class logicWhile {
     static title = "WHILE";
     static desc = "Cycle WHILE";
     // re-evaluating the condition re-runs its nodes in the frame, which the "strict" model refuses
-    static def = { execution: { ...LOOP_EXECUTION, models: { strict: false } } };
+    static def = {
+        execution: { ...LOOP_EXECUTION, models: { strict: false } },
+        usage: "Send an event to do; the do output fires while condition is true (at most cycleLimit times), then completed fires. Not valid under the strict model.",
+    };
 
     onExecute() {
         this.setOutputData(1, this.k);

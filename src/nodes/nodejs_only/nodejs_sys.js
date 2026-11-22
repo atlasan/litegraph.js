@@ -1,6 +1,6 @@
 // built-in pack: node types registered below belong to "litegraph/nodejs-sys" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/nodejs-sys", version: LiteGraph.VERSION, title: "Node.js system", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/nodejs-sys", version: LiteGraph.VERSION, title: "Node.js system", description: "Node.js file system and command nodes: read, write, list and run (runner and Node.js only; denied by the runner unless allowed).", builtin: true });
 
 /**
  * NodeJsSysHelper - shared helpers for the Node.js system nodes (libraries: LiteGraph.LibraryManager)
@@ -567,6 +567,8 @@ class SysUtil_FileBaseNode {
 }
 
 class SysUtil_FileReadNode extends SysUtil_FileBaseNode {
+    static title = "File read";
+    static desc = "Reads a text file on the host (Node.js), then fires onSuccess or onError.";
     constructor() {
         super("Read File", "Reads content from a file.");
         this.addOutput("fileContent", "string");
@@ -587,6 +589,8 @@ LiteGraph.registerNodeType("sys/fileRead", SysUtil_FileReadNode);
 
 
 class SysUtil_FileWriteNode extends SysUtil_FileBaseNode {
+    static title = "File write";
+    static desc = "Writes text to a file on the host (Node.js), then fires onSuccess or onError.";
     constructor() {
         super("Write File", "Writes content to a file.");
         this.addInput("content", "string", { param_bind: true });
@@ -608,6 +612,8 @@ LiteGraph.registerNodeType("sys/fileWrite", SysUtil_FileWriteNode);
 
 
 class SysUtil_FileDeleteNode extends SysUtil_FileBaseNode {
+    static title = "File delete";
+    static desc = "Deletes a file on the host (Node.js), then fires onSuccess or onError.";
     constructor() {
         super("Delete File", "Deletes a file.");
     }
@@ -631,6 +637,8 @@ LiteGraph.registerNodeType("sys/fileDelete", SysUtil_FileDeleteNode);
 
 
 class SysUtil_FileExistsNode extends SysUtil_FileBaseNode {
+    static title = "File exists";
+    static desc = "Checks whether a file exists on the host (Node.js), then fires onSuccess or onError.";
     constructor() {
         super("File Exists", "Checks if a file exists.");
         this.addOutput("exists", "boolean");
@@ -651,6 +659,8 @@ LiteGraph.registerNodeType("sys/fileExists", SysUtil_FileExistsNode);
 
 
 class SysUtil_FileListNode extends SysUtil_FileBaseNode {
+    static title = "File list";
+    static desc = "Lists the files of a host folder (Node.js), then fires onSuccess or onError.";
     constructor() {
         super("List Directory", "Lists files in a directory.");
         this.addOutput("fileList", "array");
