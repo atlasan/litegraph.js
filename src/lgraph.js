@@ -686,7 +686,8 @@ export class LGraph {
                     if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
                     if (node.mode === LiteGraph.ALWAYS && node.doExecute) {
                         if (rules.frame_pull) ExecutionEngine.pull(node);
-                        node.doExecute();
+                        this._step_node = node; // its own turn: runStep reports it below
+                        try { node.doExecute(); } finally { this._step_node = null; }
                         // one message per change, not one per step
                         if (node.execution_state?.status !== "done") this.reportExecutionState(node, "status", { status: "done" });
                     }

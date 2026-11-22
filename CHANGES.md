@@ -8,6 +8,7 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 ## Changed
 
 * **New graphs run under the `ancestors` execution model.** A graph created in code (`new LGraph()`) or a new document in the editor delivers actions immediately and pulls ON_REQUEST data before them. **The one behaviour change:** an action reaches a node that has an `onExecute` at once, not at its next turn in the step. Opt out with one line: `LiteGraph.default_execution_model = "legacy";`. Projects that assign any legacy flag (`use_deferred_actions`, `refreshAncestorsOnActions`, …) get `legacy` automatically.
+* **Editor pages** set `LiteGraph.default_execution_model = "ancestors"` instead of assigning the legacy flags (`js/defaults.js` and its `debug`, `mobile` and `event_based` presets).
 * **Documents keep their behaviour:** a document saved without `config.execution` loads as `legacy` and is saved without the field. New documents save the model they run under.
 
 ## Added
@@ -21,6 +22,8 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 * **New nodes get the model's default mode** when their type declares one (pure math, logic and string nodes are On Request under `ancestors`; loops On Event). Loaded nodes keep their modes; `graph.applyExecutionModelModes()` applies the defaults in one undo step.
 * **`graph.checkExecution()`**, `execution-check {report}` after a load, and an execution badge (setting `LiteGraph.Node.ExecutionBadge`, on in the Editor).
 * FOR, ForEach and WHILE have a `completed` output.
+* **Graph info:** the canvas menu's "Options (execution: <model>)" (with `LiteGraph.showCanvasOptions`, on in the Editor) opens the Options panel with an "Execution model" combo (one undo step) and an optional "Apply the model's node modes (N)" button (one more undo step).
+* **Execution state for event runs:** a node run by an action, a trigger or a pull reports `running` then `done`, once per change. The runner page draws the streamed `execution_state` on the open workflow and keeps it per workflow.
 
 ## Fixed
 

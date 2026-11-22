@@ -193,6 +193,7 @@ export class LiteGraphClass {
     AUTOHIDE_TITLE = 3;
     VERTICAL_LAYOUT = "vertical"; // arrange nodes vertically
 
+    showCanvasOptions = false; // the canvas menu offers "Options": graph info (execution model) and canvas switches
     // canvas flags the graph Options panel offers as on/off switches
     availableCanvasOptions = [
         "allow_addOutSlot_onExecuted", "free_resize", "highquality_render", "use_gradients",
@@ -2055,7 +2056,8 @@ export class ExecutionEngine {
     static LEGACY = Object.freeze({
         name: "legacy",
         legacy: true,
-        title: "Legacy (global flags)"
+        title: "Legacy (global flags)",
+        description: "Documents saved without a model: the global flags (use_deferred_actions, refreshAncestorsOn*, ...) decide, as before Wave 6."
     });
 
     /** a global data version, stamped on links by setOutputData */
@@ -2216,7 +2218,10 @@ export class ExecutionEngine {
 
     // ---- pull ------------------------------------------------------------------------------------
 
-    /** the ON_REQUEST nodes feeding a node's data inputs (direct origins) */
+    /**
+     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST nodes, and an
+     * ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
+     */
     static requestOrigins(node) {
         const graph = node.graph;
         const origins = [];
@@ -2224,7 +2229,9 @@ export class ExecutionEngine {
             if (input.link == null || input.type === LiteGraph.ACTION || input.type === LiteGraph.EVENT) continue;
             const link = graph.links[input.link];
             const origin = link && graph.getNodeById(link.origin_id);
-            if (origin && origin.mode === LiteGraph.ON_REQUEST && !origins.includes(origin)) origins.push(origin);
+            if (!origin || origins.includes(origin)) continue;
+            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks;
+            if (origin.mode === LiteGraph.ON_REQUEST || firstValue) origins.push(origin);
         }
         return origins;
     }
@@ -6092,7 +6099,12 @@ export class LGraph {
                     if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
                     if (node.mode === LiteGraph.ALWAYS && node.doExecute) {
                         if (rules.frame_pull) ExecutionEngine.pull(node);
-                        node.doExecute();
+                        this._step_node = node; // its own turn: runStep reports it below
+                        try {
+                            node.doExecute();
+                        } finally {
+                            this._step_node = null;
+                        }
                         // one message per change, not one per step
                         if (node.execution_state?.status !== "done") this.reportExecutionState(node, "status", {
                             status: "done"
@@ -18472,6 +18484,28 @@ export class LGraphCanvas {
 
             // panel.addWidget( "string", "Graph name", "", {}, fUpdate); // implement
 
+            // the document's execution model (graph info): one undo step per change
+            const root = graphcanvas.graph?.rootGraph ?? graphcanvas.graph;
+            let pendingModes = 0;
+            if (root?.setExecutionModel && LiteGraph.listExecutionModels) {
+                const names = LiteGraph.listExecutionModels().map((model) => model.name);
+                panel.addWidget("combo", "Execution model", root.executionModel, {
+                    values: names
+                }, (_name, value) => {
+                    try {
+                        if (root.setExecutionModel(value)) graphcanvas.setDirty(true, true);
+                    } catch (error) {
+                        graphcanvas.showExecutionNotice(error.message);
+                    }
+                    inner_refresh();
+                });
+                const model = LiteGraph.getExecutionModel(root.executionModel);
+                const info = panel.addHTML("", "execution-model-info");
+                info.textContent = model?.description ?? model?.title ?? "";
+                pendingModes = LiteGraph.ExecutionEngine.modelModes(root).length;
+                panel.addSeparator();
+            }
+
             var aProps = [...(LiteGraph.availableCanvasOptions || [])].sort();
             for (var pI in aProps) {
                 var pX = aProps[pI];
@@ -18491,6 +18525,14 @@ export class LGraphCanvas {
 
             panel.footer.innerHTML = ""; // clear
 
+            // optional and never automatic: the declared default modes of the model, as one more undo step
+            if (pendingModes) {
+                panel.addButton(`Apply the model's node modes (${pendingModes})`, () => {
+                    root.applyExecutionModelModes();
+                    graphcanvas.setDirty(true, true);
+                    inner_refresh();
+                });
+            }
         }
         inner_refresh();
 
@@ -19149,6 +19191,14 @@ export class LGraphCanvas {
                 // { content: "Arrange", callback: that.graph.arrange },
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
+            // graph info: the document's execution model and the canvas options (LiteGraph.showCanvasOptions)
+            if (LiteGraph.showCanvasOptions) {
+                const model = this.graph?.executionModel;
+                options.push({
+                    content: model ? `Options (execution: ${model})` : "Options",
+                    callback: () => this.showShowGraphOptionsPanel()
+                });
+            }
 
             if (this.selectedItems.length) {
                 options.push({
@@ -21077,6 +21127,8 @@ export class LGraphNode {
         graph.nodes_executedAction[this.id] = options.action_call;
         graph.nodes_executing[this.id] = true;
         ExecutionEngine._depth++;
+        // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
+        const reportRun = graph._step_node !== this && this._reportRunStart();
         try {
             if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
             this.processCallbackHandlers("onExecute", {
@@ -21091,6 +21143,7 @@ export class LGraphNode {
             this.processCallbackHandlers("onAfterExecuteNode", {
                 def_cb: this.onAfterExecuteNode
             }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             this.exec_version = previousExecution;
             graph.nodes_executedAction[this.id] = previousAction;
@@ -21143,6 +21196,22 @@ export class LGraphNode {
         }
     }
 
+    /** reports "running" for a run outside the node's own step turn, unless it already reported done */
+    _reportRunStart() {
+        const status = this.execution_state?.status;
+        if (status === "done" || status === "running" || !this.graph) return false;
+        this.graph.reportExecutionState(this, "status", {
+            status: "running"
+        });
+        return true;
+    }
+
+    _reportRunDone() {
+        if (this.graph && this.execution_state?.status === "running") this.graph.reportExecutionState(this, "status", {
+            status: "done"
+        });
+    }
+
     /**
      * retrocompatibility :: old doExecute
      * @method doExecute
@@ -21177,6 +21246,7 @@ export class LGraphNode {
         const previousAction = graph.nodes_actioning[this.id];
         graph.nodes_actioning[this.id] = options.action_call;
         ExecutionEngine._depth++;
+        const reportRun = this._reportRunStart();
         try {
             if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
             this.processCallbackHandlers("onAction", {
@@ -21189,6 +21259,7 @@ export class LGraphNode {
             this.processCallbackHandlers("onAfterActionedNode", {
                 def_cb: this.onAfterActionedNode
             }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
             if (error && typeof error === "object" && !error.node) {

@@ -419,6 +419,8 @@ export interface LiteGraphAPI extends CallbackHost {
     refreshAncestorsOnTriggers: boolean;
     /** legacy execution flag (used by the "legacy" model); assigning it makes new graphs default to "legacy" */
     preventAncestorRecalculation: boolean;
+    /** the canvas menu offers "Options" (graph info: the execution model; canvas switches) */
+    showCanvasOptions: boolean;
     /** the execution model of new graphs: "ancestors", or "legacy" once a legacy flag was assigned (unless this was set) */
     default_execution_model: string;
     /** the execution engine and model registry (Wave 6) */

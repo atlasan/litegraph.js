@@ -43,15 +43,12 @@ LiteGraph.showCanvasOptions = true;// enable canvas options panel, customize in 
 
 LiteGraph.use_uuids = false; // why not? maybe not good for comparison?
 
-/* -- EVENTS PROCESSING METHODS -- */
-
-/* METHOD 1 ANCESTORS : EXECUTING ACTIONS BEFORE THE NEXT FRAME, AFFECTING INPUT NODES WILL BE REPROCESSED */
-LiteGraph.refreshAncestorsOnTriggers = false; //[true!]
-LiteGraph.refreshAncestorsOnActions = false; //[true!]
-LiteGraph.ensureUniqueExecutionAndActionCall = false; //[true!]
-
-/* METHOD 2 DEFERRED ACTIONS */
-LiteGraph.use_deferred_actions = true; //
+/* -- EVENTS AND EXECUTION (Wave 6) -- */
+// New documents run under an execution model, saved in their config.execution and shown in the
+// graph Options panel. Documents saved without one load as "legacy" (the old global flags).
+// Do not assign the legacy flags (use_deferred_actions, refreshAncestorsOn*, ...): that switches
+// new documents to "legacy".
+LiteGraph.default_execution_model = "ancestors";
 
 // CONTEXT MENU FILTERING
 // ---- WIP ----
@@ -72,10 +69,7 @@ const PRESETS = {
         logging_level: 4,
         do_add_triggers_slots: true,
         actionHistory_enabled: true,
-        refreshAncestorsOnTriggers: true,
-        refreshAncestorsOnActions: true,
-        ensureUniqueExecutionAndActionCall: true,
-        use_deferred_actions: false,
+        default_execution_model: "ancestors", // was the flags of the ancestors approach (Wave 6)
         context_menu_filter_enabled: true,
         reprocess_slot_while_node_configure: true,
         properties_allow_input_binding: true,
@@ -90,10 +84,7 @@ const PRESETS = {
         do_add_triggers_slots: true,
         pointerevents_method: "pointer",
         two_fingers_opens_menu: true,
-        refreshAncestorsOnTriggers: true,
-        refreshAncestorsOnActions: true,
-        ensureUniqueExecutionAndActionCall: true,
-        use_deferred_actions: false,
+        default_execution_model: "ancestors", // was the flags of the ancestors approach (Wave 6)
         reprocess_slot_while_node_configure: true,
         properties_allow_input_binding: true,
         properties_allow_output_binding: true,
@@ -102,10 +93,7 @@ const PRESETS = {
         allow_scripts: false,
         do_add_triggers_slots: true,
         actionHistory_enabled: true,
-        refreshAncestorsOnTriggers: true,
-        refreshAncestorsOnActions: true,
-        ensureUniqueExecutionAndActionCall: true,
-        use_deferred_actions: false,
+        default_execution_model: "ancestors", // was the flags of the ancestors approach (Wave 6)
         reprocess_slot_while_node_configure: true,
         properties_allow_input_binding: true,
         properties_allow_output_binding: true,

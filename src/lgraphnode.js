@@ -1024,6 +1024,8 @@ export class LGraphNode {
         graph.nodes_executedAction[this.id] = options.action_call;
         graph.nodes_executing[this.id] = true;
         ExecutionEngine._depth++;
+        // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
+        const reportRun = graph._step_node !== this && this._reportRunStart();
         try {
             if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
             this.processCallbackHandlers("onExecute", { def_cb: this.onExecute }, param, options);
@@ -1034,6 +1036,7 @@ export class LGraphNode {
             if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
             this.execute_triggered = 2;
             this.processCallbackHandlers("onAfterExecuteNode", { def_cb: this.onAfterExecuteNode }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             this.exec_version = previousExecution;
             graph.nodes_executedAction[this.id] = previousAction;
@@ -1076,6 +1079,18 @@ export class LGraphNode {
         }
     }
 
+    /** reports "running" for a run outside the node's own step turn, unless it already reported done */
+    _reportRunStart() {
+        const status = this.execution_state?.status;
+        if (status === "done" || status === "running" || !this.graph) return false;
+        this.graph.reportExecutionState(this, "status", { status: "running" });
+        return true;
+    }
+
+    _reportRunDone() {
+        if (this.graph && this.execution_state?.status === "running") this.graph.reportExecutionState(this, "status", { status: "done" });
+    }
+
     /**
      * retrocompatibility :: old doExecute
      * @method doExecute
@@ -1110,6 +1125,7 @@ export class LGraphNode {
         const previousAction = graph.nodes_actioning[this.id];
         graph.nodes_actioning[this.id] = options.action_call;
         ExecutionEngine._depth++;
+        const reportRun = this._reportRunStart();
         try {
             if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
             this.processCallbackHandlers("onAction", { def_cb: this.onAction }, action, param, options, action_slot);
@@ -1118,6 +1134,7 @@ export class LGraphNode {
             graph.nodes_executedAction[this.id] = options.action_call;
             this.action_triggered = 2;
             this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
             if (error && typeof error === "object" && !error.node) {

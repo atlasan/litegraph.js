@@ -9071,6 +9071,26 @@ export class LGraphCanvas {
 
             // panel.addWidget( "string", "Graph name", "", {}, fUpdate); // implement
 
+            // the document's execution model (graph info): one undo step per change
+            const root = graphcanvas.graph?.rootGraph ?? graphcanvas.graph;
+            let pendingModes = 0;
+            if (root?.setExecutionModel && LiteGraph.listExecutionModels) {
+                const names = LiteGraph.listExecutionModels().map((model) => model.name);
+                panel.addWidget("combo", "Execution model", root.executionModel, { values: names }, (_name, value) => {
+                    try {
+                        if (root.setExecutionModel(value)) graphcanvas.setDirty(true, true);
+                    } catch (error) {
+                        graphcanvas.showExecutionNotice(error.message);
+                    }
+                    inner_refresh();
+                });
+                const model = LiteGraph.getExecutionModel(root.executionModel);
+                const info = panel.addHTML("", "execution-model-info");
+                info.textContent = model?.description ?? model?.title ?? "";
+                pendingModes = LiteGraph.ExecutionEngine.modelModes(root).length;
+                panel.addSeparator();
+            }
+
             var aProps = [...(LiteGraph.availableCanvasOptions || [])].sort();
             for(var pI in aProps) {
                 var pX = aProps[pI];
@@ -9083,6 +9103,14 @@ export class LGraphCanvas {
 
             panel.footer.innerHTML = ""; // clear
 
+            // optional and never automatic: the declared default modes of the model, as one more undo step
+            if (pendingModes) {
+                panel.addButton(`Apply the model's node modes (${pendingModes})`, () => {
+                    root.applyExecutionModelModes();
+                    graphcanvas.setDirty(true, true);
+                    inner_refresh();
+                });
+            }
         }
         inner_refresh();
 
@@ -9707,6 +9735,11 @@ export class LGraphCanvas {
                 // { content: "Arrange", callback: that.graph.arrange },
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
+            // graph info: the document's execution model and the canvas options (LiteGraph.showCanvasOptions)
+            if (LiteGraph.showCanvasOptions) {
+                const model = this.graph?.executionModel;
+                options.push({ content: model ? `Options (execution: ${model})` : "Options", callback: () => this.showShowGraphOptionsPanel() });
+            }
 
             if (this.selectedItems.length) {
                 options.push({ content: "Group selected", callback: () => this.groupSelected() });

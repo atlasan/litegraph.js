@@ -7,6 +7,7 @@ import { ComfyInterop } from '../src/extensions/comfy_interop.js';
 import '../src/nodes/base.js';
 import '../src/nodes/events.js';
 import '../src/nodes/logic.js';
+import '../src/nodes/math.js';
 
 let clock;
 let flagValues;
@@ -541,5 +542,57 @@ describe('checkExecution and the badge (step 14)', () => {
         } finally {
             LiteGraph.settings.set('LiteGraph.Node.ExecutionBadge', false);
         }
+    });
+});
+
+describe('graph info, reporting and runner parity (steps 15-17)', () => {
+    test('switching the model is one undo step and applying its modes is another', () => {
+        LiteGraph.actionHistory_enabled = true;
+        try {
+            const g = graph('legacy');
+            const op = make(g, 'math/operation'); // legacy keeps ALWAYS; also the first history entry
+            expect(op.mode).toBe(LiteGraph.ALWAYS);
+            g.transact('switch model', () => g.setExecutionModel('ancestors'));
+            expect(g.applyExecutionModelModes()).toBe(1);
+            expect(g.getNodeById(op.id).mode).toBe(LiteGraph.ON_REQUEST);
+            g.actionHistoryBack();
+            expect([g.executionModel, g.getNodeById(op.id).mode]).toEqual(['ancestors', LiteGraph.ALWAYS]);
+            g.actionHistoryBack();
+            expect([g.executionModel, g.getNodeById(op.id).mode]).toEqual(['legacy', LiteGraph.ALWAYS]);
+            expect(g.applyExecutionModelModes()).toBe(0); // legacy declares no defaults
+        } finally {
+            LiteGraph.actionHistory_enabled = false;
+        }
+    });
+
+    test('nodes run by actions or pulls report running then done, once per change', () => {
+        const g = graph('ancestors');
+        const messages = [];
+        g.events.on('execution-state', (e) => messages.push(e.detail.message));
+        const src = make(g, 'exm/src');
+        const c = make(g, 'basic/const', { value: 1 });
+        const p = make(g, 'exm/pure', {}, LiteGraph.ON_REQUEST);
+        const rec = make(g, 'exm/rec');
+        c.connect(0, p, 0); p.connect(0, rec, 1); src.connect(0, rec, 0);
+        src.triggerSlot(0); src.triggerSlot(0);
+        const statuses = (node) => messages.filter((m) => m.path === node.getPath()).map((m) => m.status);
+        expect(statuses(rec)).toEqual(['running', 'done']);
+        expect(statuses(p)).toEqual(['running', 'done']);
+        step(g); // its own step turn: ALWAYS nodes report done once, as before
+        expect(statuses(c)).toEqual(['running', 'done']); // pulled for its first value, then stepped
+        expect(statuses(rec)).toEqual(['running', 'done']);
+    });
+
+    test.each(['runner-parity-ancestors.json', 'runner-parity-legacy.json'])('runner parity fixture %s (in-process side)', async (name) => {
+        const fs = await import('node:fs');
+        const read = (file) => JSON.parse(fs.readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8'));
+        const expected = read('runner-parity.expected.json')[name];
+        const g = new LGraph(read(name));
+        expect(g.executionModel).toBe(expected.model);
+        g.starttime = g.last_update_time = clock;
+        for (let i = 0; i < 10; i++) step(g, 20);
+        const data = (title) => g._nodes.find((n) => n.title === title).properties.data;
+        expect({ 'FOR result': data('FOR result'), 'WHILE result': data('WHILE result') })
+            .toEqual({ 'FOR result': expected['FOR result'], 'WHILE result': expected['WHILE result'] });
     });
 });

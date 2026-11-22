@@ -165,6 +165,7 @@ export class LiteGraphClass {
     AUTOHIDE_TITLE = 3;
     VERTICAL_LAYOUT = "vertical"; // arrange nodes vertically
 
+    showCanvasOptions = false; // the canvas menu offers "Options": graph info (execution model) and canvas switches
     // canvas flags the graph Options panel offers as on/off switches
     availableCanvasOptions = [
         "allow_addOutSlot_onExecuted", "free_resize", "highquality_render", "use_gradients",
