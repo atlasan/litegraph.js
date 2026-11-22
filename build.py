@@ -74,6 +74,7 @@ lib_js_files = [
     "./src/subgraph.js",
     "./src/librarymanager.js",
     "./src/widgets.js",
+    "./src/valuetypes.js",
     "./src/nodesearch.js",
     "./src/packs.js",
     "./src/executionstate.js",

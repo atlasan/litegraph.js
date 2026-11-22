@@ -346,6 +346,8 @@ export interface LiteGraphAPI extends CallbackHost {
     menus: MenuRegistry;
     /** widget type name -> class (see registerWidgetType) */
     widget_types: Record<string, typeof BaseWidget>;
+    /** value types: how a value of each type is edited on the canvas (widget) and in panels (editor) */
+    valueTypes: ValueTypeRegistry;
     /** node search: parsing, ranking and definition filters */
     nodeSearch: NodeSearch;
     /** node badges drawn in title bars; providers return badges for a node (settings LiteGraph.Node.IdBadge, LiteGraph.Node.SourceBadge) */
@@ -366,6 +368,10 @@ export interface LiteGraphAPI extends CallbackHost {
     /** a link dragged over a node body highlights, and a drop connects, the slot it would use (default true) */
     snap_link_to_slot: boolean;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
+    /** registers a value type (widget, editor, options, coercion, help); returns a disposer that restores a replaced one */
+    registerValueType(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void;
+    /** the resolved value type for a name or alias (case-insensitive), or null */
+    getValueType(name: string): Readonly<ResolvedValueType> | null;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
     persistPlatformState(storage?: SettingsStorage): void;
@@ -1584,6 +1590,10 @@ export declare class DragAndScale {
 export declare class LGraphCanvas {
     /** a short notice over the canvas (execution refusals); logs without a DOM */
     showExecutionNotice(message: string, ms?: number): HTMLElement | null;
+    /** writes a widget value as a canvas edit does (value type coercion, onWidgetChanged, bound property, history, widget-changed, callback); true when it changed */
+    applyWidgetValue(node: LGraphNode, widget: IWidget, value: any, context?: { old_value?: any; pos?: Vector2; event?: Event }): boolean;
+    /** loose equality; arrays and objects compare by content */
+    static sameValue(a: any, b: any): boolean;
     static node_colors: Record<
         string,
         {
@@ -2188,7 +2198,10 @@ export declare class Subgraph extends LGraphNode {
     /** stored instance fields this runtime does not model (written back) */
     kept_fields: Record<string, unknown>;
 }
-export declare class GraphInput extends LGraphNode {}
+export declare class GraphInput extends LGraphNode {
+    /** replaces the value widget by the widget of a value type, keeping the value when it converts */
+    setValueWidgetType(type: string): IWidget;
+}
 export declare class GraphOutput extends LGraphNode {}
 /** calls a subgraph definition: call -> inputs in, one run, outputs out -> done */
 export declare class NodeFunction extends Subgraph {
@@ -2694,6 +2707,65 @@ export declare class ComboWidget extends BaseWidget {
     resolveValues(node: LGraphNode): any[] | Record<string, any>;
 }
 export declare class TextWidget extends BaseWidget<string> {}
+/** A colour value: a swatch (click: the browser colour picker, alpha kept) and its text (click the label to type it). */
+export declare class ColorWidget extends BaseWidget<string> {
+    static lastPicker: HTMLInputElement | null;
+}
+/** A vector of numbers (options.size, from vec2/vec3/vec4): one draggable field per component. */
+export declare class VectorWidget extends BaseWidget<number[], { size?: number; min?: number; max?: number; step?: number; precision?: number; round?: number }> {
+    static size(widget: IWidget): number;
+    static layout(widget: IWidget, ctx: CanvasRenderingContext2D | null, widget_width: number, env: { margin: number; show_label: boolean }): { size: number; start: number; cell: number };
+}
+
+/** A value type definition (see LiteGraph.registerValueType). Every field is optional. */
+export interface ValueTypeDefinition {
+    /** a type whose fields are inherited; options are merged, the base's first */
+    base?: string;
+    aliases?: string[];
+    label?: string;
+    description?: string;
+    examples?: string[];
+    /** canvas widget type (LiteGraph.widget_types) */
+    widget?: string;
+    /** panel editor (LiteGraph.panel_editors) */
+    editor?: string;
+    /** default widget and editor options; a property's own info wins */
+    options?: Record<string, any>;
+    default?: any;
+    coerce?(value: any, options: Record<string, any>): any;
+    /** null, or why the value is refused */
+    validate?(value: any, options: Record<string, any>): string | null;
+    format?(value: any, options: Record<string, any>): string;
+    parse?(text: string, options: Record<string, any>): any;
+    [key: string]: any;
+}
+export interface ResolvedValueType extends ValueTypeDefinition {
+    name: string;
+    aliases: string[];
+    /** names of the base chain, nearest first */
+    bases: string[];
+    options: Readonly<Record<string, any>>;
+}
+/** Value types: one type -> canvas widget, panel editor, options, coercion, validation and help. */
+export declare class ValueTypeRegistry {
+    constructor();
+    register(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void;
+    has(name: string): boolean;
+    get(name: string): Readonly<ResolvedValueType> | null;
+    list(): Readonly<ResolvedValueType>[];
+    defaultValue(name: string, options?: Record<string, any>): any;
+    coerce(name: string, value: any, options?: Record<string, any>): any;
+    validate(name: string, value: any, options?: Record<string, any>): string | null;
+    format(name: string, value: any, options?: Record<string, any>): string;
+    parse(name: string, text: string, options?: Record<string, any>): any;
+    /** the panel editor for a property: info.editor, info.widget, info.type, then the JS type of the value; else "readonly" */
+    resolveEditor(info: Record<string, any> | null | undefined, value?: any, editors?: Record<string, any>): { editor: string; type: string | null; options: Record<string, any>; valueType: Readonly<ResolvedValueType> | null };
+    /** the canvas widget class for a type: a registered widget type wins, then the value type's widget */
+    resolveWidgetClass(type: string, widgetTypes?: Record<string, typeof BaseWidget>): { cls: typeof BaseWidget; options: Record<string, any>; valueType: Readonly<ResolvedValueType> | null } | null;
+    static formatAny(value: any): string;
+    static clampNumber(value: number, options?: { min?: number; max?: number }): number;
+    static builtins(): Record<string, ValueTypeDefinition>;
+}
 export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
 /** The object whose draw/onPointer applies to a widget (its class, or its type's class for plain objects), or null. */
 export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;

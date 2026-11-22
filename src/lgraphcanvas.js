@@ -6159,33 +6159,68 @@ export class LGraphCanvas {
         }// end for
 
         function inner_value_change(widget, value, old_value) {
-            LiteGraph.log_debug("inner_value_change for processNodeWidgets",widget,value);
-            const value_original = value;
-            if(widget.type == "number") {
-                value = Number(value);
-            }
-            widget.value = value;
-            // value changed: notify with the new value (text widgets used to report the old one)
-            if( old_value != value ) {
-                node.processCallbackHandlers("onWidgetChanged",{
-                    def_cb: node.onWidgetChanged
-                }, widget.name, value, old_value, widget);
-            }
-            // a bound property is written before the change is recorded, so the history entry includes it
-            if ( widget.options && widget.options.property && node.properties[widget.options.property] !== undefined ) {
-                node.setProperty( widget.options.property, value );
-            }
-            if( old_value != value ) {
-                node.graph._markChange?.("widget");
-                node.graph.onGraphChanged({action: "widgetChanged", doSave: true}); // tag: graph event entrypoint
-                node.graph._emit?.("widget-changed", { node, widget, value, previous: old_value }, { recorded: true });
-            }
-            if (widget.callback) {
-                widget.callback(widget.value, that, node, pos, event, value_original);
-            }
+            (that.applyWidgetValue ?? LGraphCanvas.prototype.applyWidgetValue).call(that, node, widget, value, { old_value, pos, event });
         }
 
         return null;
+    }
+
+    /**
+     * Writes a value into a node widget the way a canvas edit does: the value is normalized by the
+     * widget's value type (LiteGraph.valueTypes), `onWidgetChanged` runs, a bound property
+     * (`options.property`) is written, the change is recorded and `widget-changed` is emitted, then
+     * the widget callback runs. The canvas pointer handling and the node panel both use it.
+     * @param {object} node
+     * @param {object} widget
+     * @param {*} value
+     * @param {{old_value?: *, pos?: number[], event?: Event}} [context] - old_value defaults to the widget's current value
+     * @returns {boolean} true when the value changed
+     */
+    applyWidgetValue(node, widget, value, context = {}) {
+        const old_value = Object.hasOwn(context, "old_value") ? context.old_value : widget.value;
+        LiteGraph.log_debug("lgraphcanvas", "applyWidgetValue", widget, value);
+        const value_original = value;
+        if (widget.type == "number") {
+            value = Number(value);
+        } else if (LiteGraph.valueTypes?.has(widget.type)) {
+            try {
+                value = LiteGraph.valueTypes.coerce(widget.type, value, widget.options);
+            } catch (error) {
+                this.showExecutionNotice?.(`${widget.label || widget.name}: ${error.message}`);
+                return false;
+            }
+        }
+        widget.value = value;
+        const changed = !LGraphCanvas.sameValue(old_value, value);
+        // value changed: notify with the new value (text widgets used to report the old one)
+        if (changed) {
+            node.processCallbackHandlers("onWidgetChanged", {
+                def_cb: node.onWidgetChanged,
+            }, widget.name, value, old_value, widget);
+        }
+        // a bound property is written before the change is recorded, so the history entry includes it
+        if (widget.options && widget.options.property && node.properties?.[widget.options.property] !== undefined) {
+            node.setProperty(widget.options.property, value);
+        }
+        if (changed && node.graph) {
+            node.graph._markChange?.("widget");
+            node.graph.onGraphChanged({ action: "widgetChanged", doSave: true }); // tag: graph event entrypoint
+            node.graph._emit?.("widget-changed", { node, widget, value, previous: old_value }, { recorded: true });
+        }
+        if (widget.callback) {
+            widget.callback(widget.value, this, node, context.pos, context.event, value_original);
+        }
+        this.dirty_canvas = true;
+        return changed;
+    }
+
+    /** Loose equality for widget and property values; arrays and objects compare by content. */
+    static sameValue(a, b) {
+        if (a == b) return true;
+        if (a && b && typeof a === "object" && typeof b === "object") {
+            try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+        }
+        return false;
     }
 
     /**
@@ -8546,8 +8581,12 @@ export class LGraphCanvas {
         let type = info && info!==null ? info.type : "string";
 
         let input_html;
+        // other value types (vec3, color, text, int, ...) are typed as text and parsed by their type
+        const legacy_text = ["string", "number", "array", "object", "code"].includes(type);
+        const value_type = legacy_text ? null : LiteGraph.valueTypes?.get(type);
+        const typed_by_value_type = !!value_type && !["enum", "boolean"].includes(value_type.name) && value_type.editor !== "readonly";
 
-        if (type == "string" || type == "number" || type == "array" || type == "object" || type == "code") {
+        if (legacy_text || typed_by_value_type) {
             input_html = "<input autofocus type='text' class='value'/>";
         } else if ( (type == "enum" || type == "combo") && info.values) {
             LiteGraph.log_debug("lgraphcanvas", "showEditPropertyValue", "CREATING ENUM COMBO",input,type,dialog);
@@ -8615,7 +8654,9 @@ export class LGraphCanvas {
                 });
 
                 v = node.properties[property] !== undefined ? node.properties[property] : "";
-                if (type !== 'string') {
+                if (typed_by_value_type) {
+                    v = LiteGraph.valueTypes.format(type, v, info);
+                } else if (type !== 'string') {
                     v = JSON.stringify(v);
                 }
 
@@ -8655,6 +8696,14 @@ export class LGraphCanvas {
             }
             if (type == "array" || type == "object") {
                 value = JSON.parse(value);
+            }
+            if (typed_by_value_type) {
+                try {
+                    value = LiteGraph.valueTypes.coerce(type, LiteGraph.valueTypes.parse(type, value, info), info);
+                } catch (error) {
+                    LiteGraph.log_warn("lgraphcanvas", "showEditPropertyValue", "value refused", property, error.message);
+                    return;
+                }
             }
             const prevValue = node.properties[property];
             node.properties[property] = value;

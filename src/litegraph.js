@@ -16,6 +16,7 @@ import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
 import { MenuRegistry } from "./menus.js";
 import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
+import { ValueTypeRegistry } from "./valuetypes.js";
 import { NodeSearch } from "./nodesearch.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
@@ -575,6 +576,25 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers a value type: how values of that type are edited on the canvas (widget) and in
+     * panels (editor), with default options, coercion, validation and help (see ValueTypeRegistry).
+     * @param {string} name
+     * @param {object} def
+     * @param {{replace?: boolean}} [options] - replace: allow replacing a registered type
+     * @returns {() => void} disposer (restores a replaced definition)
+     */
+    registerValueType(name, def, options) {
+        this.setupPlatform();
+        return this.valueTypes.register(name, def, options);
+    }
+
+    /** @returns {object|null} the resolved value type for a name or alias */
+    getValueType(name) {
+        this.setupPlatform();
+        return this.valueTypes.get(name);
+    }
+
+    /**
      * Registers (or replaces) the class implementing a canvas widget type.
      * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
      * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
@@ -622,6 +642,7 @@ export class LiteGraphClass {
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
         this.widget_types ??= defaultWidgetTypes();
+        this.valueTypes ??= new ValueTypeRegistry();
         if (!this.nodeSearch) {
             this.nodeSearch = new NodeSearch();
             // definition filters: deprecated nodes are hidden unless a setting shows them
