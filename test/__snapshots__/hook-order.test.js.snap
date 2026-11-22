@@ -1,0 +1,224 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`on_lgraph_construct / graph-created 1`] = `
+Array [
+  "LiteGraph.on_lgraph_construct handler +1",
+  "LiteGraph.on_lgraph_construct onX",
+  "LiteGraph.on_lgraph_construct handler -1",
+  "LiteGraph event graph-created",
+]
+`;
+
+exports[`on_lgraphcanvas_construct / canvas-created 1`] = `
+Array [
+  "LiteGraph.on_lgraphcanvas_construct handler +1",
+  "LiteGraph.on_lgraphcanvas_construct onX",
+  "LiteGraph.on_lgraphcanvas_construct handler -1",
+  "LiteGraph event canvas-created",
+]
+`;
+
+exports[`onConfigure / configured 1`] = `
+Array [
+  "graph event configuring",
+  "graph event node-added",
+  "graph event node-added",
+  "graph.onConfigure handler +1",
+  "graph.onConfigure onX",
+  "graph.onConfigure handler -1",
+  "graph event configured",
+  "graph event graph-changed",
+  "graph event modified-changed",
+  "graph event execution-check",
+]
+`;
+
+exports[`onConnectInput vetoed / link-connected 1`] = `
+Array [
+  "origin.onConnectOutput handler +1",
+  "origin.onConnectOutput onX",
+  "origin.onConnectOutput handler -1",
+  "target.onConnectInput handler +1",
+  "target.onConnectInput onX",
+  "target.onConnectInput handler -1",
+]
+`;
+
+exports[`onConnectOutput vetoed / link-connected 1`] = `
+Array [
+  "origin.onConnectOutput handler +1",
+  "origin.onConnectOutput onX",
+  "origin.onConnectOutput handler -1",
+]
+`;
+
+exports[`onConnectOutput, onConnectInput / link-connected 1`] = `
+Array [
+  "origin.onConnectOutput handler +1",
+  "origin.onConnectOutput onX",
+  "origin.onConnectOutput handler -1",
+  "target.onConnectInput handler +1",
+  "target.onConnectInput onX",
+  "target.onConnectInput handler -1",
+  "graph event changed",
+  "graph event graph-changed",
+  "graph event link-connected",
+]
+`;
+
+exports[`onExecuteStep, onAfterExecute / execution-step (runStep) 1`] = `
+Array [
+  "graph.onExecuteStep handler +1",
+  "graph.onExecuteStep onX",
+  "graph.onExecuteStep handler -1",
+  "graph event execution-step",
+  "graph.onAfterExecute handler +1",
+  "graph.onAfterExecute onX",
+  "graph.onAfterExecute handler -1",
+]
+`;
+
+exports[`onNodeAdded / node-added 1`] = `
+Array [
+  "graph.onNodeAdded handler +1",
+  "graph.onNodeAdded onX",
+  "graph.onNodeAdded handler -1",
+  "graph event changed",
+  "graph event graph-changed",
+  "graph event node-added",
+]
+`;
+
+exports[`onNodeRemoved / node-removed 1`] = `
+Array [
+  "graph.onNodeRemoved handler +1",
+  "graph.onNodeRemoved onX",
+  "graph.onNodeRemoved handler -1",
+  "graph event changed",
+  "graph event graph-changed",
+  "graph event node-removed",
+]
+`;
+
+exports[`onNodeTypeRegistered, onNodeTypeReplaced / node-type-registered, node-type-replaced 1`] = `
+Array [
+  "LiteGraph.onNodeTypeRegistered handler +1",
+  "LiteGraph.onNodeTypeRegistered onX",
+  "LiteGraph.onNodeTypeRegistered handler -1",
+  "LiteGraph event node-type-registered",
+  "LiteGraph.onNodeTypeRegistered handler +1",
+  "LiteGraph.onNodeTypeRegistered onX",
+  "LiteGraph.onNodeTypeRegistered handler -1",
+  "LiteGraph event node-type-registered",
+  "LiteGraph.onNodeTypeReplaced handler +1",
+  "LiteGraph.onNodeTypeReplaced onX",
+  "LiteGraph.onNodeTypeReplaced handler -1",
+  "LiteGraph event node-type-replaced",
+]
+`;
+
+exports[`onOpenSubgraph, onCloseSubgraph / subgraph-opened, subgraph-closed 1`] = `
+Array [
+  "canvas.onOpenSubgraph handler +1",
+  "canvas.onOpenSubgraph onX",
+  "canvas.onOpenSubgraph handler -1",
+  "canvas event subgraph-opened",
+  "canvas.onCloseSubgraph handler +1",
+  "canvas.onCloseSubgraph onX",
+  "canvas.onCloseSubgraph handler -1",
+  "canvas event selection-changed",
+  "canvas event selection-changed",
+  "canvas event subgraph-closed",
+]
+`;
+
+exports[`onPropertyChanged / node-property-changed (property dialog) 1`] = `
+Array [
+  "graph event changed",
+  "graph event graph-changed",
+  "node.onPropertyChanged handler +1",
+  "node.onPropertyChanged onX",
+  "node.onPropertyChanged handler -1",
+]
+`;
+
+exports[`onPropertyChanged / node-property-changed (setProperty) 1`] = `
+Array [
+  "node.onPropertyChanged handler +1",
+  "node.onPropertyChanged onX",
+  "node.onPropertyChanged handler -1",
+  "graph event node-property-changed",
+  "later: graph event graph-changed",
+]
+`;
+
+exports[`onPropertyChanged vetoed / node-property-changed (property dialog) 1`] = `
+Array [
+  "graph event changed",
+  "graph event graph-changed",
+  "node.onPropertyChanged handler +1",
+  "node.onPropertyChanged onX",
+  "node.onPropertyChanged handler -1",
+]
+`;
+
+exports[`onPropertyChanged vetoed / node-property-changed (setProperty) 1`] = `
+Array [
+  "node.onPropertyChanged handler +1",
+  "node.onPropertyChanged onX",
+  "node.onPropertyChanged handler -1",
+]
+`;
+
+exports[`onSelectionChange / selection-changed (group selectItem, deselectItem) 1`] = `
+Array [
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+]
+`;
+
+exports[`onSelectionChange / selection-changed (selectNodes, deselectNode, deselectAllNodes) 1`] = `
+Array [
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+  "canvas.onSelectionChange handler +1",
+  "canvas.onSelectionChange onX",
+  "canvas.onSelectionChange handler -1",
+  "canvas event selection-changed",
+]
+`;
+
+exports[`onWidgetChanged / widget-changed (canvas widget) 1`] = `
+Array [
+  "node.onWidgetChanged handler +1",
+  "node.onWidgetChanged onX",
+  "node.onWidgetChanged handler -1",
+  "graph event changed",
+  "graph event graph-changed",
+  "graph event widget-changed",
+]
+`;
