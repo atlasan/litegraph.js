@@ -1,5 +1,5 @@
 import { LiteGraph } from "./litegraph.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { installHooks } from "./callbackhandler.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
@@ -207,8 +207,6 @@ export class LGraph {
         /** number of saved changes to this document */
         this.revision = 0;
 
-        this.callbackhandler_setup();
-
         this.clear();
 
         if (o) {
@@ -218,20 +216,7 @@ export class LGraph {
         LiteGraph.processCallbackHandlers("on_lgraph_construct",{
             def_cb: LiteGraph.on_lgraph_construct
         }, this);
-    }
-
-    callbackhandler_setup(){
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler(){
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        return this.cb_handler.processCallbackHandlers(...arguments);
+        LiteGraph._emit?.("graph-created", { graph: this });
     }
 
     /**
@@ -1129,6 +1114,7 @@ export class LGraph {
             this.change();
             node.graph = this;
             this.onGraphChanged({action: "groupAdd", doSave: opts.doProcessChange});
+            this._emit("group-added", { group: node });
             return;
         }
 
@@ -1224,6 +1210,7 @@ export class LGraph {
             }
             node.graph = null;
             this.onGraphChanged({action: "groupRemove"});
+            this._emit("group-removed", { group: node });
             this.setDirtyCanvas(true, true);
             this.change();
             return;
@@ -3276,3 +3263,6 @@ export class LGraph {
 
     }
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraph);
