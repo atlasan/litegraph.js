@@ -49,9 +49,13 @@ The other 16 cases are identical, and so is the result snapshot through every co
 
 - A node's `getMenuOptions` uses only `{return_value: [...]}`. **A plain array result is ignored**, though upstream litegraph returns a plain array there. The same holds for `onMenuNodeInputs` / `onMenuNodeOutputs`, the canvas `getExtraMenuOptions` and `getSlotMenuOptions`; `onGetInputs`, `onGetOutputs` and the node's `getExtraMenuOptions` accept both.
 - **`{return_value: null}` throws a TypeError** in `onMenuNodeInputs`, `onMenuNodeOutputs` and the node's `getExtraMenuOptions`. Elsewhere it is used as `null`: no slot menu, or `null` appended to the canvas menu.
-- **`onShowNodePanel` counts every non-null result as handled,** `false` included.
+- **`onShowNodePanel` counted every non-null result as handled,** `false` included. The panels branch (`openNodePanel`, merged into `LG/dev` while this work ran) changed it to `CallbackHandler.valueOf`: `false` now opens the built-in panel. The snapshot caught it when `LG/dev` was merged in, and was updated with that reason; the `onAddPropertyToPanel` driver was adapted to the new panel (`addRow`), with the same rule.
 - **`onGetPropertyInfo` uses only object results:** a plain value is ignored.
 - **The tap in `editor_build.html`:** the page loads `build/litegraph.js` and `src/` modules together, so the canvas (from `src/`) and `LiteGraph` (from the build) have different `ListenerList` copies. `LiteGraph.setDispatchTap` there reaches only the build's dispatches; the browser check set the `src/` copy directly. This mixing predates Wave 7 (see the [Wave 7 review](../audits/2026-11-22-wave7-review.md)).
+
+## Merge into `LG/dev`
+
+`LG/dev` had moved on to `7bf953c` (panels and widgets). It was merged into this branch first. The only conflicts were the executions index (both rows kept) and the minified bundles (regenerated). The result snapshot then showed the `onShowNodePanel` change above. After the update, `npm run check` passed, and `LG/dev` was fast-forwarded to the branch.
 
 ## Verification
 

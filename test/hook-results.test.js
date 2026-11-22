@@ -201,11 +201,19 @@ const SITES = {
         return panel.mock.calls.length ? 'default panel' : 'handled';
     }],
     'node onAddPropertyToPanel': ['onAddPropertyToPanel', 'node', ({ canvas, node }) => {
+        // records the default rows the node panel adds (addRow, or addWidget on a custom panel)
         const added = [];
-        const panel = { addWidget: (...args) => added.push(args[1]), addHTML() {}, addSeparator() {}, addButton() { return {}; }, footer: {}, content: {}, id: '', classList: { add() {} }, close() {}, onClose: null };
-        jest.spyOn(canvas, 'createPanel').mockReturnValue(panel);
-        try { canvas.showShowNodePanel(node); } catch { /* the rest of the panel needs more DOM */ }
-        return added.includes('k') ? 'default widget' : 'handled';
+        const create = canvas.createPanel.bind(canvas);
+        jest.spyOn(canvas, 'createPanel').mockImplementation((...args) => {
+            const panel = create(...args);
+            for (const method of ['addRow', 'addWidget']) {
+                const original = panel[method]?.bind(panel);
+                if (original) panel[method] = (first, ...rest) => { added.push(typeof first === 'object' ? first?.name : rest[0]); return original(first, ...rest); };
+            }
+            return panel;
+        });
+        try { canvas.showShowNodePanel(node); } catch { /* the rest of the panel may need more DOM */ }
+        return added.includes('k') ? 'default row' : 'handled';
     }],
     'node onDropItem': ['onDropItem', 'node', ({ canvas }) => String(canvas.processDrop(drop()))],
     'canvas onDropItem (drop on the background)': ['onDropItem', 'canvas', ({ canvas }) => {

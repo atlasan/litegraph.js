@@ -43,7 +43,9 @@ Listed in build order (`build.py` `lib_js_files`):
 | `linkrender.js`, `minimap.js` | `RenderLink`, `LinkRouterRegistry` (`LiteGraph.linkRouters`), `LinkStyleRegistry` (`LiteGraph.linkStyles`); `MiniMap` (Wave 4c) |
 | `layout.js`, `palette.js` | `LayoutRegistry` (`LiteGraph.layout`: dagre via LibraryManager, layered, ELK adapter); `NodePalette` (`LiteGraph.palette`) (Wave 4d) |
 | `packs.js` | `PackRegistry` (`LiteGraph.packs`): pack manifests, type attribution, index, version ranges, replacement mappings; `replaceNodeInGraph` (Wave 4a) |
-| `widgets.js` | `BaseWidget` and its subclasses; the safe arithmetic parser |
+| `widgets.js` | `BaseWidget` and its subclasses (`ColorWidget`, `VectorWidget` included); `widgetImplementation` (follows a changed `type` on built-in instances; a plain object's own `draw`/`mouse` wins for types without a pre-value-types class); the safe arithmetic parser |
+| `valuetypes.js` | `ValueTypeRegistry` (`LiteGraph.valueTypes`): type → canvas widget, panel editor, options, coerce / validate / format / parse, help; aliases and base types; `resolveEditor`, `resolveWidgetClass` |
+| `panels.js` | `PanelBuilder` (what `createPanel` returns: sections, tabs, toolbar, typed rows; `showGraphOptions`, `showNode`), `PanelHost` (dock side, width, resize), `defaultPanelEditors`; contributed sections (`LiteGraph.panel_sections`) |
 | `init_litegraph.js` | Calls `LiteGraph.initialize()`; last in the build, so bundles initialize themselves |
 | `litegraph-editor.js` | `Editor` shell; included in full builds only |
 | `*.d.ts`, `*.d.cts` | Type declarations. `litegraph.d.cts` is the core one, checked for parity with runtime exports |
@@ -142,6 +144,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - `drawBackCanvas`: background, groups, links.
   - `drawFrontCanvas`: nodes, overlays, tooltips.
   - Widgets are drawn by `drawNodeWidgets`; changes emit `widget-changed`.
+- **Panels:** `createPanel`, `showShowGraphOptionsPanel` and `showShowNodePanel` delegate to `src/panels.js`. `openNodePanel(node)` runs the `onShowNodePanel` callback first (double click, follow selection in `processNodeSelected`). The widget write path is `applyWidgetValue` (pointer edits and the node panel). `LGraphCanvas.optionInfo` describes the canvas options. The constructor applies the `LiteGraph.Canvas.Defaults` setting.
 - **Search and menus:** `showSearchBox` matches titles, aliases and descriptions. The canvas and node menus collect `LiteGraph.menus` contributions.
 
 ## Runner

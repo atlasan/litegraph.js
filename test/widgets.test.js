@@ -154,3 +154,128 @@ describe('widget inputs', () => {
         expect(over).toBe(1);
     });
 });
+
+describe('widgets for value types', () => {
+    test('addWidget resolves value types: int, float, color, vec3 and aliases keep their own type name', async () => {
+        const { ColorWidget, VectorWidget } = await import('../src/widgets.js');
+        const node = LiteGraph.createNode('wdg/host');
+        const int = node.addWidget('INT', 'count', 2);
+        expect(int).toBeInstanceOf(NumberWidget);
+        expect(int.type).toBe('int');
+        expect(int.options).toMatchObject({ step: 1, precision: 0, round: 1 });
+        expect(widgetImplementation(int)).toBe(int);
+        const own = node.addWidget('int', 'own', 2, null, { step: 5 });
+        expect(own.options.step).toBe(5); // the caller's options win
+        expect(node.addWidget('float', 'f', 1)).toBeInstanceOf(NumberWidget);
+        const color = node.addWidget('color', 'tint', '#ff0000');
+        expect(color).toBeInstanceOf(ColorWidget);
+        const vec = node.addWidget('vec3', 'pos');
+        expect(vec).toBeInstanceOf(VectorWidget);
+        expect(vec.value).toEqual([0, 0, 0]); // the type's default when no value is given
+        expect(vec.options.size).toBe(3);
+    });
+
+    test('dragging an int moves in whole steps and arrows round', () => {
+        const node = LiteGraph.createNode('wdg/host');
+        const int = node.addWidget('int', 'count', 2);
+        const { env } = pointerEnv(node, int, { x: 100 });
+        int.onPointer({ type: 'pointerdown' }, env);
+        for (let i = 0; i < 6; ++i) int.onPointer({ type: 'pointermove', deltaX: 2 }, env);
+        expect(int.value).toBe(3); // 2 + 6 * 0.2 = 3.2, rounded
+        expect(Number.isInteger(int.value)).toBe(true);
+    });
+
+    test('applyWidgetValue coerces by value type, writes the bound property and emits widget-changed', () => {
+        const graph = new LGraph();
+        const node = LiteGraph.createNode('wdg/host');
+        graph.add(node);
+        node.addProperty('offset', [0, 0, 0], 'vec3');
+        const vec = node.addWidget('vec3', 'offset', [0, 0, 0], null, { property: 'offset' });
+        const int = node.addWidget('int', 'n', 0, null, { min: 0, max: 10 });
+        const seen = [];
+        graph.events.on('widget-changed', (event) => seen.push(event.detail.value));
+        const canvas = { dirty_canvas: false };
+        const apply = LiteGraph.LGraphCanvas.prototype.applyWidgetValue;
+        expect(apply.call(canvas, node, vec, '1, 2, 3')).toBe(true);
+        expect(node.properties.offset).toEqual([1, 2, 3]);
+        expect(apply.call(canvas, node, int, '7.6')).toBe(true);
+        expect(int.value).toBe(8);
+        expect(apply.call(canvas, node, int, 99)).toBe(true);
+        expect(int.value).toBe(10);
+        expect(apply.call(canvas, node, vec, [1, 2, 3])).toBe(false); // same content: no change
+        expect(seen).toEqual([[1, 2, 3], 8, 10]);
+    });
+
+    test('a vector widget drags one component and types one on click', async () => {
+        const node = LiteGraph.createNode('wdg/host');
+        const vec = node.addWidget('vec3', 'v', [1, 2, 3], null, { step: 1 });
+        // label "v" is narrow: the cells start near x = 30 and share the rest of 200 px
+        const { changes, canvas, env } = pointerEnv(node, vec, { x: 190 });
+        vec.onPointer({ type: 'pointerdown' }, env);
+        vec.onPointer({ type: 'pointermove', deltaX: 20 }, env);
+        expect(vec.value).toEqual([1, 2, 5]);
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        expect(changes.at(-1)).toEqual(['v', [1, 2, 5], [1, 2, 3]]);
+        vec.onPointer({ type: 'pointerdown' }, { ...env, x: 60 });
+        vec.onPointer({ type: 'pointerup' }, { ...env, x: 60 });
+        expect(canvas.prompt).toHaveBeenCalledWith('Component 1', 1, expect.any(Function), expect.anything());
+        canvas.prompt.mock.calls.at(-1)[2]('4*2');
+        expect(changes.at(-1)[1]).toEqual([8, 2, 5]);
+    });
+
+    test('a colour widget opens a picker on the swatch and keeps the alpha suffix', async () => {
+        const { JSDOM } = await import('jsdom');
+        const dom = new JSDOM('<body></body>');
+        const node = LiteGraph.createNode('wdg/host');
+        const color = node.addWidget('color', 'tint', '#11223380');
+        const { changes, canvas, env } = pointerEnv(node, color, { x: 190, ref_window: dom.window });
+        color.onPointer({ type: 'pointerdown' }, env);
+        const input = dom.window.document.querySelector('input[type=color]');
+        expect(input.value).toBe('#112233');
+        input.value = '#445566';
+        input.dispatchEvent(new dom.window.Event('input'));
+        expect(changes.at(-1)).toEqual(['tint', '#44556680', '#11223380']);
+        color.onPointer({ type: 'pointerdown' }, { ...env, x: 20 });
+        expect(canvas.prompt).toHaveBeenCalled();
+        dom.window.close();
+    });
+
+    test('a built-in widget whose type is changed afterwards uses its new class; own legacy draw is kept', async () => {
+        const { ColorWidget } = await import('../src/widgets.js');
+        const node = LiteGraph.createNode('wdg/host');
+        const w = node.addWidget('number', 'x', 1);
+        w.type = 'toggle';
+        expect(widgetImplementation(w)).toBe(ToggleWidget.prototype);
+        w.type = 'color';
+        expect(widgetImplementation(w)).toBe(ColorWidget.prototype);
+        // a host's plain-object widget named like a new type keeps its own draw
+        expect(widgetImplementation({ type: 'color', draw() {} })).toBeNull();
+        expect(widgetImplementation({ type: 'vec3', mouse() {} })).toBeNull();
+        expect(widgetImplementation({ type: 'vec3' })).not.toBeNull();
+        // a widget from another copy of the library (not instanceof this BaseWidget) inherits draw: it still resolves
+        class Foreign { draw() {} onPointer() {} }
+        const foreign = Object.assign(new Foreign(), { type: 'int', options: {} });
+        expect(widgetImplementation(foreign)).toBe(NumberWidget.prototype);
+        // pre-existing types keep the old rule: the class wins over an own draw
+        expect(widgetImplementation({ type: 'number', draw() {} })).toBe(NumberWidget.prototype);
+    });
+
+    test('a subgraph input switched to boolean draws a toggle, and a number value is kept on reload', () => {
+        const input = LiteGraph.createNode('graph/input');
+        input.value_widget.value = 7;
+        input.properties.value = 7;
+        input.updateType();
+        expect(input.value_widget.value).toBe(7); // used to reset to 0
+        input.properties.type = 'boolean';
+        input.updateType();
+        expect(input.value_widget).toBeInstanceOf(ToggleWidget);
+        expect(input.widgets).toContain(input.value_widget);
+        expect(input.value_widget.value).toBe(true);
+        input.properties.type = 'vec2';
+        input.updateType();
+        expect(input.value_widget.value).toEqual([1, 0]); // true -> [1, 0]
+        input.properties.type = 'something';
+        input.updateType();
+        expect(input.value_widget.type).toBeNull();
+    });
+});

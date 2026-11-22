@@ -7,6 +7,7 @@ import { ContextMenu } from "./contextmenu.js";
 import { CanvasPointer } from "./canvaspointer.js";
 import { LinkConnector } from "./linkconnector.js";
 import { widgetImplementation } from "./widgets.js";
+import { PanelBuilder } from "./panels.js";
 import { NodeSearch } from "./nodesearch.js";
 import { LGraphEventTarget } from "./eventtarget.js";
 
@@ -168,6 +169,14 @@ export class LGraphCanvas {
 
         this.viewport = options.viewport || null; // to constraint render area to a portion of the canvas
         this.low_quality_rendering_threshold = 5; // amount of slow fps to switch to low quality rendering
+
+        // canvas options saved with "Save canvas as defaults" (options panel; setting LiteGraph.Canvas.Defaults)
+        const savedDefaults = LiteGraph.settings?.has?.("LiteGraph.Canvas.Defaults") ? LiteGraph.settings.get("LiteGraph.Canvas.Defaults") : null;
+        if (savedDefaults && typeof savedDefaults === "object") {
+            for (const [key, value] of Object.entries(savedDefaults)) {
+                if (key in this && typeof value !== "object" && typeof value !== "function") this[key] = value;
+            }
+        }
 
         // link canvas and graph
         graph?.attachCanvas(this);
@@ -2677,12 +2686,7 @@ export class LGraphCanvas {
 
     processNodeDblClicked(n) {
 
-        let r = this.processCallbackHandlers("onShowNodePanel",{
-            def_cb: this.onShowNodePanel
-        }, n);
-        if(r===null || ((typeof(r)=="object" && (r.return_value === null || !r.return_value)))){
-            this.showShowNodePanel(n); // use onShowNodePanel, this is an only local method
-        }
+        this.openNodePanel(n);
 
         this.processCallbackHandlers("onNodeDblClicked",{
             def_cb: this.onNodeDblClicked
@@ -2695,6 +2699,10 @@ export class LGraphCanvas {
         this.processCallbackHandlers("onNodeSelected",{
             def_cb: this.onNodeSelected
         }, node);
+        // an open node panel follows the selection when its pin is on (setting LiteGraph.Panel.FollowSelection)
+        if (node && this.node_panel && this.node_panel.node !== node && LiteGraph.settings?.has?.("LiteGraph.Panel.FollowSelection") && LiteGraph.settings.get("LiteGraph.Panel.FollowSelection")) {
+            this.openNodePanel(node);
+        }
     }
 
     /**
@@ -6131,33 +6139,68 @@ export class LGraphCanvas {
         }// end for
 
         function inner_value_change(widget, value, old_value) {
-            LiteGraph.log_debug("inner_value_change for processNodeWidgets",widget,value);
-            const value_original = value;
-            if(widget.type == "number") {
-                value = Number(value);
-            }
-            widget.value = value;
-            // value changed: notify with the new value (text widgets used to report the old one)
-            if( old_value != value ) {
-                node.processCallbackHandlers("onWidgetChanged",{
-                    def_cb: node.onWidgetChanged
-                }, widget.name, value, old_value, widget);
-            }
-            // a bound property is written before the change is recorded, so the history entry includes it
-            if ( widget.options && widget.options.property && node.properties[widget.options.property] !== undefined ) {
-                node.setProperty( widget.options.property, value );
-            }
-            if( old_value != value ) {
-                node.graph._markChange?.("widget");
-                node.graph.onGraphChanged({action: "widgetChanged", doSave: true}); // tag: graph event entrypoint
-                node.graph._emit?.("widget-changed", { node, widget, value, previous: old_value }, { recorded: true });
-            }
-            if (widget.callback) {
-                widget.callback(widget.value, that, node, pos, event, value_original);
-            }
+            (that.applyWidgetValue ?? LGraphCanvas.prototype.applyWidgetValue).call(that, node, widget, value, { old_value, pos, event });
         }
 
         return null;
+    }
+
+    /**
+     * Writes a value into a node widget the way a canvas edit does: the value is normalized by the
+     * widget's value type (LiteGraph.valueTypes), `onWidgetChanged` runs, a bound property
+     * (`options.property`) is written, the change is recorded and `widget-changed` is emitted, then
+     * the widget callback runs. The canvas pointer handling and the node panel both use it.
+     * @param {object} node
+     * @param {object} widget
+     * @param {*} value
+     * @param {{old_value?: *, pos?: number[], event?: Event}} [context] - old_value defaults to the widget's current value
+     * @returns {boolean} true when the value changed
+     */
+    applyWidgetValue(node, widget, value, context = {}) {
+        const old_value = Object.hasOwn(context, "old_value") ? context.old_value : widget.value;
+        LiteGraph.log_debug("lgraphcanvas", "applyWidgetValue", widget, value);
+        const value_original = value;
+        if (widget.type == "number") {
+            value = Number(value);
+        } else if (LiteGraph.valueTypes?.has(widget.type)) {
+            try {
+                value = LiteGraph.valueTypes.coerce(widget.type, value, widget.options);
+            } catch (error) {
+                this.showExecutionNotice?.(`${widget.label || widget.name}: ${error.message}`);
+                return false;
+            }
+        }
+        widget.value = value;
+        const changed = !LGraphCanvas.sameValue(old_value, value);
+        // value changed: notify with the new value (text widgets used to report the old one)
+        if (changed) {
+            node.processCallbackHandlers("onWidgetChanged", {
+                def_cb: node.onWidgetChanged,
+            }, widget.name, value, old_value, widget);
+        }
+        // a bound property is written before the change is recorded, so the history entry includes it
+        if (widget.options && widget.options.property && node.properties?.[widget.options.property] !== undefined) {
+            node.setProperty(widget.options.property, value);
+        }
+        if (changed && node.graph) {
+            node.graph._markChange?.("widget");
+            node.graph.onGraphChanged({ action: "widgetChanged", doSave: true }); // tag: graph event entrypoint
+            node.graph._emit?.("widget-changed", { node, widget, value, previous: old_value }, { recorded: true });
+        }
+        if (widget.callback) {
+            widget.callback(widget.value, this, node, context.pos, context.event, value_original);
+        }
+        this.dirty_canvas = true;
+        return changed;
+    }
+
+    /** Loose equality for widget and property values; arrays and objects compare by content. */
+    static sameValue(a, b) {
+        if (a == b) return true;
+        if (a && b && typeof a === "object" && typeof b === "object") {
+            try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+        }
+        return false;
     }
 
     /**
@@ -8498,8 +8541,12 @@ export class LGraphCanvas {
         let type = info && info!==null ? info.type : "string";
 
         let input_html;
+        // other value types (vec3, color, text, int, ...) are typed as text and parsed by their type
+        const legacy_text = ["string", "number", "array", "object", "code"].includes(type);
+        const value_type = legacy_text ? null : LiteGraph.valueTypes?.get(type);
+        const typed_by_value_type = !!value_type && !["enum", "boolean"].includes(value_type.name) && value_type.editor !== "readonly";
 
-        if (type == "string" || type == "number" || type == "array" || type == "object" || type == "code") {
+        if (legacy_text || typed_by_value_type) {
             input_html = "<input autofocus type='text' class='value'/>";
         } else if ( (type == "enum" || type == "combo") && info.values) {
             LiteGraph.log_debug("lgraphcanvas", "showEditPropertyValue", "CREATING ENUM COMBO",input,type,dialog);
@@ -8567,7 +8614,9 @@ export class LGraphCanvas {
                 });
 
                 v = node.properties[property] !== undefined ? node.properties[property] : "";
-                if (type !== 'string') {
+                if (typed_by_value_type) {
+                    v = LiteGraph.valueTypes.format(type, v, info);
+                } else if (type !== 'string') {
                     v = JSON.stringify(v);
                 }
 
@@ -8607,6 +8656,14 @@ export class LGraphCanvas {
             }
             if (type == "array" || type == "object") {
                 value = JSON.parse(value);
+            }
+            if (typed_by_value_type) {
+                try {
+                    value = LiteGraph.valueTypes.coerce(type, LiteGraph.valueTypes.parse(type, value, info), info);
+                } catch (error) {
+                    LiteGraph.log_warn("lgraphcanvas", "showEditPropertyValue", "value refused", property, error.message);
+                    return;
+                }
             }
             const prevValue = node.properties[property];
             node.properties[property] = value;
@@ -8729,205 +8786,17 @@ export class LGraphCanvas {
         return dialog;
     }
 
+    /**
+     * Creates a side panel (see src/panels.js): header, optional toolbar and tabs, content, footer.
+     * Former API kept: addWidget, addHTML, addButton, addSeparator, clear, close, toggleAltContent,
+     * toggleFooterVisibility, content / alt_content / footer / title_element. New: addRow, addSection,
+     * addTabs / useTab, addToolbar, addNote, applyFilter, applySort.
+     * @param {string} title
+     * @param {object} [options] - {closable, window, width, height, onOpen, onClose, id}
+     * @returns {HTMLElement}
+     */
     createPanel(title, options) {
-        options = options || {};
-
-        var ref_window = options.window || window;
-        var root = document.createElement("div");
-        root.className = "litegraph dialog";
-        root.innerHTML = "<div class='dialog-header'><span class='dialog-title'></span></div><div class='dialog-content'></div><div style='display:none;' class='dialog-alt-content'></div><div class='dialog-footer'></div>";
-        root.header = root.querySelector(".dialog-header");
-
-        if(options.width)
-            root.style.width = options.width + (options.width.constructor === Number ? "px" : "");
-        if(options.height)
-            root.style.height = options.height + (options.height.constructor === Number ? "px" : "");
-        if(options.closable) {
-            var close = document.createElement("span");
-            close.innerHTML = "&#10005;";
-            close.classList.add("close");
-            close.addEventListener("click",function() {
-                root.close();
-            });
-            root.header.appendChild(close);
-        }
-        root.title_element = root.querySelector(".dialog-title");
-        root.title_element.innerText = title;
-        root.content = root.querySelector(".dialog-content");
-        root.alt_content = root.querySelector(".dialog-alt-content");
-        root.footer = root.querySelector(".dialog-footer");
-
-        root.close = function() {
-            if (root.onClose && typeof root.onClose == "function") {
-                root.onClose();
-            }
-            if(root.parentNode)
-                root.parentNode.removeChild(root);
-            /* XXX CHECK THIS */
-            if(this.parentNode) {
-                this.parentNode.removeChild(this);
-            }
-            /* XXX this was not working, was fixed with an IF, check this */
-            // check: maybe need a .call(this)
-        }
-
-        // function to swap panel content
-        root.toggleAltContent = function(force) {
-            let vTo, vAlt;
-            if (typeof force != "undefined") {
-                vTo = force ? "block" : "none";
-                vAlt = force ? "none" : "block";
-            }else{
-                vTo = root.alt_content.style.display != "block" ? "block" : "none";
-                vAlt = root.alt_content.style.display != "block" ? "none" : "block";
-            }
-            root.alt_content.style.display = vTo;
-            root.content.style.display = vAlt;
-        }
-
-        root.toggleFooterVisibility = function(force) {
-            let vTo;
-            if (typeof force != "undefined") {
-                vTo = force ? "block" : "none";
-            }else{
-                vTo = root.footer.style.display != "block" ? "block" : "none";
-            }
-            root.footer.style.display = vTo;
-        }
-
-        root.clear = function() {
-            this.content.innerHTML = "";
-        }
-
-        root.addHTML = function(code, classname, on_footer) {
-            var elem = document.createElement("div");
-            if(classname)
-                elem.className = classname;
-            elem.innerHTML = code;
-            if(on_footer)
-                root.footer.appendChild(elem);
-            else
-                root.content.appendChild(elem);
-            return elem;
-        }
-
-        root.addButton = function( name, callback, options ) {
-            var elem = document.createElement("button");
-            elem.innerText = name;
-            elem.options = options;
-            elem.classList.add("btn");
-            elem.addEventListener("click",callback);
-            root.footer.appendChild(elem);
-            return elem;
-        }
-
-        root.addSeparator = function() {
-            var elem = document.createElement("div");
-            elem.className = "separator";
-            root.content.appendChild(elem);
-        }
-
-        root.addWidget = function( type, name, value, options, callback ) {
-            options = options || {};
-            var str_value = String(value);
-            type = type.toLowerCase();
-            if(type == "number")
-                str_value = LiteGraph.formatNumber(value,3);
-
-            var elem = document.createElement("div");
-            elem.className = "property";
-            elem.innerHTML = "<span class='property_name'></span><span class='property_value'></span>";
-            elem.querySelector(".property_name").innerText = options.label || name;
-            var value_element = elem.querySelector(".property_value");
-            value_element.innerText = str_value;
-            elem.dataset["property"] = name;
-            elem.dataset["type"] = options.type || type;
-            // if(elem.dataset["type"]=="number"){
-            //     elem.dataset["precision"] = options.precision || 3;
-            // }
-            elem.options = options;
-            elem.value = value;
-
-            LiteGraph.log_debug("lgraphcanvas", "createPanel", "addWidget", type, value, value_element, options);
-
-            if(type == "code") {
-                elem.addEventListener("click", function(_event) {
-                    root.inner_showCodePad( this.dataset["property"] );
-                });
-            } else if (type == "boolean") {
-                elem.classList.add("boolean");
-                if(value)
-                    elem.classList.add("bool-on");
-                elem.addEventListener("click", function() {
-                    // var v = node.properties[this.dataset["property"]];
-                    // node.setProperty(this.dataset["property"],!v); this.innerText = v ? "on" : "off";
-                    var propname = this.dataset["property"];
-                    this.value = !this.value;
-                    this.classList.toggle("bool-on");
-                    this.querySelector(".property_value").innerText = this.value ? "on" : "off";
-                    innerChange(propname, this.value );
-                });
-            } else if (type == "string" || type == "number" || type == "undefined") {
-                value_element.setAttribute("contenteditable",true);
-                value_element.addEventListener("keydown", function(e) {
-                    if(e.key == "Enter" && (type != "string" || !e.shiftKey)) { // allow for multiline; key also covers NumpadEnter
-                        e.preventDefault();
-                        this.blur();
-                    }
-                });
-                value_element.addEventListener("blur", function() {
-                    var v = this.innerText;
-                    var propname = this.parentNode.dataset["property"];
-                    var proptype = this.parentNode.dataset["type"];
-                    if( proptype == "number")
-                        v = Number(v);
-                    innerChange(propname, v);
-                });
-            } else if (type == "enum" || type == "combo") {
-                str_value = LGraphCanvas.getPropertyPrintableValue( value, options.values );
-                value_element.innerText = str_value;
-
-                LiteGraph.log_debug("lgraphcanvas", "createPanel", "addWidget", "ENUM COMBO", type, str_value, value_element, options);
-
-                value_element.addEventListener("click", function(event) {
-                    var values = options.values || [];
-                    var propname = this.parentNode.dataset["property"];
-                    var elem_that = this;
-                    LiteGraph.ContextMenu(
-                        values,{
-                            event: event,
-                            className: "dark",
-                            callback: inner_clicked,
-                        },
-                        ref_window,
-                    );
-                    function inner_clicked(v) {
-                        // node.setProperty(propname,v);
-                        // graphcanvas.dirty_canvas = true;
-                        elem_that.innerText = v;
-                        innerChange(propname,v);
-                        return false;
-                    }
-                });
-            }
-
-            root.content.appendChild(elem);
-
-            function innerChange(name, value) {
-                LiteGraph.log_debug("lgraphcanvas", "createPanel", "addWidget", "innerChange", name, value, options);
-                // that.dirty_canvas = true;
-                if(options.callback)
-                    options.callback(name,value,options);
-                if(callback)
-                    callback(name,value,options);
-            }
-
-            return elem;
-        }
-
-        if (root.onOpen && typeof root.onOpen == "function") root.onOpen();
-
-        return root;
+        return PanelBuilder.create(title, { ...(options || {}), canvas: this });
     }
 
     static getPropertyPrintableValue(value, values) {
@@ -8957,13 +8826,16 @@ export class LGraphCanvas {
         }
     }
 
+    /**
+     * Opens the graph options panel: Graph (execution model, document facts), Canvas (this view's
+     * options, LGraphCanvas.optionInfo) and Settings (LiteGraph.settings) tabs, with search.
+     */
     showShowGraphOptionsPanel(refOpts, obEv) {
         let graphcanvas;
         if(this.constructor && this.constructor.name == "HTMLDivElement") {
             // assume coming from the menu event click
             if (! obEv?.event?.target?.lgraphcanvas) {
                 LiteGraph.log_warn("lgraphcanvas", "showShowGraphOptionsPanel", "References not found to add optionPanel", refOpts, obEv); // need a ref to canvas obj
-                LiteGraph.log_debug("lgraphcanvas", "showShowGraphOptionsPanel", "!obEv || !obEv.event || !obEv.event.target || !obEv.event.target.lgraphcanvas",obEv,obEv.event,obEv.event.target,obEv.event.target.lgraphcanvas);
                 return;
             }
             graphcanvas = obEv.event.target.lgraphcanvas;
@@ -8971,103 +8843,7 @@ export class LGraphCanvas {
             // assume called internally
             graphcanvas = this;
         }
-        graphcanvas.closePanels();
-        var ref_window = graphcanvas.getCanvasWindow();
-        var panel = graphcanvas.createPanel("Options",{
-            closable: true,
-            window: ref_window,
-            onOpen: function() {
-                graphcanvas.OPTIONPANEL_IS_OPEN = true;
-            },
-            onClose: function() {
-                graphcanvas.OPTIONPANEL_IS_OPEN = false;
-                graphcanvas.options_panel = null;
-            },
-        });
-        graphcanvas.options_panel = panel;
-        panel.id = "option-panel";
-        panel.classList.add("settings");
-
-        function inner_refresh() {
-
-            panel.content.innerHTML = ""; // clear
-
-            const fUpdate = (name, value, options) => {
-                switch(name) {
-                    /* case "Render mode":
-                        // Case ""..
-                        if (options.values && options.key){
-                            var kV = Object.values(options.values).indexOf(value);
-                            if (kV>=0 && options.values[kV]){
-                                LiteGraph.log_debug("update graph options: "+options.key+": "+kV);
-                                graphcanvas[options.key] = kV;
-                                //LiteGraph.log_debug(graphcanvas);
-                                break;
-                            }
-                        }
-                        LiteGraph.log_warn("unexpected options");
-                        LiteGraph.log_debug(options);
-                        break;*/
-                    default:
-                        LiteGraph.log_verbose("lgraphcanvas", "showShowGraphOptionsPanel", "want to update graph options: "+name+": "+value);
-                        if (options && options.key) {
-                            name = options.key;
-                        }
-                        if (options.values) {
-                            value = Object.values(options.values).indexOf(value);
-                        }
-                        LiteGraph.log_verbose("lgraphcanvas", "showShowGraphOptionsPanel", "update graph option: "+name+": "+value);
-                        graphcanvas[name] = value;
-                        break;
-                }
-            };
-
-            // panel.addWidget( "string", "Graph name", "", {}, fUpdate); // implement
-
-            // the document's execution model (graph info): one undo step per change
-            const root = graphcanvas.graph?.rootGraph ?? graphcanvas.graph;
-            let pendingModes = 0;
-            if (root?.setExecutionModel && LiteGraph.listExecutionModels) {
-                const names = LiteGraph.listExecutionModels().map((model) => model.name);
-                panel.addWidget("combo", "Execution model", root.executionModel, { values: names }, (_name, value) => {
-                    try {
-                        if (root.setExecutionModel(value)) graphcanvas.setDirty(true, true);
-                    } catch (error) {
-                        graphcanvas.showExecutionNotice(error.message);
-                    }
-                    inner_refresh();
-                });
-                const model = LiteGraph.getExecutionModel(root.executionModel);
-                const info = panel.addHTML("", "execution-model-info");
-                info.textContent = model?.description ?? model?.title ?? "";
-                pendingModes = LiteGraph.ExecutionEngine.modelModes(root).length;
-                panel.addSeparator();
-            }
-
-            var aProps = [...(LiteGraph.availableCanvasOptions || [])].sort();
-            for(var pI in aProps) {
-                var pX = aProps[pI];
-                panel.addWidget( "boolean", pX, graphcanvas[pX], {key: pX, on: "on", off: "off"}, fUpdate);
-            }
-
-            panel.addWidget( "combo", "Render mode", LiteGraph.LINK_RENDER_MODES[graphcanvas.links_render_mode], {key: "links_render_mode", values: LiteGraph.LINK_RENDER_MODES}, fUpdate);
-
-            panel.addSeparator();
-
-            panel.footer.innerHTML = ""; // clear
-
-            // optional and never automatic: the declared default modes of the model, as one more undo step
-            if (pendingModes) {
-                panel.addButton(`Apply the model's node modes (${pendingModes})`, () => {
-                    root.applyExecutionModelModes();
-                    graphcanvas.setDirty(true, true);
-                    inner_refresh();
-                });
-            }
-        }
-        inner_refresh();
-
-        graphcanvas.canvas.parentNode.appendChild( panel );
+        return PanelBuilder.showGraphOptions(graphcanvas);
     }
 
     /**
@@ -9094,161 +8870,28 @@ export class LGraphCanvas {
         return notice;
     }
 
+    /**
+     * Opens the node details panel: header, General, Properties, Widgets, Inputs, Outputs, Execution
+     * and Advanced sections, contributed sections, live refresh and one undo step per edit.
+     * The node hooks onAddPropertyToPanel and onShowCustomPanelInfo still apply.
+     */
     showShowNodePanel(node) {
-        this.SELECTED_NODE = node;
-        this.closePanels();
-        var ref_window = this.getCanvasWindow();
+        return PanelBuilder.showNode(this, node);
+    }
 
-        var graphcanvas = this;
-        var panel = this.createPanel(node.title || "",{
-            closable: true,
-            window: ref_window,
-            onOpen: function() {
-                graphcanvas.NODEPANEL_IS_OPEN = true;
-            },
-            onClose: function() {
-                graphcanvas.NODEPANEL_IS_OPEN = false;
-                graphcanvas.node_panel = null;
-            },
-        });
-        graphcanvas.node_panel = panel;
-        panel.id = "node-panel";
-        panel.node = node;
-        panel.classList.add("settings");
-
-        function inner_refresh() {
-            panel.content.innerHTML = ""; // clear
-            panel.addHTML("<span class='node_type'>"+node.type+"</span>"+
-                "<span class='node_desc'>"+(node.constructor.desc || "")+"</span>"+
-                (node.graph?._subgraph_node ? "<span class='node_desc'>path "+String(node.getPath()).replace(/[<>&"']/g, "")+"</span>" : "")+
-                "<span class='separator'></span>");
-
-            panel.addHTML("<h3>Properties</h3>");
-
-            const fUpdate = (name,value) => {
-                graphcanvas.graph.beforeChange(node);
-                switch(name) {
-                    case "Title":
-                        node.title = value;
-                        break;
-                    case "Mode":
-                        var kV = Object.values(LiteGraph.NODE_MODES).indexOf(value);
-                        if (kV>=0 && LiteGraph.NODE_MODES[kV]) {
-                            if (node.changeMode(kV) === false && node.mode_refusal) graphcanvas.showExecutionNotice(node.mode_refusal);
-                        }else{
-                            LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected mode",value,kV);
-                        }
-                        break;
-                    case "Color":
-                        if (LGraphCanvas.node_colors[value]) {
-                            node.color = LGraphCanvas.node_colors[value].color;
-                            node.bgcolor = LGraphCanvas.node_colors[value].bgcolor;
-                        }else{
-                            LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected color",value);
-                        }
-                        break;
-                    default:
-                        node.setProperty(name,value);
-                        break;
-                }
-                graphcanvas.graph.afterChange();
-                graphcanvas.dirty_canvas = true;
-            };
-
-            panel.addWidget( "string", "Title", node.title, {}, fUpdate);
-
-            // only the modes the node's type declares valid under the document's execution model
-            const validModes = LiteGraph.getValidNodeModes?.(node) ?? LiteGraph.NODE_MODES.map((_, i) => i);
-            panel.addWidget( "combo", "Mode", LiteGraph.NODE_MODES[node.mode], {values: LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i))}, fUpdate);
-
-            var nodeCol = "";
-            if (node.color !== undefined) {
-                nodeCol = Object.keys(LGraphCanvas.node_colors).filter(function(nK) {
-                    return LGraphCanvas.node_colors[nK].color == node.color;
-                });
-            }
-
-            panel.addWidget( "combo", "Color", nodeCol, {values: Object.keys(LGraphCanvas.node_colors)}, fUpdate);
-
-            for(var pName in node.properties) {
-                var value = node.properties[pName];
-                var info = node.getPropertyInfo(pName);
-                let type = info && info!==null ? info.type : "string";
-
-                // in case the user wants control over the side panel widget
-                const r = node.processCallbackHandlers("onAddPropertyToPanel", {
-                    def_cb: node.onAddPropertyToPanel
-                }, pName, panel, value, info, fUpdate);
-                // any truthy legacy result (an element, too) means handled; a {return_value} object counts by its value
-                if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) {
-                    continue;
-                }
-                panel.addWidget( info.widget || type, pName, value, info, fUpdate);
-            }
-
-            panel.addSeparator();
-
-            node.processCallbackHandlers("onShowCustomPanelInfo", { def_cb: node.onShowCustomPanelInfo }, panel);
-
-            panel.footer.innerHTML = ""; // clear
-            panel.addButton("Delete",function() {
-                if(node.block_delete)
-                    return;
-                node.graph.remove(node);
-                panel.close();
-            }).classList.add("delete");
+    /**
+     * Opens the node panel the way a double click does: the onShowNodePanel callback may handle it.
+     * @returns {boolean} true when the built-in panel was opened
+     */
+    openNodePanel(node) {
+        let r = this.processCallbackHandlers("onShowNodePanel",{
+            def_cb: this.onShowNodePanel
+        }, node);
+        if(!CallbackHandler.valueOf(r)){
+            this.showShowNodePanel(node); // use onShowNodePanel, this is an only local method
+            return true;
         }
-
-        panel.inner_showCodePad = function( propname ) {
-            panel.classList.remove("settings");
-            panel.classList.add("centered");
-
-            /* TODO restore, export to extensions
-            if(window.CodeFlask) //disabled for now
-            {
-                panel.content.innerHTML = "<div class='code'></div>";
-                var flask = new CodeFlask( "div.code", { language: 'js' });
-                flask.updateCode(node.properties[propname]);
-                flask.onUpdate( function(code) {
-                    node.setProperty(propname, code);
-                });
-            }
-            else
-            {*/
-            panel.alt_content.innerHTML = "<textarea class='code'></textarea>";
-            var textarea = panel.alt_content.querySelector("textarea");
-            var fDoneWith = () => {
-                panel.toggleAltContent(false); // if(node_prop_div) node_prop_div.style.display = "block"; // panel.close();
-                panel.toggleFooterVisibility(true);
-                textarea.parentNode.removeChild(textarea);
-                panel.classList.add("settings");
-                panel.classList.remove("centered");
-                inner_refresh();
-            }
-            textarea.value = node.properties[propname];
-            textarea.addEventListener("keydown", function(e) {
-                if(e.key == "Enter" && e.ctrlKey ) {
-                    node.setProperty(propname, textarea.value);
-                    fDoneWith();
-                }
-            });
-            panel.toggleAltContent(true);
-            panel.toggleFooterVisibility(false);
-            textarea.style.height = "calc(100% - 40px)";
-            /* }*/
-            var assign = panel.addButton( "Assign", function() {
-                node.setProperty(propname, textarea.value);
-                fDoneWith();
-            });
-            panel.alt_content.appendChild(assign); // panel.content.appendChild(assign);
-            var button = panel.addButton( "Close", fDoneWith);
-            button.style.float = "right";
-            panel.alt_content.appendChild(button); // panel.content.appendChild(button);
-        }
-
-        inner_refresh();
-
-        this.canvas.parentNode.appendChild( panel );
+        return false;
     }
 
     showSubgraphPropertiesDialog(node) {
@@ -9377,12 +9020,11 @@ export class LGraphCanvas {
      * @returns void 
      */
     closePanels() {
-        var panel = document.querySelector("#node-panel");
-        if(panel)
-            panel.close(); // ? panel.close.call(panel);
-        panel = document.querySelector("#option-panel");
-        if(panel)
-            panel.close(); // ? panel.close.call(panel);
+        this.node_panel?.close?.();
+        this.options_panel?.close?.();
+        const doc = this.canvas?.ownerDocument ?? (typeof document !== "undefined" ? document : null);
+        doc?.querySelector("#node-panel")?.close?.();
+        doc?.querySelector("#option-panel")?.close?.();
     }
 
     /**
@@ -10174,6 +9816,44 @@ export class LGraphCanvas {
     static gradients = {}; // cache of gradients
 
     static search_limit = -1;
+
+    /**
+     * What the Canvas tab of the options panel shows for each canvas option: label, tooltip,
+     * category (Rendering, Links, Interaction, Advanced), type and default. Options listed in
+     * LiteGraph.availableCanvasOptions without an entry appear under "Other"; entries with
+     * `always: true` are shown even when not listed there.
+     */
+    static optionInfo = {
+        highquality_render: { category: "Rendering", label: "High-quality rendering", default: true, tooltip: "Draw rounded shapes, shadows and full detail. Off draws simple boxes, which is faster on large graphs." },
+        use_gradients: { category: "Rendering", label: "Title gradients", default: false, tooltip: "Fill title bars with a gradient instead of a flat colour." },
+        render_shadows: { category: "Rendering", label: "Node shadows", default: true, tooltip: "Draw a shadow under each node." },
+        render_title_colored: { category: "Rendering", label: "Coloured titles", default: true, tooltip: "Colour each title bar with the node's colour." },
+        render_collapsed_slots: { category: "Rendering", label: "Slots on collapsed nodes", default: true, tooltip: "Show the input and output dots of collapsed nodes." },
+        render_execution_order: { category: "Rendering", label: "Execution order", default: false, tooltip: "Show each node's position in the execution order on its title bar." },
+        render_canvas_border: { category: "Rendering", label: "Canvas border", default: true, tooltip: "Draw a frame around the drawing area." },
+        show_info: { category: "Rendering", label: "Info overlay", default: true, tooltip: "Show zoom, node count and frame rate in the corner." },
+        clear_background: { category: "Rendering", label: "Clear each frame", default: true, tooltip: "Clear the canvas before drawing each frame. Turn off only when the host draws the background itself." },
+        always_render_background: { category: "Rendering", label: "Redraw background every frame", default: false, tooltip: "Redraw the grid on every frame, not only when the view changed." },
+        round_radius: { category: "Rendering", label: "Corner radius", type: "int", min: 0, max: 24, unit: "px", default: 8, always: true, tooltip: "Radius of the rounded corners of nodes and groups." },
+        links_render_mode: { category: "Links", label: "Link shape", type: "enum", store: "index", values: () => LiteGraph.LINK_RENDER_MODES, default: 2, always: true, tooltip: "How links are drawn: straight (right angles), linear or spline (curves).", examples: ["Spline: smooth curves", "Straight: right angles, tidy layouts"] },
+        connections_width: { category: "Links", label: "Link width", type: "number", min: 1, max: 12, step: 0.5, unit: "px", default: 3, always: true, tooltip: "Thickness of links." },
+        render_connections_border: { category: "Links", label: "Link outline", default: true, tooltip: "Draw a dark outline around links so they stand out on any background." },
+        render_connections_shadows: { category: "Links", label: "Link shadows", default: false, tooltip: "Draw shadows under links. Slow on large graphs." },
+        render_connection_arrows: { category: "Links", label: "Flow arrows", default: false, tooltip: "Draw arrows along links, pointing in the direction data flows." },
+        render_link_tooltip: { category: "Links", label: "Link value tooltip", default: true, tooltip: "Show the value a link carries when the pointer is over its centre." },
+        move_destination_link_without_shift: { category: "Links", label: "Drag links off inputs", default: false, tooltip: "Dragging from a connected input moves its link without holding Shift." },
+        allow_interaction: { category: "Interaction", label: "Widgets and buttons", default: true, tooltip: "Allow clicking widgets, title buttons and collapse boxes." },
+        allow_dragnodes: { category: "Interaction", label: "Move nodes", default: true, tooltip: "Move nodes by dragging them." },
+        allow_dragcanvas: { category: "Interaction", label: "Pan by dragging", default: true, tooltip: "Pan the view by dragging the background." },
+        allow_searchbox: { category: "Interaction", label: "Search on double click", default: true, tooltip: "Double-clicking the background opens the node search." },
+        read_only: { category: "Interaction", label: "Read only", default: false, tooltip: "Nodes can be selected and inspected, but the graph cannot be changed from this canvas." },
+        free_resize: { category: "Interaction", label: "Free resize", tooltip: "Resize nodes to any size, below their computed minimum." },
+        live_mode: { category: "Interaction", label: "Live mode", default: false, tooltip: "Hide the editing chrome (titles, slots) and show only the nodes' live content." },
+        pause_rendering: { category: "Advanced", label: "Pause drawing", default: false, tooltip: "Stop drawing this canvas. The graph keeps running." },
+        set_canvas_dirty_on_mouse_event: { category: "Advanced", label: "Redraw on pointer events", default: true, tooltip: "Redraw on every pointer event. Off saves CPU, but hover effects may lag." },
+        low_quality_rendering_threshold: { category: "Advanced", label: "Low-quality threshold", type: "int", min: 0, default: 5, always: true, tooltip: "Slow frames in a row before drawing switches to low quality." },
+        allow_addOutSlot_onExecuted: { category: "Advanced", label: "Add onExecuted slot", tooltip: "Legacy: let the canvas add an onExecuted output slot (see LiteGraph.do_add_triggers_slots)." },
+    };
 
     static node_colors = {
         red: { color: "#322", bgcolor: "#533", groupcolor: "#A88" },

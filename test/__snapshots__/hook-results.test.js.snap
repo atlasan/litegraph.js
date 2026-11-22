@@ -74,7 +74,7 @@ Object {
   },
   "canvas onShowNodePanel": Object {
     "1": "handled",
-    "false": "handled",
+    "false": "default",
     "no result": "default panel",
     "true": "handled",
     "{return_value: 1}": "handled",
@@ -116,7 +116,7 @@ Object {
   "node onAddPropertyToPanel": Object {
     "1": "handled",
     "false": "default",
-    "no result": "default widget",
+    "no result": "default row",
     "true": "handled",
     "{return_value: 1}": "handled",
     "{return_value: true}": "handled",

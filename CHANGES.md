@@ -1,6 +1,32 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased: panels and widgets
+
+Plan: `agents/plans/2026-11-22-panels-options-node-details.md`.
+
+## Added
+
+* **Value types** (`LiteGraph.valueTypes`, `src/valuetypes.js`): one registry maps each type to its canvas widget, panel editor, default options, coercion, validation, formatting and help, with aliases (`INT`, `FLOAT`, `COMBO`, `COLOR`, …) and base types. Also `LiteGraph.registerValueType` / `getValueType`, and `ctx.valueTypes.register` in extensions.
+* **`addWidget` for any value type:** `int`, `float`, `color`, `vec2`/`vec3`/`vec4`, `text`, `resource`, and the ComfyUI-style names. Two new canvas widgets: `ColorWidget` (swatch and colour picker) and `VectorWidget` (one drag field per component).
+* **`LGraphCanvas.applyWidgetValue(node, widget, value)`**: the shared widget write path (value-type coercion, callbacks, bound property, history, `widget-changed`).
+* **Options panel:** Graph, Canvas and Settings tabs. Canvas options have labels, tooltips and categories (`LGraphCanvas.optionInfo`), host-added options appear under Other, and "Save canvas as defaults" saves to the `LiteGraph.Canvas.Defaults` setting. Every `LiteGraph.settings` definition can now be edited there. Search covers all tabs.
+* **Node details panel:**
+  - a header and sections: General, Properties (`section`, `order`, `hidden`), Widgets, Inputs, Outputs, Execution, Advanced;
+  - an editor that fits each value, with tooltip, description, examples, reset and a modified marker;
+  - one undo step per edit, live refresh, and follow selection (`LiteGraph.Panel.FollowSelection`, on in the Editor).
+* **Both panels:** search, sorting, a modified-only filter, remembered collapsed sections, a resizable width and a docking side (settings `LiteGraph.Panel.*`).
+* **Panel API:** `LiteGraph.registerPanelEditor`, `LiteGraph.registerPanelSection` (also `ctx.panels` in extensions), `PanelBuilder`, `PanelHost`, `defaultPanelEditors`; `createPanel` gains `addRow`, `addSection`, `addTabs`, `addToolbar` and `addNote`.
+* `apps/editor/server.js` reads `PORT`.
+
+## Fixed
+
+* A `graph/input` switched to `boolean` drew and behaved as a number widget. A number input reset its value to 0 on every load.
+* The node panel inserted the node type and description as HTML. They are now set as text.
+* `vec3`, `color`, `text`, `array` and `resource` properties could not be edited in the node panel. `min` and `max` were ignored there.
+* The property dialog refused `vec3`, `color`, `int` and the other value types ("unknown type").
+* Node panel edits used `beforeChange`/`afterChange` without a transaction. They are now one undo step each, and those hooks still fire.
+
 # Unreleased: Wave 7 (event integration)
 
 Plan: `agents/plans/2026-11-22-event-integration.md`; audit: `agents/audits/2026-11-22-event-handling.md`.
@@ -16,6 +42,7 @@ Hooks (CallbackHandler) and typed events now run on one listener core (`Listener
   * **The node property dialog** (`showEditPropertyValue`) now fires `node-property-changed` after `onPropertyChanged`, as `setProperty` does; it fired no event before.
   * **The property dialog records its history entry after `onPropertyChanged`, and none when the hook vetoes** (returns `false`). Before, the entry was recorded before the hook, so a vetoed edit left an undo step, and `changed` / `graph-changed` fired before the hook.
 * **A vetoable hook that vetoes skips its typed event** (open decision 3): `setProperty` and the property dialog (`onPropertyChanged` → `node-property-changed`), and `connect` (`onConnectInput` / `onConnectOutput` → `link-connected`), which already behaved so. Hooks whose result is not a veto (`onSelectionChange`, `onOpenSubgraph`, `onNodeAdded`, ...) always fire their event.
+* **`onShowNodePanel` returning `false` no longer counts as handled:** the built-in node panel opens, as with no result (`openNodePanel` reads the result with `CallbackHandler.valueOf`). Before, any non-null result, `false` included, suppressed it.
 * **`selection-changed` always carries `items`** (nodes, groups and reroutes); before, only group and reroute selection set it.
 * **Hosts share one hook implementation** (`installHooks`). The handler registry is created when first needed: reading `cb_handler` (still a `CallbackHandler`, still assignable) or registering a handler. Nodes and graphs that nobody hooks no longer allocate one. A dispatch with no handler only calls `onX`: about 4× faster than before (`runStep` on `benchmark.json` about 15% faster). `callbacks_handlers[name]` exists only for names that had a handler registered; before, every dispatched name created an empty entry.
 

@@ -112,6 +112,13 @@ export class ExtensionRegistry {
             },
             /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
             on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Side panel sections and editors (LiteGraph.registerPanelSection / registerPanelEditor), removed on dispose. */
+            panels: {
+                registerSection: (section) => track(host.registerPanelSection(section)),
+                registerEditor: (name, editor) => track(host.registerPanelEditor(name, editor)),
+            },
+            /** Value types (LiteGraph.registerValueType), removed on dispose. */
+            valueTypes: { register: (name, definition, options) => track(host.registerValueType(name, definition, options)) },
             /** Adds context-menu items ("canvas" or "node"; see MenuRegistry). */
             menus: { register: (location, provider) => track(host.menus.register(location, provider)) },
             /** Typed event listener (graph.events / canvas.events), removed on dispose. */
