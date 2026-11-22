@@ -78,7 +78,7 @@ grep -ohE '\.processCallbackHandlers\(\s*"\w+"' src/*.js
 
 `LiteGraph.events`, `graph.events` and `canvas.events` (`src/eventtarget.js`) provide `on(type, fn, {once, signal, priority})`, which returns an unsubscribe function.
 - Listeners run by `priority` (highest first), then in subscription order.
-- `on("*", fn)` receives every event of that target, after the listeners of the type.
+- `on("*", fn)` receives every event of that target, after the listeners of the type. While one is attached, reports that are skipped when nobody listens are built for every event (for example `execution-step`, `missing-nodes`, `execution-check`).
 - A listener that throws is logged and does not stop the others.
 
 | Target | Events |

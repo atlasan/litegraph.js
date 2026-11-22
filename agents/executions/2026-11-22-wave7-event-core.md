@@ -44,6 +44,17 @@ Every `onX` contract is kept:
 | Benchmark, 3 alternating rounds against `LG/dev`'s `build_node` (Node v22.23.4) | No handler: 279–424 → 46–130 ns per dispatch. 1 handler: 336–407 → 192–213 ns. 5 handlers: 514–553 → 292–353 ns. `runStep` on `benchmark.json` (51 nodes): 0.142–0.168 → 0.119–0.143 ms per step |
 | Browser: `editor_build.html` (worktree served on port 8017) | Pass:<br>- 7 extensions loaded;<br>- `LiteGraph.events` "*" saw `node-type-registered`;<br>- group select and deselect fired the hook twice and the event twice;<br>- a drop on a node returned `false` and did not throw;<br>- an `onExecute` replaced directly ran in `runStep`;<br>- a real mouse drag in the Features demo fired a registered `onNodeMoved` hook once.<br>The only console errors are MIDI permission prompts, unrelated |
 
+## After review
+
+The [Wave 7 review](../audits/2026-11-22-wave7-review.md) found no semantic difference in `processCallbackHandlers` over 60,000 fuzzed scenarios. It found 5 compatibility edges, fixed in `0f5bf77`:
+- `cb_handler` is readable again;
+- a legacy `onAddPropertyToPanel` that returns an object still counts as handled;
+- `once` handlers no longer run twice when a handler dispatches the same name again;
+- removed listeners are detached from their `AbortSignal`;
+- the declarations match the runtime.
+
+`LG/dev` (the flows track) was merged in as `c104933`. After both, `npm run check` passes: 843 Jest, 103 integration, 12 builds. The browser check was repeated and passed.
+
 ## Left open
 
 These are also in the [roadmap](../plans/roadmap.md), Wave 7 and D8:

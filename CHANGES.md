@@ -12,7 +12,7 @@ Hooks (CallbackHandler) and typed events now run on one listener core (`Listener
 * **A throwing hook handler no longer stops the chain.** The remaining handlers and the default `onX` still run, then the first error is rethrown to the caller; later errors are logged. Before, the chain stopped at the throw and the default did not run.
 * **Registering a handler during a dispatch takes effect from the next dispatch.** Before, it re-ran earlier handlers, and a handler that registered on every call never returned.
 * **Groups and reroutes:** selecting or deselecting one now also fires the canvas `onSelectionChange` hook, as `selection-changed` already did.
-* **Hosts share one hook implementation** (`installHooks`). The handler registry (`cb_handler`) is created on first registration, so nodes and graphs no longer allocate one each. A dispatch with no handler only calls `onX`: about 4× faster than before (`runStep` on `benchmark.json` about 15% faster).
+* **Hosts share one hook implementation** (`installHooks`). The handler registry is created when first needed: reading `cb_handler` (still a `CallbackHandler`, still assignable) or registering a handler. Nodes and graphs that nobody hooks no longer allocate one. A dispatch with no handler only calls `onX`: about 4× faster than before (`runStep` on `benchmark.json` about 15% faster). `callbacks_handlers[name]` exists only for names that had a handler registered; before, every dispatched name created an empty entry.
 
 ## Added
 
@@ -29,6 +29,8 @@ Hooks (CallbackHandler) and typed events now run on one listener core (`Listener
 
 * **Dropping on a node without `onDropItem` threw** a TypeError (a `null` hook result was read as an object).
 * **Mouse down ran the canvas `onClear` hook** (with `onMouse` as its default); it now runs the `onMouse` hook.
+* **A `once` / `call_once` handler could run twice** when a handler dispatched the same name again (hooks and typed events).
+* **Removed listeners stayed attached to their `AbortSignal`**, so a long-lived signal kept them alive.
 
 # Unreleased: flows track (node reference, declarations, examples)
 
