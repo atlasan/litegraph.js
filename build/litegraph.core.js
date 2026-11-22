@@ -62,6 +62,35 @@ export function getRuntime() {
  * Entries are `{id, priority, callback, data}`; `data` holds the options given at registration.
  */
 export class ListenerList {
+    /**
+     * The process-wide dispatch tap (set with `LiteGraph.setDispatchTap`): called after every hook
+     * dispatch and every typed event dispatch with `{owner, name, phase, ms, error}`. While none is
+     * set (the default), a dispatch pays one null check.
+     * @type {((record: {owner: object, name: string, phase: "hook"|"event", ms: number, error: unknown}) => void)|null}
+     */
+    static tap = null;
+    /** true while the tap runs: its own dispatches are not reported */
+    static tapping = false;
+    static now = typeof performance === "object" && typeof performance?.now === "function" ? () => performance.now() : () => Date.now();
+
+    /** Reports one dispatch to the tap. A failing tap is logged and never reaches the dispatcher. */
+    static report(tap, owner, name, phase, start, error) {
+        ListenerList.tapping = true;
+        try {
+            tap({
+                owner,
+                name,
+                phase,
+                ms: ListenerList.now() - start,
+                error: error ?? null
+            });
+        } catch (tapError) {
+            console.error?.("[LG] dispatch tap failed", tapError);
+        } finally {
+            ListenerList.tapping = false;
+        }
+    }
+
     /** @type {{id: number, priority: number, callback: Function, data: object}[]} never mutated */
     handlers = [];
     last_id = 0;
@@ -183,23 +212,30 @@ export class LGraphEventTarget {
      */
     dispatch(type, detail, options = {}) {
         const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
-        this._deliver(this._listeners.get(type), event);
-        if (type !== "*") this._deliver(this._listeners.get("*"), event);
+        const tap = ListenerList.tap;
+        const start = tap !== null && !ListenerList.tapping ? ListenerList.now() : -1;
+        const error = this._deliver(this._listeners.get(type), event);
+        const wildcardError = type !== "*" ? this._deliver(this._listeners.get("*"), event) : undefined;
+        if (start >= 0) ListenerList.report(tap, this.owner, type, "event", start, error ?? wildcardError);
         return event;
     }
 
+    /** @returns {unknown} the first listener error (each one is reported through onError) */
     _deliver(list, event) {
-        if (!list?.size) return;
+        if (!list?.size) return undefined;
+        let first;
         for (const entry of list.handlers) {
             // a re-entrant dispatch may already have delivered (and removed) a once listener
             if (entry.data.once && !list.remove(entry.id)) continue;
             try {
                 entry.callback.call(this.owner, event);
             } catch (error) {
+                first ??= error;
                 if (this.onError) this.onError(error, event);
                 else console.error?.("[LG] event listener failed", event.type, error);
             }
         }
+        return first;
     }
 }
 
@@ -287,9 +323,23 @@ export class CallbackHandler {
 
     /**
      * The chain behind processCallbackHandlers (also used directly by hook hosts, see installHooks).
-     * With no registered handler it only calls the default callback.
+     * With no registered handler it only calls the default callback. A dispatch tap, when set,
+     * receives each dispatch with its duration (see ListenerList.tap).
      */
-    static run(owner, handler, name, opts, args) {
+    static run(owner, handler, name, opts, args, untapped) {
+        if (ListenerList.tap !== null && !untapped && !ListenerList.tapping) {
+            const tap = ListenerList.tap,
+                start = ListenerList.now();
+            let error = null;
+            try {
+                return CallbackHandler.run(owner, handler, name, opts, args, true);
+            } catch (thrown) {
+                error = thrown;
+                throw thrown;
+            } finally {
+                ListenerList.report(tap, owner, name, "hook", start, error);
+            }
+        }
         const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
         const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
         if (!handlers?.length) {
@@ -363,6 +413,29 @@ export class CallbackHandler {
         return value;
     }
 
+    /**
+     * Fires a point that has both faces, in the one documented order: the hook chain (handlers by
+     * priority, the legacy `owner[name]` as default) and then the typed event. With `veto`, a hook
+     * result equal to it (plain or as `{return_value}`) skips the event.
+     * @param {object} owner the hook host
+     * @param {string} name the hook name; its default callback is `owner[name]`
+     * @param {any[]} args the hook arguments
+     * @param {{_emit?: Function}|null|undefined} emitter where the event goes: LiteGraph, a graph or a canvas
+     * @param {string} type the event type
+     * @param {object|(() => object|null)} detail the payload; a function is called after the hook, and null skips the event
+     * @param {{veto?: any, emit?: object}} [options] `emit` is passed on to `_emit` (`recorded`, `cancelable`)
+     * @returns {any} the hook result, as processCallbackHandlers returns it
+     */
+    static fireHookThenEvent(owner, name, args, emitter, type, detail, options) {
+        const result = owner.processCallbackHandlers(name, {
+            def_cb: owner[name]
+        }, ...args);
+        if (!emitter?._emit || (options && "veto" in options && CallbackHandler.is(result, options.veto))) return result;
+        const payload = typeof detail === "function" ? detail() : detail;
+        if (payload) emitter._emit(type, payload, options?.emit);
+        return result;
+    }
+
     /** The value a hook settled on: `return_value` of an object result, otherwise the result itself. */
     static valueOf(result) {
         return result !== null && typeof result === "object" ? result.return_value : result;
@@ -371,6 +444,19 @@ export class CallbackHandler {
     /** true when the result is `value`, plain or as `{return_value: value}` (e.g. a `false` veto). */
     static is(result, value) {
         return result === value || (result !== null && typeof result === "object" && result.return_value === value);
+    }
+
+    /**
+     * The menu and slot-list hooks' rule: the `return_value` of an object result when it is an
+     * object (null included), with `arrays` also an array-like result itself; otherwise `fallback`.
+     * @param {any} result a hook result
+     * @param {any} [fallback] returned when the result holds no object
+     * @param {boolean} [arrays=false] accept a plain array result (onGetInputs, onGetOutputs, node getExtraMenuOptions)
+     */
+    static objectOf(result, fallback = undefined, arrays = false) {
+        if (result === null || typeof result !== "object") return fallback;
+        if (typeof result.return_value === "object") return result.return_value;
+        return arrays && result.length !== undefined ? result : fallback;
     }
 
     /** The pointer hooks' "handled": `true`, or an object result with a truthy `return_value`. */
@@ -788,6 +874,21 @@ export class LiteGraphClass {
     get events() {
         return this._events ??= new LGraphEventTarget(this, (error, event) =>
             this.log_error("litegraph", "event listener failed", event.type, error));
+    }
+
+    /**
+     * Sets the process-wide dispatch tap, for tracing and profiling (e.g. a per-node execution
+     * trace: phase "hook", name "onExecute", owner the node). `fn({owner, name, phase, ms, error})`
+     * runs after every hook dispatch (phase "hook", error: what the chain threw) and every typed
+     * event dispatch (phase "event", error: the first listener error). Dispatches made inside the
+     * tap are not reported, and a throwing tap is only logged. null removes it.
+     * @param {Function|null} fn
+     * @returns {Function|null} the previous tap
+     */
+    setDispatchTap(fn) {
+        const previous = ListenerList.tap;
+        ListenerList.tap = typeof fn === "function" ? fn : null;
+        return previous;
     }
 
     /** dispatch only when someone listens (no allocation otherwise) */
@@ -1446,20 +1547,13 @@ export class LiteGraphClass {
         this.packs?._onTypeRegistered(type);
         this.node_definitions[type] = this.describeNodeType(type, base_class);
 
-        this.processCallbackHandlers("onNodeTypeRegistered", {
-            def_cb: this.onNodeTypeRegistered
-        }, type, base_class);
-        this._emit("node-type-registered", {
+        CallbackHandler.fireHookThenEvent(this, "onNodeTypeRegistered", [type, base_class], this, "node-type-registered", {
             type,
             ctor: base_class,
             previous: prev ?? null
         });
-
         if (prev) {
-            this.processCallbackHandlers("onNodeTypeReplaced", {
-                def_cb: this.onNodeTypeReplaced
-            }, type, base_class, prev);
-            this._emit("node-type-replaced", {
+            CallbackHandler.fireHookThenEvent(this, "onNodeTypeReplaced", [type, base_class, prev], this, "node-type-replaced", {
                 type,
                 ctor: base_class,
                 previous: prev
@@ -5607,10 +5701,7 @@ export class LGraph {
             this.configure(o);
         }
 
-        LiteGraph.processCallbackHandlers("on_lgraph_construct", {
-            def_cb: LiteGraph.on_lgraph_construct
-        }, this);
-        LiteGraph._emit?.("graph-created", {
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraph_construct", [this], LiteGraph, "graph-created", {
             graph: this
         });
     }
@@ -9143,6 +9234,18 @@ installHooks(LGraph);
  * @param {LGraph} graph [optional]
  * @param {Object} options [optional] { skip_rendering, autoresize, viewport }
  */
+/**
+ * onSelectionChange (with `selected_nodes`, as before), then `selection-changed {nodes, items}`.
+ * A function, not a method: the selection methods also run on canvas-like objects (`deselectNode.call(obj, node)`).
+ */
+function selectionChanged(canvas) {
+    CallbackHandler.fireHookThenEvent(canvas, "onSelectionChange", [canvas.selected_nodes], canvas, "selection-changed",
+        () => ({
+            nodes: Object.values(canvas.selected_nodes),
+            items: canvas.selectedItems
+        }));
+}
+
 export class LGraphCanvas {
     constructor(canvas, graph, options) {
         options ??= {
@@ -9292,10 +9395,7 @@ export class LGraphCanvas {
             this.startRendering();
         }
 
-        LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct", {
-            def_cb: LiteGraph.on_lgraphcanvas_construct
-        }, this);
-        LiteGraph._emit?.("canvas-created", {
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraphcanvas_construct", [this], LiteGraph, "canvas-created", {
             canvas: this
         });
         // extensions registered through LiteGraph.registerExtension see every canvas
@@ -11960,12 +12060,7 @@ export class LGraphCanvas {
                 });
             });
         });
-        this.processCallbackHandlers("onSelectionChange", {
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", {
-            nodes: Object.values(this.selected_nodes)
-        });
+        selectionChanged(this);
         this.setDirty(true);
     }
 
@@ -11985,12 +12080,7 @@ export class LGraphCanvas {
         this.processCallbackHandlers("onNodeDeselected", {
             def_cb: this.onNodeDeselected
         }, node);
-        this.processCallbackHandlers("onSelectionChange", {
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", {
-            nodes: Object.values(this.selected_nodes)
-        });
+        selectionChanged(this);
 
         // Remove highlighted
         node.inputs?.forEach((input) => {
@@ -12030,12 +12120,7 @@ export class LGraphCanvas {
         for (const item of this._selected_items ?? []) item.selected = false;
         this._selected_items?.clear();
 
-        this.processCallbackHandlers("onSelectionChange", {
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", {
-            nodes: Object.values(this.selected_nodes)
-        });
+        selectionChanged(this);
         this.setDirty(true);
     }
 
@@ -12080,13 +12165,7 @@ export class LGraphCanvas {
         if (!this._selected_items.has(item)) {
             this._selected_items.add(item);
             item.selected = true;
-            this.processCallbackHandlers("onSelectionChange", {
-                def_cb: this.onSelectionChange
-            }, this.selected_nodes);
-            this._emit?.("selection-changed", {
-                nodes: Object.values(this.selected_nodes),
-                items: this.selectedItems
-            });
+            selectionChanged(this);
         }
         this.setDirty(true, true);
     }
@@ -12100,13 +12179,7 @@ export class LGraphCanvas {
         }
         if (this._selected_items.delete(item)) {
             item.selected = false;
-            this.processCallbackHandlers("onSelectionChange", {
-                def_cb: this.onSelectionChange
-            }, this.selected_nodes);
-            this._emit?.("selection-changed", {
-                nodes: Object.values(this.selected_nodes),
-                items: this.selectedItems
-            });
+            selectionChanged(this);
             this.setDirty(true, true);
         }
     }
@@ -16168,13 +16241,7 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("onGetInputs", {
             def_cb: node.onGetInputs
         });
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = r.return_value;
-            } else if (typeof(r.length) !== "undefined") {
-                options = r;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options, true);
 
         var entries = [];
         if (options) {
@@ -16209,11 +16276,7 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("onMenuNodeInputs", {
             def_cb: node.onMenuNodeInputs
         }, entries);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                entries = r.return_value;
-            }
-        }
+        entries = CallbackHandler.objectOf(r, entries);
 
         if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
             if (node.findInputSlot("onTrigger") == -1) {
@@ -16284,13 +16347,7 @@ export class LGraphCanvas {
         let r = node.processCallbackHandlers("onGetOutputs", {
             def_cb: node.onGetOutputs
         });
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = r.return_value;
-            } else if (typeof(r.length) !== "undefined") {
-                options = r;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options, true);
 
         var entries = [];
         if (options) {
@@ -16332,11 +16389,7 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("onMenuNodeOutputs", {
             def_cb: node.onMenuNodeOutputs
         }, entries);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                entries = r.return_value;
-            }
-        }
+        entries = CallbackHandler.objectOf(r, entries);
 
         if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
             if (node.findOutputSlot("onExecuted") == -1) {
@@ -18085,18 +18138,25 @@ export class LGraphCanvas {
             }
             const prevValue = node.properties[property];
             node.properties[property] = value;
-            node.graph?.onGraphChanged({
-                action: "propertyChanged",
-                doSave: true
-            });
 
-            // Call onPropertyChanged and block the change if needed
-            let r = node.processCallbackHandlers("onPropertyChanged", {
-                def_cb: node.onPropertyChanged
-            }, property, value, prevValue);
+            // as setProperty: onPropertyChanged returning false vetoes (reverted, no event, no history entry)
+            const r = CallbackHandler.fireHookThenEvent(node, "onPropertyChanged", [property, value, prevValue], node.graph, "node-property-changed",
+                () => node.properties[property] !== prevValue ? {
+                    node,
+                    name: property,
+                    value: node.properties[property],
+                    previous: prevValue
+                } : null, {
+                    veto: false
+                });
             if (CallbackHandler.is(r, false)) {
                 node.properties[property] = prevValue;
                 LiteGraph.log_debug("lgraphcanvas", "showEditPropertyValue", "setValue", "prevent property set by cbHandler", property, value, prevValue, r);
+            } else {
+                node.graph?.onGraphChanged({
+                    action: "propertyChanged",
+                    doSave: true
+                });
             }
 
             if (options.onclose)
@@ -19264,11 +19324,8 @@ export class LGraphCanvas {
         r = this.processCallbackHandlers("getExtraMenuOptions", {
             def_cb: this.getExtraMenuOptions
         }, this, options);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = options.concat(r.return_value);
-            }
-        }
+        const extra = CallbackHandler.objectOf(r);
+        if (extra !== undefined) options = options.concat(extra);
 
         // extension contributions (LiteGraph.menus.register("canvas", ...))
         if (options) LiteGraph.menus?.contribute("canvas", LiteGraph.commands.contextFor(this), options);
@@ -19282,11 +19339,7 @@ export class LGraphCanvas {
         let r = node.processCallbackHandlers("getMenuOptions", {
             def_cb: node.getMenuOptions
         }, this);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = r.return_value;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options);
         if (options === null) {
             options = [{
                     content: "Inputs",
@@ -19376,20 +19429,11 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("getExtraMenuOptions", {
             def_cb: node.getExtraMenuOptions
         }, this, options);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                if (typeof(r.return_value.length) !== "undefined" && r.return_value.length) {
-                    options = options.concat(r.return_value);
-                } else {
-                    LiteGraph.log_warn("getExtraMenuOptions", "not array", r.return_value);
-                }
-            } else {
-                if (typeof(r.length) !== "undefined" && r.length) {
-                    options = options.concat(r);
-                } else {
-                    // LiteGraph.log_verbose("getExtraMenuOptions", "not returning additional options", r);
-                }
-            }
+        // an array, or {return_value: array}; a non-array return_value is reported
+        const extra = CallbackHandler.objectOf(r, undefined, true);
+        if (extra !== undefined) {
+            if (extra.length) options = options.concat(extra);
+            else if (extra !== r) LiteGraph.log_warn("getExtraMenuOptions", "not array", extra);
         }
 
         if (node.clonable !== false) {
@@ -19540,8 +19584,9 @@ export class LGraphCanvas {
             let r = node.processCallbackHandlers("getSlotMenuOptions", {
                 def_cb: node.getSlotMenuOptions
             }, slot);
-            if (r !== null && (typeof(r) == "object" && typeof(r.return_value) == "object")) {
-                menu_info = r.return_value;
+            const custom = CallbackHandler.objectOf(r);
+            if (custom !== undefined) {
+                menu_info = custom;
             } else {
                 if (LiteGraph.canSetSlotsLabels) {
                     menu_info.push({
@@ -20587,22 +20632,19 @@ export class LGraphNode {
         const prevValue = this.properties[name];
         this.properties[name] = value;
 
-        // Call onPropertyChanged and revert the change if needed
-        let r = this.processCallbackHandlers("onPropertyChanged", {
-            def_cb: this.onPropertyChanged
-        }, name, value, prevValue);
-        if (CallbackHandler.is(r, false)) {
-            this.properties[name] = prevValue;
-            LiteGraph.log_debug("lgraphnode", "setProperty", "prevent property set by cbHandler", name, value, prevValue, r);
-        }
-
-        if (this.properties[name] !== prevValue) {
-            this.graph?._emit?.("node-property-changed", {
+        // onPropertyChanged returning false vetoes: the value is reverted and no event fires
+        const r = CallbackHandler.fireHookThenEvent(this, "onPropertyChanged", [name, value, prevValue], this.graph, "node-property-changed",
+            () => this.properties[name] !== prevValue ? {
                 node: this,
                 name,
                 value: this.properties[name],
                 previous: prevValue
+            } : null, {
+                veto: false
             });
+        if (CallbackHandler.is(r, false)) {
+            this.properties[name] = prevValue;
+            LiteGraph.log_debug("lgraphnode", "setProperty", "prevent property set by cbHandler", name, value, prevValue, r);
         }
 
         // Update the widget value associated with the property name
