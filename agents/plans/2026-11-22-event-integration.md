@@ -204,7 +204,7 @@ Proposed as **Wave 7**, on branches `LG/wave7<x>_<topic>` cut from `LG/dev`. Eve
 ## History
 
 - 2026-11-22: proposed, from the [event handling audit](../audits/2026-11-22-event-handling.md). The target ("one core, two faces") and the compatibility priority were chosen by the user.
-- 2026-11-22: accepted by the user ("keep compatibility high … best effort"). Implemented on `LG/wave7_events`; see the [execution record](../executions/2026-11-22-wave7-event-core.md).
+- 2026-11-22: accepted by the user ("keep compatibility high … best effort"). Implemented on `LG/wave7_events`, reviewed ([audit](../audits/2026-11-22-wave7-review.md)) and merged into `LG/dev`; see the [execution record](../executions/2026-11-22-wave7-event-core.md).
   - **Done:**
     - the core: `ListenerList`, `installHooks`, copy-on-write, isolated errors, the fast path, `onHook`, `signal`, `once`, `hasCallbackHandlers`;
     - the result helpers, with 21 call sites migrated, each keeping its rule;
