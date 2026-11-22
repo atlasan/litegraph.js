@@ -1,6 +1,6 @@
 # Panels and widgets: value types, graph options, node details
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** done (on `LG/dev_panel_and_widget`, not merged) · **Base** `LG/dev` @ `9926717`
+> **Date** 2026-11-22 · **Kind** plan · **Status** done, merged into `LG/dev` · **Base** `LG/dev` @ `9926717`
 
 This plan gives litegraph one way to edit a value of a given type, whether on the canvas, in a panel, in a setting or in a subgraph input, and rebuilds the two side panels on top of it:
 

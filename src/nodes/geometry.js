@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/geometry" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/geometry", version: LiteGraph.VERSION, title: "Geometry", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/geometry", version: LiteGraph.VERSION, title: "Geometry", description: "WebGL geometry: points, primitives, polygons, extrusion, transforms and rendering of meshes.", builtin: true });
 
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
 // import { GL } from "../../vendor/litegl.js";
@@ -501,6 +501,7 @@ LiteGraph.registerNodeType("geometry/points3D", LGraphPoints3D);
 
 
 class LGraphPointsToInstances {
+    static desc = "Turns the vertices of a geometry into an array of instance matrices.";
     constructor() {
         this.addInput("points", "geometry");
         this.addOutput("instances", "[mat4]");
@@ -638,6 +639,7 @@ LiteGraph.registerNodeType("geometry/points_to_instances", LGraphPointsToInstanc
 
 
 class LGraphGeometryTransform {
+    static desc = "Transforms a geometry, or an array of instance matrices, by a 4×4 matrix.";
     constructor() {
         this.addInput("in", "geometry,[mat4]");
         this.addInput("mat4", "mat4");
@@ -766,6 +768,7 @@ LiteGraph.registerNodeType("geometry/transform", LGraphGeometryTransform);
 
 
 class LGraphGeometryPolygon {
+    static desc = "Builds a regular polygon geometry from a number of sides and a radius.";
     constructor() {
         this.addInput("sides", "number");
         this.addInput("radius", "number");
@@ -830,6 +833,7 @@ LiteGraph.registerNodeType("geometry/polygon", LGraphGeometryPolygon);
 
 
 class LGraphGeometryExtrude {
+    static desc = "Extrudes a 2D shape geometry along an offset, with optional top and bottom caps.";
     constructor() {
         this.addInput("", "geometry");
         this.addOutput("", "geometry");

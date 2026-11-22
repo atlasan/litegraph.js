@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/events" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/events", version: LiteGraph.VERSION, title: "Events", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/events", version: LiteGraph.VERSION, title: "Events", description: "Execution flow: triggers, sequences, timers, delays, counters, gates and filters that pass events between nodes.", builtin: true });
 
 // Show value inside the debug console
 class LogEvent {
@@ -66,7 +66,10 @@ class EvSequence {
     static title = "Sequence";
     static desc = "Triggers a sequence of events when an event arrives";
     // its outputs fire now, in slot order, in every model (B4)
-    static def = { execution: { emit: "immediate" } };
+    static def = {
+        execution: { emit: "immediate" },
+        usage: "Connect one event to an input; its outputs fire one after the other, top to bottom, before the next node runs.",
+    };
     // @ BUG: fails to construct Node
 
     constructor() {
@@ -376,7 +379,10 @@ class DelayEvent {
     static title = "Delay";
     static desc = "Delays one event";
     // counts time in the step loop: ALWAYS only (B7)
-    static def = { execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] } };
+    static def = {
+        execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] },
+        usage: "Send an event to the input; on_time fires time_in_ms later, while the graph is running.",
+    };
 
     constructor() {
         this.size = [60, 30];
@@ -433,7 +439,10 @@ class TimerEvent {
 
     static title = "Timer";
     static desc = "Sends an event every N milliseconds";
-    static def = { execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] } };
+    static def = {
+        execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] },
+        usage: "Start the graph; on_tick fires every interval milliseconds. A start point for event flows.",
+    };
 
     constructor() {
         this.addProperty("interval", 1000);
@@ -655,5 +664,10 @@ class EventSwitch {
     }
 }
 LiteGraph.registerNodeType("events/switch", EventSwitch);
+
+// declaration pass (flows track): nodes that only react to events (no onExecute)
+LiteGraph.declareNodeExecution(["events/once", "events/waitAll", "events/filter", "events/log"], { default_mode: LiteGraph.ON_EVENT });
+// Kept ALWAYS: counter, semaphore, stepper, switch and branch read data or count steps in onExecute,
+// and basic/data_store mirrors its value there; ON_EVENT would stop that.
 
 LiteGraph.packs.close("litegraph/events");

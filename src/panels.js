@@ -1482,7 +1482,11 @@ PanelBuilder.showNode = function(graphcanvas, node) {
                 for (const { pName, info } of list) {
                     const value = node.properties[pName];
                     // in case the node wants control over its panel row
-                    if (node.onAddPropertyToPanel && node.onAddPropertyToPanel(pName, panel, value, info, fUpdate)) continue;
+                    // (registered handlers too; any truthy legacy result means handled, a {return_value} counts by its value)
+                    const r = node.processCallbackHandlers
+                        ? node.processCallbackHandlers("onAddPropertyToPanel", { def_cb: node.onAddPropertyToPanel }, pName, panel, value, info, fUpdate)
+                        : node.onAddPropertyToPanel?.(pName, panel, value, info, fUpdate);
+                    if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) continue;
                     panel.addRow({
                         name: pName,
                         value,
@@ -1636,7 +1640,8 @@ PanelBuilder.showNode = function(graphcanvas, node) {
         panel.endSection();
 
         // the node's own additions, after the sections (former hook)
-        if (node.onShowCustomPanelInfo) node.onShowCustomPanelInfo(panel);
+        if (node.processCallbackHandlers) node.processCallbackHandlers("onShowCustomPanelInfo", { def_cb: node.onShowCustomPanelInfo }, panel);
+        else node.onShowCustomPanelInfo?.(panel);
 
         panel.footer.replaceChildren();
         panel.addButton("Center", () => { graphcanvas.centerOnNode?.(node); graphcanvas.setDirty(true, true); }).title = "Centre the canvas on this node";

@@ -1,7 +1,7 @@
 import { LiteGraph } from "./litegraph.js";
 import { RenderLink, LinkRouterRegistry } from "./linkrender.js";
 import { MiniMap } from "./minimap.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CanvasPointer } from "./canvaspointer.js";
@@ -44,9 +44,6 @@ export class LGraphCanvas {
         };
         this.options = options;
         
-        // register CallbackHandler methods on this
-        this.callbackhandler_setup();
-
         // if(graph === undefined)
         //	throw new Error("No graph assigned");
         this.background_image = LGraphCanvas.DEFAULT_BACKGROUND_IMAGE;
@@ -181,34 +178,12 @@ export class LGraphCanvas {
             this.startRendering();
         }
 
-        // (the CallbackHandler was created at the top of the constructor; creating it again here
-        // would drop every handler registered while constructing)
         LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct",{
             def_cb: LiteGraph.on_lgraphcanvas_construct
         }, this);
+        LiteGraph._emit?.("canvas-created", { canvas: this });
         // extensions registered through LiteGraph.registerExtension see every canvas
         LiteGraph.extensions?.attachCanvas(this);
-    }
-
-    callbackhandler_setup(){
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        // this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        // this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        // this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
-    }
-
-    registerCallbackHandler(){
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     /**
@@ -983,10 +958,10 @@ export class LGraphCanvas {
         //     return;
 
         // TAG callback graphrenderer event entrypoint
-        var cbRet = this.processCallbackHandlers("onClear",{
+        var cbRet = this.processCallbackHandlers("onMouse",{
             def_cb: this.onMouse
         }, e );
-        if((typeof(cbRet)!="undefined" && cbRet!==null) && (cbRet === false || (typeof(cbRet)=="object" && cbRet.return_value === false))){
+        if(CallbackHandler.is(cbRet, false)){
             LiteGraph.log_info("lgraphcanvas", "processMouseDown", "callback prevents continue");
             return;
         }
@@ -1265,7 +1240,7 @@ export class LGraphCanvas {
                         cbRet = node.processCallbackHandlers("onDblClick",{
                             def_cb: node.onDblClick
                         }, e, pos, this );
-                        if ( cbRet!==null && (cbRet === true || (typeof(cbRet)=="object" && cbRet.return_value)) ) {
+                        if ( CallbackHandler.handled(cbRet) ) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onDblClick", cbRet);
                         }else{
                             this.processNodeDblClicked(node);
@@ -1279,7 +1254,7 @@ export class LGraphCanvas {
                     }, e, pos, this );
                     
                     // if do not capture mouse
-                    if ( cbRet!==null && (cbRet === true || (typeof(cbRet)=="object" && cbRet.return_value)) ) {
+                    if ( CallbackHandler.handled(cbRet) ) {
                         LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onMouseDownCbRet", cbRet);
                         block_drag_node = true;
                     } else {
@@ -2362,7 +2337,7 @@ export class LGraphCanvas {
                         def_cb: this.selected_nodes[i].onKeyDown
                     }, e );
                     // could a node stop replicating to the others ?
-                    if(r!==null && (r===true || (typeof(r)=="object" && r.return_value===true))){
+                    if(CallbackHandler.is(r, true)){
                         LiteGraph.log_debug("lgraphcanvas","processKey","onKeyDown has been processed with result true, prevent event bubbling");
                         block_default = true;
                     }
@@ -2374,7 +2349,7 @@ export class LGraphCanvas {
             r = this.processCallbackHandlers("onKeyDown",{
                 def_cb: this.onKeyDown
             }, e );
-            if(r!==null && (r===true || (typeof(r)=="object" && r.return_value===true))){
+            if(CallbackHandler.is(r, true)){
                 LiteGraph.log_debug("lgraphcanvas","processKey","onKeyDown has been processed with result true, prevent event bubbling");
                 block_default = true;
             }else{
@@ -2604,10 +2579,10 @@ export class LGraphCanvas {
             r = this.processCallbackHandlers("onDropItem",{
                 def_cb: this.onDropItem
             }, e);
-            if(r===null || !r || (typeof(r)=="object" && !r.return_value)){
+            if(!CallbackHandler.valueOf(r)){
                 LiteGraph.log_verbose("lgraphcanvas", "processDrop", "running default implementation", e);
                 this.checkDropItem(e);
-                return r===null ? r : (typeof(r)=="object" ? r.return_value : r); // this is probably ignored
+                return CallbackHandler.valueOf(r); // this is probably ignored
             }else{
                 return r; // this is probably ignored
             }
@@ -2631,7 +2606,7 @@ export class LGraphCanvas {
                     }, file);
 
                     // if not getting a positive result, process file as data and call onDropData
-                    if(!r || (typeof(r)=="object" && !r.return_value)){
+                    if(!CallbackHandler.valueOf(r)){
                             
                         // prepare reader
                         var reader = new FileReader();
@@ -2664,7 +2639,7 @@ export class LGraphCanvas {
                 def_cb: node.onDropItem
             }, e);
             // if getting a positive result, return
-            if(r === true || (typeof(r)=="object" && r.return_value)){
+            if(CallbackHandler.handled(r)){
                 return true;
             }
 
@@ -2673,7 +2648,7 @@ export class LGraphCanvas {
                 def_cb: this.onDropItem
             }, e);
             // if getting a positive result, return
-            if(r === true || (typeof(r)=="object" && r.return_value)){
+            if(CallbackHandler.handled(r)){
                 return true;
             }
 
@@ -2885,6 +2860,7 @@ export class LGraphCanvas {
         if (!this._selected_items.has(item)) {
             this._selected_items.add(item);
             item.selected = true;
+            this.processCallbackHandlers("onSelectionChange", { def_cb: this.onSelectionChange }, this.selected_nodes);
             this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes), items: this.selectedItems });
         }
         this.setDirty(true, true);
@@ -2899,6 +2875,7 @@ export class LGraphCanvas {
         }
         if (this._selected_items.delete(item)) {
             item.selected = false;
+            this.processCallbackHandlers("onSelectionChange", { def_cb: this.onSelectionChange }, this.selected_nodes);
             this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes), items: this.selectedItems });
             this.setDirty(true, true);
         }
@@ -4180,7 +4157,7 @@ export class LGraphCanvas {
         let r = this.processCallbackHandlers("onRenderBackground",{
             def_cb: this.onRenderBackground
         }, canvas, ctx);
-        if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+        if(CallbackHandler.is(r, true)){
             bg_already_painted = true;
         }
 
@@ -4345,7 +4322,7 @@ export class LGraphCanvas {
             let r = node.processCallbackHandlers("onDrawCollapsed",{
                 def_cb: node.onDrawCollapsed
             }, ctx, this);
-            if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+            if(CallbackHandler.is(r, true)){
                 return;
             }
         }
@@ -4826,7 +4803,7 @@ export class LGraphCanvas {
         let r = this.processCallbackHandlers("onDrawLinkTooltip",{
             def_cb: this.onDrawLinkTooltip
         }, ctx, link, this);
-        if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+        if(CallbackHandler.is(r, true)){
             return;
         }
 
@@ -4950,7 +4927,7 @@ export class LGraphCanvas {
             r = node.processCallbackHandlers("onDrawTitleBar",{
                 def_cb: node.onDrawTitleBar
             }, ctx, title_height, size, this.ds.scale, fgcolor);
-            if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+            if(CallbackHandler.is(r, true)){
                 // managed
             } else if (
                 title_mode != LiteGraph.TRANSPARENT_TITLE &&
@@ -5007,7 +4984,7 @@ export class LGraphCanvas {
             r = node.processCallbackHandlers("onDrawTitleBox",{
                 def_cb: node.onDrawTitleBox
             }, ctx, title_height, size, this.ds.scale);
-            if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+            if(CallbackHandler.is(r, true)){
                 // managed
             } else if (
                 shape == LiteGraph.ROUND_SHAPE ||
@@ -8196,7 +8173,7 @@ export class LGraphCanvas {
                 let r = that.processCallbackHandlers("onSearchBoxSelection",{
                     def_cb: that.onSearchBoxSelection
                 }, name, event, graphcanvas);
-                if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+                if(CallbackHandler.is(r, true)){
                     // managed
                 } else {
                     var extra = LiteGraph.searchbox_extras[name.toLowerCase()];
@@ -8721,7 +8698,7 @@ export class LGraphCanvas {
             let r = node.processCallbackHandlers("onPropertyChanged",{
                 def_cb: node.onPropertyChanged
             }, property, value, prevValue);
-            if(r===false || (r!==null && (typeof(r)=="object" && r.return_value===false))){
+            if(CallbackHandler.is(r, false)){
                 node.properties[property] = prevValue;
                 LiteGraph.log_debug("lgraphcanvas","showEditPropertyValue","setValue","prevent property set by cbHandler",property,value,prevValue,r);
             }
@@ -8934,7 +8911,7 @@ export class LGraphCanvas {
         let r = this.processCallbackHandlers("onShowNodePanel",{
             def_cb: this.onShowNodePanel
         }, node);
-        if(r===null || ((typeof(r)=="object" && (r.return_value === null || !r.return_value)))){
+        if(!CallbackHandler.valueOf(r)){
             this.showShowNodePanel(node); // use onShowNodePanel, this is an only local method
             return true;
         }
@@ -9360,7 +9337,7 @@ export class LGraphCanvas {
         let r = this.processCallbackHandlers("getMenuOptions",{
             def_cb: this.getMenuOptions
         });
-        if(r!==null && (r === true || (typeof(r)=="object" && r.return_value === true))){
+        if(CallbackHandler.is(r, true)){
             // managed
         } else {
 
@@ -9962,6 +9939,9 @@ export class LGraphCanvas {
     }
 
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphCanvas);
 
 /* LGraphCanvas render */
 var temp = new Float32Array(4);

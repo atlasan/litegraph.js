@@ -50,4 +50,17 @@ await checkExports('src/litegraph.d.ts', '../build/litegraph.js', true);
 await checkExports('src/litegraph.core.d.ts', '../build/litegraph.core.js');
 await checkExports('src/litegraph.full.d.cts', '../build_node/litegraph.cjs');
 await checkExports('src/litegraph.node.d.cts', '../build_node/litegraph_nodejs.full.cjs');
-console.log('Validated strict ESM/CJS consumers, isolated published declarations, and runtime export parity.');
+
+// every typed event emitted in src/ is declared in one of the event maps
+const declarations = fs.readFileSync(path.join(root, 'src/litegraph.d.cts'), 'utf8');
+const declared = new Set();
+for (const [, body] of declarations.matchAll(/export interface (?:LGraphEventMap|LGraphCanvasEventMap|LiteGraphEventMap) \{([\s\S]*?)\n\}/g)) {
+    for (const [, name] of body.matchAll(/^ {4}"?([a-z][a-z-]*)"?\??:/gm)) declared.add(name);
+}
+const emitted = new Set();
+for (const file of fs.readdirSync(path.join(root, 'src')).filter((name) => name.endsWith('.js'))) {
+    for (const [, name] of fs.readFileSync(path.join(root, 'src', file), 'utf8').matchAll(/_emit\??\.?\(\s*"([a-z][a-z-]*)"/g)) emitted.add(name);
+}
+assert.deepEqual([...emitted].filter((name) => !declared.has(name)).sort(), [], 'Typed events emitted but not declared in an event map');
+
+console.log('Validated strict ESM/CJS consumers, isolated published declarations, runtime export parity and declared typed events.');

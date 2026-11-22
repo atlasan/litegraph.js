@@ -148,6 +148,8 @@ export type ContextMenuEventListener = (
 
 export interface LiteGraphAPI extends CallbackHost {
     VERSION: string;
+    /** library events: node types registered, replaced or unregistered; graphs and canvases created */
+    readonly events: LGraphEventTarget<LiteGraphEventMap, LiteGraphAPI>;
     /** numeric graph-document schema version written by LGraph.serialize */
     SERIALIZATION_VERSION: number;
 
@@ -1394,13 +1396,17 @@ export declare class LGraphEvent<TDetail = unknown, TTarget = unknown> {
     preventDefault(): void;
 }
 
-/** Typed event hub; listener errors are reported, never thrown to the dispatcher. */
+export interface ListenerOptions { once?: boolean; signal?: AbortSignal; /** higher runs first (default 0) */ priority?: number }
+
+/** Typed event hub; listener errors are reported, never thrown to the dispatcher. "*" receives every event. */
 export declare class LGraphEventTarget<TMap = Record<string, unknown>, TOwner = unknown> {
     constructor(owner?: TOwner, onError?: (error: unknown, event: LGraphEvent) => void);
-    on<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
-    once<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: { signal?: AbortSignal }): () => void;
-    off<K extends keyof TMap & string>(type: K, listener: (event: LGraphEvent<TMap[K], TOwner>) => void): void;
-    has(type: keyof TMap & string): boolean;
+    on<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: ListenerOptions): () => void;
+    on(type: "*", listener: (this: TOwner, event: LGraphEvent<TMap[keyof TMap], TOwner>) => void, options?: ListenerOptions): () => void;
+    once<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: Omit<ListenerOptions, "once">): () => void;
+    once(type: "*", listener: (this: TOwner, event: LGraphEvent<TMap[keyof TMap], TOwner>) => void, options?: Omit<ListenerOptions, "once">): () => void;
+    off<K extends keyof TMap & string>(type: K | "*", listener: (event: LGraphEvent<TMap[K], TOwner>) => void): void;
+    has(type: (keyof TMap & string) | "*"): boolean;
     dispatch<K extends keyof TMap & string>(type: K, detail: TMap[K], options?: { cancelable?: boolean }): LGraphEvent<TMap[K], TOwner>;
 }
 
@@ -1444,6 +1450,17 @@ export interface LGraphEventMap {
     "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
     /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
     "subgraph-forked": { node: LGraphNode; from: string; to: string; reason: string };
+    "group-added": { group: LGraphGroup };
+    "group-removed": { group: LGraphGroup };
+}
+
+/** Events of LiteGraph.events (the library). */
+export interface LiteGraphEventMap {
+    "node-type-registered": { type: string; ctor: Function; previous: Function | null };
+    "node-type-replaced": { type: string; ctor: Function; previous: Function };
+    "node-type-unregistered": { type: string; ctor: Function };
+    "graph-created": { graph: LGraph };
+    "canvas-created": { canvas: LGraphCanvas };
 }
 
 export interface LGraphCanvasEventMap {
@@ -1458,6 +1475,11 @@ export interface LGraphCanvasEventMap {
     disposed: { canvas: LGraphCanvas };
     /** the view moved or zoomed (checked once per drawn frame) */
     "viewport-changed": { offset: [number, number]; scale: number; visible_area: number[] };
+    /** a dropped blueprint file could not be inserted */
+    "blueprint-error": { error: unknown; file: unknown };
+    /** re-emitted from the canvas LinkConnector */
+    "link-drag-start": LinkDragDetail & { canvas: LGraphCanvas };
+    "link-drag-end": LinkDragDetail & { canvas: LGraphCanvas };
 }
 
 /** A point links are routed through; chains via parentId towards the origin. */
@@ -2113,17 +2135,57 @@ export interface CallbackInfo {
     data: CallbackOptions;
     results_chain: any[];
 }
-export interface CallbackOptions { priority?: number; is_default?: boolean; call_once?: boolean; }
+export interface CallbackOptions {
+    /** higher runs first; the default (legacy onX) callback runs between >= 0 and < 0 */
+    priority?: number;
+    /** skipped when another handler prevents the default */
+    is_default?: boolean;
+    /** unregister after the first call (alias: once) */
+    call_once?: boolean;
+    once?: boolean;
+    /** unregister on abort */
+    signal?: AbortSignal;
+}
+/** A handler result: a plain value, or this object. */
+export interface CallbackResult { return_value?: any; result_priority?: number; prevent_default?: boolean; stop_replication?: boolean }
 export interface CallbackHost {
     registerCallbackHandler(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): number | false;
     unregisterCallbackHandler(name: string, id: number): boolean;
+    /** runs the handlers and the default callback (def_cb, the legacy onX); synchronous; rethrows the first handler error after the chain */
     processCallbackHandlers(name: string, options?: { def_cb?: Function | false; on_result?: (result: any) => void }, ...args: any[]): any;
+    hasCallbackHandlers(name: string): boolean;
+    /** the handler registry, created on first read */
+    cb_handler: CallbackHandler;
+    /** registers a handler and returns its disposer */
+    onHook(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => boolean;
 }
 export declare class CallbackHandler {
     constructor(owner: object);
     debug: boolean;
+    ob_ref: object;
+    /** the value a hook settled on: return_value of an object result, otherwise the result itself */
+    static valueOf(result: any): any;
+    /** true for value, plain or as {return_value: value} */
+    static is(result: any, value: any): boolean;
+    /** true for true, or an object result with a truthy return_value */
+    static handled(result: any): boolean;
 }
-export interface CallbackHandler extends CallbackHost {}
+export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
+    /** per hook name */
+    callbacks_handlers: Record<string, ListenerList>;
+}
+/** The listener core shared by hooks and typed events: ordered by priority, copy-on-write. */
+export declare class ListenerList {
+    /** never mutated; replaced on every change */
+    readonly handlers: ReadonlyArray<{ id: number; priority: number; callback: Function; data: Record<string, any> }>;
+    last_id: number;
+    readonly size: number;
+    add(callback: Function, data?: { priority?: number; signal?: AbortSignal; [key: string]: any }): number;
+    remove(id: number): boolean;
+    find(callback: Function): { id: number; priority: number; callback: Function; data: Record<string, any> } | undefined;
+}
+/** Gives a class the hook API (registerCallbackHandler, unregisterCallbackHandler, processCallbackHandlers, hasCallbackHandlers, onHook). */
+export declare function installHooks<T extends Function>(Class: T): T;
 export interface LGraph extends CallbackHost {}
 export interface LGraphNode extends CallbackHost {
     doExecute(param?: any, options?: ExecutionOptions): void;
@@ -2350,7 +2412,9 @@ export interface ExtensionContext {
     panels: { registerSection(section: PanelSectionDefinition): () => void; registerEditor(name: string, editor: PanelEditor): () => void };
     /** value types, removed on dispose */
     valueTypes: { register(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void };
-    onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
+    onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: ListenerOptions): () => void;
+    /** hook names (onX, on_x, getXMenuOptions) register a hook handler; other names a typed listener */
+    listen(target: CallbackHost | { events: LGraphEventTarget<any, any> }, name: string, listener: (...args: any[]) => any, options?: CallbackOptions & ListenerOptions): () => void;
     addDisposer(dispose: () => void): () => void;
 }
 export interface ExtensionDefinition {
@@ -2389,6 +2453,8 @@ export interface NodeDefinition {
     type: string;
     title: string;
     description: string;
+    /** how to use the node (def.usage or a static usage); "" when not given */
+    usage: string;
     category: string;
     search_aliases: readonly string[];
     /** what the type needs from its runtime: "browser", "node", "webgl", "audio", "midi", "dom", "network", "sys", or custom */
@@ -2449,6 +2515,24 @@ export interface PackManifest {
     [key: string]: unknown;
 }
 export type PackState = 'active' | 'disabled' | 'incompatible' | 'indexed';
+/** A pack template, in the shape of the editor's examples manifest (apps/editor/examples/index.json). */
+export interface PackTemplate {
+    pack: string;
+    id: string;
+    title: string;
+    description: string;
+    /** e.g. "flows/dataflow", "subgraphs", "ui"; "packs" when not given */
+    category: string;
+    profile: string | null;
+    flow: string | null;
+    tags: readonly string[];
+    packs: readonly string[];
+    level: string | null;
+    /** relative, http or https */
+    url: string | null;
+    /** an inline graph */
+    data: object | null;
+}
 export interface NodeReplacementMapping {
     old_type: string;
     new_type: string;
@@ -2497,6 +2581,8 @@ export declare class PackRegistry {
     typesOf(id: string): string[];
     findPackForType(type: string): { id: string; version: string; installed: boolean; state?: PackState } | null;
     describe(): (PackManifest & { state: PackState; types: string[]; error?: string })[];
+    /** the templates (example graphs) of the active packs, from their manifests' templates[] */
+    listTemplates(): readonly Readonly<PackTemplate>[];
     stampFor(type: string): { pack: string; pack_ver: string } | null;
     registerReplacement(mapping: NodeReplacementMapping): () => void;
     getReplacement(type: string): Readonly<NodeReplacementMapping> | null;

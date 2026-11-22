@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/math3d" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/math3d", version: LiteGraph.VERSION, title: "Math 3D", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/math3d", version: LiteGraph.VERSION, title: "Math 3D", description: "3D math on gl-matrix: vectors, quaternions, rotations and 4×4 matrices.", builtin: true });
 
 const MATH3D_DEG2RAD = Math.PI / 180;
 const MATH3D_RAD2DEG = 180 / Math.PI;
@@ -16,6 +16,7 @@ function isNumberArray(value, minLength) {
 }
 
 class Math3DMat4 {
+    static desc = "Builds a 4×4 matrix from translation, rotation (Euler, in degrees by default) and scale.";
 
     static title = "mat4";
 
@@ -639,5 +640,13 @@ if (typeof(glMatrix)!=="undefined") {
 } else if (LiteGraph.debug) {
     console.warn?.("No glmatrix found, some Math3D nodes may not work");
 }
+
+// declaration pass (flows track): vector, quaternion and matrix math is pure (the gl-matrix types
+// exist only when glMatrix is loaded; declareNodeExecution skips unregistered types)
+LiteGraph.declareNodeExecution([
+    "math3d/mat4", "math3d/operation", "math3d/vec3-scale", "math3d/vec3-length", "math3d/vec3-normalize", "math3d/vec3-lerp",
+    "math3d/vec3-dot", "math3d/quaternion", "math3d/rotation", "math3d/euler_to_quat", "math3d/quat_to_euler",
+    "math3d/rotate_vec3", "math3d/mult-quat", "math3d/quat-slerp", "math3d/remap_range",
+], { pure: true });
 
 LiteGraph.packs.close("litegraph/math3d");

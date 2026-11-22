@@ -12,13 +12,13 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
 | `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
-| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module |
+| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu from it and `LiteGraph.packs.listTemplates()` |
 | `apps/tester/` | Browser tester that generates per-node scenarios (also served at `/editor_tester/`) |
 | `apps/runner/` | WebSocket runner: Express + `ws`, one worker per graph; `headless/graphrunner/server/index.js` is a shim that starts it |
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
-| `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures |
+| `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses) |
 | `test/` | Jest suites |
 | `csharp/` | Experimental C#/Unity port, untouched since 2023 |
 
@@ -30,8 +30,8 @@ Listed in build order (`build.py` `lib_js_files`):
 |---|---|
 | `global.js` | Global object access; runtime detection: `isBrowser`, `isNode`, `isBun` |
 | `litegraph.js` | `LiteGraphClass`: constants, node registry, factory, platform setup; the global singleton (`:1504`) |
-| `callbackhandler.js` | Prioritised multi-handler hooks ([callbacks](../../../docs/callbacks.md)) |
-| `eventtarget.js` | `LGraphEventTarget`: typed events with `on` / `once` / `off` / `dispatch` |
+| `callbackhandler.js` | Prioritised, vetoable hooks around the `onX` callbacks; `installHooks(Class)` gives LiteGraph, graphs, nodes, groups and canvases the hook API ([callbacks](../../../docs/callbacks.md)) |
+| `eventtarget.js` | `ListenerList` (the listener core: priority order, copy-on-write, `signal`) and `LGraphEventTarget` (typed events: `on` / `once` / `off` / `dispatch`, `"*"`) |
 | `commands.js`, `keybindings.js`, `settings.js`, `menus.js`, `extensionregistry.js` | Wave 1 platform registries |
 | `nodesearch.js` | `NodeSearch` (`LiteGraph.nodeSearch`): query parsing (`i:` `o:` `c:` `s:`), ranking, definition filters; used by the search box |
 | `contextmenu.js`, `curveeditor.js` | DOM menus; curve widget helper |
@@ -108,7 +108,10 @@ Listed in build order (`build.py` `lib_js_files`):
   - **ON_REQUEST (4):** under `legacy`, runs only through `refreshAncestors` (`getInputData(slot, true, true)` or the `refreshAncestorsOn*` flags); under the models, through the engine's pulls.
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
 - **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
-- **Two hook systems coexist:** the CallbackHandler (102 hook names at 164 call sites; it intercepts, and the legacy `onX` runs as its default handler) and typed events (32 types on `graph.events` and `canvas.events`; they observe). The [event handling audit](../../audits/2026-11-22-event-handling.md) explains both and lists their defects. The [event integration plan](../../plans/2026-11-22-event-integration.md) proposes running both on one engine, as Wave 7.
+- **Hooks and typed events share one core (Wave 7):**
+  - **Hooks intercept.** About 100 `onX` names; the assigned `onX` is the default handler. `CallbackHandler.run` calls only `onX` when no handler is registered, isolates handler errors and rethrows the first one after the chain. Read results with `CallbackHandler.is` / `handled` / `valueOf`.
+  - **Typed events observe.** `LiteGraph.events`, `graph.events` and `canvas.events`.
+  - Both are built on `ListenerList`. See the [event handling audit](../../audits/2026-11-22-event-handling.md) and the [event integration plan](../../plans/2026-11-22-event-integration.md).
 
 ## Platform layer (Wave 1)
 
@@ -163,8 +166,8 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Minification:** `mini` builds are `uglifyjs -c`; the others are beautified. CJS is produced by a regex conversion in `build.py`.
 - **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
 - **Tests:**
-  - Jest: 43 files, 803 tests (26 golden snapshots), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
-  - node:test: 18 files, 99 tests, in `tools/tests/`; covers the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
+  - Jest: 45 files, 856 tests (26 golden snapshots, documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
+  - node:test: 20 files, 125 tests, in `tools/tests/`; covers the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 

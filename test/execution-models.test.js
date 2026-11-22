@@ -309,6 +309,27 @@ describe('event-dropped reasons (step 10)', () => {
         expect(events.map((x) => x.reason)).toEqual(['refreshing']);
     });
 
+    // audit finding 10 (ancestors/check_subgraph): an ALWAYS emitter that has not run yet was pulled
+    // for its first value, so its events fired while pulling and were dropped as "refreshing"
+    test('an ALWAYS emitter is not pulled for its first value: its events fire at its turn', () => {
+        const g = graph('ancestors');
+        const events = dropped(g);
+        const src = make(g, 'exm/src');
+        const rec = make(g, 'exm/rec');
+        const e = make(g, 'exm/emitter');
+        const plain = make(g, 'exm/plain');
+        src.connect(0, rec, 0);
+        e.connect(1, rec, 1); e.connect(0, plain, 0);
+        expect(e.mode).toBe(LiteGraph.ALWAYS);
+        src.triggerSlot(0); // before any step: the emitter has not run
+        expect(events.map((x) => x.reason)).toEqual([]);
+        expect(rec.log[0][0]).toBeUndefined(); // no value yet; it comes at the emitter's turn
+        step(g);
+        src.triggerSlot(0);
+        expect(rec.log[1][0]).toBe(1);
+        expect(events.map((x) => x.reason)).toEqual(['no-handler']); // fired at its turn: reached exm/plain, which has no onAction
+    });
+
     test('no-handler and mode', () => {
         const g = graph('ancestors');
         const events = dropped(g);
@@ -611,6 +632,19 @@ describe('deprecations (step 18)', () => {
     });
 });
 
+test('a host actionDo pulls the node\'s ON_REQUEST data under ancestors, not under event', () => {
+    for (const [model, expected] of [['ancestors', [5]], ['event', [undefined]]]) { // event: no refresh, no data yet
+        const g = new LGraph();
+        g.config.execution = model;
+        const c = LiteGraph.createNode('basic/const'); c.properties.value = 5; g.add(c);
+        c.mode = LiteGraph.ON_REQUEST;
+        const rec = LiteGraph.createNode('exm/rec'); g.add(rec);
+        c.connect(0, rec, 1);
+        rec.actionDo('in');
+        expect([model, rec.log.map(([v]) => v)]).toEqual([model, expected]);
+    }
+});
+
 test('the guide\'s loop example runs as documented', () => {
     const g = new LGraph();
     expect(g.executionModel).toBe('ancestors');
@@ -629,7 +663,7 @@ test('the guide\'s loop example runs as documented', () => {
     const assign = store.onAction.bind(store);
     store.onAction = (...args) => { assign(...args); stored.push(store.properties.data); };
     g.runStep();
-    loop.onAction('do');
+    loop.actionDo('do'); // a host call pulls the pure constants first, like a delivered event
     expect(stored).toEqual([0, 2, 4]);
     expect(store.properties.data).toBe(4);
 });

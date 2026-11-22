@@ -3,7 +3,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/html" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/html", version: LiteGraph.VERSION, title: "HTML", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/html", version: LiteGraph.VERSION, title: "HTML", description: "DOM nodes: select elements, read and set attributes and content, listen to DOM events.", builtin: true });
 
 /**
  * will extend a node class creating an html element for it available in this._el_cont, use this._html to set his content

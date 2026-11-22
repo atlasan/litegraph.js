@@ -1,0 +1,686 @@
+{
+  "format": "litegraph-examples",
+  "version": 1,
+  "categories": [
+    {
+      "id": "flows/blueprint",
+      "title": "Flows: event scripting"
+    },
+    {
+      "id": "flows/dataflow",
+      "title": "Flows: dataflow"
+    },
+    {
+      "id": "flows/realtime",
+      "title": "Flows: realtime"
+    },
+    {
+      "id": "flows/stepped",
+      "title": "Flows: stepped"
+    },
+    {
+      "id": "flows/reactive",
+      "title": "Flows: reactive"
+    },
+    {
+      "id": "flows/mixed",
+      "title": "Flows: mixed"
+    },
+    {
+      "id": "subgraphs",
+      "title": "Subgraphs and functions"
+    },
+    {
+      "id": "ui",
+      "title": "Editor and widgets"
+    },
+    {
+      "id": "audio",
+      "title": "Audio and MIDI"
+    },
+    {
+      "id": "graphics",
+      "title": "Graphics"
+    },
+    {
+      "id": "network",
+      "title": "Network"
+    },
+    {
+      "id": "3d",
+      "title": "3D"
+    },
+    {
+      "id": "packs",
+      "title": "From packs"
+    },
+    {
+      "id": "wip",
+      "title": "Work in progress",
+      "hidden": true
+    }
+  ],
+  "examples": [
+    {
+      "id": "lg-docs",
+      "file": "doc/LG_docs.JSON",
+      "title": "What is LiteGraph",
+      "description": "A first graph: two numbers added and watched, a button that counts, and notes about the library.",
+      "category": "flows/mixed",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "intro",
+        "widgets"
+      ],
+      "packs": [
+        "math",
+        "interface",
+        "basic",
+        "events"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "node-execution-modes",
+      "file": "node_execution_modes.JSON",
+      "title": "Node execution modes",
+      "description": "Counters in Always, On Trigger and On Request mode side by side: when each one runs.",
+      "category": "flows/mixed",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "modes",
+        "execution"
+      ],
+      "packs": [
+        "interface",
+        "events",
+        "basic",
+        "math"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "check-frame-value",
+      "file": "ancestors/check_frame_value.JSON",
+      "title": "Event chain reads fresh values",
+      "description": "A button starts a sequence; IF and log nodes read variables set earlier in the same chain (ancestors model).",
+      "category": "flows/blueprint",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "events",
+        "sequence",
+        "ancestors"
+      ],
+      "packs": [
+        "events",
+        "basic",
+        "logic",
+        "interface"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "while-console",
+      "file": "conditionals/while_console_test.JSON",
+      "title": "WHILE loop to the console",
+      "description": "A WHILE loop with a counter and conditions that logs each iteration.",
+      "category": "flows/blueprint",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "loops",
+        "console"
+      ],
+      "packs": [
+        "interface",
+        "basic",
+        "strings",
+        "events",
+        "logic",
+        "math"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "random-console",
+      "file": "tests/randomConsole.JSON",
+      "title": "Timer, random and branch",
+      "description": "A timer ticks, a random number is compared with a threshold, and IF logs the result each tick.",
+      "category": "flows/stepped",
+      "profile": "stepped",
+      "flow": "stepped",
+      "tags": [
+        "timer",
+        "random",
+        "branch"
+      ],
+      "packs": [
+        "math",
+        "interface",
+        "events",
+        "logic",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "features",
+      "file": "features.json",
+      "title": "Node features",
+      "description": "Slots, shapes and widgets of the demo nodes.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "widgets",
+        "slots",
+        "shapes"
+      ],
+      "packs": [
+        "math",
+        "input",
+        "events",
+        "interface"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "benchmark",
+      "file": "benchmark.json",
+      "title": "Benchmark",
+      "description": "Many nodes, plots, gamepads and a subgraph, to measure drawing and stepping.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "benchmark",
+        "performance"
+      ],
+      "packs": [
+        "input",
+        "math",
+        "events",
+        "interface",
+        "graphics",
+        "core",
+        "basic"
+      ],
+      "level": "advanced"
+    },
+    {
+      "id": "copypaste",
+      "file": "copypaste.json",
+      "title": "Copy and paste",
+      "description": "Widgets and large editors to copy, paste and move around.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "clipboard",
+        "widgets"
+      ],
+      "packs": [
+        "interface"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "autoconnect",
+      "file": "features/extension_autoconnect.JSON",
+      "title": "Autoconnect extension",
+      "description": "Nodes with many slots to try the autoconnect extension.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "extensions",
+        "autoconnect"
+      ],
+      "packs": [],
+      "level": "basic"
+    },
+    {
+      "id": "html-nodes",
+      "file": "html_nodes_simple.JSON",
+      "title": "HTML nodes",
+      "description": "Create, select, style and remove DOM elements from a graph.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "html",
+        "dom"
+      ],
+      "packs": [
+        "basic",
+        "html",
+        "strings",
+        "interface"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "subgraph",
+      "file": "subgraph.json",
+      "title": "Subgraph",
+      "description": "A subgraph with inputs and outputs inside a small graph.",
+      "category": "subgraphs",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "subgraphs"
+      ],
+      "packs": [
+        "basic",
+        "events",
+        "core",
+        "math"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "check-subgraph",
+      "file": "ancestors/check_subgraph.JSON",
+      "title": "Events across subgraph boundaries",
+      "description": "Nested subgraphs with event inputs and outputs, a timer inside and counters outside (ancestors model).",
+      "category": "subgraphs",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "subgraphs",
+        "events",
+        "ancestors"
+      ],
+      "packs": [
+        "interface",
+        "math",
+        "events",
+        "basic",
+        "core",
+        "logic"
+      ],
+      "level": "advanced"
+    },
+    {
+      "id": "function-replication",
+      "file": "functions/function_replication.JSON",
+      "title": "Function nodes",
+      "description": "One subgraph definition called from several function nodes.",
+      "category": "subgraphs",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "functions",
+        "definitions"
+      ],
+      "packs": [
+        "interface",
+        "basic",
+        "core",
+        "math"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "audio",
+      "file": "audio.json",
+      "title": "Audio",
+      "description": "Oscillators, filters and gain wired as a Web Audio graph.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "audio",
+        "synth"
+      ],
+      "packs": [
+        "interface",
+        "basic",
+        "audio"
+      ],
+      "level": "intermediate",
+      "needs": [
+        "audio"
+      ]
+    },
+    {
+      "id": "audio-delay",
+      "file": "audio_delay.json",
+      "title": "Audio delay",
+      "description": "An audio source through a delay line.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "audio",
+        "delay"
+      ],
+      "packs": [
+        "interface",
+        "audio"
+      ],
+      "level": "basic",
+      "needs": [
+        "audio"
+      ]
+    },
+    {
+      "id": "audio-reverb",
+      "file": "audio_reverb.json",
+      "title": "Audio reverb",
+      "description": "An audio source through a convolver reverb.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "audio",
+        "reverb"
+      ],
+      "packs": [
+        "interface",
+        "audio"
+      ],
+      "level": "basic",
+      "needs": [
+        "audio"
+      ]
+    },
+    {
+      "id": "midi-generation",
+      "file": "midi_generation.json",
+      "title": "MIDI generation",
+      "description": "Generates MIDI notes from timers and math and plays them.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "midi",
+        "generative"
+      ],
+      "packs": [
+        "midi",
+        "basic",
+        "events",
+        "logic",
+        "math",
+        "graphics",
+        "interface"
+      ],
+      "level": "advanced"
+    },
+    {
+      "id": "image-fade",
+      "file": "graphics/image_fade.JSON",
+      "title": "Image fade",
+      "description": "Two images faded by a value over time.",
+      "category": "graphics",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "images",
+        "canvas"
+      ],
+      "packs": [
+        "graphics",
+        "interface",
+        "math",
+        "basic",
+        "events"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "websocket-client",
+      "file": "websocket/client.JSON",
+      "title": "WebSocket client",
+      "description": "Sends and receives values through a WebSocket server.",
+      "category": "network",
+      "profile": "reactive",
+      "flow": "reactive",
+      "tags": [
+        "websocket"
+      ],
+      "packs": [
+        "events",
+        "basic",
+        "math",
+        "network",
+        "interface"
+      ],
+      "level": "intermediate",
+      "needs": [
+        "network"
+      ]
+    },
+    {
+      "id": "cdn-libraries",
+      "file": "cdn_libraries/test_load.JSON",
+      "title": "Load a library from a CDN",
+      "description": "Loads a JavaScript library from a CDN and calls it from a graph.",
+      "category": "network",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "libraries",
+        "cdn"
+      ],
+      "packs": [
+        "events",
+        "libraries",
+        "basic",
+        "html",
+        "interface"
+      ],
+      "level": "intermediate",
+      "needs": [
+        "network"
+      ]
+    },
+    {
+      "id": "three-moving-cube",
+      "file": "three/threeJsMovingCube.JSON",
+      "title": "three.js moving cube",
+      "description": "A rotating cube with three.js nodes (threejs.js is in no bundle).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "3d",
+        "threejs"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "all-nodes",
+      "file": "wip_testing/allNodes_250219.JSON",
+      "title": "All nodes (2025-02-19)",
+      "description": "One node of every type, including old names.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "catalog"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-array",
+      "file": "wip_testing/testing_array.JSON",
+      "title": "Arrays",
+      "description": "Array nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "arrays"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-cdn",
+      "file": "wip_testing/testingCdn.JSON",
+      "title": "CDN libraries",
+      "description": "CDN library nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "libraries"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-jquery",
+      "file": "wip_testing/testing_jQuery.JSON",
+      "title": "jQuery nodes",
+      "description": "Old jQuery nodes (mapped to html/*).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "html"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-lib-three",
+      "file": "wip_testing/testingLibThree.JSON",
+      "title": "three.js library",
+      "description": "Loads three.js as a library.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "libraries",
+        "3d"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-objects-adv",
+      "file": "wip_testing/testingObjectsAdv.JSON",
+      "title": "Objects (advanced)",
+      "description": "Object nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "objects"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-objects",
+      "file": "wip_testing/testing_objects.JSON",
+      "title": "Objects",
+      "description": "Object nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "objects"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-osc-client-server",
+      "file": "wip_testing/testing_oscClientServer.JSON",
+      "title": "OSC client and server",
+      "description": "OSC nodes under test (old names).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "osc",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-osc-nodes",
+      "file": "wip_testing/testingOscNodes.JSON",
+      "title": "OSC nodes",
+      "description": "OSC nodes under test (old names).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "osc",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-socketio",
+      "file": "wip_testing/testing_socketIO.JSON",
+      "title": "Socket.IO",
+      "description": "Socket.IO nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "socketio",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-subgraph-function",
+      "file": "wip_testing/testing_subgraph_as_function.JSON",
+      "title": "Subgraph as function",
+      "description": "A subgraph used as a function, under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "subgraphs",
+        "functions"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-subgraph",
+      "file": "wip_testing/testingSubgraph.JSON",
+      "title": "Subgraph",
+      "description": "Subgraph nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "subgraphs"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-websocket-client",
+      "file": "wip_testing/testing_websocket_client.JSON",
+      "title": "WebSocket client",
+      "description": "WebSocket client under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "websocket",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 proposed
+> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 core done in `LG/dev`; flows track done in `LG/dev`
 
 This is the single place for the current status of planned work.
 
@@ -13,8 +13,8 @@ This is the single place for the current status of planned work.
 |---|---|
 | `master` | Released baseline. It changes only through reviewed PRs. |
 | `LG/dev` | **Progressive integration branch.** Every finished wave (or part of one) lands here first. Docs, plans and audits are kept current here. |
-| `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs`, `LG/wave4b_workspace`, `LG/wave4c_links`, `LG/wave4d_layout`, `LG/wave4e_catalog` (merged into `LG/dev`). |
-| `LG/dev_panel_and_widget` | Parallel line, not a wave: value types, the options and node panels ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)). Merges into `LG/dev` when ready. |
+| `LG/dev_<topic>` | **Parallel work** (tracks, not milestones): temporary branches cut from `LG/dev` and merged back with `--no-ff` when done. They get a named track on this roadmap, not a wave number. Example: `LG/dev_flows_reference`, `LG/dev_flows_declarations`, `LG/dev_flows_examples`. |
+| `LG/wave<N>_<topic>` | Waves are **milestones** with a build and verification pass. One branch per wave part, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs`, `LG/wave4b_workspace`, `LG/wave4c_links`, `LG/wave4d_layout`, `LG/wave4e_catalog` (merged into `LG/dev`). |
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
@@ -33,7 +33,8 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 4 | Ecosystem and workspace features | **Done**: 4a packs and missing nodes ([record](../executions/2026-11-20-wave4a-packs.md)), 4b workspace state and execution ([record](../executions/2026-11-20-wave4b-workspace.md)), 4c links and view ([record](../executions/2026-11-20-wave4c-links-view.md)), 4d layout and palette ([record](../executions/2026-11-20-wave4d-layout-palette.md)), 4e catalog and boundaries ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)), all merged into `LG/dev`. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
-| 7 | Event integration (one core, two faces) | **Proposed** ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md)): CallbackHandler, legacy `onX` and typed events on one listener engine, compatible API; see [Wave 7](#wave-7-event-integration-proposed) |
+| Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
+| 7 | Event integration (one core, two faces) | **Core done**, merged into `LG/dev` from `LG/wave7_events` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API; ordering helper, tap and hook typing deferred; see [Wave 7](#wave-7-event-integration-core-done) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -96,7 +97,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 **Carried over to Wave 2** (they belong with the standalone ports):
 - Moving node, group and link dragging onto the gesture pattern (with the `LinkConnector` port).
 - Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
-- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Now proposed as [Wave 7](#wave-7-event-integration-proposed).**
+- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Core done in [Wave 7](#wave-7-event-integration-core-done).**
 
 ## Wave 2: authoring core (done)
 
@@ -160,9 +161,9 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | **Done** on `LG/wave6d_graphinfo`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6d-graphinfo-runner.md)) |
 | 6e | Deprecations; docs; decision record | **Done** on `LG/wave6e_polish`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)) |
 
-## Wave 7: event integration (proposed)
+## Wave 7: event integration (core done)
 
-[Plan](2026-11-22-event-integration.md) (proposed 2026-11-22), from the [event handling audit](../audits/2026-11-22-event-handling.md).
+[Plan](2026-11-22-event-integration.md) (accepted 2026-11-22), from the [event handling audit](../audits/2026-11-22-event-handling.md). Implemented on `LG/wave7_events`, reviewed ([audit](../audits/2026-11-22-wave7-review.md)) and merged into `LG/dev` ([record](../executions/2026-11-22-wave7-event-core.md)).
 - **Target ("one core, two faces"):** the legacy `onX` callbacks, the CallbackHandler hooks and the typed events run on one listener engine. Hooks stay the intercept face and typed events the observe face, fired in one documented order. The API stays compatible.
 - **Fixes:**
   - registering during a dispatch re-runs handlers, or hangs (E1);
@@ -180,17 +181,29 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 | Part | Items | Status |
 |---|---|---|
-| 7a | Characterization: hook semantics, a snapshot of the per-site result rules, a golden of the hook and event order, a benchmark baseline | proposed |
-| 7b | `ListenerStore` and the `installHooks` mixin; copy-on-write, error isolation, fast path, disposers | proposed |
-| 7c | `LiteGraph.hookResult` and migrating the 164 call sites (each keeps its rule); hook bypasses | proposed |
-| 7d | Hook → `onX` → event order, with the event skipped after a veto; selection parity; new event targets and events | proposed |
-| 7e | `ctx.listen`, `events.on("*")`, tap; hook typing and `check-types`; deprecations; generated docs; decision record | proposed |
+| 7a | Characterization: hook semantics, results with and without handlers, E1/E2 regressions, a benchmark baseline (`test/hook-pipeline.test.js`) | **Done**; the per-site snapshot and the order golden are deferred |
+| 7b | `ListenerList` (the plan's `ListenerStore`) and the `installHooks` mixin; copy-on-write, error isolation, fast path, disposers | **Done** |
+| 7c | `CallbackHandler.is` / `handled` / `valueOf` (the plan's `hookResult`) on 21 sites, each keeping its rule; panel hook bypasses; E12 and E13 fixed | **Done**; the menu-array sites are unchanged |
+| 7d | Selection parity; `LiteGraph.events`; group events. The hook → `onX` → event helper and skipping events after a veto are not done | **Partly done** |
+| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md). The tap, typed hook maps and generated tables are not done | **Partly done** |
 
 Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
 
-## Parallel: panels and widgets
+## Flows track: reference, declarations, examples
 
-[Plan](2026-11-22-panels-options-node-details.md) accepted 2026-11-22, on `LG/dev_panel_and_widget` ([record](../executions/2026-11-22-panels-and-widgets.md)):
+[Plan](2026-11-22-flows-reference-examples.md) (accepted 2026-11-22). These are steps 1–3 of the [flows direction](2026-11-22-flows-direction.md), from the [event flows audit](../audits/2026-11-22-event-flows-audit.md). It is parallel work, so it has no wave number.
+
+| Part | Branch | Items | Status |
+|---|---|---|---|
+| Reference | `LG/dev_flows_reference` | `npm run docs:nodes` (`tools/node-reference.mjs`) → `docs/nodes/` (local, not committed: D9); pack descriptions; `def.usage`; catalog test | **Done** ([record](../executions/2026-11-22-flows-reference.md)) |
+| Declarations | `LG/dev_flows_declarations` | `pure` / `ticks` / default modes for the undeclared types; volatile nodes stay ALWAYS until FLW-02 | **Done** ([record](../executions/2026-11-22-flows-declarations.md)) |
+| Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | **Done** ([record](../executions/2026-11-22-flows-examples.md)) |
+
+Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, profiles, flow docs) stay proposed. Step 5 can now build on Wave 7's listener core (in `LG/dev`).
+
+## Panels and widgets track
+
+[Plan](2026-11-22-panels-options-node-details.md) accepted 2026-11-22; done on `LG/dev_panel_and_widget` and **merged into `LG/dev`**. It is parallel work, so it has no wave number ([record](../executions/2026-11-22-panels-and-widgets.md)):
 - value types ("widget for type");
 - `ColorWidget` and `VectorWidget`;
 - the options panel (Graph, Canvas and Settings tabs);
@@ -214,4 +227,5 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
 | D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
 | D7 | Upgrading the remaining runtime dependencies with advisories | Upgrade to releases at least 2 weeks old, after a changelog review |
-| D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | Isolate, report, and rethrow after the chain under `throw_errors`. Keep each site's rule until 0.20, then `strict`. Skip the event after a veto. No `node.events`. `"*"` only, observe only. Async hooks out of scope |
+| D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | **Error policy decided (2026-11-22):** a handler error never stops the chain, and the first one is always rethrown after it (independent of `throw_errors`, so `runStep` still reports `node-error`). `"*"` per target, observe only: done. Still open, with the plan's recommendations: making "handled" uniform in 0.20, skipping events after a veto, no `node.events`, no async hooks |
+| D9 | Generated node reference `docs/nodes/`: commit it (GitHub renders it, `check:fresh` guards it) or generate it in CI only ([plan](2026-11-22-flows-reference-examples.md#user-decisions-2026-11-22)) | **Postponed (user, 2026-11-22):** generated locally with `npm run docs:nodes` and git-ignored; no CI. Propose again when the reference has settled |

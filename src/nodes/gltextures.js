@@ -5,7 +5,7 @@ import { CurveEditor } from "../curveeditor.js";
 
 // built-in pack: node types registered below belong to "litegraph/gltextures" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/gltextures", version: LiteGraph.VERSION, title: "WebGL textures", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/gltextures", version: LiteGraph.VERSION, title: "WebGL textures", description: "WebGL texture nodes: load, filter, mix, blur, warp and preview textures on the GPU.", builtin: true });
 
 // TODO move this
 // LiteGraph.LGraphCanvas.link_type_colors["Texture"] = "#987";
@@ -5749,5 +5749,10 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("texture/", ["browser", "webgl"]);
+
+// declaration pass (flows track), conservative for a media pack: only the frame-history smoothers tick
+LiteGraph.declareNodeExecution(["texture/temporal_smooth", "texture/linear_avg_smooth"], { ticks: true });
+// The filters (color, gradient, mix, edges, blur, ...) are deterministic but not declared pure until they are
+// checked in a browser. Volatile (FLW-02), ALWAYS: texture/operation, texture/shader, texture/canvas2D, texture/average, texture/webcam.
 
 LiteGraph.packs.close("litegraph/gltextures");

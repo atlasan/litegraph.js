@@ -49,7 +49,8 @@ class Sum {
 LiteGraph.registerNodeType("math/my_sum", Sum);
 ```
 
-- **`static def`** feeds the search box and `LiteGraph.getNodeDefinition(type)`. It accepts `display_name`, `description`, `category`, `search_aliases`, `capabilities`, `deprecated`, `experimental`, `hidden`, `inputs` and `outputs`.
+- **`static def`** feeds the search box and `LiteGraph.getNodeDefinition(type)`. It accepts `display_name`, `description`, `usage` (a short how-to), `category`, `search_aliases`, `capabilities`, `deprecated`, `experimental`, `hidden`, `inputs`, `outputs` and `execution`.
+- **Node reference:** `npm run docs:nodes` writes `docs/nodes/` from the registry: a README with the packs, one page per pack (type, title, description, slots as `name:type`, execution declarations, usage) and `nodes.json` for tools. The pages are generated locally and not committed (roadmap decision D9). Run `npm run build` first, because the tool reads `build/litegraph_nodejs.full.js`.
 - **Classic statics** still work: `title`, `desc`, `title_color`, `shape`, `priority`, `skip_list`.
 - **`LiteGraph.wrapFunctionAsNode(type, fn, inputTypes, outputType)`** turns a plain function into a node.
 - **Optional libraries:** list them in `this.libraries` / `this.requiredLibraries`. The node's `ready` promise settles once they are loaded.
@@ -132,8 +133,11 @@ LiteGraph.declareNodeExecution(["my/add", "my/mul"], { pure: true });  // ON_REQ
 LiteGraph.getNodeDefinition("events/timer").execution;  // { ticks: true, modes: [0, 2], ... }
 ```
 
-- `pure: true`: safe to re-run; new nodes are ON_REQUEST under `ancestors`. The math, logic and string packs declare their pure nodes.
-- `ticks: true`: needs the step loop (Timer, Delay); a pull never re-runs it.
+- `pure: true`: safe to re-run; new nodes are ON_REQUEST under `ancestors`. Declared by the math, math3d, logic and string packs, and the basic constants and conversions (`basic/const`, `boolean`, `string`, `data`, `array`, `length`, `not`).
+- `ticks: true`: needs the step loop; a pull never re-runs it. Declared by Timer, Delay, `math/average`, `tendTo`, `spikes`, `accumulate`, `audio/adsr` and the two texture smoothers.
+- Nodes that only react to events default to ON_EVENT outside `legacy`: `events/once`, `waitAll`, `filter`, `log`, `basic/alert`.
+- **Volatile nodes stay undeclared, so ALWAYS:** nodes that read the time, randomness, outside state or a widget (`basic/time`, `math/rand`, `widget/*`, …). ON_REQUEST would keep one value per frame or call; a `volatile` kind is planned (FLW-02). The node reference (`npm run docs:nodes`) shows every type's declaration.
+- **Host calls:** `node.actionDo(action)` from your code is an event entry. Under `ancestors` it pulls the node's ON_REQUEST inputs first, as a delivered event does. Calling `node.onAction(...)` directly bypasses the engine.
 - `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse a mode the type declares invalid. The refusal (`node.mode_refusal`) names `LiteGraph.Execution.AllowAnyMode`, the setting that lifts it; a group lists the nodes it skipped. `LiteGraph.getValidNodeModes(node)`.
 - A new node of a declared type gets its model's default mode when it is added; a loaded node keeps its stored mode.
 - `graph.checkExecution()` returns `{model, issues}`: an invalid model or mode, a `ticks` node that is not stepped (also inside a non-ALWAYS subgraph node), an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS. A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
@@ -159,8 +163,7 @@ start.connect(0, loop, 0);  count.connect(0, loop, 1);
 loop.connect(1, double, 0);                                  // index -> A
 double.connect(0, store, 0);                                 // pulled before each body action
 loop.connect(0, store, 1);                                   // body: assign
-graph.runStep();                                             // the constants get their values
-loop.onAction("do");                                         // or wire a button or a Timer to "do": stores 0, 2, 4
+loop.actionDo("do");                                         // or wire a button or a Timer to "do": stores 0, 2, 4
 store.properties.data;                                       // 4; double ran once per index
 ```
 
@@ -552,7 +555,7 @@ LiteGraph.getNodeDefinition("acme/filter").pack; // { id: "acme-audio", version:
 LiteGraph.packs.index([{ id: "far", version: "3.0.0", nodes: ["far/thing"] }]); // known, not installed
 ```
 
-- **Built-in packs:** every built-in node file is a builtin pack `litegraph/<family>` (`litegraph/math`, …).
+- **Built-in packs:** every built-in node file is a builtin pack `litegraph/<family>` (`litegraph/math`, …), with a `description`.
 - **Provenance:** new nodes of non-builtin packs get `properties.pack` and `properties.pack_ver`; a loaded node keeps what it was saved with.
 - **Missing types:** a node of an unregistered type loads as a placeholder that saves back unchanged. `graph.getMissingNodes()` lists them by type, with the pack they come from (stamp, index, or ComfyUI's `cnr_id`) and a registered replacement. The root graph emits `missing-nodes {report, reason}` after loading, and the Editor shows the report.
 - **Replacements as data:**
@@ -577,6 +580,8 @@ A linked slot the mapping cannot place is removed and listed in `dropped`. Comma
 | `LiteGraph.Packs.AllowIncompatible` | false | Register a pack whose `requires.litegraph` does not match (refused otherwise, naming this setting) |
 | `LiteGraph.Packs.Disabled` | `[]` | Pack ids whose `setup` does not run |
 | `LiteGraph.Nodes.ShowMissingOnLoad` | true | The Editor opens the missing-nodes panel after a load |
+
+**Templates:** a pack can ship example graphs in its manifest's `templates[]`. Each entry is `{id, title, description, category, profile, flow, tags, packs, level}` plus a `url` (relative, http or https) or an inline `data` graph. `LiteGraph.packs.listTemplates()` returns the valid templates of the active packs. The editor's Demo menu lists them in their category, next to the examples of `apps/editor/examples/index.json`, which uses the same fields.
 
 ## Saving and loading
 

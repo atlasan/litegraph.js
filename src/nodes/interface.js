@@ -2,7 +2,7 @@ import { LiteGraph } from "../litegraph.js";
 
 // built-in pack: node types registered below belong to "litegraph/interface" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/interface", version: LiteGraph.VERSION, title: "Interface widgets", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/interface", version: LiteGraph.VERSION, title: "Interface widgets", description: "Widgets drawn inside the node: buttons, toggles, sliders, knobs, combos, text and progress displays.", builtin: true });
 
 class WidgetButton {
 
@@ -498,6 +498,7 @@ LiteGraph.registerNodeType("widget/knob", WidgetKnob);
 
 // Show value inside the debug console
 class WidgetSliderGUI {
+    static desc = "A slider drawn across the whole node; outputs its value.";
 
     static title = "Inner Slider";
 
@@ -827,5 +828,9 @@ class WidgetPanel {
     widgets = [{ name: "update", text: "Update", type: "button" }];
 }
 LiteGraph.registerNodeType("widget/panel", WidgetPanel);
+
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// every widget/* node (its value comes from the UI). widget/progress, widget/text and widget/panel only display.
 
 LiteGraph.packs.close("litegraph/interface");

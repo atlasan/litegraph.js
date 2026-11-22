@@ -1,7 +1,7 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
-# Unreleased: panels and widgets (branch `LG/dev_panel_and_widget`)
+# Unreleased: panels and widgets
 
 Plan: `agents/plans/2026-11-22-panels-options-node-details.md`.
 
@@ -26,6 +26,65 @@ Plan: `agents/plans/2026-11-22-panels-options-node-details.md`.
 * `vec3`, `color`, `text`, `array` and `resource` properties could not be edited in the node panel. `min` and `max` were ignored there.
 * The property dialog refused `vec3`, `color`, `int` and the other value types ("unknown type").
 * Node panel edits used `beforeChange`/`afterChange` without a transaction. They are now one undo step each, and those hooks still fire.
+
+# Unreleased: Wave 7 (event integration)
+
+Plan: `agents/plans/2026-11-22-event-integration.md`; audit: `agents/audits/2026-11-22-event-handling.md`.
+
+Hooks (CallbackHandler) and typed events now run on one listener core (`ListenerList` in `src/eventtarget.js`). Assigning `onX` callbacks (`node.onExecute = fn`, prototype methods, `LiteGraph.onNodeTypeRegistered = fn`) works exactly as before: it is the default callback of the hook chain. `registerCallbackHandler` still returns a numeric id, and `processCallbackHandlers` returns the same values.
+
+## Changed
+
+* **A throwing hook handler no longer stops the chain.** The remaining handlers and the default `onX` still run, then the first error is rethrown to the caller; later errors are logged. Before, the chain stopped at the throw and the default did not run.
+* **Registering a handler during a dispatch takes effect from the next dispatch.** Before, it re-ran earlier handlers, and a handler that registered on every call never returned.
+* **Groups and reroutes:** selecting or deselecting one now also fires the canvas `onSelectionChange` hook, as `selection-changed` already did.
+* **Hosts share one hook implementation** (`installHooks`). The handler registry is created when first needed: reading `cb_handler` (still a `CallbackHandler`, still assignable) or registering a handler. Nodes and graphs that nobody hooks no longer allocate one. A dispatch with no handler only calls `onX`: about 4× faster than before (`runStep` on `benchmark.json` about 15% faster). `callbacks_handlers[name]` exists only for names that had a handler registered; before, every dispatched name created an empty entry.
+
+## Added
+
+* `obj.onHook(name, fn, opts)` returns a disposer; `hasCallbackHandlers(name)`; handler options `once` (alias of `call_once`) and `signal` (unregister on abort).
+* `CallbackHandler.is(result, value)`, `CallbackHandler.handled(result)` and `CallbackHandler.valueOf(result)` read hook results the way the library does.
+* **`LiteGraph.events`:** `node-type-registered`, `node-type-replaced`, `node-type-unregistered`, `graph-created`, `canvas-created`.
+* Graph events `group-added` and `group-removed`.
+* Typed events: a `priority` option, and `"*"` listeners that receive every event of a target.
+* Extension context: `ctx.listen(target, name, fn, opts)` registers a hook for hook names (`onX`, `on_x`, `getXMenuOptions`) and a typed listener otherwise; disposed with the extension.
+* `onAddPropertyToPanel` and `onShowCustomPanelInfo` (node panel) are hooks too.
+* `npm run check:types` also fails when a typed event is emitted but not declared; `blueprint-error`, `link-drag-start` and `link-drag-end` are now declared on the canvas.
+
+## Fixed
+
+* **Dropping on a node without `onDropItem` threw** a TypeError (a `null` hook result was read as an object).
+* **Mouse down ran the canvas `onClear` hook** (with `onMouse` as its default); it now runs the `onMouse` hook.
+* **A `once` / `call_once` handler could run twice** when a handler dispatched the same name again (hooks and typed events).
+* **Removed listeners stayed attached to their `AbortSignal`**, so a long-lived signal kept them alive.
+
+# Unreleased: flows track (node reference, declarations, examples)
+
+Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
+
+## Changed
+
+* **An ALWAYS node with a connected event output is no longer pulled for its first value** (`ancestors`). Running it inside a pull dropped its events as `refreshing`; it now runs at its turn (audit finding 10).
+* **`ancestors/check_subgraph.JSON`:** its root counter was saved in ON_REQUEST mode with connected event outputs. It is now ALWAYS, so the example checks clean and drops no events. The golden tests read frozen copies of their examples (`test/fixtures/golden-examples/`), so their snapshots are unchanged.
+* **New constants are ON_REQUEST under `ancestors`:** a new `basic/const`, `boolean`, `string`, `data` or `array` node, like the pure math nodes, runs when a consumer pulls it. `legacy` documents and loaded nodes keep their modes; "Apply the model's node modes" converts an old document.
+* **A ticking node is never re-run by a pull:** this covers `math/accumulate` and `math/average`, among others. Before, under the `event` and `step` models, a forced pull from an event re-ran them, so they advanced more than once per step.
+* **`node.actionDo(action)` called from host code pulls the node's ON_REQUEST inputs first under `ancestors`**, as a delivered event does. The guide's loop example now calls `loop.actionDo("do")`.
+
+## Added
+
+* **Node reference:** `npm run docs:nodes` (`tools/node-reference.mjs`) writes `docs/nodes/README.md`, one page per pack and `nodes.json` from the registry. The pages are generated locally and git-ignored; committing them is an open decision (D9).
+* **`def.usage`** (or a static `usage`): a short how-to for a node type, returned by `getNodeDefinition(type).usage`. The FOR, ForEach, WHILE, IF, Sequence, Timer, Delay and Function nodes have one.
+* **Every builtin pack has a `description`**, and every bundled node type has a description. New titles: Spikes, Process info, File read/write/delete/exists/list.
+* **Declaration pass:** 36 more node types declare their execution needs (86 of 273 bundled types):
+  * pure: the basic constants and conversions, `logic/sequence`, `math/noise`, the math3d nodes;
+  * ticks: `math/average`, `tendTo`, `spikes`, `accumulate`, `audio/adsr`, `texture/temporal_smooth`, `linear_avg_smooth`;
+  * ON_EVENT by default: `events/once`, `waitAll`, `filter`, `log`, `basic/alert`.
+
+  Volatile nodes (time, random, widgets) stay ALWAYS, with a comment, until FLW-02.
+* **Examples library:** `apps/editor/examples/index.json` describes all 34 example files: `id`, `file`, `title`, `description`, `category`, `profile`, `flow`, `tags`, `packs`, `level`, plus `needs` for network and audio. The editor's Demo menu is built from it, with one group per category (flows, subgraphs, editor and widgets, audio, graphics, network); `wip` examples are hidden. The example files keep their paths.
+* **`LiteGraph.packs.listTemplates()`:** the templates of the active packs (manifest `templates[]`, with a `url` or inline `data`). The Demo menu lists them in their category.
+* **Examples test** (`tools/tests/examples.test.mjs`): every non-wip example loads without missing nodes and checks clean under `ancestors` after the model's modes are applied. It runs 5 steps without errors or dropped events, and its link data matches `tools/fixtures/examples-outputs.json`. Network and audio examples load and check only.
+* **Catalog test** (`tools/tests/node-catalog.test.mjs`): every bundled type is created (browser types with jsdom, Web Audio and WebGL stand-ins), described, in a described pack, and listed once in the reference.
 
 # Unreleased: Wave 6 (events and execution models)
 

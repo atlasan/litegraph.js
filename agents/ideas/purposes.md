@@ -37,7 +37,7 @@ A purpose describes **what the user is trying to make**, not a technology. Each 
   - uniform widgets that update without recompiling
   - type-aware slots (vec2/3/4, textures)
 - **This fork today:** `glshaders.js`, `gltextures.js`, `glfx.js` (litegl), `geometry.js`, `math3d.js`.
-- **Key ideas:** 3D-05 to 3D-11, 3D-19, 3D-20, WGS-06 to WGS-08, WGS-10, USE-11, USE-12, USE-41, USE-44.
+- **Key ideas:** 3D-05 to 3D-11, 3D-19, 3D-20, WGS-06 to WGS-08, WGS-10, USE-11, USE-12, USE-41, USE-44, FLW-08 (dataflow and realtime profiles), FLW-12, FLW-13, FLW-21.
 - **Decision this purpose raises:** keep the litegl families, or move to TSL? See [3d-libraries §3](landscape/3d-libraries.md#3-directions-worth-deciding).
 
 ## P3: Scene and game logic, behaviours
@@ -52,7 +52,7 @@ A purpose describes **what the user is trying to make**, not a technology. Each 
   - per-object graph instances from shared templates
   - timelines
 - **This fork today:** `threejs.js` (22 types), event slots, subgraphs.
-- **Key ideas:** 3D-01 to 3D-04, 3D-12 to 3D-17, 3D-22, WGS-01 to WGS-05, WGS-09, NUN-01 to NUN-06, USE-13, JS-20, JS-30.
+- **Key ideas:** 3D-01 to 3D-04, 3D-12 to 3D-17, 3D-22, WGS-01 to WGS-05, WGS-09, NUN-01 to NUN-06, USE-13, JS-20, JS-30, FLW-01 to FLW-11, FLW-14, FLW-15 ([execution flows](landscape/execution-flows.md)).
 
 ## P4: Audio, music and live performance
 
@@ -64,7 +64,7 @@ A purpose describes **what the user is trying to make**, not a technology. Each 
   - DSP code as nodes
   - low-latency event I/O
 - **This fork today:** `audio.js`, `midi.js`, OSC/UDP/Socket.IO libraries.
-- **Key ideas:** JS-04 to JS-08, USE-16, USE-17, USE-19, WGS-09.
+- **Key ideas:** JS-04 to JS-08, USE-16, USE-17, USE-19, WGS-09, FLW-05, FLW-09, FLW-12, FLW-21.
 
 ## P5: Devices, IoT and robotics
 
@@ -132,7 +132,7 @@ A purpose describes **what the user is trying to make**, not a technology. Each 
   - starter recipes
   - generated node references
 - **This fork today:** the editor and demo graphs.
-- **Key ideas:** USE-06, USE-12, USE-15, USE-31, USE-32, CFY-19, 3D-17.
+- **Key ideas:** USE-06, USE-12, USE-15, USE-31, USE-32, CFY-19, 3D-17, FLW-05, FLW-06, FLW-08, FLW-14, FLW-22, FLW-23.
 
 ## P10: The host itself (platform and editor)
 
@@ -149,26 +149,26 @@ A purpose describes **what the user is trying to make**, not a technology. Each 
   - the code editor
   - a portable format
 - **This fork today:** the Wave 1 platform layer: commands, keybindings, settings, menus, extensions, widget classes, typed events, `transact`.
-- **Key ideas:** X-02 to X-07, CFY-45 to CFY-55, USE-14, USE-16, USE-23, USE-33 to USE-40, USE-42, JS-14 to JS-19, JS-21, JS-22, JS-34.
+- **Key ideas:** X-02 to X-07, CFY-45 to CFY-55, USE-14, USE-16, USE-23, USE-33 to USE-40, USE-42, JS-14 to JS-19, JS-21, JS-22, JS-34, FLW-07, FLW-08, FLW-16, FLW-24.
 
 ## Purpose × kind at a glance
 
-Counts of catalog rows on 2026-11-20 (212 ideas). An idea that serves several purposes is counted once for each. Regenerate the table from [catalog.md](catalog.md) when rows change.
+Counts of catalog rows on 2026-11-22 (236 ideas). An idea that serves several purposes is counted once for each. Regenerate the table from [catalog.md](catalog.md) when rows change.
 
 | Purpose | node | widget | ext | io | runtime | core | proto | app | Total |
 |---|---|---|---|---|---|---|---|---|---|
-| P1 AI media | 4 | 11 | 2 | 1 | 4 | 6 | 4 | 2 | 34 |
-| P2 Graphics | 5 | 6 | 1 | 6 | 3 | 1 |  |  | 22 |
-| P3 Scene logic | 7 | 3 | 3 | 3 | 3 | 4 |  | 6 | 29 |
-| P4 Audio | 4 | 4 | 2 | 1 | 2 | 1 |  |  | 14 |
-| P5 Devices | 4 |  | 2 |  |  | 1 |  |  | 7 |
-| P6 Data | 7 | 4 | 1 | 5 | 1 | 1 |  | 1 | 20 |
-| P7 LLM | 3 | 1 |  | 3 | 6 | 2 | 2 |  | 17 |
-| P8 Process | 10 | 1 | 4 | 6 | 12 | 5 | 6 | 3 | 47 |
-| P9 Education | 3 | 1 | 5 | 4 |  | 2 |  | 3 | 18 |
-| P10 Host |  | 9 | 16 | 4 | 11 | 33 | 3 | 4 | 80 |
+| P1 AI media | 4 | 11 | 2 | 1 | 4 | 8 | 4 | 2 | 36 |
+| P2 Graphics | 6 | 6 | 2 | 6 | 3 | 6 |  |  | 29 |
+| P3 Scene logic | 9 | 3 | 4 | 3 | 4 | 11 |  | 6 | 40 |
+| P4 Audio | 6 | 4 | 2 | 1 | 2 | 4 |  |  | 19 |
+| P5 Devices | 5 |  | 2 |  |  | 1 |  |  | 8 |
+| P6 Data | 7 | 4 | 1 | 5 | 1 | 4 |  | 1 | 23 |
+| P7 LLM | 3 | 1 |  | 3 | 7 | 2 | 2 |  | 18 |
+| P8 Process | 11 | 1 | 4 | 6 | 12 | 6 | 6 | 3 | 49 |
+| P9 Education | 5 | 1 | 7 | 4 |  | 7 |  | 5 | 29 |
+| P10 Host |  | 9 | 18 | 4 | 11 | 37 | 3 | 6 | 88 |
 
 **What the counts suggest [I]:**
-- **P10 is where the core work is:** 33 core hooks, and most other purposes depend on them.
+- **P10 is where the core work is:** 37 core hooks, and most other purposes depend on them.
 - **P8 is the largest application area,** because the Bun runner investigation decomposed it in detail.
 - **P5 Devices is under-explored** compared with the existing OSC, UDP and MIDI families. It is a candidate for the next investigation.

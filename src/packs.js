@@ -351,6 +351,44 @@ export class PackRegistry {
     }
 
     /**
+     * The templates (example graphs) of the active packs, from each manifest's `templates[]`, in the
+     * shape of the editor's examples manifest: `{pack, id, title, description, category, profile,
+     * flow, tags, packs, level, url, data}`. An entry needs a string `id` and either a `url`
+     * (relative, http or https) or an inline `data` graph; other entries are skipped.
+     * @returns {ReadonlyArray<Readonly<object>>}
+     */
+    listTemplates() {
+        const text = (value, fallback = null) => (typeof value === "string" && value ? value : fallback);
+        const out = [];
+        for (const entry of this._packs.values()) {
+            if (entry.state !== "active") continue;
+            const id = entry.manifest.id;
+            for (const t of entry.manifest.templates) {
+                if (!t || typeof t !== "object" || !text(t.id)) continue;
+                const url = text(t.url);
+                const safeUrl = url && (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^https?:/i.test(url)) ? url : null;
+                const data = t.data && typeof t.data === "object" ? t.data : null;
+                if (!safeUrl && !data) continue;
+                out.push(Object.freeze({
+                    pack: id,
+                    id: t.id,
+                    title: text(t.title, t.id),
+                    description: text(t.description, ""),
+                    category: text(t.category, "packs"),
+                    profile: text(t.profile),
+                    flow: text(t.flow),
+                    tags: Object.freeze(packStringList(t.tags)),
+                    packs: Object.freeze(packStringList(t.packs).length ? packStringList(t.packs) : [id]),
+                    level: text(t.level),
+                    url: safeUrl,
+                    data,
+                }));
+            }
+        }
+        return out;
+    }
+
+    /**
      * Provenance to stamp on a new node of `type`: `{pack, pack_ver}` for non-builtin packs when
      * the setting `LiteGraph.Packs.Stamp` is on, otherwise null.
      */

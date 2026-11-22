@@ -11,6 +11,7 @@ test('definition from static def, classic statics and capability rules, without 
         static def = {
             display_name: 'Modern Node',
             description: 'Adds things',
+            usage: 'Connect two numbers; read the sum.',
             search_aliases: ['plus', 'sum'],
             capabilities: ['custom-cap'],
             experimental: true,
@@ -25,14 +26,14 @@ test('definition from static def, classic statics and capability rules, without 
     LiteGraph.registerNodeType('defs/classic', Classic);
     const modern = LiteGraph.getNodeDefinition('defs/modern');
     expect(modern).toMatchObject({
-        type: 'defs/modern', title: 'Modern Node', description: 'Adds things', category: 'defs',
+        type: 'defs/modern', title: 'Modern Node', description: 'Adds things', usage: 'Connect two numbers; read the sum.', category: 'defs',
         search_aliases: ['plus', 'sum'], experimental: true, deprecated: false, hidden: false,
         inputs: [{ name: 'a', type: 'number', tooltip: 'first' }], outputs: [{ name: 'out', type: 'number' }],
     });
     expect([...modern.capabilities].sort()).toEqual(['custom-cap', 'webgl']);
     expect(Object.isFrozen(modern)).toBe(true);
     const classic = LiteGraph.getNodeDefinition('defs/classic');
-    expect(classic).toMatchObject({ title: 'Classic', description: 'Old style', hidden: true, inputs: null });
+    expect(classic).toMatchObject({ title: 'Classic', description: 'Old style', usage: '', hidden: true, inputs: null });
     expect([...classic.capabilities].sort()).toEqual(['browser', 'webgl']); // rule applies to later registrations
     expect(constructed).toBe(0);
 
@@ -90,7 +91,7 @@ describe('execution declarations (Wave 6c)', () => {
         expect(exec).toMatchObject({ pure: true, modes: [0, 4], models: { strict: false, event: { default_mode: 1 } } });
         expect(Object.isFrozen(exec)).toBe(true);
         expect(constructed).toBe(0);
-        expect(LiteGraph.getNodeDefinition('basic/const').execution).toBeNull();
+        expect(LiteGraph.getNodeDefinition('basic/time').execution).toBeNull(); // volatile: undeclared (basic/const is pure since the declaration pass)
         expect(LiteGraph.getNodeDefinition('logic/CycleFOR').execution).toMatchObject({ emit: 'immediate', loop: true, immediate_inputs: ['break'] });
         expect(LiteGraph.getNodeDefinition('events/timer').execution).toMatchObject({ ticks: true, modes: [0, 2] });
         expect(LiteGraph.getNodeDefinition('math/operation').execution.pure).toBe(true);

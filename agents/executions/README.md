@@ -7,6 +7,10 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 | Date | Record | Status |
 |---|---|---|
 | 2026-11-22 | [Panels and widgets](2026-11-22-panels-and-widgets.md): value types (type → canvas widget and panel editor), colour and vector widgets, options panel tabs, node details panel, panel editors and sections; branch `LG/dev_panel_and_widget` | final; not merged |
+| 2026-11-22 | [Flows track, examples](2026-11-22-flows-examples.md): examples manifest, Demo menu by category, `packs.listTemplates()`, examples test, audit finding 10 fixed (example and first-value pull) | final |
+| 2026-11-22 | [Flows track, declarations](2026-11-22-flows-declarations.md): pure, ticks and ON_EVENT defaults for 36 more types (86 of 273), volatile types commented, host `actionDo` pulls under `ancestors` | final |
+| 2026-11-22 | [Wave 7: event integration, the core](2026-11-22-wave7-event-core.md): one listener core for hooks and typed events, compatible `onX`, fast path, isolated errors, `LiteGraph.events`, `ctx.listen`, E12/E13 fixed | final |
+| 2026-11-22 | [Flows track, reference](2026-11-22-flows-reference.md): `npm run docs:nodes` node reference, pack descriptions, `def.usage`, descriptions for every bundled type, catalog test of 273 types | final |
 | 2026-11-01 | [Baseline validation](2026-11-01-baseline-validation.md): setup, contracts, editor, tester and runner acceptance | final |
 | 2026-11-01 | [Readiness checklist](2026-11-01-readiness-checklist.md): verified foundation and remaining acceptance work | snapshot |
 | 2026-11-22 | [Pre-release 0.18.0-dev.1](2026-11-22-pre-release-0.18.0-dev.1.md): all planned waves done, release checks (clean clone, packed install, probes, browser), version bump | final; push/PR/tag pending |
