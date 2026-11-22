@@ -218,6 +218,8 @@ export class ExecutionEngine {
     static triggerSlot(node, slot, param, link_id, options, rules) {
         const graph = node.graph;
         const output = node.outputs[slot];
+        // a node that declares emit: "immediate" (loops, Sequence) delivers now, with a refresh, in every model
+        const emitNow = this.declarationOf(node)?.emit === "immediate";
         if (this._pulling > 0) return this.drop(node, "refreshing", { message: `${node.type} ${node.id}: an event fired while its data was pulled is dropped (event emitters cannot be ON_REQUEST)` });
         graph._last_trigger_time = LiteGraph.getTime();
         for (const id of [...output.links]) {
@@ -234,11 +236,12 @@ export class ExecutionEngine {
             if (asTrigger) {
                 call.action_call ??= `${node.id}_trigg_${LiteGraph.uuidv4()}`;
                 if (!target.onExecute) { this.drop(target, "no-handler", { message: `${target.type} ${target.id}: triggered but has no onExecute` }); continue; }
-                if (rules.refresh === "ancestors") this.pull(target);
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
                 target.doExecute(param, call);
             } else if (target.onAction) {
                 call.action_call ??= `${node.id}_act_${LiteGraph.uuidv4()}`;
-                if (rules.delivery === "deferred" && target.onExecute) {
+                const immediateInput = this.declarationOf(target)?.immediate_inputs?.includes(input.name);
+                if (rules.delivery === "deferred" && target.onExecute && !emitNow && !immediateInput) {
                     target._waiting_actions ??= [];
                     target._waiting_actions.push([input.name, param, call, link.target_slot]);
                     if (target.graph.status !== target.graph.constructor.STATUS_RUNNING && !target._stopped_queue_reported) {
@@ -247,7 +250,7 @@ export class ExecutionEngine {
                     }
                     continue;
                 }
-                if (rules.refresh === "ancestors") this.pull(target);
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
                 target.actionDo(input.name, param, call, link.target_slot);
             } else {
                 this.drop(target, "no-handler", { message: `${target.type} ${target.id}: input "${input?.name}" receives an event but the node has no onAction` });
@@ -304,11 +307,128 @@ export class ExecutionEngine {
         }
     }
 
-    // ---- model changes ----------------------------------------------------------------------------
+    // ---- node declarations (static def.execution) -------------------------------------------------
 
-    /** the mode a new node of an undeclared type gets under a model */
-    static defaultModeFor(rules) {
-        return rules?.legacy ? null : rules?.default_mode ?? LiteGraph.ALWAYS;
+    /**
+     * Normalizes a node type's execution declaration:
+     * `{models: {<model>: false | {default_mode, modes}}, modes, default_mode, emit: "immediate", ticks, pure, loop, immediate_inputs}`.
+     * @returns {Readonly<object>|null}
+     */
+    static normalizeDeclaration(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const modes = (value) => Array.isArray(value) ? Object.freeze(value.filter((m) => Number.isInteger(m))) : undefined;
+        const models = {};
+        for (const [name, entry] of Object.entries(raw.models ?? {})) {
+            models[name] = entry === false ? false : Object.freeze({ default_mode: entry?.default_mode, modes: modes(entry?.modes) });
+        }
+        return Object.freeze({
+            models: Object.freeze(models),
+            modes: modes(raw.modes),
+            default_mode: Number.isInteger(raw.default_mode) ? raw.default_mode : undefined,
+            emit: raw.emit === "immediate" ? "immediate" : undefined,
+            ticks: !!raw.ticks,
+            pure: !!raw.pure,
+            loop: !!raw.loop,
+            immediate_inputs: Object.freeze(Array.isArray(raw.immediate_inputs) ? [...raw.immediate_inputs] : []),
+        });
+    }
+
+    /** the execution declaration of a node or type (from its definition), or null */
+    static declarationOf(nodeOrType) {
+        const type = typeof nodeOrType === "string" ? nodeOrType : nodeOrType?.type;
+        if (!type) return null;
+        return LiteGraph.getNodeDefinition?.(type)?.execution ?? null;
+    }
+
+    static get allowAnyMode() { return !!this.setting("LiteGraph.Execution.AllowAnyMode", false); }
+
+    /** the modes a node (or type) may use under a model; NEVER is always allowed */
+    static validModes(nodeOrType, modelName) {
+        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST];
+        const decl = this.declarationOf(nodeOrType);
+        if (!decl) return all;
+        const per = decl.models?.[modelName];
+        if (per === false) return [LiteGraph.NEVER];
+        const modes = per?.modes ?? decl.modes ?? all;
+        return modes.includes(LiteGraph.NEVER) ? [...modes] : [...modes, LiteGraph.NEVER];
+    }
+
+    /** true when the node may use the mode under its graph's model (or LiteGraph.Execution.AllowAnyMode is on) */
+    static isModeValid(node, mode, graph = node?.graph) {
+        if (this.allowAnyMode) return true;
+        return this.validModes(node, this.modelNameFor(graph)).includes(mode);
+    }
+
+    /** the refusal message for an invalid mode; names the setting that lifts it */
+    static modeRefusal(node, mode, graph = node?.graph) {
+        const model = this.modelNameFor(graph);
+        const name = (m) => LiteGraph.NODE_MODES[m] ?? String(m);
+        const valid = this.validModes(node, model).map(name).join(", ");
+        return `${node?.type ?? "node"}: mode "${name(mode)}" is not valid for this node under the "${model}" execution model (valid: ${valid}); set LiteGraph.Execution.AllowAnyMode to allow any mode`;
+    }
+
+    /** the mode a newly added node of a declared type gets under a model, or null to keep its own */
+    static declaredDefaultMode(node, rules) {
+        if (!rules || rules.legacy) return null;
+        const decl = this.declarationOf(node);
+        if (!decl) return null;
+        const per = decl.models?.[rules.name];
+        if (per && per.default_mode != null) return per.default_mode;
+        if (decl.pure && rules.refresh === "ancestors") return LiteGraph.ON_REQUEST;
+        if (decl.default_mode != null) return decl.default_mode;
+        return null;
+    }
+
+    /** the mode each node would get under a model (for "Apply the model's node modes") */
+    static modelModes(graph, rules = this.rulesFor(graph)) {
+        const out = [];
+        const visit = (g) => {
+            for (const node of g._nodes) {
+                const mode = this.declaredDefaultMode(node, rules);
+                if (mode != null && mode !== node.mode && node.mode !== LiteGraph.NEVER) out.push({ node, mode });
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph);
+            }
+        };
+        visit(graph);
+        return out;
+    }
+
+    // ---- diagnostics ---------------------------------------------------------------------------------
+
+    /**
+     * Checks a graph (and its subgraphs) against the model and the node declarations.
+     * @returns {{model: string, issues: Array<{node, path, code, message}>}}
+     */
+    static check(graph) {
+        const root = graph.rootGraph ?? graph;
+        const model = this.modelNameFor(root);
+        const issues = [];
+        const add = (node, code, message) => issues.push({ node, path: node.getPath?.() ?? null, code, message });
+        const hasEventOutput = (node) => (node.outputs ?? []).some((o) => o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION);
+        const visit = (g, parentMode) => {
+            for (const node of g._nodes) {
+                const decl = this.declarationOf(node);
+                if (node.mode !== LiteGraph.NEVER) {
+                    if (decl?.models?.[model] === false) add(node, "invalid-model", `${node.type}: not valid under the "${model}" execution model`);
+                    else if (!this.validModes(node, model).includes(node.mode)) add(node, "invalid-mode", this.modeRefusal(node, node.mode, root));
+                    if (decl?.ticks && (node.mode !== LiteGraph.ALWAYS || (parentMode != null && parentMode !== LiteGraph.ALWAYS))) {
+                        add(node, "ticks-not-stepped", `${node.type}: needs the step loop (ALWAYS mode${parentMode != null ? ", in an ALWAYS subgraph node" : ""}); it keeps its events until stepped`);
+                    }
+                    if (node.mode === LiteGraph.ON_REQUEST && hasEventOutput(node) && node.outputs.some((o) => (o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION) && o.links?.length)) {
+                        add(node, "on-request-emitter", `${node.type}: an event emitter in ON_REQUEST mode never fires (events are dropped while data is pulled)`);
+                    }
+                    if (decl?.loop && !node.outputs?.find((o) => o.name === "do")?.links?.length) {
+                        add(node, "loop-without-body", `${node.type}: the loop body ("do" output) is not connected`);
+                    }
+                    if (decl?.pure && model === "ancestors" && node.mode === LiteGraph.ALWAYS) {
+                        add(node, "pure-always", `${node.type}: a pure node in ALWAYS mode runs every frame; ON_REQUEST runs it only when needed`);
+                    }
+                }
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, node.mode === LiteGraph.NEVER ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
+            }
+        };
+        visit(root, null);
+        return { model, issues };
     }
 }
 

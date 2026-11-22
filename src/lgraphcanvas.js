@@ -9089,6 +9089,30 @@ export class LGraphCanvas {
         graphcanvas.canvas.parentNode.appendChild( panel );
     }
 
+    /**
+     * Shows a short notice over the canvas (execution refusals: invalid modes, skipped nodes).
+     * Without a DOM it only logs. The element has the class "litegraph-execution-notice".
+     */
+    showExecutionNotice(message, ms = 6000) {
+        LiteGraph.log_warn("lgraphcanvas", "execution", message);
+        const host = this.canvas?.parentNode;
+        const doc = this.canvas?.ownerDocument;
+        if (!host || !doc) return null;
+        this._executionNotice?.remove();
+        const notice = doc.createElement("div");
+        notice.className = "litegraph-execution-notice";
+        notice.textContent = message;
+        Object.assign(notice.style, {
+            position: "absolute", left: "50%", top: "48px", transform: "translateX(-50%)", maxWidth: "70%",
+            padding: "6px 10px", background: "rgba(60,30,20,0.92)", color: "#FDB", border: "1px solid #A64",
+            borderRadius: "4px", font: "12px Arial, sans-serif", zIndex: 20, pointerEvents: "none",
+        });
+        host.appendChild(notice);
+        this._executionNotice = notice;
+        setTimeout(() => { if (this._executionNotice === notice) { notice.remove(); this._executionNotice = null; } }, ms);
+        return notice;
+    }
+
     showShowNodePanel(node) {
         this.SELECTED_NODE = node;
         this.closePanels();
@@ -9129,7 +9153,7 @@ export class LGraphCanvas {
                     case "Mode":
                         var kV = Object.values(LiteGraph.NODE_MODES).indexOf(value);
                         if (kV>=0 && LiteGraph.NODE_MODES[kV]) {
-                            node.changeMode(kV);
+                            if (node.changeMode(kV) === false && node.mode_refusal) graphcanvas.showExecutionNotice(node.mode_refusal);
                         }else{
                             LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected mode",value,kV);
                         }
@@ -9152,7 +9176,9 @@ export class LGraphCanvas {
 
             panel.addWidget( "string", "Title", node.title, {}, fUpdate);
 
-            panel.addWidget( "combo", "Mode", LiteGraph.NODE_MODES[node.mode], {values: LiteGraph.NODE_MODES}, fUpdate);
+            // only the modes the node's type declares valid under the document's execution model
+            const validModes = LiteGraph.getValidNodeModes?.(node) ?? LiteGraph.NODE_MODES.map((_, i) => i);
+            panel.addWidget( "combo", "Mode", LiteGraph.NODE_MODES[node.mode], {values: LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i))}, fUpdate);
 
             var nodeCol = "";
             if (node.color !== undefined) {
@@ -9417,8 +9443,9 @@ export class LGraphCanvas {
     }
 
     static onMenuNodeMode(value, options, e, menu, node) {
+        const validModes = node && LiteGraph.getValidNodeModes ? LiteGraph.getValidNodeModes(node) : LiteGraph.NODE_MODES.map((_, i) => i);
         LiteGraph.ContextMenu(
-            LiteGraph.NODE_MODES,
+            LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i)),
             { event: e, callback: inner_clicked, parentMenu: menu, node: node },
         );
 
@@ -9428,9 +9455,9 @@ export class LGraphCanvas {
             }
             var kV = Object.values(LiteGraph.NODE_MODES).indexOf(v);
             const fApplyMultiNode = (node) => {
-                if (kV>=0 && LiteGraph.NODE_MODES[kV])
-                    node.changeMode(kV);
-                else{
+                if (kV>=0 && LiteGraph.NODE_MODES[kV]) {
+                    if (node.changeMode(kV) === false && node.mode_refusal) LGraphCanvas.active_canvas?.showExecutionNotice(node.mode_refusal);
+                } else{
                     LiteGraph.log_warn("lgraphcanvas", "onMenuNodeMode", "unexpected mode", v, kV);
                     node.changeMode(LiteGraph.ALWAYS);
                 }
@@ -9919,9 +9946,14 @@ export class LGraphCanvas {
                     options: modes,
                     callback: (entry) => {
                         if (!group?.graph) return;
+                        let skipped = [];
                         group.graph.transact("groupNodesMode", () => {
-                            if (group.setNodesMode(entry.mode).length) group.graph.onGraphChanged({ action: "groupNodesMode" });
+                            const changed = group.setNodesMode(entry.mode);
+                            skipped = changed.skipped ?? [];
+                            if (changed.length) group.graph.onGraphChanged({ action: "groupNodesMode" });
                         });
+                        // nodes whose type refuses the mode keep theirs: say which, and the setting that lifts it
+                        if (skipped.length) canvas.showExecutionNotice?.(`${skipped.length} node(s) kept their mode (${skipped.map((n) => n.title || n.type).join(", ")}): their type does not allow "${entry.content}". Setting LiteGraph.Execution.AllowAnyMode allows any mode.`);
                         canvas.setDirty(true, true);
                     },
                 },

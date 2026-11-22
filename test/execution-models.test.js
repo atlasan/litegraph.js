@@ -450,3 +450,96 @@ describe('legacy refusals are reported too (step 10)', () => {
         expect(events.map((x) => x.reason).sort()).toEqual(['mode', 'no-handler', 'stopped-queue']);
     });
 });
+
+describe('flow nodes under the models (step 13)', () => {
+    test('FOR fires completed after its body; break stops it within the loop (step model)', () => {
+        const g = graph('step');
+        const src = make(g, 'exm/src');
+        const n = make(g, 'basic/const', { value: 5 });
+        const f = make(g, 'logic/CycleFOR');
+        expect(f.mode).toBe(LiteGraph.ON_EVENT); // the declared default outside legacy
+        const body = make(g, 'exm/loop'); // fires its output on every action
+        const done = make(g, 'exm/rec');
+        n.connect(0, f, 1); src.connect(0, f, 2);
+        f.connect(0, body, 0); body.connect(0, f, 3); // body -> break after the first iteration
+        f.connect(f.findOutputSlot('completed'), done, 0);
+        step(g);
+        src.triggerSlot(0);
+        step(g); // FOR's "do" waits for its turn in the step model
+        expect(body.n).toBe(1);
+        expect(done.log).toHaveLength(1);
+    });
+
+    test('WHILE stopped by cycleLimit reports and names properties.cycleLimit', () => {
+        const g = graph('ancestors');
+        const events = dropped(g);
+        const src = make(g, 'exm/src');
+        const yes = make(g, 'basic/boolean', { value: true });
+        const w = make(g, 'logic/CycleWHILE', { cycleLimit: 5 });
+        const body = make(g, 'exm/rec');
+        src.connect(0, w, 0); yes.connect(0, w, 1); w.connect(0, body, 0);
+        step(g);
+        src.triggerSlot(0);
+        expect(body.log).toHaveLength(5);
+        const drop = events.find((e) => e.node === w);
+        expect(drop.setting).toBe('properties.cycleLimit');
+        expect(drop.message).toMatch(/raise properties\.cycleLimit/);
+    });
+
+    test('DataStore stores the value on its input when the event arrives (B15)', () => {
+        const g = graph('ancestors');
+        const src = make(g, 'exm/src');
+        const c = make(g, 'basic/const', { value: 1 });
+        const p = make(g, 'exm/pure', {}, LiteGraph.ON_REQUEST);
+        const store = make(g, 'basic/data_store');
+        c.connect(0, p, 0); p.connect(0, store, 0); src.connect(0, store, 1);
+        step(g);
+        c.properties.value = 41; step(g); // the const's new value reaches the link
+        src.triggerSlot(0);
+        expect(store.properties.data).toBe(42);
+    });
+});
+
+describe('checkExecution and the badge (step 14)', () => {
+    test('reports an ON_REQUEST emitter, Delay in ON_EVENT and a ticks node in an ON_EVENT subgraph', () => {
+        const g = graph('ancestors');
+        const trig = make(g, 'events/trigger', {}, LiteGraph.ON_REQUEST);
+        const rec = make(g, 'exm/rec');
+        trig.connect(0, rec, 0);
+        const delay = make(g, 'events/delay', {}, LiteGraph.ON_EVENT);
+        const sg = make(g, 'graph/subgraph');
+        sg.mode = LiteGraph.ON_EVENT;
+        const timer = LiteGraph.createNode('events/timer');
+        sg.subgraph.add(timer);
+        const f = make(g, 'logic/CycleFOR');
+        const report = g.checkExecution();
+        const codes = (node) => report.issues.filter((i) => i.node === node).map((i) => i.code).sort();
+        expect(report.model).toBe('ancestors');
+        expect(codes(trig)).toEqual(['invalid-mode', 'on-request-emitter']);
+        expect(codes(delay)).toEqual(['invalid-mode', 'ticks-not-stepped']);
+        expect(codes(timer)).toEqual(['ticks-not-stepped']);
+        expect(report.issues.find((i) => i.node === timer).path).toBe(timer.getPath());
+        expect(codes(f)).toEqual(['loop-without-body']);
+    });
+
+    test('execution-check on root configure, and the badge behind LiteGraph.Node.ExecutionBadge', () => {
+        const source = graph('ancestors');
+        make(source, 'events/delay', {}, LiteGraph.ON_EVENT);
+        const doc = source.serialize();
+        const g = new LGraph();
+        const reports = [];
+        g.events.on('execution-check', (e) => reports.push(e.detail.report));
+        g.configure(doc);
+        expect(reports).toHaveLength(1);
+        expect(reports[0].issues.map((i) => i.code)).toContain('ticks-not-stepped');
+        const delay = g._nodes[0];
+        expect(LiteGraph.nodeBadges.collect(delay).some((b) => b.text === '⚠ exec')).toBe(false);
+        LiteGraph.settings.set('LiteGraph.Node.ExecutionBadge', true);
+        try {
+            const badge = LiteGraph.nodeBadges.collect(delay).find((b) => b.text === '⚠ exec');
+            expect(badge.title).toMatch(/needs the step loop/);
+        } finally {
+            LiteGraph.settings.set('LiteGraph.Node.ExecutionBadge', false);
+        }
+    });
+});

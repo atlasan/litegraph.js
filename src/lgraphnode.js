@@ -659,7 +659,8 @@ export class LGraphNode {
         if (!rules.legacy) {
             // a forced pull runs the origin once per frame or call (or again on newer input data); under
             // the ancestors model only ON_REQUEST origins: ALWAYS nodes give this frame's value
-            if (node.mode === LiteGraph.ON_REQUEST || rules.refresh !== "ancestors") ExecutionEngine.ensureFresh(node);
+            // a node that ticks (Timer, Delay) is never re-run by a pull
+            if (node.mode === LiteGraph.ON_REQUEST || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
             return link.data;
         }
 
@@ -950,6 +951,13 @@ export class LGraphNode {
     }
 
     changeMode(modeTo) {
+        // a declared type refuses modes it cannot run in (LiteGraph.Execution.AllowAnyMode lifts this)
+        if (this.type && !ExecutionEngine.isModeValid(this, modeTo)) {
+            this.mode_refusal = ExecutionEngine.modeRefusal(this, modeTo);
+            LiteGraph.log_warn("lgraphnode", "changeMode", this.mode_refusal);
+            return false;
+        }
+        this.mode_refusal = null;
         switch(modeTo) {
 
             case LiteGraph.ON_TRIGGER:

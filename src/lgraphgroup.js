@@ -175,13 +175,22 @@ export class LGraphGroup {
 
     /**
      * Sets the execution mode of every node inside the group (LiteGraph.ALWAYS, NEVER, ...).
-     * @returns {Array<object>} the nodes changed
+     * Nodes whose type declares the mode invalid keep theirs: they are listed in `changed.skipped`.
+     * @returns {Array<object>} the nodes changed, with `skipped` (the nodes that refused the mode)
      */
     setNodesMode(mode) {
-        if (!this.graph) return [];
+        const changed = [];
+        // the nodes that refused the mode (not enumerable: the result stays a plain list)
+        Object.defineProperty(changed, "skipped", { value: [], enumerable: false });
+        if (!this.graph) return changed;
         this.recomputeInsideNodes();
-        const changed = this._nodes.filter((node) => node.mode !== mode);
-        for (const node of changed) node.changeMode ? node.changeMode(mode) : (node.mode = mode);
+        for (const node of this._nodes.filter((n) => n.mode !== mode)) {
+            const ok = node.changeMode ? node.changeMode(mode) !== false : ((node.mode = mode), true);
+            (ok ? changed : changed.skipped).push(node);
+        }
+        if (changed.skipped.length) {
+            LiteGraph.log_warn("lgraphgroup", "setNodesMode", `${changed.skipped.length} node(s) kept their mode: ${changed.skipped.map((n) => n.mode_refusal ?? n.type).join("; ")}`);
+        }
         return changed;
     }
 

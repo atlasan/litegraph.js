@@ -1429,4 +1429,13 @@ class Math3DXYZWToVec4 {
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
+// execution needs (Wave 6): pure nodes run on request in the ancestors model; rand, noise, spikes,
+// average, tendTo, accumulate and formula keep ALWAYS (state, time or scripts)
+LiteGraph.declareNodeExecution([
+    "math/converter", "math/bypass", "math/to_number", "math/range", "math/clamp", "math/lerp", "math/abs", "math/floor",
+    "math/frac", "math/smoothstep", "math/scale", "math/gate", "math/operation", "math/compare", "math/condition",
+    "math/branch", "math/trigonometry", "math3d/vec2-to-xy", "math3d/xy-to-vec2", "math3d/vec3-to-xyz",
+    "math3d/xyz-to-vec3", "math3d/vec4-to-xyzw", "math3d/xyzw-to-vec4",
+], { pure: true });
+
 LiteGraph.packs.close("litegraph/math");

@@ -142,4 +142,7 @@ class StringToTable {
 }
 LiteGraph.registerNodeType("string/toTable", StringToTable);
 
+// execution needs (Wave 6): every string node is pure
+LiteGraph.declareNodeExecution(Object.keys(LiteGraph.registered_node_types).filter((type) => type.startsWith("string/")), { pure: true });
+
 LiteGraph.packs.close("litegraph/strings");

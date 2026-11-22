@@ -16,6 +16,11 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 * **`event-dropped {node, path, reason, setting?, message}`** on the root graph for every refused event (`reentry`, `refreshing`, `no-handler`, `mode`, `stopped-queue`, `max-passes`, `max-depth`, `cycle`, `once-per-frame`), plus one warning per node and reason.
 * Settings `LiteGraph.Execution.MaxEventDepth` (256) and `LiteGraph.Execution.MaxEventPasses` (64, was a fixed 64 in the function node); reaching either is reported and names the setting.
 * `graph.stop({dropQueued: true})` clears actions waiting for deferred delivery.
+* **Node execution declarations:** `static def.execution` (or `LiteGraph.declareNodeExecution(types, decl)`) with `models`, `modes`, `default_mode`, `emit: "immediate"`, `ticks`, `pure`, `loop`, `immediate_inputs`; read through `getNodeDefinition(type).execution`. The events, logic, base, math and strings packs and `graph/function` declare theirs.
+* **Mode restrictions:** `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse modes a type declares invalid (Timer and Delay: Always or Never; TriggerEvent: not On Request). The message names `LiteGraph.Execution.AllowAnyMode`, which lifts it; a group change lists the nodes it skipped. `LiteGraph.getValidNodeModes(node)`.
+* **New nodes get the model's default mode** when their type declares one (pure math, logic and string nodes are On Request under `ancestors`; loops On Event). Loaded nodes keep their modes; `graph.applyExecutionModelModes()` applies the defaults in one undo step.
+* **`graph.checkExecution()`**, `execution-check {report}` after a load, and an execution badge (setting `LiteGraph.Node.ExecutionBadge`, on in the Editor).
+* FOR, ForEach and WHILE have a `completed` output.
 
 ## Fixed
 
@@ -25,6 +30,9 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 * **ForEach `break` stops the loop (B5),** and ForEach no longer reads its `do` action input as data.
 * **Payload and call options are forwarded (B15)** by WaitAll (the completing event's payload), Semaphore, Once and Stepper. Sequence no longer changes its caller's `options` object.
 * **Six `html/*` nodes start in ON_EVENT mode (B11)** (`event_listener`, `event_listener_remove`, `create_element`, `append_child`, `remove_element`, `apply_element_css`); they set the undefined `LiteGraph.ON_ACTION` and so ran every step.
+* **Loops and Sequence under deferred models (B1, B2, B4, B5):** FOR, ForEach, WHILE and Sequence deliver their events immediately in every model but `legacy`, so the body sees each index, WHILE stops on its condition and Sequence keeps its slot order; `break` reaches a running loop. A WHILE stopped by `properties.cycleLimit` reports it.
+* **Switch and IF no longer fire on every step (B14):** `events/switch` fires when its selection changes; `logic/IF` in ALWAYS mode branches when its condition changes (triggered, it always branches).
+* **DataStore stores the input value at the time of the event (B15).**
 * **Subgraph nodes in any mode deliver inner events (B6)** under the `step` and `strict` models (and `ancestors` / `event`, which deliver immediately); events entering a subgraph see fresh interface data.
 * A forced pull (`getInputData(slot, true, true)`) no longer logs a "CHECK THIS" warning on every call; the unused `LiteGraph.allowMultiOutputForEvents` flag is gone (B16; `allow_multi_output_for_events` is the real one).
 

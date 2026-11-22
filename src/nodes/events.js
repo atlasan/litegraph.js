@@ -27,6 +27,8 @@ class TriggerEvent {
 
     static title = "TriggerEvent";
     static desc = "Triggers event if input evaluates to true";
+    // an event emitter cannot be ON_REQUEST: triggers are dropped while data is pulled (A4)
+    static def = { execution: { modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.NEVER] } };
 
     constructor() {
         this.size = [60, 30];
@@ -63,6 +65,8 @@ class EvSequence {
 
     static title = "Sequence";
     static desc = "Triggers a sequence of events when an event arrives";
+    // its outputs fire now, in slot order, in every model (B4)
+    static def = { execution: { emit: "immediate" } };
     // @ BUG: fails to construct Node
 
     constructor() {
@@ -371,6 +375,8 @@ class DelayEvent {
 
     static title = "Delay";
     static desc = "Delays one event";
+    // counts time in the step loop: ALWAYS only (B7)
+    static def = { execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] } };
 
     constructor() {
         this.size = [60, 30];
@@ -427,6 +433,7 @@ class TimerEvent {
 
     static title = "Timer";
     static desc = "Sends an event every N milliseconds";
+    static def = { execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] } };
 
     constructor() {
         this.addProperty("interval", 1000);
@@ -573,7 +580,8 @@ class DataStore {
     }
 
     onAction() {
-        this.properties.data = this._last_value;
+        // the value on the input when the event arrives, not the one of the previous step (B15)
+        this.properties.data = this.isInputConnected(0) ? this.getInputData(0) : this._last_value;
     }
 
     onSerialize(o) {
@@ -621,6 +629,9 @@ class EventSwitch {
     onExecute() {
         // var sel = this.getInputData("in");
         const sel = String(this.getInputOrProperty("in"));
+        // fires when the selection changes, not on every step (B14)
+        if (sel === this._last_selection) return;
+        this._last_selection = sel;
         let found = false;
         for(let iS in this.outputs){
             let outSlot = this.outputs[iS];
@@ -628,14 +639,12 @@ class EventSwitch {
                 this.selected = outSlot.name; //iS;
                 found = true;
                 this.triggerSlot(outSlot.name); //iS);
-                console.debug("SWITCH FoundAndTrigger", sel, outSlot.name);
                 break;
             }
         }
         if(!found){
             this.selected = 0;
             this.triggerSlot("default");
-            console.debug("SWITCH NotFound", sel);
         }
     }
 

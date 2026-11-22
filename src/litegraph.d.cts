@@ -425,6 +425,10 @@ export interface LiteGraphAPI extends CallbackHost {
     ExecutionEngine: typeof ExecutionEngine;
     registerExecutionModel(name: string, rules?: ExecutionModelRules): ExecutionModel;
     getExecutionModel(name: string): ExecutionModel | null;
+    /** declares the execution needs of registered types (in-class form: static def.execution) */
+    declareNodeExecution(types: string | string[], execution: NodeExecutionDeclaration): void;
+    /** the modes a node may use under its graph's model */
+    getValidNodeModes(node: LGraphNode): number[];
     listExecutionModels(): ExecutionModel[];
     properties_allow_input_binding: boolean;
     properties_allow_output_binding: boolean;
@@ -757,6 +761,10 @@ export declare class LGraph {
     autoLayout(options?: { engine?: string; nodes?: LGraphNode[]; direction?: 'LR' | 'RL' | 'TB' | 'BT'; spacing?: { node?: number; rank?: number } }): Promise<{ engine: string; moved: number }>;
     /** missing node types, one entry per type (deep: include subgraphs, default true) */
     getMissingNodes(options?: { deep?: boolean }): MissingNodeReport[];
+    /** diagnostics against the execution model and the node declarations (see LiteGraph.Node.ExecutionBadge) */
+    checkExecution(): ExecutionReport;
+    /** sets the declared default modes of the current model on every node (one undo step); returns how many changed */
+    applyExecutionModelModes(): number;
     /** replaces a node (one undo step); mapping: a mapping, a type name, or the registered mapping */
     replaceNode(node: LGraphNode, mapping?: NodeReplacementMapping | string): { node: LGraphNode; dropped: DroppedLink[] };
     /** replaces every matching node with a usable replacement (default: missing-type placeholders), one undo step per graph */
@@ -905,6 +913,8 @@ export declare class LGraphNode {
     getPath(): string;
     /** runtime execution state (not saved), set by runStep, reportProgress, setExecutionStatus or applyExecutionState */
     execution_state?: NodeExecutionState;
+    /** why the last changeMode was refused (it names LiteGraph.Execution.AllowAnyMode), or null */
+    mode_refusal?: string | null;
     /** a short glyph or a loaded image drawn before the title (else the definition's icon) */
     icon?: string | CanvasImageSource | null;
     /** reports progress (value of max) through the execution-state protocol */
@@ -1332,7 +1342,8 @@ export declare class LGraphGroup {
     resizeTo(items: Array<LGraphNode | LGraphGroup | Reroute>, padding?: number): boolean;
     fitToContents(padding?: number): boolean;
     /** sets the execution mode of every node inside; returns the nodes changed */
-    setNodesMode(mode: number): LGraphNode[];
+    /** nodes whose type refuses the mode keep theirs and are listed in the result's (non-enumerable) skipped */
+    setNodesMode(mode: number): LGraphNode[] & { readonly skipped: LGraphNode[] };
 }
 
 /** An event delivered by LGraphEventTarget. */
@@ -1390,6 +1401,8 @@ export interface LGraphEventMap {
     "event-dropped": { node: LGraphNode | null; path: string | null; reason: EventDropReason; setting?: string; message: string };
     /** setExecutionModel changed the document's model (root graph) */
     "execution-model-changed": { model: string };
+    /** execution diagnostics after the root graph loads (only when someone listens) */
+    "execution-check": { report: ExecutionReport; reason: 'load' | 'history' | 'rollback' };
     /** a subgraph definition changed by a commit; linked instances were refreshed (root graph) */
     "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
     /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
@@ -1546,6 +1559,8 @@ export declare class DragAndScale {
  * @param options { skip_rendering, autoresize }
  */
 export declare class LGraphCanvas {
+    /** a short notice over the canvas (execution refusals); logs without a DOM */
+    showExecutionNotice(message: string, ms?: number): HTMLElement | null;
     static node_colors: Record<
         string,
         {
@@ -2330,7 +2345,30 @@ export interface NodeDefinition {
     pack: Readonly<{ id: string; version: string; builtin: boolean }> | null;
     inputs: readonly Readonly<NodeSlotDefinition>[] | null;
     outputs: readonly Readonly<NodeSlotDefinition>[] | null;
+    /** execution needs from static def.execution (or LiteGraph.declareNodeExecution); null when undeclared */
+    execution: Readonly<NodeExecutionDeclaration> | null;
 }
+/** What a node type needs from the execution model (Wave 6). Undeclared types are valid everywhere and start ALWAYS. */
+export interface NodeExecutionDeclaration {
+    /** per model: false = not valid there; or its default mode and valid modes */
+    models?: Record<string, false | { default_mode?: number; modes?: readonly number[] }>;
+    /** modes that are valid in every model (NEVER is always allowed) */
+    modes?: readonly number[];
+    /** the mode new nodes get outside legacy */
+    default_mode?: number;
+    /** "immediate": its events are delivered now, with a refresh, in every model but legacy (loops, Sequence) */
+    emit?: 'immediate';
+    /** needs the step loop (Timer, Delay): never re-run by a pull */
+    ticks?: boolean;
+    /** safe to re-run: ON_REQUEST by default under "ancestors" */
+    pure?: boolean;
+    /** a loop: checkExecution reports it without a body */
+    loop?: boolean;
+    /** action inputs delivered immediately even under deferred models ("break") */
+    immediate_inputs?: readonly string[];
+}
+export interface ExecutionIssue { node: LGraphNode; path: string | null; code: 'invalid-model' | 'invalid-mode' | 'ticks-not-stepped' | 'on-request-emitter' | 'loop-without-body' | 'pure-always'; message: string }
+export interface ExecutionReport { model: string; issues: ExecutionIssue[] }
 
 /** A pack manifest: plain data, never code (see LiteGraph.packs). */
 export interface PackManifest {

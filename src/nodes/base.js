@@ -1328,4 +1328,7 @@ class GenericCompare {
 }
 LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
 
+// execution needs (Wave 6): pure readers run on request in the ancestors model
+LiteGraph.declareNodeExecution(["basic/array_length", "basic/array[]", "basic/table[][]", "basic/cast", "basic/CompareValues"], { pure: true });
+
 LiteGraph.packs.close("litegraph/basic");
