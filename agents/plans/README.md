@@ -23,6 +23,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
+| 2026-11-22 | [Events and execution](2026-11-22-events-execution.md): audit of the event mechanisms; execution models per document with `ancestors` as the default, node execution declarations, `legacy` compatibility (proposed Wave 6) | accepted |
 | 2026-11-21 | [Wave 5: repository and packaging](2026-11-21-wave5-repository-packaging.md): dependencies, exports, CI build freshness, docs, apps move | accepted; in progress |
 | 2026-11-20 | [Pre-release 0.18.0-dev.1](2026-11-20-pre-release-0.18.0-dev.1.md): wave audit, open items, release steps (tag only) | accepted; in progress |
 | 2026-11-20 | [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md): packs and missing nodes (4a), workspace state and execution (4b), links and view (4c), layout and palette (4d), catalog and boundaries (4e) | done |
