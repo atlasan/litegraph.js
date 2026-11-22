@@ -856,16 +856,9 @@ export class LiteGraphClass {
         this.packs?._onTypeRegistered(type);
         this.node_definitions[type] = this.describeNodeType(type, base_class);
 
-        this.processCallbackHandlers("onNodeTypeRegistered",{
-            def_cb: this.onNodeTypeRegistered
-        }, type, base_class);
-        this._emit("node-type-registered", { type, ctor: base_class, previous: prev ?? null });
-
+        CallbackHandler.fireHookThenEvent(this, "onNodeTypeRegistered", [type, base_class], this, "node-type-registered", { type, ctor: base_class, previous: prev ?? null });
         if (prev) {
-            this.processCallbackHandlers("onNodeTypeReplaced",{
-                def_cb: this.onNodeTypeReplaced
-            }, type, base_class, prev);
-            this._emit("node-type-replaced", { type, ctor: base_class, previous: prev });
+            CallbackHandler.fireHookThenEvent(this, "onNodeTypeReplaced", [type, base_class, prev], this, "node-type-replaced", { type, ctor: base_class, previous: prev });
         }
 
         // warnings

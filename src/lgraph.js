@@ -1,5 +1,5 @@
 import { LiteGraph } from "./litegraph.js";
-import { installHooks } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
@@ -213,10 +213,7 @@ export class LGraph {
             this.configure(o);
         }
         
-        LiteGraph.processCallbackHandlers("on_lgraph_construct",{
-            def_cb: LiteGraph.on_lgraph_construct
-        }, this);
-        LiteGraph._emit?.("graph-created", { graph: this });
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraph_construct", [this], LiteGraph, "graph-created", { graph: this });
     }
 
     /**

@@ -134,11 +134,12 @@ Array [
 
 exports[`onPropertyChanged / node-property-changed (property dialog) 1`] = `
 Array [
-  "graph event changed",
-  "graph event graph-changed",
   "node.onPropertyChanged handler +1",
   "node.onPropertyChanged onX",
   "node.onPropertyChanged handler -1",
+  "graph event node-property-changed",
+  "graph event changed",
+  "graph event graph-changed",
 ]
 `;
 
@@ -154,8 +155,6 @@ Array [
 
 exports[`onPropertyChanged vetoed / node-property-changed (property dialog) 1`] = `
 Array [
-  "graph event changed",
-  "graph event graph-changed",
   "node.onPropertyChanged handler +1",
   "node.onPropertyChanged onX",
   "node.onPropertyChanged handler -1",

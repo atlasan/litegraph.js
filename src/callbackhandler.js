@@ -148,6 +148,27 @@ export class CallbackHandler {
         return value;
     }
 
+    /**
+     * Fires a point that has both faces, in the one documented order: the hook chain (handlers by
+     * priority, the legacy `owner[name]` as default) and then the typed event. With `veto`, a hook
+     * result equal to it (plain or as `{return_value}`) skips the event.
+     * @param {object} owner the hook host
+     * @param {string} name the hook name; its default callback is `owner[name]`
+     * @param {any[]} args the hook arguments
+     * @param {{_emit?: Function}|null|undefined} emitter where the event goes: LiteGraph, a graph or a canvas
+     * @param {string} type the event type
+     * @param {object|(() => object|null)} detail the payload; a function is called after the hook, and null skips the event
+     * @param {{veto?: any, emit?: object}} [options] `emit` is passed on to `_emit` (`recorded`, `cancelable`)
+     * @returns {any} the hook result, as processCallbackHandlers returns it
+     */
+    static fireHookThenEvent(owner, name, args, emitter, type, detail, options) {
+        const result = owner.processCallbackHandlers(name, { def_cb: owner[name] }, ...args);
+        if (!emitter?._emit || (options && "veto" in options && CallbackHandler.is(result, options.veto))) return result;
+        const payload = typeof detail === "function" ? detail() : detail;
+        if (payload) emitter._emit(type, payload, options?.emit);
+        return result;
+    }
+
     /** The value a hook settled on: `return_value` of an object result, otherwise the result itself. */
     static valueOf(result) {
         return result !== null && typeof result === "object" ? result.return_value : result;

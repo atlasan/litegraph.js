@@ -368,3 +368,45 @@ describe('canvas fixes', () => {
         expect(typeof node.onHook).toBe('function');
     });
 });
+
+describe('fireHookThenEvent: hook chain, then the typed event', () => {
+    test('order, the returned result, and a veto that skips the event', () => {
+        const graph = new LGraph();
+        const seq = [];
+        graph.onHook('onThing', () => { seq.push('hi'); }, { priority: 1 });
+        graph.onHook('onThing', () => { seq.push('lo'); }, { priority: -1 });
+        graph.onThing = (value) => { seq.push(['onX', value]); return value === 'no' ? false : undefined; };
+        graph.events.on('thing', (event) => seq.push(['event', event.detail.value]));
+        const fire = (value) => CallbackHandler.fireHookThenEvent(graph, 'onThing', [value], graph, 'thing', () => ({ value }), { veto: false });
+        expect(fire('yes')).toBeNull(); // as processCallbackHandlers: null when nothing returned a value
+        expect(fire('no')).toBe(false);
+        expect(seq).toEqual(['hi', ['onX', 'yes'], 'lo', ['event', 'yes'], 'hi', ['onX', 'no'], 'lo']);
+    });
+
+    test('a {return_value: false} veto counts; without veto the event always fires; a null detail skips it', () => {
+        const graph = new LGraph();
+        const seen = [];
+        graph.events.on('thing', (event) => seen.push(event.detail));
+        graph.onHook('onThing', () => ({ return_value: false }));
+        CallbackHandler.fireHookThenEvent(graph, 'onThing', [], graph, 'thing', { a: 1 }, { veto: false });
+        CallbackHandler.fireHookThenEvent(graph, 'onThing', [], graph, 'thing', { a: 2 });
+        CallbackHandler.fireHookThenEvent(graph, 'onThing', [], graph, 'thing', () => null);
+        CallbackHandler.fireHookThenEvent(graph, 'onThing', [], null, 'thing', { a: 3 }); // no emitter
+        expect(seen).toEqual([{ a: 2 }]);
+    });
+
+    test('a vetoed setProperty is reverted and fires no event (the property dialog: see hook-order)', () => {
+        const graph = new LGraph();
+        const node = LiteGraph.createNode('hooks/box');
+        node.properties = { k: 1 };
+        graph.add(node);
+        const events = [];
+        graph.events.on('node-property-changed', (event) => events.push(event.detail.value));
+        graph.events.on('changed', () => events.push('changed'));
+        node.onPropertyChanged = (name, value) => (value === 9 ? false : undefined);
+        node.setProperty('k', 9);
+        node.setProperty('k', 2);
+        expect(node.properties.k).toBe(2);
+        expect(events).toEqual([2]);
+    });
+});

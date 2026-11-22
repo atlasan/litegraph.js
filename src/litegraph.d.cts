@@ -1457,7 +1457,7 @@ export interface LGraphCanvasEventMap {
     };
     "subgraph-opened": { graph: LGraph; parent: LGraph | null };
     "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
-    "selection-changed": { nodes: LGraphNode[]; items?: Array<LGraphNode | LGraphGroup | Reroute> };
+    "selection-changed": { nodes: LGraphNode[]; items: Array<LGraphNode | LGraphGroup | Reroute> };
     disposed: { canvas: LGraphCanvas };
     /** the view moved or zoomed (checked once per drawn frame) */
     "viewport-changed": { offset: [number, number]; scale: number; visible_area: number[] };
@@ -2141,6 +2141,13 @@ export declare class CallbackHandler {
     static is(result: any, value: any): boolean;
     /** true for true, or an object result with a truthy return_value */
     static handled(result: any): boolean;
+    /**
+     * Fires a point that has both faces: the hook chain (the legacy owner[name] as default), then the
+     * typed event on emitter. With veto, a hook result equal to it skips the event. A detail function
+     * is called after the hook; null skips the event. Returns the hook result.
+     */
+    static fireHookThenEvent(owner: CallbackHost, name: string, args: any[], emitter: { _emit?(type: string, detail: any, options?: any): any } | null | undefined,
+        type: string, detail: object | (() => object | null), options?: { veto?: any; emit?: { recorded?: boolean; cancelable?: boolean } }): any;
 }
 export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
     /** per hook name */

@@ -20,6 +20,15 @@ import { LGraphEventTarget } from "./eventtarget.js";
  * @param {LGraph} graph [optional]
  * @param {Object} options [optional] { skip_rendering, autoresize, viewport }
  */
+/**
+ * onSelectionChange (with `selected_nodes`, as before), then `selection-changed {nodes, items}`.
+ * A function, not a method: the selection methods also run on canvas-like objects (`deselectNode.call(obj, node)`).
+ */
+function selectionChanged(canvas) {
+    CallbackHandler.fireHookThenEvent(canvas, "onSelectionChange", [canvas.selected_nodes], canvas, "selection-changed",
+        () => ({ nodes: Object.values(canvas.selected_nodes), items: canvas.selectedItems }));
+}
+
 export class LGraphCanvas {
     constructor(canvas, graph, options) {
         options ??= {
@@ -169,10 +178,7 @@ export class LGraphCanvas {
             this.startRendering();
         }
 
-        LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct",{
-            def_cb: LiteGraph.on_lgraphcanvas_construct
-        }, this);
-        LiteGraph._emit?.("canvas-created", { canvas: this });
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraphcanvas_construct", [this], LiteGraph, "canvas-created", { canvas: this });
         // extensions registered through LiteGraph.registerExtension see every canvas
         LiteGraph.extensions?.attachCanvas(this);
     }
@@ -2738,10 +2744,7 @@ export class LGraphCanvas {
                 });
             });
         });
-        this.processCallbackHandlers("onSelectionChange",{
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes) });
+        selectionChanged(this);
         this.setDirty(true);
     }
 
@@ -2761,10 +2764,7 @@ export class LGraphCanvas {
         this.processCallbackHandlers("onNodeDeselected",{
             def_cb: this.onNodeDeselected
         }, node);
-        this.processCallbackHandlers("onSelectionChange",{
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes) });
+        selectionChanged(this);
 
         // Remove highlighted
         node.inputs?.forEach((input) => {
@@ -2804,10 +2804,7 @@ export class LGraphCanvas {
         for (const item of this._selected_items ?? []) item.selected = false;
         this._selected_items?.clear();
 
-        this.processCallbackHandlers("onSelectionChange",{
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes) });
+        selectionChanged(this);
         this.setDirty(true);
     }
 
@@ -2852,8 +2849,7 @@ export class LGraphCanvas {
         if (!this._selected_items.has(item)) {
             this._selected_items.add(item);
             item.selected = true;
-            this.processCallbackHandlers("onSelectionChange", { def_cb: this.onSelectionChange }, this.selected_nodes);
-            this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes), items: this.selectedItems });
+            selectionChanged(this);
         }
         this.setDirty(true, true);
     }
@@ -2867,8 +2863,7 @@ export class LGraphCanvas {
         }
         if (this._selected_items.delete(item)) {
             item.selected = false;
-            this.processCallbackHandlers("onSelectionChange", { def_cb: this.onSelectionChange }, this.selected_nodes);
-            this._emit?.("selection-changed", { nodes: Object.values(this.selected_nodes), items: this.selectedItems });
+            selectionChanged(this);
             this.setDirty(true, true);
         }
     }
@@ -8635,15 +8630,16 @@ export class LGraphCanvas {
             }
             const prevValue = node.properties[property];
             node.properties[property] = value;
-            node.graph?.onGraphChanged({action: "propertyChanged", doSave: true});
-            
-            // Call onPropertyChanged and block the change if needed
-            let r = node.processCallbackHandlers("onPropertyChanged",{
-                def_cb: node.onPropertyChanged
-            }, property, value, prevValue);
+
+            // as setProperty: onPropertyChanged returning false vetoes (reverted, no event, no history entry)
+            const r = CallbackHandler.fireHookThenEvent(node, "onPropertyChanged", [property, value, prevValue], node.graph, "node-property-changed",
+                () => node.properties[property] !== prevValue ? { node, name: property, value: node.properties[property], previous: prevValue } : null,
+                { veto: false });
             if(CallbackHandler.is(r, false)){
                 node.properties[property] = prevValue;
                 LiteGraph.log_debug("lgraphcanvas","showEditPropertyValue","setValue","prevent property set by cbHandler",property,value,prevValue,r);
+            } else {
+                node.graph?.onGraphChanged({action: "propertyChanged", doSave: true});
             }
             
             if(options.onclose)

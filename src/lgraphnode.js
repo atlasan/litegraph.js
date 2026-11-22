@@ -493,17 +493,13 @@ export class LGraphNode {
         const prevValue = this.properties[name];
         this.properties[name] = value;
 
-        // Call onPropertyChanged and revert the change if needed
-        let r = this.processCallbackHandlers("onPropertyChanged",{
-            def_cb: this.onPropertyChanged
-        }, name, value, prevValue);
+        // onPropertyChanged returning false vetoes: the value is reverted and no event fires
+        const r = CallbackHandler.fireHookThenEvent(this, "onPropertyChanged", [name, value, prevValue], this.graph, "node-property-changed",
+            () => this.properties[name] !== prevValue ? { node: this, name, value: this.properties[name], previous: prevValue } : null,
+            { veto: false });
         if(CallbackHandler.is(r, false)){
             this.properties[name] = prevValue;
             LiteGraph.log_debug("lgraphnode","setProperty","prevent property set by cbHandler",name,value,prevValue,r);
-        }
-
-        if (this.properties[name] !== prevValue) {
-            this.graph?._emit?.("node-property-changed", { node: this, name, value: this.properties[name], previous: prevValue });
         }
 
         // Update the widget value associated with the property name
