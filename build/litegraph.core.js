@@ -211,6 +211,7 @@ export class LiteGraphClass {
     throw_errors = true;
     allow_scripts = false; // nodes should be check this value before executing unsafe code :: does not prevent anything in the main library, implement in nodes :: if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits
     use_deferred_actions = true; // executes actions during the graph execution flow
+    _dispatch_depth = 0; // runtime: nesting of runStep and event entry points (node-error reporting)
     registered_node_types = {}; // nodetypes by string
     node_types_by_file_extension = {}; // used for dropping files in the canvas
     Nodes = {}; // node types by classname
@@ -300,7 +301,6 @@ export class LiteGraphClass {
     ensureNodeSingleAction = false; // OLD this will prevent nodes to be executed more than once for action call!
     preventAncestorRecalculation = false; // OLD(?) when calculating the ancestors, set a flag to prevent recalculate the subtree
 
-    allowMultiOutputForEvents = false; // being events, it is strongly reccomended to use them sequentually, one by one
 
     reprocess_slot_while_node_configure = false; // reprocess inputs and output node slots comparing by name, will fix index changes, works on dynamics
 
@@ -5186,7 +5186,8 @@ export class LGraph {
             this.processCallbackHandlers("onPlayEvent", {
                 def_cb: this.onPlayEvent
             });
-            this.sendEventToAllNodes("onStart");
+            // every node that can run gets onStart, not only ALWAYS nodes (B10)
+            this.sendEventToAllNodes("onStart", undefined, [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST]);
         } catch (error) {
             try {
                 this.stop();
@@ -5199,6 +5200,7 @@ export class LGraph {
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
+        this._shareTiming();
         if (!this._subgraph_node) this.reportExecutionState(null, "reset");
 
         const onAnimationFrame = () => {
@@ -5228,6 +5230,37 @@ export class LGraph {
                     def_cb: this.onAfterStep
                 });
             }, interval);
+        }
+    }
+
+    /**
+     * Reports a node error: `node-error {error, node, path}` on this graph and an `error` execution
+     * state on the failing node. The innermost failing node travels with the error (`error.node`,
+     * set by doExecute and actionDo), so outer graphs report it with its path. Used by `runStep`
+     * and by event entry points outside a step.
+     */
+    _reportNodeError(error) {
+        const failing = typeof error?.node?.getPath === "function" ? error.node : null;
+        this._emit("node-error", {
+            error,
+            node: failing,
+            path: failing?.getPath() ?? null
+        });
+        if (failing?.graph && failing.execution_state?.status !== "error") {
+            failing.graph.reportExecutionState(failing, "error", {
+                message: error?.message ?? String(error)
+            });
+        }
+    }
+
+    /** gives the inner graphs of subgraph and function nodes this graph's clock origin (B13) */
+    _shareTiming() {
+        for (const node of this._nodes) {
+            const inner = node.subgraph;
+            if (!inner || inner === this) continue;
+            inner.starttime = this.starttime;
+            inner.last_update_time = this.last_update_time;
+            inner._shareTiming();
         }
     }
 
@@ -5342,6 +5375,12 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        // an inner graph keeps its parent's clock origin (B13)
+        const parent = this._subgraph_node?.graph;
+        if (parent && this.starttime !== parent.starttime) {
+            this.starttime = parent.starttime;
+            this.last_update_time = Math.max(this.last_update_time, parent.last_update_time);
+        }
         const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
         const resetExecutionState = () => {
@@ -5350,6 +5389,7 @@ export class LGraph {
             this.node_ancestorsCalculated = [];
             this.nodes_executedAction = [];
         };
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         try {
             for (let step = 0; step < num; step++) {
                 // Changes made during one cycle take effect in the following cycle.
@@ -5383,18 +5423,7 @@ export class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
-            // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
-            const failing = typeof error?.node?.getPath === "function" ? error.node : null;
-            this._emit("node-error", {
-                error,
-                node: failing,
-                path: failing?.getPath() ?? null
-            });
-            if (failing?.graph && failing.execution_state?.status !== "error") {
-                failing.graph.reportExecutionState(failing, "error", {
-                    message: error?.message ?? String(error)
-                });
-            }
+            this._reportNodeError(error);
             try {
                 this.stop();
             } catch (cleanupError) {
@@ -5403,6 +5432,7 @@ export class LGraph {
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
         } finally {
+            LiteGraph._dispatch_depth--;
             const now = LiteGraph.getTime();
             this.execution_time = 0.001 * Math.max(1, now - start);
             this.globaltime += this.execution_time;
@@ -5746,7 +5776,8 @@ export class LGraph {
         const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
         const errors = [];
         for (const node of nodes) {
-            if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
+            if (node.graph !== this) continue;
+            if (Array.isArray(mode) ? !mode.includes(node.mode) : (mode != null && node.mode !== mode)) continue;
             try {
                 if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
                     try {
@@ -19803,10 +19834,7 @@ export class LGraphNode {
             return link.data;
         }
 
-        // TODO Consider moving this out of here and use a single ancestorsCalculation (for each event?)
-        // CHECK THIS : used in logic/while , is ATM necessary? does this solve reading self value while executing loops ?
         if (refresh_tree) {
-            LiteGraph.log_warn("CHECK THIS", "lgraphnode", "getInputData", "Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             LiteGraph.log_debug("lgraphnode", "getInputData", "Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             let uIdRand = this.id + "_getInputData_forced_" + LiteGraph.uuidv4();
             let optsAncestors = {
@@ -20154,6 +20182,7 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
@@ -20195,6 +20224,35 @@ export class LGraphNode {
         }
     }
     /**
+     * Runs an event entry point (an action, a trigger or an execution started outside a step).
+     * An error that leaves the outermost entry is reported on the root graph as `node-error`, with
+     * an `error` execution state on the failing node, the same way `runStep` reports it (B9); it is
+     * then rethrown to the caller, as before.
+     */
+    _dispatchEvent(run) {
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
+        try {
+            return run();
+        } catch (error) {
+            if (error && typeof error === "object" && !error.node) {
+                try {
+                    error.node = this;
+                } catch {
+                    /* a frozen error keeps its fields */ }
+            }
+            const root = this.graph?.rootGraph ?? this.graph;
+            try {
+                root?._reportNodeError(error);
+            } catch (reportError) {
+                LiteGraph.log_error("lgraphnode", "event error report failed", reportError);
+            }
+            throw error;
+        } finally {
+            LiteGraph._dispatch_depth--;
+        }
+    }
+
+    /**
      * retrocompatibility :: old doExecute
      * @method doExecute
      * @param {*} param
@@ -20212,6 +20270,7 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.actionDo(action, param, options, action_slot));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
@@ -20235,6 +20294,12 @@ export class LGraphNode {
             }, param, options);
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
+            if (error && typeof error === "object" && !error.node) {
+                try {
+                    error.node = this;
+                } catch {
+                    /* a frozen error keeps its fields */ }
+            }
             throw error;
         } finally {
             graph.nodes_actioning[this.id] = previousAction || false;
@@ -20282,6 +20347,7 @@ export class LGraphNode {
         if (!this.outputs) {
             return;
         }
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));
         var output = null;
         if (slot === null) {
             LiteGraph.log_error("lgraphnode", "triggerSlot", "wrong slot", slot);

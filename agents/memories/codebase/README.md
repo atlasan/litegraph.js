@@ -96,7 +96,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Other modes:**
   - **ON_EVENT:** receives actions only.
   - **ON_TRIGGER:** executes when `triggerSlot` reaches it.
-  - **ON_REQUEST (4):** runs only through `refreshAncestors`, triggered by `getInputData(slot, false, true)` or the `refreshAncestorsOn*` flags.
+  - **ON_REQUEST (4):** runs only through `refreshAncestors`, triggered by `getInputData(slot, true, true)` (a refresh needs `force_update`) or the `refreshAncestorsOn*` flags.
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off.
 - **Optional guards** (all off by default): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`.
 - **Two hook systems coexist:** the CallbackHandler (about 100 hook names) and typed events. Merging them into one pipe is planned for Wave 2.

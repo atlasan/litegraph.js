@@ -310,21 +310,17 @@ class logicForEach {
     onExecute(param) {
         if (!this.started) return;
         var ar = this.getInputData(0);
-        var num = this.getInputData(1);
         if(ar === null || !ar || typeof(ar.forEach)!="function"){
             return;
         }
-        // for (var k=iI;k<iI+num;k++) {
-        ar.forEach((el,k)=>{
-            console.debug?.("for cycle "+k);
+        // a plain loop, so that break stops it (B5); slot 1 is the "do" action, not data
+        const elements = Array.from(ar);
+        for (let k = 0; k < elements.length; k++) {
             this.setOutputData(1, k);
-            this.setOutputData(2, el);
+            this.setOutputData(2, elements[k]);
             this.triggerSlot(0, param);
-            if (this.stopped) {
-                console.debug?.("foreach cycle stopped on index "+k);
-                return;
-            }
-        })
+            if (this.stopped) break;
+        }
         this.started = false;
         this.stopped = true;
     }
