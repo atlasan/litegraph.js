@@ -7,7 +7,8 @@ import { Subgraph, GraphInput, GraphOutput, NodeFunction } from "./subgraph.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
+import { LGraphEventTarget } from "./eventtarget.js";
 import { getGlobalObject, setGlobalVariable, getGlobalVariable, isBrowser, isNode, isBun, getRuntime } from './global.js';
 import { LibraryManager } from "./librarymanager.js";
 import { CommandRegistry } from "./commands.js";
@@ -348,26 +349,18 @@ export class LiteGraphClass {
         }
     }
 
-    callbackhandler_setup(){
-        if(this.cb_handler) return;
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
+    /**
+     * Typed library events: node-type-registered, node-type-replaced, node-type-unregistered,
+     * graph-created, canvas-created ("*" receives all). See LGraphEventTarget.
+     */
+    get events() {
+        return this._events ??= new LGraphEventTarget(this, (error, event) =>
+            this.log_error("litegraph", "event listener failed", event.type, error));
     }
 
-    registerCallbackHandler(){
-        this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
+    /** dispatch only when someone listens (no allocation otherwise) */
+    _emit(type, detail) {
+        return this._events?.has(type) ? this._events.dispatch(type, detail) : null;
     }
 
     /**
@@ -865,11 +858,13 @@ export class LiteGraphClass {
         this.processCallbackHandlers("onNodeTypeRegistered",{
             def_cb: this.onNodeTypeRegistered
         }, type, base_class);
+        this._emit("node-type-registered", { type, ctor: base_class, previous: prev ?? null });
 
         if (prev) {
             this.processCallbackHandlers("onNodeTypeReplaced",{
                 def_cb: this.onNodeTypeReplaced
             }, type, base_class, prev);
+            this._emit("node-type-replaced", { type, ctor: base_class, previous: prev });
         }
 
         // warnings
@@ -919,6 +914,7 @@ export class LiteGraphClass {
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
         }
+        this._emit("node-type-unregistered", { type: base_class.type, ctor: base_class });
     }
 
     /**
@@ -1729,6 +1725,9 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
             window.setTimeout(callback, 1000 / 60);
         });
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LiteGraphClass);
 
 // if(typeof(root) == "undefined" || !root){
 //     var root = getGlobalObject();

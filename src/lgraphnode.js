@@ -1,7 +1,7 @@
 // src/lgraphnode.js
 
 import { LiteGraph } from "./litegraph.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
 import { ExecutionEngine } from "./execution.js";
 import { getRuntime, isBrowser, isNode } from "./global.js";
 
@@ -113,7 +113,6 @@ export class LGraphNode {
             LGraphNode._default_sizes.add(this.size);
         }
         this.size_basic ??= this.size;
-        this.callbackhandler_setup();
     }
 
     validateExecutionEnvironment() {
@@ -180,23 +179,6 @@ export class LGraphNode {
 
     loadRequiredLibraries() {
         return this.loadLibraries(this.requiredLibraries || []);
-    }
-
-    callbackhandler_setup() {
-        if (!this.cb_handler) this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -516,7 +498,7 @@ export class LGraphNode {
         let r = this.processCallbackHandlers("onPropertyChanged",{
             def_cb: this.onPropertyChanged
         }, name, value, prevValue);
-        if(r===false || (r!==null && (typeof(r)=="object" && r.return_value===false))){
+        if(CallbackHandler.is(r, false)){
             this.properties[name] = prevValue;
             LiteGraph.log_debug("lgraphnode","setProperty","prevent property set by cbHandler",name,value,prevValue,r);
         }
@@ -2547,7 +2529,7 @@ export class LGraphNode {
         r = target_node.processCallbackHandlers("onBeforeConnectInput",{
             def_cb: target_node.onBeforeConnectInput
         }, target_slot);
-        var redirect = r!==null && typeof(r)=="object" ? r.return_value : r;
+        var redirect = CallbackHandler.valueOf(r);
         if (redirect === false) {
             LiteGraph.log_debug("lgraphnode","connect", "Node onBeforeConnectInput refused the connection",target_slot);
             return null;
@@ -2566,7 +2548,7 @@ export class LGraphNode {
         r = this.processCallbackHandlers("onConnectOutput",{
             def_cb: this.onConnectOutput
         }, slot, input.type, input, target_node, target_slot);
-        if(r!==null && (r===false || (typeof(r)=="object" && r.return_value===false))){
+        if(CallbackHandler.is(r, false)){
             LiteGraph.log_debug("lgraphnode","connect", "Node onConnectOutput stopping connection",r.return_value);
             return null;
         }
@@ -2586,7 +2568,7 @@ export class LGraphNode {
         r = target_node.processCallbackHandlers("onConnectInput",{
             def_cb: target_node.onConnectInput
         }, target_slot, output.type, output, this, slot);
-        if(r!==null && (r===false || (typeof(r)=="object" && r.return_value===false))){
+        if(CallbackHandler.is(r, false)){
             LiteGraph.log_debug("lgraphnode","connect", "targetNode onConnectInput stopping connection",r.return_value);
             return null;
         }
@@ -3383,3 +3365,6 @@ export class LGraphNode {
         };
     }
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphNode);

@@ -1,5 +1,5 @@
 import { LiteGraph } from "./litegraph.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { installHooks } from "./callbackhandler.js";
 
 export class LGraphGroup {
 
@@ -21,24 +21,6 @@ export class LGraphGroup {
         this._nodes = [];
         this._groups = [];
         this.graph = null;
-        this.callbackhandler_setup();
-    }
-
-    callbackhandler_setup(){
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -242,3 +224,6 @@ export class LGraphGroup {
     isPointInside = LiteGraph.LGraphNode.prototype.isPointInside;
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphGroup);

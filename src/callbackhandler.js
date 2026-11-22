@@ -1,260 +1,195 @@
 import { LiteGraph } from "./litegraph.js";
+import { ListenerList } from "./eventtarget.js";
 
 /**
- * WIP
- * intended to replace direct (single) assignment of callbacks [ event entrypoint ]
+ * Prioritised, vetoable hooks around the classic `onX` callbacks.
+ *
+ * Assigning `node.onExecute = fn` (or a prototype method) keeps working: it is the *default*
+ * callback of the chain. Registered handlers run by priority (highest first); the default runs
+ * after those with priority >= 0 and before the negative ones.
+ *
+ *   const off = node.onHook("onExecute", (info, param) => ({ return_value: 42, result_priority: 1 }), { priority: 1 });
+ *   off(); // or node.unregisterCallbackHandler("onExecute", id) with the id registerCallbackHandler returns
+ *
+ * A handler result may be a plain value or `{return_value, result_priority, prevent_default, stop_replication}`.
+ * Hooks are synchronous (a Promise result is not awaited). A handler that throws does not stop
+ * the others: the chain completes and the first error is then rethrown to the caller.
+ * Listener storage, ordering and copy-on-write come from ListenerList (shared with typed events).
  */
 export class CallbackHandler {
 
     debug = false;
 
-    constructor(ref){
+    constructor(ref) {
+        /** @type {Record<string, ListenerList>} per hook name: `{handlers, last_id}` */
         this.callbacks_handlers = {};
         this.ob_ref = ref;
-        if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("CallbackHandler Initialize callbacks",ref);
     }
 
     /**
-     * subscribe callbacks for events
-     * @method registerCallbackHandler
-     * @param {string} name event name to register to
-     * @param {function} callback function to call when processing the event name
-     * @param {object} opts options for registerCallBackHandler
-     * @param {number} opts.priority default handler as 0, lesser value executes after, greater value will be execute before but their value eventually overridden in case if not stopping the chain
-     * @param {boolean} opts.is_default original library handlers would have true, while custom registered has choice to be eventually treathed as such
-     * @returns {number} the id of the handler for the specified name
+     * Subscribes a handler to a hook.
+     * @param {string} name hook name, e.g. "onExecute"
+     * @param {Function} callback called as `callback.call(owner, info, ...args)`
+     * @param {object} [opts]
+     * @param {number} [opts.priority=0] higher runs first; the default callback runs between >= 0 and < 0
+     * @param {boolean} [opts.is_default=false] skipped when another handler prevents the default
+     * @param {boolean} [opts.call_once=false] unregister after the first call (alias: `once`)
+     * @param {AbortSignal} [opts.signal] unregister on abort
+     * @returns {number|false} the handler id for this name, false for an invalid callback
      */
-    registerCallbackHandler = function(name, callback, opts){
-        if(!opts || typeof(opts)!=="object") opts = {};
-        const def_opts = {priority: 0, is_default: false, call_once: false};
-        opts = Object.assign(def_opts, opts);
-        
-        if(typeof(callback)!=="function"){
-            if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_error("registerCallbackHandler","Invalid callback");
+    registerCallbackHandler(name, callback, opts) {
+        if (typeof callback !== "function") {
+            LiteGraph?.log_warn?.("registerCallbackHandler", "invalid callback for", name);
             return false;
         }
+        const data = { priority: 0, is_default: false, call_once: false, ...(opts && typeof opts === "object" ? opts : {}) };
+        if (data.once) data.call_once = true;
+        return (this.callbacks_handlers[name] ??= new ListenerList()).add(callback, data);
+    }
 
-        if(typeof(this.callbacks_handlers[name]) === "undefined"){
-            this.callbacks_handlers[name] = {last_id: 0, handlers:[]};
-        }
-        const h_id = this.callbacks_handlers[name].last_id++;
+    /** @returns {boolean} true if the handler was registered */
+    unregisterCallbackHandler(name, h_id) {
+        return this.callbacks_handlers[name]?.remove(h_id) ?? false;
+    }
 
-        if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("registerCallbackHandler","new callback handler",name,h_id);
-
-        this.callbacks_handlers[name].handlers.push({
-            id: h_id,
-            priority: opts.priority,
-            callback: callback,
-            data: opts, // enqueue passed options, can store info in here
-        });
-
-        // sort descending
-        this.callbacks_handlers[name].handlers.sort((a, b) => b.priority - a.priority);
-
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("registerCallbackHandler","sorted",this.callbacks_handlers[name]);
-
-        return h_id; // return the cbhandle id
-    };
-    /**
-     * 
-     * @param {string} name event name to unregister from
-     * @param {number} h_id the handler pointer, need to be saved when registering the callback
-     * @returns {boolean} true if found
-     */
-    unregisterCallbackHandler(name, h_id){
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("unregisterCallbackHandler","Checking in handlers",this.callbacks_handlers,name,h_id);
-        if(typeof(this.callbacks_handlers[name]) !== "undefined"){
-            const nHandlers = this.callbacks_handlers[name].handlers.length;
-            this.callbacks_handlers[name].handlers = this.callbacks_handlers[name].handlers.filter(function( obj ) {
-                // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("unregisterCallbackHandler","Checking handle",obj.id,h_id);
-                if(obj.id === h_id){
-                    LiteGraph.log_info("unregisterCallbackHandler",name,h_id);
-                }
-                return obj.id !== h_id;
-            });
-            if(this.callbacks_handlers[name].handlers.length < nHandlers){
-                return true;
-            }
-        }
-        LiteGraph.log_warn("unregisterCallbackHandler","no handlers for",name,h_id);
-        return false;
+    /** true when a handler is registered for name */
+    hasCallbackHandlers(name) {
+        return !!this.callbacks_handlers[name]?.size;
     }
 
     /**
-     * Executes the callbacks and cache their result
-     * execution if from higher priority down
-     * handler data is passed as first argument, than all the additional pars passed to this
-     * @param {string} name the event name for which execute the callbacks registered to
-     * @param {object} opts specify the option here
-     * @param {object} opts.def_cb can specify a callback here to be treated as default callback, executed after the >= 0, eventually prevented
-     * @returns {null|boolean|object} get back default result, and along the chain
+     * Runs the handlers registered for name and the default callback.
+     * @param {string} name
+     * @param {{def_cb?: Function|false, on_result?: (result: any) => void}} [opts] def_cb is the classic `onX`
+     * @param {...any} args passed after `info` to handlers, and alone to the default callback
+     * @returns {any} null when nothing returned a value; otherwise the winning plain value or result object
      */
-    processCallbackHandlers(name,opts/*, .. arguments */){
-        if(!opts || typeof(opts)!=="object") opts = {};
-        const def_opts = {
-            // WIP :: think try and implement options
-            // process: "all", return: "first_result", skip_null_return: true, append_last_return: false
-            // min_piority: false, max_priority: false
-            def_cb: false // the [default] callback : in LG this is the previous(current) function called when an event is executed, can be undefined or null
+    processCallbackHandlers(name, opts, ...args) {
+        return CallbackHandler.run(this.ob_ref, this, name, opts, args);
+    }
+
+    /**
+     * The chain behind processCallbackHandlers (also used directly by hook hosts, see installHooks).
+     * With no registered handler it only calls the default callback.
+     */
+    static run(owner, handler, name, opts, args) {
+        const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
+        const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
+        if (!handlers?.length) {
+            if (!def_cb) return null;
+            const ret = def_cb.apply(owner, args);
+            opts.on_result?.(ret);
+            return ret ?? null;
+        }
+
+        const results = [];
+        let value = null;
+        let valuePriority = 0;
+        let prevented = false;
+        let stopped = false;
+        let defaultDone = false;
+        let failure = null;
+
+        // a result replaces the kept one when its result_priority (plain values: 0) is not lower
+        const call = (fn, info) => {
+            let ret;
+            try {
+                ret = info ? fn.call(owner, info, ...args) : fn.apply(owner, args);
+            } catch (error) {
+                if (failure) LiteGraph?.log_error?.("hook", name, "handler failed", error);
+                else failure = { error };
+                return;
+            }
+            results.push(ret);
+            opts?.on_result?.(ret);
+            if (ret !== null && typeof ret === "object") {
+                if (ret.prevent_default) prevented = true;
+                const priority = typeof ret.result_priority === "number" && !isNaN(ret.result_priority) ? ret.result_priority : 0;
+                if (value === null || priority >= valuePriority) {
+                    value = ret;
+                    valuePriority = priority;
+                }
+                if (ret.stop_replication) stopped = true;
+            } else if (ret !== null && ret !== undefined && (value === null || valuePriority <= 0)) {
+                value = ret;
+                valuePriority = 0;
+            }
         };
-        opts = Object.assign(def_opts, opts);
-        var cbHandle = this;
+        const runDefault = () => {
+            defaultDone = true;
+            if (def_cb && !prevented) call(def_cb, null);
+        };
 
-        if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("**processCallbackHandlers**",...arguments);
-
-        // ensure callback name is present on this
-        if(typeof(this.callbacks_handlers[name]) == "undefined"){
-            this.callbacks_handlers[name] = {last_id: 0, handlers:[]};
-        }
-        
-        var aArgs = ([].slice.call(arguments)).slice(2);
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("Cleaned arguments (slice 2)",aArgs,"original",arguments);
-
-        // previous implementation of converting arguments
-        // using shorter ([].slice.call(arguments)).slice(2)
-        // can clean when checked works fine
-        // function clean_args(args) {
-        //     let aRet = [];
-        //     for(let iA=2; iA<args.length; iA++) {
-        //         // if(typeof(args[iA])!=="undefined")
-        //         aRet.push(args[iA]);
-        //     }
-        //     return aRet;
-        // }
-        // var aArgs = clean_args(arguments);
-
-        var stepRet = null;         // temp step specific result 
-        var cbRet = null;           // progressive final result
-        var aResChain = [];         // progressive results chain
-        var oCbInfo = {};           // info passed to the callback
-        var cbResPriority = 0;      // incremental result priority
-        var defCbChecked = false;   // flag activated when executed the [default] callback
-        var preventDefCb = false;   // if to prevent the [default] callback execution (set eventually by some callback result)
-        var breakCycle = false;     // if to stop callback execution (set eventually by some callback result)
-
-        var executeDefaultCb = function(){
-            if(!preventDefCb && typeof(opts.def_cb)=="function"){
-                // execute default callback
-                if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_verbose("Calling DEFAULT w Args",...aArgs);
-                // stepRet = opts.def_cb(...aArgs); // OLD, not working because of bas THIS 
-                // call method on ref object (LiteGraph, LGraphNode, LGraphCanvas, ...) in othe method `this` will than correctly set
-                stepRet = opts.def_cb.call(cbHandle.ob_ref, ...aArgs); // could pass more data
-                if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","default callback executed",stepRet);
-                checkStepRet();
-            }else{
-                if(typeof(opts.def_cb)=="function"){
-                    if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","preventing default passed",opts.def_cb);
-                }else{
-                    // not passed
-                }
+        for (const entry of handlers) {
+            if (prevented && entry.data.is_default) continue;
+            if (entry.priority < 0 && !defaultDone) {
+                runDefault();
+                if (stopped) break;
             }
-            defCbChecked = true;
+            // unregistered before the call, so a re-entrant dispatch cannot run it again
+            if (entry.data.call_once) handler.unregisterCallbackHandler(name, entry.id);
+            call(entry.callback, { name, id: entry.id, current_return_value: value, data: entry.data, results_chain: results });
+            if (stopped) break;
         }
-        // results should be structured a object (to try to return a final value or change chain execution behavior)
-        /**
-         * @prop {*} return_value assign the return ( could be overriden )
-         * @prop {number} result_priority assign proper values to allow handlers with higher priority to have not their return_value overridden 
-         * @prop {boolean} prevent_default stop default execution ( force only when really needed )
-         * @prop {boolean} stop_replication stop the execution chain
-         */
-        var buildRetObj = function(){
-            // TODO: implement object return construction :: THAN replace all result checking in the libs to easier object ensured checks
-        }
-        /**
-         * called for each callback to push and merge results
-         * void
-         */
-        // a result replaces the current one only when its result_priority (default 0) is not lower
-        // than the priority of the result currently held
-        var acceptResult = function(value, priority){
-            if(typeof(priority)!=="number" || isNaN(priority)) priority = 0;
-            if(cbRet === null || priority >= cbResPriority){
-                cbRet = value;
-                cbResPriority = priority;
-            }
-        }
-        var checkStepRet = function(){
-            aResChain.push(stepRet); // cache result
-            opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
-            // check result for structured object
-            if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","stepRet check",stepRet);
-            if(stepRet !== null && typeof(stepRet)=="object"){
-                if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","result is object",stepRet);
-                if(typeof(stepRet.prevent_default)!=="undefined" && stepRet.prevent_default){
-                    preventDefCb = true;
-                }
-                if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","object result",stepRet,oCbInfo);
-                acceptResult(stepRet, stepRet.result_priority);
-                if(typeof(stepRet.stop_replication)!=="undefined" && stepRet.stop_replication){
-                    if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","stop_replication",oCbInfo);
-                    breakCycle = true;
-                    return; // will break;
-                }
-            }else{
-                if(cbHandle.debug&&LiteGraph!==undefined) LiteGraph.log_debug("processCallbackHandlers","checkStepRet","result NOT object",stepRet);
-                // ? save current result if not null or undefined (?)
-                if(stepRet !== null && stepRet !== undefined){
-                    acceptResult(stepRet, 0); // plain values count as result_priority 0
-                }
-            }
-        }
-        for(let cbhX of this.callbacks_handlers[name].handlers){
+        // stop_replication stops everything after it, the default callback included
+        if (!defaultDone && !stopped) runDefault();
 
-            // eventually prevent cb marked as default
-            if(preventDefCb && cbhX.data.is_default){
-                if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers","preventing default registered",cbhX);
-                continue;
-            }
-            
-            // execute default if already processed the ones >= 0
-            if(cbhX.priority<0 && !defCbChecked){
-                if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers","process default passed","nextCb:",cbhX);
-                executeDefaultCb();
-                if(breakCycle) break;
-            }
-
-            if(cbhX.data.call_once){
-                this.unregisterCallbackHandler(name, cbhX.id);
-                if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers","unregistered call_once",cbhX.id);
-            }
-
-            oCbInfo = {
-                name: name // name of the handler
-                ,id: cbhX.id // id of the handler for the name
-                ,current_return_value: cbRet // current temporary value (if >= second call and previous return a value) 
-                ,data: cbhX.data // pass the priority and the additional data passed
-                ,results_chain: aResChain
-                // opts: def_opts
-            };
-
-            // execute callback
-            // OLD, not working because of bas THIS : stepRet = cbhX.callback(oCbInfo,...aArgs);
-            // call method on ref object (LiteGraph, LGraphNode, LGraphCanvas, ...) in the method `this` will than correctly set
-            stepRet = cbhX.callback.call(this.ob_ref, oCbInfo, ...aArgs);
-
-            if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers","callback executed",stepRet,oCbInfo);
-            
-            // push result
-            checkStepRet();
-            if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers","result checked","cbRet", cbRet,"aResChain", aResChain,"cbResPriority", cbResPriority,"defCbChecked", defCbChecked,"preventDefCb", preventDefCb,"breakCycle", breakCycle);
-            if(breakCycle) break;
-
-        } // end cycle
-    
-        // run the default callback if no handler ran it yet, unless the chain was stopped
-        // (stop_replication stops everything after it, the default callback included)
-        if(!defCbChecked && !breakCycle){
-            executeDefaultCb();
-        }
-
-        // if(cbRet===null){
-        //     // return default true if no callbacks specified a return value
-        //     // [ some original LG callback execution checks for boolean return ]
-        //     cbRet = true;
-        // }
-        return cbRet;
-
-        // could return obj instead and there check for values, etc ..
-        // TODO would be probably better to always return an object to than check for result and make easier code in implementation
+        if (failure) throw failure.error;
+        return value;
     }
+
+    /** The value a hook settled on: `return_value` of an object result, otherwise the result itself. */
+    static valueOf(result) {
+        return result !== null && typeof result === "object" ? result.return_value : result;
+    }
+
+    /** true when the result is `value`, plain or as `{return_value: value}` (e.g. a `false` veto). */
+    static is(result, value) {
+        return result === value || (result !== null && typeof result === "object" && result.return_value === value);
+    }
+
+    /** The pointer hooks' "handled": `true`, or an object result with a truthy `return_value`. */
+    static handled(result) {
+        return result === true || (result !== null && typeof result === "object" && !!result.return_value);
+    }
+}
+
+/**
+ * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
+ * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
+ * The CallbackHandler is created on first registration; dispatching without one only calls `onX`.
+ * @param {Function} Class
+ */
+export function installHooks(Class) {
+    const methods = {
+        /** @returns {CallbackHandler} this object's handler registry (created once) */
+        callbackhandler_setup() {
+            return (this.cb_handler ||= new CallbackHandler(this));
+        },
+        registerCallbackHandler(name, callback, opts) {
+            return this.callbackhandler_setup().registerCallbackHandler(name, callback, opts);
+        },
+        unregisterCallbackHandler(name, h_id) {
+            return this.cb_handler ? this.cb_handler.unregisterCallbackHandler(name, h_id) : false;
+        },
+        processCallbackHandlers(name, opts, ...args) {
+            return CallbackHandler.run(this, this.cb_handler, name, opts, args);
+        },
+        hasCallbackHandlers(name) {
+            return !!this.cb_handler?.hasCallbackHandlers(name);
+        },
+        /**
+         * Registers a hook handler and returns its disposer.
+         * @returns {() => boolean} unregisters the handler
+         */
+        onHook(name, callback, opts) {
+            const id = this.registerCallbackHandler(name, callback, opts);
+            if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
+            return () => this.unregisterCallbackHandler(name, id);
+        },
+    };
+    for (const [key, value] of Object.entries(methods)) {
+        Object.defineProperty(Class.prototype, key, { value, writable: true, configurable: true });
+    }
+    return Class;
 }
