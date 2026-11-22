@@ -30,7 +30,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
 | 3 | Subgraph v2 and components | **Done**: 3a definitions, function node, interop ([record](../executions/2026-11-20-wave3a-subgraph-definitions.md), [probe](../executions/2026-11-20-wave3a-schema-probe.md)); 3b authoring ([record](../executions/2026-11-20-wave3b-subgraph-authoring.md)); 3c components, blueprints, SA port ([record](../executions/2026-11-20-wave3c-components.md)); merged into `LG/dev` and `master` ([PR #10](https://github.com/atlasan/litegraph.js/pull/10)). See the [plan](2026-11-20-wave3-subgraph-system.md). |
 | 4 | Ecosystem and workspace features | **Done**: 4a packs and missing nodes ([record](../executions/2026-11-20-wave4a-packs.md)), 4b workspace state and execution ([record](../executions/2026-11-20-wave4b-workspace.md)), 4c links and view ([record](../executions/2026-11-20-wave4c-links-view.md)), 4d layout and palette ([record](../executions/2026-11-20-wave4d-layout-palette.md)), 4e catalog and boundaries ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)), all merged into `LG/dev`. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
-| 5 | Repository organization and packaging | **In progress**: [plan](2026-11-21-wave5-repository-packaging.md); **5a packaging and 5b CI/docs done** in `LG/dev` ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)); 5c apps move after Wave 4 |
+| 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 
 ## Wave 0: safety and correctness (done)
 
@@ -132,7 +132,7 @@ Plan: [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md)
 | 4d | **Auto-layout adapter** (dagre loaded on demand, ELK optional; one transaction; selection scope), **node palette** with drag-to-canvas, favourites and a preview | **Done** on `LG/wave4d_layout`, merged into `LG/dev` ([record](../executions/2026-11-20-wave4d-layout-palette.md)) |
 | 4e | **Catalog cleanup** (one watch node, `jquery` → `html`, one network naming scheme, category roots) through 4a mappings; reroutes across subgraph boundaries (carried over) | **Done** on `LG/wave4e_catalog`, merged into `LG/dev` ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)) |
 
-## Wave 5: repository organization and packaging (in progress)
+## Wave 5: repository organization and packaging (done)
 
 From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 11-18 roadmap phases 2 and 5:
 

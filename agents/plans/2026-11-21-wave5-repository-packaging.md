@@ -1,6 +1,6 @@
 # Wave 5: repository organization and packaging
 
-> **Date** 2026-11-21 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `5466b92`
+> **Date** 2026-11-21 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `5466b92`
 
 **Outcome:** the package says truthfully what it needs and what it exposes, CI proves that the committed builds are fresh, the docs let a tester start, and the editor, tester and runner apps live in `apps/`. This is the last wave before the [pre-release 0.18.0-dev.1](2026-11-20-pre-release-0.18.0-dev.1.md).
 
@@ -51,5 +51,6 @@ The sources are the [11-18 repository review](2026-11-18-repo-review-and-roadmap
 
 ## History
 
+- 2026-11-22: 5c done ([record](../executions/2026-11-22-wave5c-apps-move.md)); the single tester controller is deferred (two run flows, needs its own plan).
 - 2026-11-21: 5a and 5b done ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)). Full builds no longer carry `defaults_debug.js`, which had turned scripts on.
 - 2026-11-21: proposed and accepted. The user answered W5-1 to W5-3 as recommended.
