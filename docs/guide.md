@@ -479,6 +479,8 @@ A linked slot the mapping cannot place is removed and listed in `dropped`. Comma
 | `LiteGraph.Packs.Disabled` | `[]` | Pack ids whose `setup` does not run |
 | `LiteGraph.Nodes.ShowMissingOnLoad` | true | The Editor opens the missing-nodes panel after a load |
 
+**Templates:** a pack can ship example graphs in its manifest's `templates[]`. Each entry is `{id, title, description, category, profile, flow, tags, packs, level}` plus a `url` (relative, http or https) or an inline `data` graph. `LiteGraph.packs.listTemplates()` returns the valid templates of the active packs. The editor's Demo menu lists them in their category, next to the examples of `apps/editor/examples/index.json`, which uses the same fields.
+
 ## Saving and loading
 
 ```js

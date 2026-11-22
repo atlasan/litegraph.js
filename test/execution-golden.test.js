@@ -1,6 +1,7 @@
 // Compatibility golden tests (Wave 6, step 2): each example document runs for a fixed number of
 // steps on a fixed clock under the flag presets of today, and the data on every link and the state
-// of every node is snapshotted. The snapshots must stay identical through Wave 6: a document
+// of every node is snapshotted. The documents are frozen copies of the editor examples
+// (test/fixtures/golden-examples), so the examples library can evolve without moving them. The snapshots must stay identical through Wave 6: a document
 // without `config.execution` runs as `legacy`. A changed snapshot needs a finding id in the commit.
 import { jest } from '@jest/globals';
 import fs from 'node:fs';
@@ -26,7 +27,7 @@ const EXAMPLES = [
     'node_execution_modes.JSON', 'ancestors/check_frame_value.JSON', 'ancestors/check_subgraph.JSON', 'conditionals/while_console_test.JSON',
 ];
 const read = (url) => JSON.parse(fs.readFileSync(url, 'utf8'));
-const documents = Object.fromEntries(EXAMPLES.map((name) => [name, read(new URL(`../apps/editor/examples/${name}`, import.meta.url))]));
+const documents = Object.fromEntries(EXAMPLES.map((name) => [name, read(new URL(`./fixtures/golden-examples/${name}`, import.meta.url))]));
 const fixtures = read(new URL('./fixtures/sa-subgraphs.json', import.meta.url));
 for (const [name, definition] of Object.entries(fixtures)) {
     documents[`sa-subgraphs/${name}`] = {

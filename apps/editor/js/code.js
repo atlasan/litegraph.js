@@ -1,6 +1,7 @@
 
 import { LiteGraph } from "../../../src/litegraph.js";
 import { Editor } from "../../../src/litegraph-editor.js";
+import { fetchExampleManifest, exampleGroups, fillDemoSelect } from "./examples.js";
 
 export var gl = null; // webgl_canvas
 
@@ -69,6 +70,9 @@ window.addEventListener("load", (event) => {
 		if(url){
 			LiteGraph.log_info("Editor:","Loading",url);
 			graph.load( url );
+		}else if(option.exampleData){
+			LiteGraph.log_info("Editor:","Loading pack template",option.dataset["example"]);
+			graph.configure( option.exampleData );
 		}else if(option.callback){
 			LiteGraph.log_info("Editor:","callback");
 			option.callback();
@@ -120,18 +124,11 @@ window.addEventListener("load", (event) => {
 		}
 	} );
 
-	//some examples
-	addDemo("Features", "examples/features.json");
-	addDemo("Benchmark", "examples/benchmark.json");
-	addDemo("Subgraph", "examples/subgraph.json");
-	addDemo("Audio", "examples/audio.json");
-	addDemo("Audio Delay", "examples/audio_delay.json");
-	addDemo("Audio Reverb", "examples/audio_reverb.json");
-	addDemo("MIDI Generation", "examples/midi_generation.json");
-	addDemo("Copy Paste", "examples/copypaste.json");
-	addDemo("Feat. Autoconnect", "examples/features/extension_autoconnect.JSON");
-	addDemo("Websocket Client", "examples/websocket/client.JSON");
-	addDemo("WIP Function", "examples/wip_testing/testing_subgraph_as_function.JSON");
+	// the examples library (examples/index.json) and the active packs' templates, grouped by category;
+	// the example files keep their paths, so old links to them still work
+	fetchExampleManifest("examples/").then((manifest) => {
+		fillDemoSelect(dom_demo_select, exampleGroups(manifest, LiteGraph.packs?.listTemplates?.() ?? []));
+	}).catch((error) => LiteGraph.log_warn("Editor:", "examples manifest not loaded", error));
 	addDemo("autobackup", function(){
 		var data = localStorage.getItem("litegraphg demo backup");
 		if(!data)

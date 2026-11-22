@@ -2480,6 +2480,24 @@ export interface PackManifest {
     [key: string]: unknown;
 }
 export type PackState = 'active' | 'disabled' | 'incompatible' | 'indexed';
+/** A pack template, in the shape of the editor's examples manifest (apps/editor/examples/index.json). */
+export interface PackTemplate {
+    pack: string;
+    id: string;
+    title: string;
+    description: string;
+    /** e.g. "flows/dataflow", "subgraphs", "ui"; "packs" when not given */
+    category: string;
+    profile: string | null;
+    flow: string | null;
+    tags: readonly string[];
+    packs: readonly string[];
+    level: string | null;
+    /** relative, http or https */
+    url: string | null;
+    /** an inline graph */
+    data: object | null;
+}
 export interface NodeReplacementMapping {
     old_type: string;
     new_type: string;
@@ -2528,6 +2546,8 @@ export declare class PackRegistry {
     typesOf(id: string): string[];
     findPackForType(type: string): { id: string; version: string; installed: boolean; state?: PackState } | null;
     describe(): (PackManifest & { state: PackState; types: string[]; error?: string })[];
+    /** the templates (example graphs) of the active packs, from their manifests' templates[] */
+    listTemplates(): readonly Readonly<PackTemplate>[];
     stampFor(type: string): { pack: string; pack_ver: string } | null;
     registerReplacement(mapping: NodeReplacementMapping): () => void;
     getReplacement(type: string): Readonly<NodeReplacementMapping> | null;

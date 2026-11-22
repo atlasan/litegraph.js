@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-22 | [Flows track, examples](2026-11-22-flows-examples.md): examples manifest, Demo menu by category, `packs.listTemplates()`, examples test, audit finding 10 fixed (example and first-value pull) | final |
 | 2026-11-22 | [Flows track, declarations](2026-11-22-flows-declarations.md): pure, ticks and ON_EVENT defaults for 36 more types (86 of 273), volatile types commented, host `actionDo` pulls under `ancestors` | final |
 | 2026-11-22 | [Wave 7: event integration, the core](2026-11-22-wave7-event-core.md): one listener core for hooks and typed events, compatible `onX`, fast path, isolated errors, `LiteGraph.events`, `ctx.listen`, E12/E13 fixed | final |
 | 2026-11-22 | [Flows track, reference](2026-11-22-flows-reference.md): `npm run docs:nodes` node reference, pack descriptions, `def.usage`, descriptions for every bundled type, catalog test of 273 types | final |

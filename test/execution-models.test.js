@@ -309,6 +309,27 @@ describe('event-dropped reasons (step 10)', () => {
         expect(events.map((x) => x.reason)).toEqual(['refreshing']);
     });
 
+    // audit finding 10 (ancestors/check_subgraph): an ALWAYS emitter that has not run yet was pulled
+    // for its first value, so its events fired while pulling and were dropped as "refreshing"
+    test('an ALWAYS emitter is not pulled for its first value: its events fire at its turn', () => {
+        const g = graph('ancestors');
+        const events = dropped(g);
+        const src = make(g, 'exm/src');
+        const rec = make(g, 'exm/rec');
+        const e = make(g, 'exm/emitter');
+        const plain = make(g, 'exm/plain');
+        src.connect(0, rec, 0);
+        e.connect(1, rec, 1); e.connect(0, plain, 0);
+        expect(e.mode).toBe(LiteGraph.ALWAYS);
+        src.triggerSlot(0); // before any step: the emitter has not run
+        expect(events.map((x) => x.reason)).toEqual([]);
+        expect(rec.log[0][0]).toBeUndefined(); // no value yet; it comes at the emitter's turn
+        step(g);
+        src.triggerSlot(0);
+        expect(rec.log[1][0]).toBe(1);
+        expect(events.map((x) => x.reason)).toEqual(['no-handler']); // fired at its turn: reached exm/plain, which has no onAction
+    });
+
     test('no-handler and mode', () => {
         const g = graph('ancestors');
         const events = dropped(g);
