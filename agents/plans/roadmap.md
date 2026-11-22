@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs (deferred items on `LG/dev_events_deferred`); flows track done in `LG/dev`
+> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows track done in `LG/dev`
 
 This is the single place for the current status of planned work.
 
@@ -34,7 +34,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
-| 7 | Event integration (one core, two faces) | **Core done**, merged into `LG/dev` from `LG/wave7_events` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-core-done) |
+| 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-items-deferred) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -97,7 +97,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 **Carried over to Wave 2** (they belong with the standalone ports):
 - Moving node, group and link dragging onto the gesture pattern (with the `LinkConnector` port).
 - Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
-- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Core done in [Wave 7](#wave-7-event-integration-core-done).**
+- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Core done in [Wave 7](#wave-7-event-integration-done-two-items-deferred).**
 
 ## Wave 2: authoring core (done)
 
@@ -161,7 +161,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | **Done** on `LG/wave6d_graphinfo`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6d-graphinfo-runner.md)) |
 | 6e | Deprecations; docs; decision record | **Done** on `LG/wave6e_polish`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)) |
 
-## Wave 7: event integration (core done)
+## Wave 7: event integration (done, two items deferred)
 
 [Plan](2026-11-22-event-integration.md) (accepted 2026-11-22), from the [event handling audit](../audits/2026-11-22-event-handling.md). Implemented on `LG/wave7_events`, reviewed ([audit](../audits/2026-11-22-wave7-review.md)) and merged into `LG/dev` ([record](../executions/2026-11-22-wave7-event-core.md)).
 - **Target ("one core, two faces"):** the legacy `onX` callbacks, the CallbackHandler hooks and the typed events run on one listener engine. Hooks stay the intercept face and typed events the observe face, fired in one documented order. The API stays compatible.
@@ -181,11 +181,11 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 | Part | Items | Status |
 |---|---|---|
-| 7a | Characterization: hook semantics, results with and without handlers, E1/E2 regressions, a benchmark baseline (`test/hook-pipeline.test.js`); the per-site result snapshot (`test/hook-results.test.js`) and the order golden (`test/hook-order.test.js`) | **Done** (snapshot and golden on `LG/dev_events_deferred`) |
+| 7a | Characterization: hook semantics, results with and without handlers, E1/E2 regressions, a benchmark baseline (`test/hook-pipeline.test.js`); the per-site result snapshot (`test/hook-results.test.js`) and the order golden (`test/hook-order.test.js`) | **Done** (snapshot and golden on `LG/dev_events_deferred`, merged) |
 | 7b | `ListenerList` (the plan's `ListenerStore`) and the `installHooks` mixin; copy-on-write, error isolation, fast path, disposers | **Done** |
-| 7c | `CallbackHandler.is` / `handled` / `valueOf` (the plan's `hookResult`) on 21 sites, each keeping its rule; panel hook bypasses; E12 and E13 fixed; `objectOf` on the 8 menu-array sites | **Done** (menu sites on `LG/dev_events_deferred`) |
-| 7d | Selection parity; `LiteGraph.events`; group events; `fireHookThenEvent` (hook → `onX` → event, event skipped after a veto) | **Done** (helper on `LG/dev_events_deferred`) |
-| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md); the dispatch tap; typed hook maps and the declared-hooks check. Generated doc tables and deprecation logs are not done | **Mostly done** (tap and typing on `LG/dev_events_deferred`) |
+| 7c | `CallbackHandler.is` / `handled` / `valueOf` (the plan's `hookResult`) on 21 sites, each keeping its rule; panel hook bypasses; E12 and E13 fixed; `objectOf` on the 8 menu-array sites | **Done** (menu sites on `LG/dev_events_deferred`, merged) |
+| 7d | Selection parity; `LiteGraph.events`; group events; `fireHookThenEvent` (hook → `onX` → event, event skipped after a veto) | **Done** (helper on `LG/dev_events_deferred`, merged) |
+| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md); the dispatch tap; typed hook maps and the declared-hooks check. Generated doc tables and deprecation logs are not done | **Mostly done** (tap and typing on `LG/dev_events_deferred`, merged) |
 
 Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
 

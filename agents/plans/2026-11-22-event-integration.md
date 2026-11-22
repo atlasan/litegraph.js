@@ -223,7 +223,7 @@ Proposed as **Wave 7**, on branches `LG/wave7<x>_<topic>` cut from `LG/dev`. Eve
     - step 13: deprecation logs. Nothing was deprecated, because every old name keeps working;
     - generated doc tables;
     - the `return_value` sites that read menu arrays.
-- 2026-11-22: the deferred items, on `LG/dev_events_deferred` ([execution record](../executions/2026-11-22-wave7-deferred.md)):
+- 2026-11-22: the deferred items, on `LG/dev_events_deferred`, merged into `LG/dev` ([execution record](../executions/2026-11-22-wave7-deferred.md)):
   - **Steps 2–3:** `test/hook-results.test.js` (32 result-reading sites × 5–8 results) and `test/hook-order.test.js` (18 paired points, with vetoes) were committed before any change.
   - **Step 9:** `CallbackHandler.fireHookThenEvent(owner, name, args, emitter, type, detail, {veto})`, used where the hook and the event are adjacent: `setProperty`, the property dialog, the five selection sites, node type registration, the graph and canvas construct hooks. **Open decision 3 is done as recommended:** a vetoing hook skips its event.
   - **Changed from the design:** points where library state changes between the hook and the event (`node-added`, `node-removed`, `configured`, `widget-changed`, `subgraph-opened` / `-closed`, `execution-step`) keep the event in its place, after the history record or the canvas switch. They already fire hook → `onX` → event, and moving the event would show listeners a half-done state. The audit's `onAfterStep` pair is `onExecuteStep` → `execution-step` inside `runStep`.
