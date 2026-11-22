@@ -35,13 +35,25 @@ The canvas uses the graph; the graph never needs a canvas, which is how the runn
 
 ## Execution
 
+A document runs under an **execution model**, named in the root graph's `config.execution` and applied to all its subgraphs (`src/execution.js`, `ExecutionEngine`):
+
+| Model | Delivery | Refresh | Notes |
+|---|---|---|---|
+| `ancestors` (new graphs) | immediate | ON_REQUEST data ancestors, memo per frame and call | ALWAYS nodes pull their ON_REQUEST inputs each frame |
+| `step` | deferred to the node's turn | none | today's core default |
+| `strict` | deferred | none | each node executes once per frame |
+| `event` | immediate | none | pure push |
+| `legacy` | from the global flags | | documents saved without the field |
+
 `runStep` visits nodes in topological order:
-1. it delivers deferred actions;
-2. it executes `ALWAYS` nodes.
+1. it delivers queued (deferred) actions;
+2. under `ancestors`, it pulls an ALWAYS node's ON_REQUEST inputs;
+3. it executes `ALWAYS` nodes.
 
 Events travel along links:
-- An `ON_TRIGGER` node runs when triggered.
-- An `ON_REQUEST` node runs only when a node downstream asks for its value, which pulls its ancestors.
+- An `ON_TRIGGER` node (or an `onTrigger` input) runs when triggered.
+- An `ON_REQUEST` node runs only when a node downstream needs its value. Under `ancestors` that is a pull before an action, a trigger or an ALWAYS node's turn; it runs again only when an input has newer data (`setOutputData` stamps a data version on the links).
+- A refused event (re-entry, a NEVER target, no handler, a limit) emits `event-dropped` with its reason; limits name their setting (`LiteGraph.Execution.MaxEventDepth`, `MaxEventPasses`).
 
 Mode 4 is ON_REQUEST here; ComfyUI's BYPASS is mapped explicitly by the interop extension.
 

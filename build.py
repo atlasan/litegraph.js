@@ -51,6 +51,7 @@ for arg in sys.argv:
 lib_js_files = [
     "./src/global.js",
     "./src/litegraph.js",
+    "./src/execution.js",
     "./src/callbackhandler.js",
     "./src/eventtarget.js",
     "./src/commands.js",
