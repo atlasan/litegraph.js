@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 proposed
+> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 proposed; flows track in progress
 
 This is the single place for the current status of planned work.
 
@@ -13,7 +13,8 @@ This is the single place for the current status of planned work.
 |---|---|
 | `master` | Released baseline. It changes only through reviewed PRs. |
 | `LG/dev` | **Progressive integration branch.** Every finished wave (or part of one) lands here first. Docs, plans and audits are kept current here. |
-| `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs`, `LG/wave4b_workspace`, `LG/wave4c_links`, `LG/wave4d_layout`, `LG/wave4e_catalog` (merged into `LG/dev`). |
+| `LG/dev_<topic>` | **Parallel work** (tracks, not milestones): temporary branches cut from `LG/dev` and merged back with `--no-ff` when done. They get a named track on this roadmap, not a wave number. Example: `LG/dev_flows_reference`, `LG/dev_flows_declarations`, `LG/dev_flows_examples`. |
+| `LG/wave<N>_<topic>` | Waves are **milestones** with a build and verification pass. One branch per wave part, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs`, `LG/wave4b_workspace`, `LG/wave4c_links`, `LG/wave4d_layout`, `LG/wave4e_catalog` (merged into `LG/dev`). |
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
@@ -32,6 +33,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 4 | Ecosystem and workspace features | **Done**: 4a packs and missing nodes ([record](../executions/2026-11-20-wave4a-packs.md)), 4b workspace state and execution ([record](../executions/2026-11-20-wave4b-workspace.md)), 4c links and view ([record](../executions/2026-11-20-wave4c-links-view.md)), 4d layout and palette ([record](../executions/2026-11-20-wave4d-layout-palette.md)), 4e catalog and boundaries ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)), all merged into `LG/dev`. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
+| Track | Flows: node reference, declarations, examples | **In progress** ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Proposed** ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md)): CallbackHandler, legacy `onX` and typed events on one listener engine, compatible API; see [Wave 7](#wave-7-event-integration-proposed) |
 
 ## Wave 0: safety and correctness (done)
@@ -187,6 +189,18 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
 
+## Flows track: reference, declarations, examples
+
+[Plan](2026-11-22-flows-reference-examples.md) (accepted 2026-11-22). These are steps 1–3 of the [flows direction](2026-11-22-flows-direction.md), from the [event flows audit](../audits/2026-11-22-event-flows-audit.md). It is parallel work, so it has no wave number.
+
+| Part | Branch | Items | Status |
+|---|---|---|---|
+| Reference | `LG/dev_flows_reference` | `npm run docs:nodes` (`tools/node-reference.mjs`) → `docs/nodes/` (local, not committed: D9); pack descriptions; `def.usage`; catalog test | in progress |
+| Declarations | `LG/dev_flows_declarations` | `pure` / `ticks` / default modes for the undeclared types; volatile nodes stay ALWAYS until FLW-02 | planned |
+| Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | planned |
+
+Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, profiles, flow docs) stay proposed. Step 5 waits for Wave 7's listener engine.
+
 ## Deferred (each needs its own proposal)
 
 Virtual/broadcast links, link routing as default, app mode / published parameters, graph tabs, remote pack registry, TypeScript migration, renderer change, async workflow scheduler.
@@ -203,3 +217,4 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
 | D7 | Upgrading the remaining runtime dependencies with advisories | Upgrade to releases at least 2 weeks old, after a changelog review |
 | D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | Isolate, report, and rethrow after the chain under `throw_errors`. Keep each site's rule until 0.20, then `strict`. Skip the event after a veto. No `node.events`. `"*"` only, observe only. Async hooks out of scope |
+| D9 | Generated node reference `docs/nodes/`: commit it (GitHub renders it, `check:fresh` guards it) or generate it in CI only ([plan](2026-11-22-flows-reference-examples.md#user-decisions-2026-11-22)) | **Postponed (user, 2026-11-22):** generated locally with `npm run docs:nodes` and git-ignored; no CI. Propose again when the reference has settled |
