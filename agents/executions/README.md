@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-22 | [Wave 7: event integration, the core](2026-11-22-wave7-event-core.md): one listener core for hooks and typed events, compatible `onX`, fast path, isolated errors, `LiteGraph.events`, `ctx.listen`, E12/E13 fixed | final |
 | 2026-11-01 | [Baseline validation](2026-11-01-baseline-validation.md): setup, contracts, editor, tester and runner acceptance | final |
 | 2026-11-01 | [Readiness checklist](2026-11-01-readiness-checklist.md): verified foundation and remaining acceptance work | snapshot |
 | 2026-11-22 | [Pre-release 0.18.0-dev.1](2026-11-22-pre-release-0.18.0-dev.1.md): all planned waves done, release checks (clean clone, packed install, probes, browser), version bump | final; push/PR/tag pending |

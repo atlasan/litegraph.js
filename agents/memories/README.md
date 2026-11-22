@@ -17,6 +17,7 @@ Template: [decision](../_templates/decision.md).
 |---|---|
 | [0001 Subgraph document format](decisions/0001-subgraph-document-format.md) | **accepted** 2026-11-20 (option B, litegraph runtime kept) |
 | [0002 Execution models](decisions/0002-execution-models.md) | **accepted** 2026-11-22 (named models per document, `ancestors` default, `legacy` for old documents) |
+| [0003 Event pipe](decisions/0003-event-pipe.md) | **accepted** 2026-11-22 (one listener core for hooks and typed events; `onX` stays the default callback; handler errors isolated, the first rethrown) |
 
 ## Research
 
