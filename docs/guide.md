@@ -210,12 +210,114 @@ this.addWidget("number", "Size", 4, null, { min: 1, max: 64, step: 1, socket: tr
 | `text` (alias `string`) | Short text |
 | `toggle` (alias `boolean`) | On / off |
 | `button` | Runs its callback |
+| `color` | A swatch and its text. Click the swatch to open the colour picker (the alpha suffix is kept), or the label to type any CSS colour |
+| `vector` | One draggable field per component. It is used for `vec2`, `vec3` and `vec4` |
+
+**Widgets by value type:** `addWidget` also takes any [value type](#value-types). `addWidget("int", "Count", 3)` gives a number widget with `step: 1` that rounds. `addWidget("vec3", "Offset")` starts at `[0, 0, 0]`. `addWidget("INT")`, `addWidget("FLOAT")`, `addWidget("COLOR")` and the other ComfyUI-style names work too. The widget keeps the type name it was given.
 
 **Options:** `property` binds the widget to `node.properties[name]`. Set `this.serialize_widgets = true` to save widget values.
 
 **Widget input:** `socket: true` (or `node.addWidgetInput(widget)`) puts an input on the widget's row. While that input is linked, the widget is disabled and `node.getWidgetValue(widget)` returns the linked value.
 
 **Custom types:** extend `BaseWidget`, implement `draw(ctx, node, width, y, H, env)` and `onPointer(event, env)`, then call `LiteGraph.registerWidgetType("mytype", MyWidget)`.
+
+## Value types
+
+`LiteGraph.valueTypes` says, for each type of value, how it is edited: its canvas widget, its panel editor, default options, coercion, validation, formatting, and the help the panels show. The same entry serves `node.addWidget(type)`, the node panel's property rows, settings, subgraph inputs and the property dialog.
+
+```js
+LiteGraph.registerValueType("percent", {
+    base: "number",                       // inherits everything else; options are merged
+    aliases: ["PERCENT"],
+    label: "Percentage",
+    description: "A number from 0 to 100.",
+    examples: ["50", "12.5"],
+    widget: "slider",                     // canvas widget (LiteGraph.widget_types)
+    editor: "slider",                     // panel editor (LiteGraph.panel_editors)
+    options: { min: 0, max: 100, step: 1, unit: "%" },
+});
+```
+
+| Type | Aliases | Canvas widget | Panel editor |
+|---|---|---|---|
+| `boolean` | `bool`, `toggle`, `BOOLEAN` | toggle | switch |
+| `number` | `float`, `double`, `FLOAT` | number | number field (arithmetic, arrow keys, drag the label) |
+| `int` | `integer`, `INT` | number (`step: 1`, rounded) | number field |
+| `slider` | | slider | range and number |
+| `string` | `str`, `STRING` | text | text field |
+| `text` | `multiline`, `textarea` | text | growing text area (Ctrl+Enter applies) |
+| `enum` | `combo`, `COMBO`, `select` | combo | select (with a filter above 12 choices) |
+| `color` | `colour`, `COLOR` | color | swatch, picker, text, presets |
+| `vec2`, `vec3`, `vec4` | `VEC3`, … | vector | X / Y / Z / W fields |
+| `array`, `object` | `list`, `json`, `dict` | text | JSON (a parse error keeps the old value) |
+| `code` | | text | the code pad |
+| `resource` | `file`, `url`, `texture`, `image` | text | text, plus a "…" button when `options.pick(ctx)` is given |
+
+**Customizing, from the broadest change to the narrowest:**
+1. **Change a type everywhere:** `registerValueType("number", {...LiteGraph.getValueType("number"), editor: "slider"}, {replace: true})`. The disposer it returns restores the built-in type.
+2. **Change how a type is edited in panels:** `LiteGraph.registerPanelEditor(name, {create(ctx) {...}})` (see [Panels](#panels)).
+3. **Change how a type is drawn on the canvas:** `LiteGraph.registerWidgetType(name, cls)`.
+4. **For one node class:** use the property info in `addProperty(name, value, type, info)`, `static widgets_info`, or `static "@prop"`.
+5. **For one node instance:** use `onGetPropertyInfo(name)` and `onAddPropertyToPanel(...)`.
+
+Extensions register value types as `ctx.valueTypes.register(...)`, and they are removed with the extension.
+
+## Panels
+
+**Node details panel:** double-click a node to open it. It has:
+- a header with the type, id, category, pack, deprecated and experimental chips, a warning about missing capabilities, the description and `def.usage`;
+- these sections: General (title, mode, colour, shape, collapsed, pinned), Properties, Widgets, Inputs, Outputs (a link selects the node at the other end), Execution (declaration, state, `checkExecution` issues) and Advanced (position, size, colours, JSON).
+
+Each edit is one undo step, and a drag (scrub, slider, colour picker) is one step too. The panel updates when the node changes on the canvas. Its ⌖ button makes it follow the selection (setting `LiteGraph.Panel.FollowSelection`, which is on in the Editor).
+
+**Options panel:** opened with "Options" in the canvas menu (`LiteGraph.showCanvasOptions`). It has three tabs:
+- **Graph:** the execution model, with help and document facts.
+- **Canvas:** this canvas's options with labels, tooltips and categories (`LGraphCanvas.optionInfo`). "Save canvas as defaults" writes them to `LiteGraph.Canvas.Defaults`, which new canvases apply.
+- **Settings:** every `LiteGraph.settings` definition, grouped by category.
+
+**Both panels** have:
+- search (across all tabs), sorting (category or declared order, A–Z, modified first), and a "Modified" filter;
+- reset to default (↺) and a "?" toggle that shows the description and examples;
+- remembered collapsed sections, a resizable width, and a ⇆ button that docks the panel on the other side (settings `LiteGraph.Panel.*`).
+
+**Property info keys** (all optional) are read from `addProperty(name, value, type, info)`, `widgets_info`, `"@prop"` or `onGetPropertyInfo`:
+
+| Key | Effect |
+|---|---|
+| `label` | Row label (the property name stays the key) |
+| `tooltip` | Shown on hover |
+| `description`, `examples` | Shown by the row's "?" toggle |
+| `min`, `max`, `step`, `precision`, `unit` | Numbers: clamping, arrow and drag steps, display |
+| `values` | Choices: an array, a `{label: value}` map, or a function |
+| `widget` / `editor` | Pick an editor by name (`"slider"`, `"code"`, a registered one) |
+| `readonly` | Shown as text, not editable |
+| `multiline`, `placeholder` | Text fields |
+| `section`, `order`, `hidden` | Grouping, ordering, hiding in the node panel |
+| `default_value` | Enables reset and the modified marker (`addProperty` sets it) |
+
+```js
+class Mixer {
+    constructor() {
+        this.addProperty("gain", 0.5, "number", { min: 0, max: 2, step: 0.01, tooltip: "Output level", description: "Multiplies the mixed signal.", examples: ["0.5", "1.5"] });
+        this.addProperty("tint", "#3399ff", "color", { section: "Look" });
+        this.addProperty("offset", [0, 0, 0], "vec3", { section: "Transform" });
+    }
+}
+```
+
+**Adding sections:**
+
+```js
+LiteGraph.registerPanelSection({
+    id: "stats", panel: "node", title: "Stats", order: 10,
+    when: (node) => node.inputs?.length > 0,
+    render: (section, { panel, node }) => panel.addRow({ name: "inputs", value: node.inputs.length, info: { type: "int", readonly: true } }),
+});
+```
+
+`panel: "options"` with `tab: "graph" | "canvas" | "settings"`, or a new tab id with `tabTitle`, adds a section to the options panel. Extensions use `ctx.panels.registerSection` and `ctx.panels.registerEditor`.
+
+**Building panels:** `canvas.createPanel(title, options)` keeps the former API (`addWidget`, `addHTML`, `addButton`, `addSeparator`, `clear`, `close`, …) and adds `addRow(spec)`, `addSection`, `addTabs` / `useTab`, `addToolbar`, `addNote`, `applyFilter` and `applySort`. Theme panels with the `--lg-panel-*` CSS variables.
 
 ## Drawing and interaction
 

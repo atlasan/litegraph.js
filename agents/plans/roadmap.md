@@ -14,6 +14,7 @@ This is the single place for the current status of planned work.
 | `master` | Released baseline. It changes only through reviewed PRs. |
 | `LG/dev` | **Progressive integration branch.** Every finished wave (or part of one) lands here first. Docs, plans and audits are kept current here. |
 | `LG/wave<N>_<topic>` | One branch per wave or coherent change, cut from `LG/dev` and merged back after `npm run check` passes. Wave 4: `LG/wave4a_packs`, `LG/wave4b_workspace`, `LG/wave4c_links`, `LG/wave4d_layout`, `LG/wave4e_catalog` (merged into `LG/dev`). |
+| `LG/dev_panel_and_widget` | Parallel line, not a wave: value types, the options and node panels ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)). Merges into `LG/dev` when ready. |
 | `LG/wave0_safety` | [PR #5](https://github.com/atlasan/litegraph.js/pull/5), merged into `master` on 2026-11-19. |
 | `LG/runner_deny_servers` | [PR #6](https://github.com/atlasan/litegraph.js/pull/6) (safe runner defaults with clear opt-ins), merged into `master` and `LG/dev` on 2026-11-19. |
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
@@ -186,6 +187,17 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 7e | `ctx.listen`, `events.on("*")`, tap; hook typing and `check-types`; deprecations; generated docs; decision record | proposed |
 
 Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
+
+## Parallel: panels and widgets
+
+[Plan](2026-11-22-panels-options-node-details.md) accepted 2026-11-22, on `LG/dev_panel_and_widget` ([record](../executions/2026-11-22-panels-and-widgets.md)):
+- value types ("widget for type");
+- `ColorWidget` and `VectorWidget`;
+- the options panel (Graph, Canvas and Settings tabs);
+- the node details panel;
+- panel editors and sections.
+
+Follow-ups: movable, dockable and configurable panels (X-13), multi-node editing, property presets (X-11), settings profiles (X-12).
 
 ## Deferred (each needs its own proposal)
 

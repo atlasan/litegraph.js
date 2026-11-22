@@ -1,6 +1,6 @@
 # Panels and widgets: value types, graph options, node details
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `9926717`
+> **Date** 2026-11-22 · **Kind** plan · **Status** done (on `LG/dev_panel_and_widget`, not merged) · **Base** `LG/dev` @ `9926717`
 
 This plan gives litegraph one way to edit a value of a given type, whether on the canvas, in a panel, in a setting or in a subgraph input, and rebuilds the two side panels on top of it:
 
@@ -154,7 +154,7 @@ LiteGraph.registerPanelEditor("color", {
 - **`GraphInput.updateType` / `GraphOutput`** replace the value widget with the widget of the input's type (any value type, not just number, boolean and string), keeping its value through `coerce`.
 - **The panel editors** (properties, widgets, settings, canvas options) all go through `resolveEditor`.
 - **`onShowMenuNodeProperties`** parses typed values with the type's `parse`/`coerce`, so `vec3` can be typed as `1, 2, 3`.
-- **`getPropertyInfo`** keeps its sources and its `combo` → `enum` mapping, and adds `valueType` (the resolved name) to the info it returns.
+- **`getPropertyInfo`** is unchanged: it keeps its sources and its `combo` → `enum` mapping. The value type is resolved by `resolveEditor`, so the shared info objects of node classes are not modified.
 
 ## Design: panels
 
@@ -238,3 +238,4 @@ Each item gets a test.
 
 - 2026-11-22: proposed.
 - 2026-11-22: accepted. P1–P5 adopted as recommended; no wave (branch `LG/dev_panel_and_widget`); value types ("widget for type") added as P7; movable and configurable panels recorded as follow-up X-13.
+- 2026-11-22: implemented on `LG/dev_panel_and_widget`; see the [execution record](../executions/2026-11-22-panels-and-widgets.md). `getPropertyInfo` was left unchanged (see Consumers).

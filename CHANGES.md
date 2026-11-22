@@ -1,6 +1,32 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased: panels and widgets (branch `LG/dev_panel_and_widget`)
+
+Plan: `agents/plans/2026-11-22-panels-options-node-details.md`.
+
+## Added
+
+* **Value types** (`LiteGraph.valueTypes`, `src/valuetypes.js`): one registry maps each type to its canvas widget, panel editor, default options, coercion, validation, formatting and help, with aliases (`INT`, `FLOAT`, `COMBO`, `COLOR`, …) and base types. Also `LiteGraph.registerValueType` / `getValueType`, and `ctx.valueTypes.register` in extensions.
+* **`addWidget` for any value type:** `int`, `float`, `color`, `vec2`/`vec3`/`vec4`, `text`, `resource`, and the ComfyUI-style names. Two new canvas widgets: `ColorWidget` (swatch and colour picker) and `VectorWidget` (one drag field per component).
+* **`LGraphCanvas.applyWidgetValue(node, widget, value)`**: the shared widget write path (value-type coercion, callbacks, bound property, history, `widget-changed`).
+* **Options panel:** Graph, Canvas and Settings tabs. Canvas options have labels, tooltips and categories (`LGraphCanvas.optionInfo`), host-added options appear under Other, and "Save canvas as defaults" saves to the `LiteGraph.Canvas.Defaults` setting. Every `LiteGraph.settings` definition can now be edited there. Search covers all tabs.
+* **Node details panel:**
+  - a header and sections: General, Properties (`section`, `order`, `hidden`), Widgets, Inputs, Outputs, Execution, Advanced;
+  - an editor that fits each value, with tooltip, description, examples, reset and a modified marker;
+  - one undo step per edit, live refresh, and follow selection (`LiteGraph.Panel.FollowSelection`, on in the Editor).
+* **Both panels:** search, sorting, a modified-only filter, remembered collapsed sections, a resizable width and a docking side (settings `LiteGraph.Panel.*`).
+* **Panel API:** `LiteGraph.registerPanelEditor`, `LiteGraph.registerPanelSection` (also `ctx.panels` in extensions), `PanelBuilder`, `PanelHost`, `defaultPanelEditors`; `createPanel` gains `addRow`, `addSection`, `addTabs`, `addToolbar` and `addNote`.
+* `apps/editor/server.js` reads `PORT`.
+
+## Fixed
+
+* A `graph/input` switched to `boolean` drew and behaved as a number widget. A number input reset its value to 0 on every load.
+* The node panel inserted the node type and description as HTML. They are now set as text.
+* `vec3`, `color`, `text`, `array` and `resource` properties could not be edited in the node panel. `min` and `max` were ignored there.
+* The property dialog refused `vec3`, `color`, `int` and the other value types ("unknown type").
+* Node panel edits used `beforeChange`/`afterChange` without a transaction. They are now one undo step each, and those hooks still fire.
+
 # Unreleased: Wave 6 (events and execution models)
 
 Plan: `agents/plans/2026-11-22-events-execution.md`.

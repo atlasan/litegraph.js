@@ -57,6 +57,12 @@ grep -ohE '\.processCallbackHandlers\(\s*"\w+"' src/*.js
 
 `LGraphGroup` has a handler registry but fires no hooks of its own.
 
+**Side panel methods:** these are not CallbackHandler hooks. The node panel calls them directly on the node:
+- `onAddPropertyToPanel(name, panel, value, info, update)`: return true to replace the property's row. Rows the node adds with `panel.addWidget` or `panel.addRow` go into the Properties section.
+- `onShowCustomPanelInfo(panel)`: runs after the panel's sections.
+
+The canvas hook `onShowNodePanel(node)` can open its own panel instead: a truthy return value skips the built-in one. Sections for every node or for the options panel come from `LiteGraph.registerPanelSection` (see the [guide](guide.md#panels)).
+
 ## Typed events
 
 `graph.events` and `canvas.events` (`src/eventtarget.js`) provide `on(type, fn, {once, signal})`, which returns an unsubscribe function. A listener that throws is logged and does not stop the others.
