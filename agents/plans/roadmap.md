@@ -155,7 +155,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 6a | Characterization matrix and golden snapshots; B5, B9, B10, B11, B13, B15, B16, B17 | **Done** on `LG/wave6a_ensure`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6a-ensure.md)) |
 | 6b | `src/execution.js` engine and model registry; `config.execution`; the `ancestors` semantics; boundaries; `event-dropped`; `strict` and `event` | **Done** on `LG/wave6b_engine`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6b-engine.md)) |
 | 6c | `static def.execution`; mode validity; flow-node rewrites; `checkExecution` and the badge | **Done** on `LG/wave6c_declarations`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6c-declarations.md)) |
-| 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | Planned |
+| 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | **Done** on `LG/wave6d_graphinfo`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6d-graphinfo-runner.md)) |
 | 6e | Deprecations; docs; decision record | Planned |
 
 ## Deferred (each needs its own proposal)
