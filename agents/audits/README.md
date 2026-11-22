@@ -4,6 +4,7 @@ Dated reviews of the code at a stated commit. Each audit records what was true w
 
 | Date | Audit | Scope |
 |---|---|---|
+| 2026-11-22 | [Wave 6 verification](2026-11-22-wave6-verification.md) | Independent gate, records and browser check of the events and execution wave |
 | 2026-11-19 | [Improvements ledger](2026-11-19-improvements-ledger.md) | What happened to each proposal in the 2025 automated wishlists |
 | 2026-11-19 | [Fork inventory and gap analysis](2026-11-19-fork-inventory.md) | Every subsystem: maturity, overlaps, unify or expand candidates, risks |
 | 2026-11-19 | [PR #5 (Wave 0) review](2026-11-19-wave0-pr5-review.md) | Independent check of the Wave 0 safety branch, including the runner script-node finding |
