@@ -186,7 +186,7 @@ export class ValueTypeRegistry {
             }
         }
         const valueType = this.get(info.type) ?? null;
-        return { editor: "readonly", type: valueType?.name ?? info.type ?? jsTypeOf(value), valueType, options: { ...(valueType?.options ?? {}), ...stripMeta(info) } };
+        return { editor: "readonly", type: valueType?.name ?? info.type ?? info.widget ?? info.editor ?? jsTypeOf(value), valueType, options: { ...(valueType?.options ?? {}), ...stripMeta(info) } };
     }
 
     /**

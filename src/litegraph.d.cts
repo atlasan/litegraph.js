@@ -348,6 +348,10 @@ export interface LiteGraphAPI extends CallbackHost {
     widget_types: Record<string, typeof BaseWidget>;
     /** value types: how a value of each type is edited on the canvas (widget) and in panels (editor) */
     valueTypes: ValueTypeRegistry;
+    /** panel editor name -> editor (see registerPanelEditor) */
+    panel_editors: Record<string, PanelEditor>;
+    /** sections added to side panels (see registerPanelSection) */
+    panel_sections: Map<string, PanelSectionDefinition>;
     /** node search: parsing, ranking and definition filters */
     nodeSearch: NodeSearch;
     /** node badges drawn in title bars; providers return badges for a node (settings LiteGraph.Node.IdBadge, LiteGraph.Node.SourceBadge) */
@@ -372,6 +376,10 @@ export interface LiteGraphAPI extends CallbackHost {
     registerValueType(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void;
     /** the resolved value type for a name or alias (case-insensitive), or null */
     getValueType(name: string): Readonly<ResolvedValueType> | null;
+    /** registers (or replaces) a panel editor; returns a disposer that restores the previous one */
+    registerPanelEditor(name: string, editor: PanelEditor): () => void;
+    /** adds a section to the node panel or the options panel; returns a disposer */
+    registerPanelSection(def: PanelSectionDefinition): () => void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
     persistPlatformState(storage?: SettingsStorage): void;
@@ -1594,6 +1602,16 @@ export declare class LGraphCanvas {
     applyWidgetValue(node: LGraphNode, widget: IWidget, value: any, context?: { old_value?: any; pos?: Vector2; event?: Event }): boolean;
     /** loose equality; arrays and objects compare by content */
     static sameValue(a: any, b: any): boolean;
+    /** label, tooltip, category, type and default of each canvas option (options panel, Canvas tab) */
+    static optionInfo: Record<string, CanvasOptionInfo>;
+    /** opens the node panel as a double click does (the onShowNodePanel callback may handle it); true when the built-in panel opened */
+    openNodePanel(node: LGraphNode): boolean;
+    /** creates a side panel (see PanelBuilder) */
+    createPanel(title: string, options?: PanelOptions): PanelElement;
+    /** the open node panel, if any */
+    node_panel: PanelElement | null;
+    /** the open options panel, if any */
+    options_panel: PanelElement | null;
     static node_colors: Record<
         string,
         {
@@ -2328,6 +2346,10 @@ export interface ExtensionContext {
     onTarget(target: CallbackHost, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
     onCanvas(fn: (canvas: LGraphCanvas, ctx: ExtensionCanvasContext) => void | (() => void)): void;
     menus: { register(location: MenuLocation, provider: MenuProvider): () => void };
+    /** side panel sections and editors, removed on dispose */
+    panels: { registerSection(section: PanelSectionDefinition): () => void; registerEditor(name: string, editor: PanelEditor): () => void };
+    /** value types, removed on dispose */
+    valueTypes: { register(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void };
     onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
     addDisposer(dispose: () => void): () => void;
 }
@@ -2716,6 +2738,139 @@ export declare class VectorWidget extends BaseWidget<number[], { size?: number; 
     static size(widget: IWidget): number;
     static layout(widget: IWidget, ctx: CanvasRenderingContext2D | null, widget_width: number, env: { margin: number; show_label: boolean }): { size: number; start: number; cell: number };
 }
+
+/** Context given to PanelEditor.create. */
+export interface PanelEditorContext {
+    doc: Document;
+    name: string;
+    value: any;
+    /** the value type's options merged with the property info */
+    options: Record<string, any>;
+    info: Record<string, any>;
+    /** resolved value type name */
+    type: string | null;
+    valueType: Readonly<ResolvedValueType> | null;
+    readonly: boolean;
+    row: HTMLElement;
+    /** the label element (number editors scrub on it) */
+    label: HTMLElement;
+    panel: PanelElement;
+    target: any;
+    /** final value: coerced, validated, applied as one undo step */
+    commit(value: any): boolean;
+    /** live value while dragging */
+    preview(value: any): boolean;
+    describe(text: string): void;
+}
+/** A panel editor (see LiteGraph.registerPanelEditor). */
+export interface PanelEditor {
+    create(ctx: PanelEditorContext): { element: HTMLElement; set(value: any): void; focus?(): void; destroy?(): void; onRowClick?(): void };
+}
+/** A section added to a side panel (see LiteGraph.registerPanelSection). */
+export interface PanelSectionDefinition {
+    id: string;
+    panel: "node" | "options";
+    title?: string;
+    /** options panel: "graph", "canvas", "settings" (default) or a new tab id */
+    tab?: string;
+    tabTitle?: string;
+    order?: number;
+    collapsed?: boolean;
+    when?(target: any, ctx: object): boolean;
+    render(section: HTMLDetailsElement, ctx: { panel: PanelElement; section: HTMLDetailsElement; node?: LGraphNode; graph?: LGraph; canvas?: LGraphCanvas; tab?: string }): void;
+}
+export interface CanvasOptionInfo {
+    label?: string;
+    tooltip?: string;
+    description?: string;
+    examples?: string[];
+    category?: "Rendering" | "Links" | "Interaction" | "Advanced" | string;
+    type?: string;
+    default?: any;
+    /** shown even when not listed in LiteGraph.availableCanvasOptions */
+    always?: boolean;
+    /** "index": the canvas stores the index of the chosen value (links_render_mode) */
+    store?: "index";
+    values?: any[] | (() => any[]);
+    [key: string]: any;
+}
+export interface PanelOptions {
+    closable?: boolean;
+    window?: Window;
+    width?: number | string;
+    height?: number | string;
+    onOpen?(): void;
+    onClose?(): void;
+    /** remembers collapsed sections under this id */
+    id?: string;
+}
+/** A row spec for PanelElement.addRow. */
+export interface PanelRowSpec {
+    name: string;
+    value: any;
+    /** property info: type, widget, editor, label, tooltip, description, examples, min, max, step, precision, unit, values, readonly, placeholder, default_value, ... */
+    info?: Record<string, any>;
+    label?: string;
+    commit?(value: any): void | false;
+    preview?(value: any): void;
+    defaultValue?: any;
+    keywords?: string[];
+    target?: any;
+    readonly?: boolean;
+}
+/** The element createPanel returns: the former panel API plus sections, tabs, a toolbar and typed rows. */
+export interface PanelElement extends HTMLDivElement {
+    header: HTMLElement;
+    title_element: HTMLElement;
+    actions: HTMLElement;
+    toolbar: HTMLElement;
+    tabbar: HTMLElement;
+    content: HTMLElement;
+    alt_content: HTMLElement;
+    footer: HTMLElement;
+    node?: LGraphNode;
+    panel_id: string;
+    filter_state: { query: string; modified: boolean; sort: string };
+    close(): void;
+    clear(): void;
+    addDisposer(fn: () => void): void;
+    toggleAltContent(force?: boolean): void;
+    toggleFooterVisibility(force?: boolean): void;
+    addHTML(code: string, classname?: string, on_footer?: boolean): HTMLDivElement;
+    addNote(text: string, classname?: string): HTMLDivElement;
+    addButton(name: string, callback: (e: Event) => void, options?: any): HTMLButtonElement;
+    addSeparator(): HTMLDivElement;
+    addWidget(type: string, name: string, value: any, options?: Record<string, any>, callback?: (name: string, value: any, options: Record<string, any>) => void): HTMLElement;
+    addRow(spec: PanelRowSpec): HTMLElement & { value: any; setValue(value: any): void };
+    addSection(title: string, options?: { id?: string; collapsed?: boolean; description?: string; className?: string }): HTMLDetailsElement & { body: HTMLElement };
+    endSection(): void;
+    addTabs(tabs: { id: string; title: string }[], active?: string): void;
+    showTab(id: string): void;
+    useTab(id: string | null): void;
+    addToolbar(options?: { placeholder?: string; sorts?: { id: string; label: string }[]; sort?: string; modified?: boolean; onSort?(mode: string): void }): HTMLInputElement;
+    setAllSections(open: boolean): void;
+    applyFilter(): number;
+    applySort(): void;
+    refresh?(): void;
+    [key: string]: any;
+}
+/** Builds side panels (see LGraphCanvas.createPanel). */
+export declare class PanelBuilder {
+    static create(title: string, options?: PanelOptions & { canvas?: LGraphCanvas }): PanelElement;
+    static highlight(el: HTMLElement | null, query: string): void;
+    /** builds the graph options panel of a canvas */
+    static showGraphOptions(canvas: LGraphCanvas): PanelElement;
+    /** builds the node details panel */
+    static showNode(canvas: LGraphCanvas, node: LGraphNode): PanelElement;
+    static extraEditors(): Record<string, PanelEditor>;
+}
+/** Places panels: docking side and width (settings LiteGraph.Panel.Side / Width), resize handle. */
+export declare class PanelHost {
+    static place(panel: PanelElement, parent: HTMLElement | null, options?: { side?: "left" | "right"; width?: number }): PanelElement;
+    static setSide(panel: PanelElement, side: "left" | "right"): void;
+}
+/** The built-in panel editors. */
+export declare function defaultPanelEditors(): Record<string, PanelEditor>;
 
 /** A value type definition (see LiteGraph.registerValueType). Every field is optional. */
 export interface ValueTypeDefinition {

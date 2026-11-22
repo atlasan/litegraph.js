@@ -700,3 +700,524 @@
 .litegraph.property_input_binded {
     font-weight: bold;
 }
+/* SIDE PANELS (src/panels.js) ******
+ * Theme with the --lg-panel-* variables on .litegraph.dialog.lg-panel (or any ancestor).
+ * The former classes (.property, .property_name, .property_value, .bool-on, .settings) stay on
+ * the same elements. */
+
+.litegraph.dialog.lg-panel {
+    --lg-panel-bg: #232425;
+    --lg-panel-bg-raised: #2b2c2e;
+    --lg-panel-fg: #d0d0d0;
+    --lg-panel-muted: #8a8a8a;
+    --lg-panel-border: #141414;
+    --lg-panel-line: #343537;
+    --lg-panel-input-bg: #18191a;
+    --lg-panel-input-border: #3a3b3d;
+    --lg-panel-hover: #2f3032;
+    --lg-panel-accent: #6f9bd1;
+    --lg-panel-accent-fg: #0d1420;
+    --lg-panel-modified: #e3b45a;
+    --lg-panel-danger: #e0605a;
+    --lg-panel-ok: #7fbf7f;
+    --lg-panel-radius: 6px;
+    --lg-panel-font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --lg-panel-mono: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --lg-panel-label-width: 40%;
+
+    display: flex;
+    flex-direction: column;
+    background: var(--lg-panel-bg);
+    color: var(--lg-panel-fg);
+    font: var(--lg-panel-font);
+    border: 1px solid var(--lg-panel-border);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    border-radius: var(--lg-panel-radius);
+    min-width: min(340px, calc(100% - 20px));
+    min-height: 200px;
+    overflow: hidden;
+    z-index: 10;
+}
+.litegraph.dialog.lg-panel.settings {
+    width: 420px;
+    max-width: calc(100% - 20px);
+    height: calc(100% - 20px);
+    top: 10px;
+    left: 10px;
+    margin: 0;
+}
+.litegraph.dialog.lg-panel.settings.lg-dock-right {
+    left: auto;
+    right: 10px;
+}
+.litegraph.dialog.lg-panel:focus { outline: none; }
+
+/* header */
+.litegraph.dialog.lg-panel .dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: auto;
+    min-height: 38px;
+    padding: 0 6px 0 4px;
+    border-bottom: 1px solid var(--lg-panel-border);
+    background: var(--lg-panel-bg-raised);
+    color: var(--lg-panel-fg);
+    flex: none;
+}
+.litegraph.dialog.lg-panel .dialog-header .dialog-title {
+    flex: 1;
+    min-width: 0;
+    font: 600 15px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 0;
+    padding: 8px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.litegraph.dialog.lg-panel .lg-panel-actions { display: flex; gap: 2px; }
+.litegraph.dialog.lg-panel .close {
+    float: none;
+    margin: 0;
+    padding: 2px 8px;
+    font-size: 15px;
+    color: var(--lg-panel-muted);
+    border-radius: 4px;
+}
+.litegraph.dialog.lg-panel .close:hover { color: #fff; background: var(--lg-panel-hover); }
+
+/* small buttons */
+.litegraph.dialog.lg-panel .lg-icon-btn,
+.litegraph.dialog.lg-panel .lg-help-btn,
+.litegraph.dialog.lg-panel .lg-reset {
+    border: 0;
+    background: transparent;
+    color: var(--lg-panel-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font: inherit;
+    line-height: 1.2;
+}
+.litegraph.dialog.lg-panel .lg-icon-btn:hover,
+.litegraph.dialog.lg-panel .lg-help-btn:hover,
+.litegraph.dialog.lg-panel .lg-reset:hover { color: #fff; background: var(--lg-panel-hover); }
+.litegraph.dialog.lg-panel .lg-icon-btn.active { color: var(--lg-panel-accent-fg); background: var(--lg-panel-accent); }
+.litegraph.dialog.lg-panel button:focus-visible,
+.litegraph.dialog.lg-panel .lg-input:focus-visible,
+.litegraph.dialog.lg-panel summary:focus-visible {
+    outline: 2px solid var(--lg-panel-accent);
+    outline-offset: 1px;
+}
+
+/* toolbar */
+.litegraph.dialog.lg-panel .lg-panel-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--lg-panel-border);
+    flex: none;
+}
+.litegraph.dialog.lg-panel .lg-search { flex: 1 1 140px; min-width: 0; }
+.litegraph.dialog.lg-panel .lg-toolbar-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.litegraph.dialog.lg-panel .lg-sort { width: auto; }
+.litegraph.dialog.lg-panel .lg-toggle-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px 2px 4px;
+    border: 1px solid var(--lg-panel-input-border);
+    border-radius: 12px;
+    color: var(--lg-panel-muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.litegraph.dialog.lg-panel .lg-toggle-chip:has(input:checked) { color: var(--lg-panel-modified); border-color: var(--lg-panel-modified); }
+
+/* tabs */
+.litegraph.dialog.lg-panel .lg-panel-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--lg-panel-border);
+    flex: none;
+}
+.litegraph.dialog.lg-panel .lg-tab {
+    border: 0;
+    background: transparent;
+    color: var(--lg-panel-muted);
+    padding: 8px 12px 7px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+.litegraph.dialog.lg-panel .lg-tab:hover { color: var(--lg-panel-fg); }
+.litegraph.dialog.lg-panel .lg-tab.active { color: var(--lg-panel-fg); border-bottom-color: var(--lg-panel-accent); }
+.litegraph.dialog.lg-panel .lg-tab.lg-tab-dim { opacity: 0.45; }
+.litegraph.dialog.lg-panel .lg-tab-pane { display: none; }
+.litegraph.dialog.lg-panel .lg-tab-pane.active { display: block; }
+.litegraph.dialog.lg-panel .lg-tab-heading { display: none; }
+/* while searching, every tab with results is shown under its title */
+.litegraph.dialog.lg-panel.lg-filtering .lg-tab-pane { display: none; }
+.litegraph.dialog.lg-panel.lg-filtering .lg-tab-pane.lg-has-results { display: block; }
+.litegraph.dialog.lg-panel.lg-filtering .lg-tab-pane.lg-has-results > .lg-tab-heading {
+    display: block;
+    padding: 10px 12px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--lg-panel-accent);
+}
+
+/* content */
+.litegraph.dialog.lg-panel .dialog-content,
+.litegraph.dialog.lg-panel .dialog-alt-content {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    width: auto;
+    display: block;
+    overflow: auto;
+    color: var(--lg-panel-fg);
+    padding-bottom: 8px;
+}
+.litegraph.dialog.lg-panel .dialog-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    height: auto;
+    padding: 8px;
+    border-top: 1px solid var(--lg-panel-border);
+    flex: none;
+}
+.litegraph.dialog.lg-panel .dialog-footer:empty { display: none; }
+.litegraph.dialog.lg-panel .btn,
+.litegraph.dialog.lg-panel .lg-btn {
+    border: 1px solid var(--lg-panel-input-border);
+    border-radius: 4px;
+    padding: 5px 12px;
+    background: var(--lg-panel-bg-raised);
+    color: var(--lg-panel-fg);
+    font: inherit;
+    cursor: pointer;
+}
+.litegraph.dialog.lg-panel .btn:hover,
+.litegraph.dialog.lg-panel .lg-btn:hover { background: var(--lg-panel-hover); color: #fff; }
+.litegraph.dialog.lg-panel .btn.delete { margin-left: auto; }
+.litegraph.dialog.lg-panel .btn.delete:hover { background: var(--lg-panel-danger); border-color: var(--lg-panel-danger); color: #000; }
+
+/* sections */
+.litegraph.dialog.lg-panel .lg-section { border-bottom: 1px solid var(--lg-panel-line); }
+.litegraph.dialog.lg-panel .lg-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+    list-style: none;
+}
+.litegraph.dialog.lg-panel .lg-section-title::-webkit-details-marker { display: none; }
+.litegraph.dialog.lg-panel .lg-section-title::before {
+    content: "▸";
+    color: var(--lg-panel-muted);
+    font-size: 11px;
+    transition: transform 0.12s;
+}
+.litegraph.dialog.lg-panel .lg-section[open] > .lg-section-title::before { transform: rotate(90deg); }
+.litegraph.dialog.lg-panel .lg-section-title:hover { background: var(--lg-panel-hover); }
+.litegraph.dialog.lg-panel .lg-section-count {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--lg-panel-muted);
+    font-variant-numeric: tabular-nums;
+}
+.litegraph.dialog.lg-panel .lg-section-desc { padding: 0 12px 6px; color: var(--lg-panel-muted); }
+.litegraph.dialog.lg-panel .lg-section-body { padding: 0 0 6px; }
+.litegraph.dialog.lg-panel .lg-subsection-title {
+    padding: 6px 12px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--lg-panel-muted);
+}
+.litegraph.dialog.lg-panel .lg-contributed > .lg-section-title .lg-section-name::after { content: " ·"; color: var(--lg-panel-accent); }
+
+/* rows */
+.litegraph.dialog.lg-panel .property.lg-row {
+    display: grid;
+    grid-template-columns: minmax(96px, var(--lg-panel-label-width)) minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    margin: 0;
+    padding: 3px 8px 3px 12px;
+    border-left: 2px solid transparent;
+}
+.litegraph.dialog.lg-panel .property.lg-row:hover { background: var(--lg-panel-hover); }
+.litegraph.dialog.lg-panel .property.lg-row.lg-modified { border-left-color: var(--lg-panel-modified); }
+.litegraph.dialog.lg-panel .property.lg-row.lg-invalid { border-left-color: var(--lg-panel-danger); }
+.litegraph.dialog.lg-panel .property_name {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    color: var(--lg-panel-muted);
+    overflow: hidden;
+}
+.litegraph.dialog.lg-panel .property_name .lg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.litegraph.dialog.lg-panel .property:hover .property_name { color: var(--lg-panel-fg); }
+.litegraph.dialog.lg-panel .lg-modified .property_name .lg-label { color: var(--lg-panel-fg); }
+.litegraph.dialog.lg-panel .property_name .lg-scrub { cursor: ew-resize; }
+.litegraph.dialog.lg-panel .property_name mark { background: rgba(111, 155, 209, 0.35); color: inherit; border-radius: 2px; }
+.litegraph.dialog.lg-panel .lg-help-btn { padding: 0 5px; font-size: 11px; opacity: 0.7; }
+.litegraph.dialog.lg-panel .property_value {
+    display: block;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    min-height: 0;
+    padding: 0;
+    background: none;
+    text-align: left;
+    color: var(--lg-panel-fg);
+    overflow: visible;
+    cursor: auto;
+    border-radius: 0;
+}
+.litegraph.dialog.lg-panel .property.boolean .property_value { padding: 0; color: inherit; }
+.litegraph.dialog.lg-panel .property.boolean { cursor: pointer; }
+.litegraph.dialog.lg-panel .property.boolean.bool-on .property_name { color: var(--lg-panel-fg); }
+.litegraph.dialog.lg-panel .lg-row-tail { display: flex; min-width: 20px; justify-content: flex-end; }
+.litegraph.dialog.lg-panel .lg-reset { padding: 0 4px; }
+.litegraph.dialog.lg-panel .lg-row-help,
+.litegraph.dialog.lg-panel .lg-row-error { grid-column: 1 / -1; margin: 4px 0 2px; }
+.litegraph.dialog.lg-panel .lg-row-help {
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--lg-panel-input-bg);
+    color: var(--lg-panel-muted);
+    white-space: pre-line;
+}
+.litegraph.dialog.lg-panel .lg-row-examples { margin-top: 4px; }
+.litegraph.dialog.lg-panel .lg-row-examples code,
+.litegraph.dialog.lg-panel code { font: var(--lg-panel-mono); color: var(--lg-panel-fg); }
+.litegraph.dialog.lg-panel .lg-row-error { color: var(--lg-panel-danger); font-size: 12px; }
+.litegraph.dialog.lg-panel .lg-readonly-row .property_name { opacity: 0.85; }
+.litegraph.dialog.lg-panel .lg-experimental .lg-label::after { content: " β"; color: var(--lg-panel-accent); }
+
+/* editors */
+.litegraph.dialog.lg-panel .lg-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 4px 6px;
+    background: var(--lg-panel-input-bg);
+    color: var(--lg-panel-fg);
+    border: 1px solid var(--lg-panel-input-border);
+    border-radius: 4px;
+    font: inherit;
+}
+.litegraph.dialog.lg-panel .lg-input:hover { border-color: #55575a; }
+.litegraph.dialog.lg-panel .lg-input:focus { border-color: var(--lg-panel-accent); outline: none; }
+.litegraph.dialog.lg-panel .lg-input[readonly],
+.litegraph.dialog.lg-panel .lg-input:disabled { opacity: 0.65; }
+.litegraph.dialog.lg-panel select.lg-input { padding: 3px 4px; }
+.litegraph.dialog.lg-panel .lg-textarea { resize: vertical; min-height: 26px; }
+.litegraph.dialog.lg-panel .lg-mono { font: var(--lg-panel-mono); }
+.litegraph.dialog.lg-panel .lg-readonly { color: var(--lg-panel-fg); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.litegraph.dialog.lg-panel .lg-number,
+.litegraph.dialog.lg-panel .lg-slider,
+.litegraph.dialog.lg-panel .lg-color,
+.litegraph.dialog.lg-panel .lg-resource,
+.litegraph.dialog.lg-panel .lg-code { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.litegraph.dialog.lg-panel .lg-number .lg-input { text-align: right; font-variant-numeric: tabular-nums; }
+.litegraph.dialog.lg-panel .lg-unit { color: var(--lg-panel-muted); font-size: 12px; }
+.litegraph.dialog.lg-panel .lg-range { flex: 1; min-width: 60px; accent-color: var(--lg-panel-accent); }
+.litegraph.dialog.lg-panel .lg-input-short { width: 64px; flex: none; text-align: right; }
+.litegraph.dialog.lg-panel .lg-combo { display: flex; flex-direction: column; gap: 4px; }
+.litegraph.dialog.lg-panel .lg-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.litegraph.dialog.lg-panel .lg-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.litegraph.dialog.lg-panel .lg-switch-track {
+    position: relative;
+    width: 30px;
+    height: 16px;
+    border-radius: 8px;
+    background: #4a4b4e;
+    transition: background 0.12s;
+    flex: none;
+}
+.litegraph.dialog.lg-panel .lg-switch-track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ddd;
+    transition: transform 0.12s;
+}
+.litegraph.dialog.lg-panel .lg-switch input:checked + .lg-switch-track { background: var(--lg-panel-accent); }
+.litegraph.dialog.lg-panel .lg-switch input:checked + .lg-switch-track::after { transform: translateX(14px); }
+.litegraph.dialog.lg-panel .lg-switch input:focus-visible + .lg-switch-track { outline: 2px solid var(--lg-panel-accent); outline-offset: 2px; }
+.litegraph.dialog.lg-panel .lg-switch input:disabled + .lg-switch-track { opacity: 0.5; }
+.litegraph.dialog.lg-panel .lg-switch-text { color: var(--lg-panel-muted); font-size: 12px; }
+.litegraph.dialog.lg-panel .lg-color { flex-wrap: wrap; }
+.litegraph.dialog.lg-panel .lg-color > .lg-input { flex: 1 1 80px; font: var(--lg-panel-mono); }
+.litegraph.dialog.lg-panel .lg-color-picker {
+    width: 30px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--lg-panel-input-border);
+    border-radius: 4px;
+    background: none;
+    cursor: pointer;
+    flex: none;
+}
+.litegraph.dialog.lg-panel .lg-color-empty .lg-color-picker { opacity: 0.4; }
+.litegraph.dialog.lg-panel .lg-swatches { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
+.litegraph.dialog.lg-panel .lg-swatch {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-top: 4px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.litegraph.dialog.lg-panel .lg-swatch:hover { transform: scale(1.12); }
+.litegraph.dialog.lg-panel .lg-swatch.active { outline: 2px solid var(--lg-panel-accent); outline-offset: 1px; }
+.litegraph.dialog.lg-panel .lg-swatch-none { background: repeating-linear-gradient(45deg, #444 0 3px, #2a2a2a 3px 6px); }
+.litegraph.dialog.lg-panel .lg-vector { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+.litegraph.dialog.lg-panel .lg-vector-cell { display: flex; align-items: center; min-width: 0; }
+.litegraph.dialog.lg-panel .lg-axis {
+    flex: none;
+    padding: 0 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--lg-panel-muted);
+}
+.litegraph.dialog.lg-panel .lg-vector-cell:nth-child(1) .lg-axis { color: #e07a7a; }
+.litegraph.dialog.lg-panel .lg-vector-cell:nth-child(2) .lg-axis { color: #8fc98f; }
+.litegraph.dialog.lg-panel .lg-vector-cell:nth-child(3) .lg-axis { color: #7fa6e0; }
+.litegraph.dialog.lg-panel .lg-vector .lg-input { text-align: right; padding: 4px; font-variant-numeric: tabular-nums; }
+.litegraph.dialog.lg-panel .lg-code-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lg-panel-muted); }
+
+/* notes and empty state */
+.litegraph.dialog.lg-panel .lg-note,
+.litegraph.dialog.lg-panel .execution-model-info {
+    margin: 4px 12px 6px;
+    color: var(--lg-panel-muted);
+    font-size: 12px;
+    white-space: pre-line;
+}
+.litegraph.dialog.lg-panel .lg-note.lg-warn { color: var(--lg-panel-modified); }
+.litegraph.dialog.lg-panel .lg-note.lg-error { color: var(--lg-panel-danger); }
+.litegraph.dialog.lg-panel .lg-muted { color: var(--lg-panel-muted); }
+.litegraph.dialog.lg-panel .lg-empty { padding: 24px 12px; text-align: center; color: var(--lg-panel-muted); }
+
+/* node panel */
+.litegraph.dialog.lg-panel .lg-node-header { padding: 10px 12px 8px; border-bottom: 1px solid var(--lg-panel-line); }
+.litegraph.dialog.lg-panel .lg-node-typeline { display: flex; align-items: center; gap: 8px; }
+.litegraph.dialog.lg-panel .lg-node-header .node_type {
+    display: inline;
+    margin: 0;
+    font: var(--lg-panel-mono);
+    font-size: 13px;
+    color: var(--lg-panel-fg);
+    overflow-wrap: anywhere;
+}
+.litegraph.dialog.lg-panel .lg-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.litegraph.dialog.lg-panel .lg-chip {
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: var(--lg-panel-hover);
+    color: var(--lg-panel-muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+.litegraph.dialog.lg-panel .lg-chip-id { margin-left: auto; font-variant-numeric: tabular-nums; }
+.litegraph.dialog.lg-panel .lg-chip-warn { background: rgba(224, 96, 90, 0.18); color: var(--lg-panel-danger); }
+.litegraph.dialog.lg-panel .lg-chip-exp { background: rgba(111, 155, 209, 0.18); color: var(--lg-panel-accent); }
+.litegraph.dialog.lg-panel .lg-node-header .node_desc {
+    display: block;
+    margin: 8px 0 0;
+    opacity: 1;
+    color: var(--lg-panel-muted);
+    white-space: pre-line;
+}
+.litegraph.dialog.lg-panel .lg-node-usage { margin-top: 6px; color: var(--lg-panel-fg); white-space: pre-line; }
+.litegraph.dialog.lg-panel .lg-node-header .lg-note { margin: 8px 0 0; }
+.litegraph.dialog.lg-panel .lg-slot .property_name { gap: 6px; }
+.litegraph.dialog.lg-panel .lg-slot-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+.litegraph.dialog.lg-panel .lg-slot .property_value { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.litegraph.dialog.lg-panel .lg-slot-type { color: var(--lg-panel-muted); }
+.litegraph.dialog.lg-panel .lg-link-btn {
+    border: 0;
+    border-radius: 4px;
+    padding: 1px 6px;
+    background: var(--lg-panel-input-bg);
+    color: var(--lg-panel-accent);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.litegraph.dialog.lg-panel .lg-link-btn:hover { text-decoration: underline; }
+.litegraph.dialog.lg-panel .lg-button-row { grid-template-columns: 1fr; }
+.litegraph.dialog.lg-panel .lg-widget-btn { width: 100%; }
+.litegraph.dialog.lg-panel .lg-json-box { padding: 4px 12px 8px; }
+.litegraph.dialog.lg-panel .lg-json {
+    max-height: 240px;
+    overflow: auto;
+    margin: 6px 0 0;
+    padding: 8px;
+    border-radius: 4px;
+    background: var(--lg-panel-input-bg);
+    font: var(--lg-panel-mono);
+    white-space: pre;
+}
+.litegraph.dialog.lg-panel.centered { width: auto; max-width: calc(100% - 40px); }
+.litegraph.dialog.lg-panel .dialog-alt-content textarea.code {
+    box-sizing: border-box;
+    width: calc(100% - 16px);
+    margin: 8px;
+    background: var(--lg-panel-input-bg);
+    color: var(--lg-panel-fg);
+    border: 1px solid var(--lg-panel-input-border);
+    border-radius: 4px;
+    font: var(--lg-panel-mono);
+}
+
+/* resize handle */
+.litegraph.dialog.lg-panel .lg-panel-resize {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 7px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 2;
+}
+.litegraph.dialog.lg-panel.lg-dock-right .lg-panel-resize { right: auto; left: -3px; }
+.litegraph.dialog.lg-panel .lg-panel-resize:hover { background: linear-gradient(90deg, transparent 2px, var(--lg-panel-accent) 2px 4px, transparent 4px); }
+
+/* narrow hosts */
+@media (max-width: 480px) {
+    .litegraph.dialog.lg-panel.settings { width: calc(100% - 20px) !important; }
+    .litegraph.dialog.lg-panel { --lg-panel-label-width: 38%; }
+    .litegraph.dialog.lg-panel .property.lg-row { padding-left: 8px; column-gap: 6px; }
+}
