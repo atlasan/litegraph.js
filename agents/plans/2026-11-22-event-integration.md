@@ -1,6 +1,6 @@
 # Event integration: one core, two faces
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** proposed · **Base** `LG/dev` @ `a5604d8`
+> **Date** 2026-11-22 · **Kind** plan · **Status** accepted; core done (Wave 7a–7e, partial, see History) · **Base** `LG/dev` @ `a5604d8`
 
 **Outcome:** the legacy `onX` callbacks, the CallbackHandler hooks and the typed events run on **one listener engine**, and today's code keeps working unchanged.
 - **Hooks** stay the **intercept** face: priority, veto and return values.
@@ -204,3 +204,22 @@ Proposed as **Wave 7**, on branches `LG/wave7<x>_<topic>` cut from `LG/dev`. Eve
 ## History
 
 - 2026-11-22: proposed, from the [event handling audit](../audits/2026-11-22-event-handling.md). The target ("one core, two faces") and the compatibility priority were chosen by the user.
+- 2026-11-22: accepted by the user ("keep compatibility high … best effort"). Implemented on `LG/wave7_events`, reviewed ([audit](../audits/2026-11-22-wave7-review.md)) and merged into `LG/dev`; see the [execution record](../executions/2026-11-22-wave7-event-core.md).
+  - **Done:**
+    - the core: `ListenerList`, `installHooks`, copy-on-write, isolated errors, the fast path, `onHook`, `signal`, `once`, `hasCallbackHandlers`;
+    - the result helpers, with 21 call sites migrated, each keeping its rule;
+    - the E11 panel bypasses;
+    - selection parity;
+    - `LiteGraph.events`, the group events, `"*"` and `priority`;
+    - `ctx.listen`;
+    - the emitted-versus-declared check in `check-types`.
+  - **Also fixed:** E12 (a drop on a node without `onDropItem` threw) and E13 (mouse down ran the `onClear` hook).
+  - **Changed from the design:** open decision 1. The first handler error is **always** rethrown after the chain, whatever `throw_errors` says. Swallowing it would hide `onExecute` errors from `runStep`'s `node-error` report.
+  - **Deferred:**
+    - steps 2–3: the per-site snapshot and the order golden, replaced by targeted tests in `test/hook-pipeline.test.js`;
+    - step 9: `fireHookThenEvent`, and skipping events after a veto (open decision 3);
+    - the dispatch tap;
+    - the typed hook maps;
+    - step 13: deprecation logs. Nothing was deprecated, because every old name keeps working;
+    - generated doc tables;
+    - the `return_value` sites that read menu arrays.

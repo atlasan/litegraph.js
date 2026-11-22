@@ -1,6 +1,37 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased: Wave 7 (event integration)
+
+Plan: `agents/plans/2026-11-22-event-integration.md`; audit: `agents/audits/2026-11-22-event-handling.md`.
+
+Hooks (CallbackHandler) and typed events now run on one listener core (`ListenerList` in `src/eventtarget.js`). Assigning `onX` callbacks (`node.onExecute = fn`, prototype methods, `LiteGraph.onNodeTypeRegistered = fn`) works exactly as before: it is the default callback of the hook chain. `registerCallbackHandler` still returns a numeric id, and `processCallbackHandlers` returns the same values.
+
+## Changed
+
+* **A throwing hook handler no longer stops the chain.** The remaining handlers and the default `onX` still run, then the first error is rethrown to the caller; later errors are logged. Before, the chain stopped at the throw and the default did not run.
+* **Registering a handler during a dispatch takes effect from the next dispatch.** Before, it re-ran earlier handlers, and a handler that registered on every call never returned.
+* **Groups and reroutes:** selecting or deselecting one now also fires the canvas `onSelectionChange` hook, as `selection-changed` already did.
+* **Hosts share one hook implementation** (`installHooks`). The handler registry is created when first needed: reading `cb_handler` (still a `CallbackHandler`, still assignable) or registering a handler. Nodes and graphs that nobody hooks no longer allocate one. A dispatch with no handler only calls `onX`: about 4× faster than before (`runStep` on `benchmark.json` about 15% faster). `callbacks_handlers[name]` exists only for names that had a handler registered; before, every dispatched name created an empty entry.
+
+## Added
+
+* `obj.onHook(name, fn, opts)` returns a disposer; `hasCallbackHandlers(name)`; handler options `once` (alias of `call_once`) and `signal` (unregister on abort).
+* `CallbackHandler.is(result, value)`, `CallbackHandler.handled(result)` and `CallbackHandler.valueOf(result)` read hook results the way the library does.
+* **`LiteGraph.events`:** `node-type-registered`, `node-type-replaced`, `node-type-unregistered`, `graph-created`, `canvas-created`.
+* Graph events `group-added` and `group-removed`.
+* Typed events: a `priority` option, and `"*"` listeners that receive every event of a target.
+* Extension context: `ctx.listen(target, name, fn, opts)` registers a hook for hook names (`onX`, `on_x`, `getXMenuOptions`) and a typed listener otherwise; disposed with the extension.
+* `onAddPropertyToPanel` and `onShowCustomPanelInfo` (node panel) are hooks too.
+* `npm run check:types` also fails when a typed event is emitted but not declared; `blueprint-error`, `link-drag-start` and `link-drag-end` are now declared on the canvas.
+
+## Fixed
+
+* **Dropping on a node without `onDropItem` threw** a TypeError (a `null` hook result was read as an object).
+* **Mouse down ran the canvas `onClear` hook** (with `onMouse` as its default); it now runs the `onMouse` hook.
+* **A `once` / `call_once` handler could run twice** when a handler dispatched the same name again (hooks and typed events).
+* **Removed listeners stayed attached to their `AbortSignal`**, so a long-lived signal kept them alive.
+
 # Unreleased: flows track (node reference, declarations, examples)
 
 Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
