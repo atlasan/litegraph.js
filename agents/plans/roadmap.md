@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-20 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Wave 4 done in `LG/dev`
+> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 proposed
 
 This is the single place for the current status of planned work.
 
@@ -32,6 +32,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 4 | Ecosystem and workspace features | **Done**: 4a packs and missing nodes ([record](../executions/2026-11-20-wave4a-packs.md)), 4b workspace state and execution ([record](../executions/2026-11-20-wave4b-workspace.md)), 4c links and view ([record](../executions/2026-11-20-wave4c-links-view.md)), 4d layout and palette ([record](../executions/2026-11-20-wave4d-layout-palette.md)), 4e catalog and boundaries ([record](../executions/2026-11-21-wave4e-catalog-boundaries.md)), all merged into `LG/dev`. See the [plan](2026-11-20-wave4-ecosystem-workspace.md) |
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
+| 7 | Event integration (one core, two faces) | **Proposed** ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md)): CallbackHandler, legacy `onX` and typed events on one listener engine, compatible API; see [Wave 7](#wave-7-event-integration-proposed) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -94,7 +95,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 **Carried over to Wave 2** (they belong with the standalone ports):
 - Moving node, group and link dragging onto the gesture pattern (with the `LinkConnector` port).
 - Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
-- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events.
+- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Now proposed as [Wave 7](#wave-7-event-integration-proposed).**
 
 ## Wave 2: authoring core (done)
 
@@ -158,6 +159,34 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | **Done** on `LG/wave6d_graphinfo`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6d-graphinfo-runner.md)) |
 | 6e | Deprecations; docs; decision record | **Done** on `LG/wave6e_polish`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)) |
 
+## Wave 7: event integration (proposed)
+
+[Plan](2026-11-22-event-integration.md) (proposed 2026-11-22), from the [event handling audit](../audits/2026-11-22-event-handling.md).
+- **Target ("one core, two faces"):** the legacy `onX` callbacks, the CallbackHandler hooks and the typed events run on one listener engine. Hooks stay the intercept face and typed events the observe face, fired in one documented order. The API stays compatible.
+- **Fixes:**
+  - registering during a dispatch re-runs handlers, or hangs (E1);
+  - a throwing hook aborts the chain (E2);
+  - each call site reads results its own way (E3);
+  - a dispatch costs ≈ 32× a direct call (E4);
+  - the pairs of hooks and events have no defined order and cover different points (E5, E6);
+  - the docs and typings have drifted (E7).
+- **Adds:**
+  - `LiteGraph.events`;
+  - group, reroute and slot events;
+  - `ctx.listen`;
+  - wildcard observers;
+  - a dispatch tap for the trace (USE-34).
+
+| Part | Items | Status |
+|---|---|---|
+| 7a | Characterization: hook semantics, a snapshot of the per-site result rules, a golden of the hook and event order, a benchmark baseline | proposed |
+| 7b | `ListenerStore` and the `installHooks` mixin; copy-on-write, error isolation, fast path, disposers | proposed |
+| 7c | `LiteGraph.hookResult` and migrating the 164 call sites (each keeps its rule); hook bypasses | proposed |
+| 7d | Hook → `onX` → event order, with the event skipped after a veto; selection parity; new event targets and events | proposed |
+| 7e | `ctx.listen`, `events.on("*")`, tap; hook typing and `check-types`; deprecations; generated docs; decision record | proposed |
+
+Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
+
 ## Deferred (each needs its own proposal)
 
 Virtual/broadcast links, link routing as default, app mode / published parameters, graph tabs, remote pack registry, TypeScript migration, renderer change, async workflow scheduler.
@@ -173,3 +202,4 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
 | D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
 | D7 | Upgrading the remaining runtime dependencies with advisories | Upgrade to releases at least 2 weeks old, after a changelog review |
+| D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | Isolate, report, and rethrow after the chain under `throw_errors`. Keep each site's rule until 0.20, then `strict`. Skip the event after a veto. No `node.events`. `"*"` only, observe only. Async hooks out of scope |

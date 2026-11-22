@@ -106,7 +106,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - **ON_REQUEST (4):** under `legacy`, runs only through `refreshAncestors` (`getInputData(slot, true, true)` or the `refreshAncestorsOn*` flags); under the models, through the engine's pulls.
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
 - **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
-- **Two hook systems coexist:** the CallbackHandler (about 100 hook names) and typed events. Merging them into one pipe is planned for Wave 2.
+- **Two hook systems coexist:** the CallbackHandler (102 hook names at 164 call sites; it intercepts, and the legacy `onX` runs as its default handler) and typed events (32 types on `graph.events` and `canvas.events`; they observe). The [event handling audit](../../audits/2026-11-22-event-handling.md) explains both and lists their defects. The [event integration plan](../../plans/2026-11-22-event-integration.md) proposes running both on one engine, as Wave 7.
 
 ## Platform layer (Wave 1)
 
