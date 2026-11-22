@@ -11,6 +11,7 @@ test('definition from static def, classic statics and capability rules, without 
         static def = {
             display_name: 'Modern Node',
             description: 'Adds things',
+            usage: 'Connect two numbers; read the sum.',
             search_aliases: ['plus', 'sum'],
             capabilities: ['custom-cap'],
             experimental: true,
@@ -25,14 +26,14 @@ test('definition from static def, classic statics and capability rules, without 
     LiteGraph.registerNodeType('defs/classic', Classic);
     const modern = LiteGraph.getNodeDefinition('defs/modern');
     expect(modern).toMatchObject({
-        type: 'defs/modern', title: 'Modern Node', description: 'Adds things', category: 'defs',
+        type: 'defs/modern', title: 'Modern Node', description: 'Adds things', usage: 'Connect two numbers; read the sum.', category: 'defs',
         search_aliases: ['plus', 'sum'], experimental: true, deprecated: false, hidden: false,
         inputs: [{ name: 'a', type: 'number', tooltip: 'first' }], outputs: [{ name: 'out', type: 'number' }],
     });
     expect([...modern.capabilities].sort()).toEqual(['custom-cap', 'webgl']);
     expect(Object.isFrozen(modern)).toBe(true);
     const classic = LiteGraph.getNodeDefinition('defs/classic');
-    expect(classic).toMatchObject({ title: 'Classic', description: 'Old style', hidden: true, inputs: null });
+    expect(classic).toMatchObject({ title: 'Classic', description: 'Old style', usage: '', hidden: true, inputs: null });
     expect([...classic.capabilities].sort()).toEqual(['browser', 'webgl']); // rule applies to later registrations
     expect(constructed).toBe(0);
 

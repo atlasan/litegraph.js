@@ -5,7 +5,7 @@ import { GL } from "../../vendor/litegl.js";
 
 // built-in pack: node types registered below belong to "litegraph/glfx" (see LiteGraph.packs)
 LiteGraph.setupPlatform();
-LiteGraph.packs.open({ id: "litegraph/glfx", version: LiteGraph.VERSION, title: "WebGL effects", builtin: true });
+LiteGraph.packs.open({ id: "litegraph/glfx", version: LiteGraph.VERSION, title: "WebGL effects", description: "WebGL post effects on textures: lens, depth of field, bokeh, vignette and a generic effect.", builtin: true });
 
 // Works with Litegl.js to create WebGL nodes
 

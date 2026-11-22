@@ -9,6 +9,7 @@
     "scripts": {
         "build": "python3 build.py",
         "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs/api -r --verbose --debug",
+        "docs:nodes": "node tools/node-reference.mjs",
         "editor": "nodemon apps/editor/server.js",
         "graphrunner": "nodemon --exec node apps/runner/server/index.js",
         "start": "concurrently \"npm run editor\" \"npm run graphrunner\"",

@@ -8,7 +8,7 @@
 | Inspiration | UE Content Examples; Blender manual pages per node; TouchDesigner's per-operator wiki; ComfyUI example workflows |
 | License of the inspiration | design reference only |
 | Effort | M |
-| Maturity | sketched (the user put this first, 2026-11-22) |
+| Maturity | promoted ([plan](../../plans/2026-11-22-flows-reference-examples.md), flows track) |
 | Depends on | `LiteGraph.describeNodeType`/`listNodeDefinitions` (`src/litegraph.js:384`); packs (`src/packs.js`); FLW-08 for the example profiles |
 | Last reviewed | 2026-11-22 |
 
@@ -64,3 +64,4 @@ A 50-line script that prints `listNodeDefinitions()` grouped by pack as Markdown
 ## History
 
 - 2026-11-22: created. The user chose to do the reference and the examples before new engine features.
+- 2026-11-22: promoted with the [flows reference and examples plan](../../plans/2026-11-22-flows-reference-examples.md). Decisions: `docs/nodes/` is generated locally and not committed (decision postponed); the examples come from the app manifest and the packs' `templates[]`.

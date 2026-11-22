@@ -1552,7 +1552,10 @@ export class NodeFunction extends Subgraph {
     static title = "Function";
     static desc = "Calls a subgraph definition";
     // runs only on call: ON_EVENT for new nodes outside legacy (Wave 6)
-    static def = { execution: { default_mode: 1 } }; // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
+    static def = {
+        execution: { default_mode: 1 }, // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
+        usage: "Pick a subgraph definition; each event on call pushes the inputs, runs the inner graph once and fires done with the outputs set.",
+    };
 
     constructor() {
         super();

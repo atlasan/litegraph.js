@@ -8,7 +8,7 @@ This is a family-level maintenance map, not a claim that every node has been exe
 
 [`build.py`](../../../build.py) defines the bundle lists. Core contains graph classes and subgraph support; main adds the standard catalog. The Node entry adds `nodejs_network.js`, `process.js`, and `nodejs_sys.js`. Importing the Node entry does not make the browser-dependent members of the standard catalog usable in Node.
 
-In this Node 22 environment, main registers 248 types and the Node entry 266. The browser tester registers 256 standard types because it loads gl-matrix before the bundle. Eight Math3D registrations are conditional on `glMatrix`; some other Math3D constructors also require matrix/vector globals. Counts depend on initialization context and are not coverage totals or a stable API contract.
+In this Node 22 environment, main registers 248 types and the Node entry 266. The browser tester registers 256 standard types because it loads gl-matrix before the bundle. Eight Math3D registrations are conditional on `glMatrix`; some other Math3D constructors also require matrix/vector globals. Counts depend on initialization context and are not coverage totals or a stable API contract. **2026-11-22:** with gl-matrix loaded first, `build/litegraph_nodejs.full.js` registers 273 types; with jsdom, a fake AudioContext and the WebGL guard, all 273 construct (`tools/tests/node-catalog.test.mjs`). `npm run docs:nodes` lists them per pack.
 
 `src/nodes/threejs.js` declares library requirements but is not in the standard build lists (`jquery.js` was removed in Wave 4e; `jquery/select` maps to `html/dom_selector`). Source-file existence does not establish packaged availability.
 

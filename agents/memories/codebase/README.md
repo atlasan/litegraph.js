@@ -18,7 +18,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
-| `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures |
+| `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses) |
 | `test/` | Jest suites |
 | `csharp/` | Experimental C#/Unity port, untouched since 2023 |
 

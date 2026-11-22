@@ -1,6 +1,6 @@
 # Flows direction: from the event flows audit to a later wave
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** proposed (not on the roadmap) · **Base** `LG/dev` @ `9926717`
+> **Date** 2026-11-22 · **Kind** plan · **Status** proposed; steps 1–3 promoted ([plan](2026-11-22-flows-reference-examples.md)) · **Base** `LG/dev` @ `9926717`
 
 **Outcome, if accepted:** LiteGraph offers the main flow styles of node editors as named, documented and exemplified choices per document:
 - event scripting (blueprint);
@@ -73,3 +73,4 @@ These are the same as the [Wave 6 plan](2026-11-22-events-execution.md#compatibi
 ## History
 
 - 2026-11-22: proposed from the [event flows audit](../audits/2026-11-22-event-flows-audit.md). The user asked for audit, ideas and documentation before any implementation.
+- 2026-11-22: steps 1–3 promoted to the [flows reference and examples plan](2026-11-22-flows-reference-examples.md) (flows track, branches `LG/dev_flows_*`, no wave number). Steps 4–7 stay proposed.
