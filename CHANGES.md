@@ -11,6 +11,10 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 * **Editor pages** set `LiteGraph.default_execution_model = "ancestors"` instead of assigning the legacy flags (`js/defaults.js` and its `debug`, `mobile` and `event_based` presets).
 * **Documents keep their behaviour:** a document saved without `config.execution` loads as `legacy` and is saved without the field. New documents save the model they run under.
 
+## Deprecated
+
+* **The legacy execution flags** `use_deferred_actions`, `refreshAncestorsOnActions`, `refreshAncestorsOnTriggers`, `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction` and `preventAncestorRecalculation`: still readable and writable, used by `legacy` documents; each logs once when assigned, naming its replacement model. Removal no earlier than 0.20.
+
 ## Added
 
 * **Execution models** (`src/execution.js`): `ancestors`, `step`, `strict`, `event` and `legacy`, chosen per document in `config.execution`. `graph.executionModel`, `graph.setExecutionModel(name)` (one undo step), `LiteGraph.registerExecutionModel(name, rules)`, `getExecutionModel`, `listExecutionModels`, `LiteGraph.ExecutionEngine`.
