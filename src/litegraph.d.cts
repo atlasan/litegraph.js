@@ -146,7 +146,7 @@ export type ContextMenuEventListener = (
     node: LGraphNode
 ) => boolean | void;
 
-export interface LiteGraphAPI extends CallbackHost {
+export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     VERSION: string;
     /** library events: node types registered, replaced or unregistered; graphs and canvases created */
     readonly events: LGraphEventTarget<LiteGraphEventMap, LiteGraphAPI>;
@@ -2125,7 +2125,165 @@ export interface CallbackOptions {
 }
 /** A handler result: a plain value, or this object. */
 export interface CallbackResult { return_value?: any; result_priority?: number; prevent_default?: boolean; stop_replication?: boolean }
-export interface CallbackHost {
+/**
+ * Hook names and the arguments their handlers receive after `info`, per host (the legacy `onX`
+ * receives the same arguments without `info`). Generated from the dispatch sites and kept in sync
+ * by `tools/check-types.mjs`: every name dispatched in src/ must be declared in one of these maps.
+ * Names not listed still compile through the `string` overloads.
+ */
+export interface LiteGraphHooks {
+    onNodeTypeRegistered: [type: string, ctor: Function];
+    onNodeTypeReplaced: [type: string, ctor: Function, previous: Function];
+    on_lgraph_construct: [graph: LGraph];
+    on_lgraphnode_construct: [node: LGraphNode];
+    on_lgraphcanvas_construct: [canvas: LGraphCanvas];
+}
+export interface LGraphHooks {
+    // lifecycle and history
+    onConfigure: [data: serializedLGraph];
+    onSerialize: [data: serializedLGraph];
+    on_change: [graph: LGraph];
+    onBeforeChange: [graph: LGraph, info?: any];
+    onAfterChange: [graph: LGraph, info?: any];
+    // execution
+    onPlayEvent: [];
+    onStopEvent: [];
+    onBeforeStep: [];
+    onExecuteStep: [];
+    onAfterStep: [];
+    onAfterExecute: [];
+    onTrigger: [action: string, param: any, options?: ExecutionOptions];
+    onNodeTrace: [node: LGraphNode, message: any];
+    // nodes and links
+    onNodeAdded: [node: LGraphNode];
+    onNodeRemoved: [node: LGraphNode];
+    onConnectionChange: [node: LGraphNode];
+    onNodeConnectionChange: [type: number, node: LGraphNode, slot: number, other: LGraphNode | null, otherSlot: number | null];
+    // graph inputs and outputs
+    onInputAdded: [name: string, type: string];
+    onInputRemoved: [name: string];
+    onInputRenamed: [oldName: string, name: string];
+    onInputTypeChanged: [name: string, type: string];
+    onOutputAdded: [name: string, type: string];
+    onOutputRemoved: [name: string];
+    onOutputRenamed: [oldName: string, name: string];
+    onOutputTypeChanged: [name: string, type: string];
+    onInputsOutputsChange: [];
+    // menus
+    onGetNodeMenuOptions: [options: ContextMenuItem[], node: LGraphNode];
+}
+export interface LGraphNodeHooks {
+    // lifecycle
+    onNodeCreated: [];
+    onPostConstruct: [];
+    onAdded: [graph: LGraph];
+    onRemoved: [graph?: LGraph];
+    onConfigure: [data: SerializedLGraphNode];
+    onSerialize: [data: SerializedLGraphNode];
+    onResize: [size: Vector2];
+    onBounding: [area: Float32Array | Vector4];
+    onPropertyChanged: [name: string, value: any, previous?: any];
+    onGetPropertyInfo: [name: string];
+    // execution (graph.sendEventToAllNodes dispatches onStart, onStop and other names to every node)
+    onStart: [];
+    onStop: [];
+    onExecute: [param?: any, options?: ExecutionOptions];
+    onAction: [action: string, param: any, options?: ExecutionOptions, slot?: number];
+    onAfterExecuteNode: [param?: any, options?: ExecutionOptions];
+    onAfterActionedNode: [param?: any, options?: ExecutionOptions];
+    // slots and links
+    onInputAdded: [input: INodeInputSlot];
+    onInputRemoved: [slot: number, input?: INodeInputSlot];
+    onOutputAdded: [output: INodeOutputSlot];
+    onOutputRemoved: [slot: number];
+    onBeforeConnectInput: [slot: number];
+    onConnectInput: [slot: number, type: string | number, output: INodeOutputSlot, origin: LGraphNode, originSlot: number];
+    onConnectOutput: [slot: number, type: string | number, input: INodeInputSlot, target: LGraphNode, targetSlot: number];
+    onConnectionsChange: [type: number, slot: number, connected: boolean, link: LLink | null, slotInfo: INodeInputSlot | INodeOutputSlot];
+    onGetInputs: [];
+    onGetOutputs: [];
+    onNodeInputAdd: [value: any];
+    onNodeOutputAdd: [value: any];
+    // pointer, keys and drop
+    onMouseDown: [event: MouseEvent, pos: Vector2, canvas: LGraphCanvas];
+    onMouseUp: [event: MouseEvent, pos: Vector2, canvas?: LGraphCanvas];
+    onMouseMove: [event: MouseEvent, pos: Vector2, canvas: LGraphCanvas];
+    onMouseEnter: [event: MouseEvent];
+    onMouseLeave: [event: MouseEvent];
+    onDblClick: [event: MouseEvent, pos: Vector2, canvas: LGraphCanvas];
+    onDrag: [offset: Vector2];
+    onMoved: [node?: LGraphNode, selected?: Record<string, LGraphNode>];
+    onSelected: [];
+    onDeselected: [];
+    onInputClick: [slot: number, event: MouseEvent];
+    onInputDblClick: [slot: number, event: MouseEvent];
+    onOutputClick: [slot: number, event: MouseEvent];
+    onOutputDblClick: [slot: number, event: MouseEvent];
+    onKeyDown: [event: KeyboardEvent];
+    onKeyUp: [event: KeyboardEvent];
+    onDropItem: [event: DragEvent];
+    onDropFile: [file: File];
+    onDropData: [data: string | ArrayBuffer | null, filename: string, file: File];
+    onWidgetChanged: [name: string, value: any, previous: any, widget: IWidget];
+    onTitleButtonClick: [button: any, canvas: LGraphCanvas, event: MouseEvent];
+    // node panel
+    onAddPropertyToPanel: [name: string, panel: any, value: any, info: any, update: (name: string, value: any) => void];
+    onShowCustomPanelInfo: [panel: any];
+    // drawing
+    onDrawBackground: [ctx: CanvasRenderingContext2D, canvas: LGraphCanvas, element: HTMLCanvasElement, mouse: Vector2];
+    onDrawForeground: [ctx: CanvasRenderingContext2D, canvas: LGraphCanvas, element: HTMLCanvasElement];
+    onDrawCollapsed: [ctx: CanvasRenderingContext2D, canvas: LGraphCanvas];
+    onDrawTitle: [ctx: CanvasRenderingContext2D];
+    onDrawTitleBar: [ctx: CanvasRenderingContext2D, titleHeight: number, size: Vector2, scale: number, color: string];
+    onDrawTitleBox: [ctx: CanvasRenderingContext2D, titleHeight: number, size: Vector2, scale: number];
+    onDrawTitleText: [ctx: CanvasRenderingContext2D, titleHeight: number, size: Vector2, scale: number, font: string, selected: boolean];
+    // menus
+    getMenuOptions: [canvas: LGraphCanvas];
+    getExtraMenuOptions: [canvas: LGraphCanvas, options: ContextMenuItem[]];
+    getSlotMenuOptions: [slot: { input?: INodeInputSlot; output?: INodeOutputSlot; slot: number }];
+    onMenuNodeInputs: [entries: ContextMenuItem[]];
+    onMenuNodeOutputs: [entries: ContextMenuItem[]];
+}
+export interface LGraphCanvasHooks {
+    // lifecycle
+    onClear: [];
+    onOpenSubgraph: [graph: LGraph, previous: LGraph];
+    onCloseSubgraph: [graph: LGraph, previous: LGraph, node: LGraphNode | undefined];
+    onShowNodePanel: [node: LGraphNode];
+    onSearchBoxSelection: [type: string, event: Event, canvas: LGraphCanvas];
+    // drawing
+    onRender: [element: HTMLCanvasElement, ctx: CanvasRenderingContext2D];
+    onRenderBackground: [element: HTMLCanvasElement, ctx: CanvasRenderingContext2D];
+    onDrawBackground: [ctx: CanvasRenderingContext2D, visibleArea: Float32Array];
+    onDrawForeground: [ctx: CanvasRenderingContext2D, visibleRect: Float32Array | Vector4];
+    onDrawOverlay: [ctx: CanvasRenderingContext2D];
+    onDrawLinkTooltip: [ctx: CanvasRenderingContext2D, link: LLink | null, canvas?: LGraphCanvas];
+    // input
+    onMouse: [event: MouseEvent];
+    onMouseDown: [event: MouseEvent];
+    onKeyDown: [event: KeyboardEvent];
+    onDropItem: [event: DragEvent];
+    // selection and moves
+    onNodeSelected: [node: LGraphNode];
+    onNodeDeselected: [node: LGraphNode];
+    onSelectionChange: [selected: Record<string, LGraphNode>];
+    onNodeMoved: [node: LGraphNode, selected: Record<string, LGraphNode>];
+    onNodeDblClicked: [node: LGraphNode];
+    onGroupMoving: [group: LGraphGroup, dx: number, dy: number];
+    onGroupMoved: [group: LGraphGroup];
+    onGroupResized: [group: LGraphGroup];
+    // menus
+    getMenuOptions: [];
+    getExtraMenuOptions: [canvas: LGraphCanvas, options: ContextMenuItem[]];
+}
+export interface LGraphGroupHooks {
+    onMoved: [];
+}
+/** the handler arguments of hook K in map H (after info) */
+export type HookArgs<H, K extends keyof H> = H[K] extends any[] ? H[K] : any[];
+/** The hook API of a host; H maps its hook names to their arguments (unknown names use the string overloads). */
+export interface CallbackHost<H = {}> {
+    registerCallbackHandler<K extends keyof H & string>(name: K, callback: (info: CallbackInfo, ...args: HookArgs<H, K>) => any, options?: CallbackOptions): number | false;
     registerCallbackHandler(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): number | false;
     unregisterCallbackHandler(name: string, id: number): boolean;
     /** runs the handlers and the default callback (def_cb, the legacy onX); synchronous; rethrows the first handler error after the chain */
@@ -2134,6 +2292,7 @@ export interface CallbackHost {
     /** the handler registry, created on first read */
     cb_handler: CallbackHandler;
     /** registers a handler and returns its disposer */
+    onHook<K extends keyof H & string>(name: K, callback: (info: CallbackInfo, ...args: HookArgs<H, K>) => any, options?: CallbackOptions): () => boolean;
     onHook(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => boolean;
 }
 export declare class CallbackHandler {
@@ -2146,12 +2305,14 @@ export declare class CallbackHandler {
     static is(result: any, value: any): boolean;
     /** true for true, or an object result with a truthy return_value */
     static handled(result: any): boolean;
+    /** menu and slot-list hooks: return_value when it is an object (null included), with arrays also an array result; otherwise fallback */
+    static objectOf<T = any>(result: any, fallback?: T, arrays?: boolean): any;
     /**
      * Fires a point that has both faces: the hook chain (the legacy owner[name] as default), then the
      * typed event on emitter. With veto, a hook result equal to it skips the event. A detail function
      * is called after the hook; null skips the event. Returns the hook result.
      */
-    static fireHookThenEvent(owner: CallbackHost, name: string, args: any[], emitter: { _emit?(type: string, detail: any, options?: any): any } | null | undefined,
+    static fireHookThenEvent(owner: CallbackHost<any>, name: string, args: any[], emitter: { _emit?(type: string, detail: any, options?: any): any } | null | undefined,
         type: string, detail: object | (() => object | null), options?: { veto?: any; emit?: { recorded?: boolean; cancelable?: boolean } }): any;
 }
 export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
@@ -2185,8 +2346,8 @@ export declare class ListenerList {
 }
 /** Gives a class the hook API (registerCallbackHandler, unregisterCallbackHandler, processCallbackHandlers, hasCallbackHandlers, onHook). */
 export declare function installHooks<T extends Function>(Class: T): T;
-export interface LGraph extends CallbackHost {}
-export interface LGraphNode extends CallbackHost {
+export interface LGraph extends CallbackHost<LGraphHooks> {}
+export interface LGraphNode extends CallbackHost<LGraphNodeHooks> {
     doExecute(param?: any, options?: ExecutionOptions): void;
     execute(param?: any, options?: ExecutionOptions): void;
     actionDo(action: string, param?: any, options?: ExecutionOptions, action_slot?: number): void;
@@ -2195,8 +2356,8 @@ export interface LGraphNode extends CallbackHost {
     loadLibraries(keys?: string[]): Promise<void>;
     loadRequiredLibraries(): Promise<void>;
 }
-export interface LGraphCanvas extends CallbackHost {}
-export interface LGraphGroup extends CallbackHost {}
+export interface LGraphCanvas extends CallbackHost<LGraphCanvasHooks> {}
+export interface LGraphGroup extends CallbackHost<LGraphGroupHooks> {}
 
 export interface LibraryRegistration {
     key: string;
@@ -2401,12 +2562,12 @@ export interface ExtensionContext {
     keybindings: { add(binding: KeybindingDefinition): () => void };
     settings: { define(def: SettingDefinition): () => void; get(id: string): any; set(id: string, value: any): boolean };
     on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
-    onTarget(target: CallbackHost, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+    onTarget(target: CallbackHost<any>, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
     onCanvas(fn: (canvas: LGraphCanvas, ctx: ExtensionCanvasContext) => void | (() => void)): void;
     menus: { register(location: MenuLocation, provider: MenuProvider): () => void };
     onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: ListenerOptions): () => void;
     /** hook names (onX, on_x, getXMenuOptions) register a hook handler; other names a typed listener */
-    listen(target: CallbackHost | { events: LGraphEventTarget<any, any> }, name: string, listener: (...args: any[]) => any, options?: CallbackOptions & ListenerOptions): () => void;
+    listen(target: CallbackHost<any> | { events: LGraphEventTarget<any, any> }, name: string, listener: (...args: any[]) => any, options?: CallbackOptions & ListenerOptions): () => void;
     addDisposer(dispose: () => void): () => void;
 }
 export interface ExtensionDefinition {

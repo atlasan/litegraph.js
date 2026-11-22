@@ -57,10 +57,28 @@ const declared = new Set();
 for (const [, body] of declarations.matchAll(/export interface (?:LGraphEventMap|LGraphCanvasEventMap|LiteGraphEventMap) \{([\s\S]*?)\n\}/g)) {
     for (const [, name] of body.matchAll(/^ {4}"?([a-z][a-z-]*)"?\??:/gm)) declared.add(name);
 }
+const sources = ['src', 'src/extensions'].flatMap((dir) => fs.readdirSync(path.join(root, dir))
+    .filter((name) => name.endsWith('.js')).map((name) => fs.readFileSync(path.join(root, dir, name), 'utf8')));
+// CallbackHandler.fireHookThenEvent(owner, "hook", [args], emitter, "event", ...)
+const paired = /fireHookThenEvent\(\s*[\w.]+,\s*"(\w+)",\s*\[[^\]]*\],\s*[\w.]+,\s*"([a-z][a-z-]*)"/g;
 const emitted = new Set();
-for (const file of fs.readdirSync(path.join(root, 'src')).filter((name) => name.endsWith('.js'))) {
-    for (const [, name] of fs.readFileSync(path.join(root, 'src', file), 'utf8').matchAll(/_emit\??\.?\(\s*"([a-z][a-z-]*)"/g)) emitted.add(name);
+for (const text of sources) {
+    for (const [, name] of text.matchAll(/_emit\??\.?\(\s*"([a-z][a-z-]*)"/g)) emitted.add(name);
+    for (const [, , name] of text.matchAll(paired)) emitted.add(name);
 }
 assert.deepEqual([...emitted].filter((name) => !declared.has(name)).sort(), [], 'Typed events emitted but not declared in an event map');
 
-console.log('Validated strict ESM/CJS consumers, isolated published declarations, runtime export parity and declared typed events.');
+// every hook dispatched in src/ is declared in one of the hook maps (names typed as string never fire when misspelled)
+const hooks = new Set();
+for (const [, body] of declarations.matchAll(/export interface (?:LiteGraphHooks|LGraphHooks|LGraphNodeHooks|LGraphCanvasHooks|LGraphGroupHooks) \{([\s\S]*?)\n\}/g)) {
+    for (const [, name] of body.matchAll(/^ {4}(\w+)\??:/gm)) hooks.add(name);
+}
+const dispatched = new Set();
+for (const text of sources) {
+    for (const [, name] of text.matchAll(/processCallbackHandlers\??\.?\(\s*"(\w+)"/g)) dispatched.add(name);
+    for (const [, name] of text.matchAll(paired)) dispatched.add(name);
+}
+assert.ok(dispatched.size > 90, `found only ${dispatched.size} dispatched hook names`);
+assert.deepEqual([...dispatched].filter((name) => !hooks.has(name)).sort(), [], 'Hooks dispatched but not declared in a hook map');
+
+console.log('Validated strict ESM/CJS consumers, isolated published declarations, runtime export parity, declared typed events and declared hooks.');

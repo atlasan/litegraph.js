@@ -6764,13 +6764,7 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("onGetInputs",{
             def_cb: node.onGetInputs
         });
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                options = r.return_value;
-            }else if(typeof(r.length)!=="undefined"){
-                options = r;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options, true);
 
         var entries = [];
         if (options) {
@@ -6802,11 +6796,7 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("onMenuNodeInputs",{
             def_cb: node.onMenuNodeInputs
         }, entries);
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                entries = r.return_value;
-            }
-        }
+        entries = CallbackHandler.objectOf(r, entries);
 
         if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
             if (node.findInputSlot("onTrigger") == -1) {
@@ -6870,13 +6860,7 @@ export class LGraphCanvas {
         let r = node.processCallbackHandlers("onGetOutputs",{
             def_cb: node.onGetOutputs
         });
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                options = r.return_value;
-            }else if(typeof(r.length)!=="undefined"){
-                options = r;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options, true);
 
         var entries = [];
         if (options) {
@@ -6915,11 +6899,7 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("onMenuNodeOutputs",{
             def_cb: node.onMenuNodeOutputs
         }, entries);
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                entries = r.return_value;
-            }
-        }
+        entries = CallbackHandler.objectOf(r, entries);
 
         if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
             if (node.findOutputSlot("onExecuted") == -1) {
@@ -9751,11 +9731,8 @@ export class LGraphCanvas {
         r = this.processCallbackHandlers("getExtraMenuOptions",{
             def_cb: this.getExtraMenuOptions
         }, this, options);
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                options = options.concat(r.return_value);
-            }
-        }
+        const extra = CallbackHandler.objectOf(r);
+        if (extra !== undefined) options = options.concat(extra);
 
         // extension contributions (LiteGraph.menus.register("canvas", ...))
         if (options) LiteGraph.menus?.contribute("canvas", LiteGraph.commands.contextFor(this), options);
@@ -9769,11 +9746,7 @@ export class LGraphCanvas {
         let r = node.processCallbackHandlers("getMenuOptions",{
             def_cb: node.getMenuOptions
         }, this);
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                options = r.return_value;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options);
         if(options===null){
             options = [
                 {
@@ -9864,20 +9837,11 @@ export class LGraphCanvas {
         r = node.processCallbackHandlers("getExtraMenuOptions",{
             def_cb: node.getExtraMenuOptions
         }, this, options);
-        if(r!==null && (typeof(r)=="object")){
-            if(typeof(r.return_value)=="object"){
-                if(typeof(r.return_value.length)!=="undefined" && r.return_value.length){
-                    options = options.concat(r.return_value);
-                }else{
-                    LiteGraph.log_warn("getExtraMenuOptions", "not array", r.return_value);
-                }
-            }else{
-                if(typeof(r.length)!=="undefined" && r.length){
-                    options = options.concat(r);
-                }else{
-                    // LiteGraph.log_verbose("getExtraMenuOptions", "not returning additional options", r);
-                }
-            }
+        // an array, or {return_value: array}; a non-array return_value is reported
+        const extra = CallbackHandler.objectOf(r, undefined, true);
+        if (extra !== undefined) {
+            if (extra.length) options = options.concat(extra);
+            else if (extra !== r) LiteGraph.log_warn("getExtraMenuOptions", "not array", extra);
         }
 
         if (node.clonable !== false) {
@@ -10013,8 +9977,9 @@ export class LGraphCanvas {
             let r = node.processCallbackHandlers("getSlotMenuOptions",{
                 def_cb: node.getSlotMenuOptions
             }, slot);
-            if(r!==null && (typeof(r)=="object" && typeof(r.return_value) == "object")){
-                menu_info = r.return_value;
+            const custom = CallbackHandler.objectOf(r);
+            if (custom !== undefined) {
+                menu_info = custom;
             } else {
                 if (LiteGraph.canSetSlotsLabels) {
                     menu_info.push({ content: "Set Label", slot: slot });

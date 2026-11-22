@@ -192,6 +192,19 @@ export class CallbackHandler {
         return result === value || (result !== null && typeof result === "object" && result.return_value === value);
     }
 
+    /**
+     * The menu and slot-list hooks' rule: the `return_value` of an object result when it is an
+     * object (null included), with `arrays` also an array-like result itself; otherwise `fallback`.
+     * @param {any} result a hook result
+     * @param {any} [fallback] returned when the result holds no object
+     * @param {boolean} [arrays=false] accept a plain array result (onGetInputs, onGetOutputs, node getExtraMenuOptions)
+     */
+    static objectOf(result, fallback = undefined, arrays = false) {
+        if (result === null || typeof result !== "object") return fallback;
+        if (typeof result.return_value === "object") return result.return_value;
+        return arrays && result.length !== undefined ? result : fallback;
+    }
+
     /** The pointer hooks' "handled": `true`, or an object result with a truthy `return_value`. */
     static handled(result) {
         return result === true || (result !== null && typeof result === "object" && !!result.return_value);

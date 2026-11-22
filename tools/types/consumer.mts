@@ -72,3 +72,19 @@ void nodeSingleton;
     const result: number = graph.transact("label", () => 1);
     void committed; void result;
 }
+
+// typed hook names: arguments are inferred per host; unknown names still compile
+{
+    const graph = new LGraph();
+    const node = new LGraphNode('typed hooks');
+    graph.onHook("onNodeAdded", (info, added) => { const title: string = added.title; void title; void info; });
+    node.onHook("onConnectInput", (_info, slot, _type, _output, origin) => { const index: number = slot; void index; void origin.id; return false; });
+    node.registerCallbackHandler("onPropertyChanged", (_info, name, value) => { void name.length; void value; });
+    LiteGraph.onHook("onNodeTypeRegistered", (_info, type) => { void type.toUpperCase(); });
+    node.onHook("onMyCustomHook", (_info, anything) => { void anything; });
+    // @ts-expect-error onNodeAdded passes a node, which has no such member
+    graph.onHook("onNodeAdded", (_info, added) => added.notAMember);
+    const previous = LiteGraph.setDispatchTap((record) => { const ms: number = record.ms; void ms; void record.phase; });
+    LiteGraph.setDispatchTap(previous);
+}
+

@@ -449,3 +449,12 @@ describe('dispatch tap (USE-34 base)', () => {
         expect(records).toEqual(['onBoom', 'onQuiet']);
     });
 });
+
+test('CallbackHandler.objectOf: the menu hooks\' rule', () => {
+    const list = [{ content: 'x' }];
+    expect(CallbackHandler.objectOf({ return_value: list }, 'fb')).toBe(list);
+    expect(CallbackHandler.objectOf({ return_value: null }, 'fb')).toBeNull();
+    expect(CallbackHandler.objectOf(list, 'fb')).toBe('fb'); // a plain array only with arrays = true
+    expect(CallbackHandler.objectOf(list, 'fb', true)).toBe(list);
+    for (const result of [null, true, 1, false, { return_value: 1 }]) expect(CallbackHandler.objectOf(result, 'fb', true)).toBe('fb');
+});
