@@ -143,7 +143,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 ## Pre-release 0.18.0-dev.1
 
-[Plan](2026-11-20-pre-release-0.18.0-dev.1.md) (accepted 2026-11-20): finish Waves 4 and 5, D7 and the loose ends, then tag `v0.18.0-dev.1` on `master` (tag only).
+[Plan](2026-11-20-pre-release-0.18.0-dev.1.md) (accepted 2026-11-20): Waves 4 and 5, D7 and the loose ends are **done**, and the version is bumped on `LG/release_0.18.0-dev.1` ([record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)). Push, the release PR and the tag `v0.18.0-dev.1` wait for approval.
 
 ## Deferred (each needs its own proposal)
 

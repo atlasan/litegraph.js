@@ -8,6 +8,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 |---|---|---|
 | 2026-11-01 | [Baseline validation](2026-11-01-baseline-validation.md): setup, contracts, editor, tester and runner acceptance | final |
 | 2026-11-01 | [Readiness checklist](2026-11-01-readiness-checklist.md): verified foundation and remaining acceptance work | snapshot |
+| 2026-11-22 | [Pre-release 0.18.0-dev.1](2026-11-22-pre-release-0.18.0-dev.1.md): all planned waves done, release checks (clean clone, packed install, probes, browser), version bump | final; push/PR/tag pending |
 | 2026-11-22 | [Wave 5c: apps move](2026-11-22-wave5c-apps-move.md): apps/, vendor/, old URLs kept, one defaults module, runner prefix fix | final |
 | 2026-11-21 | [Wave 5a–5b: packaging, CI, docs](2026-11-21-wave5ab-packaging-ci-docs.md): dependency advisories, no required dependencies, explicit exports, no debug defaults in builds, build freshness in CI, getting started and architecture docs | final |
 | 2026-11-20 | [Integrate LG/dev and align master](2026-11-20-integrate-dev-and-master.md): joined the records and runner lines, then opened PR #8 to `master` | final |
