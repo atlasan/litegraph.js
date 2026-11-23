@@ -1403,6 +1403,31 @@ class LiteGraphClass {
                 };
                 return null;
             });
+            // library state: a node waiting for its libraries, or whose libraries failed to load
+            this.settings.define({
+                id: "LiteGraph.Node.LibraryBadge",
+                name: "Show library loading and error badges",
+                default: true
+            });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LibraryBadge")) return null;
+                if (!node.libraries?.length && !node.requiredLibraries?.length) return null;
+                if (node.initialization_state === "loading") return {
+                    text: "loading libraries",
+                    fgColor: "#DDE",
+                    bgColor: "rgba(40,60,110,0.85)"
+                };
+                if (node.initialization_state === "error" && !node.wrong_environment) {
+                    const message = node.initialization_error?.message ?? String(node.initialization_error ?? "");
+                    return {
+                        text: "library error",
+                        title: message,
+                        fgColor: "#FDD",
+                        bgColor: "rgba(140,40,40,0.85)"
+                    };
+                }
+                return null;
+            });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? {
                 text: `#${node.id}`
             } : null);
@@ -2290,7 +2315,7 @@ class LiteGraphClass {
      * @param {*} y 
      * @param {*} maxWidth 
      * @param {*} lineHeight 
-     * @returns 
+     * @returns {Object} `{lines, height}`: the lines drawn and the total height (`max`: the width of the last wrapped line)
      */
     canvasFillTextMultiline(context, text, x, y, maxWidth, lineHeight) {
         var words = (text + "").trim().split(' ');
@@ -7466,15 +7491,25 @@ class LGraph {
     }
 
     /**
-     * Triggers the 'onTrigger' method on nodes with a specific title by passing a value to them.
-     * // TODO check this, investigate, _last_trigger_time ? who calls triggerInput ? who calls onTrigger ?
+     * Fires a trigger on the nodes with this title, as an event reaching their `onTrigger` input would:
+     * each runs through the execution engine (`doExecute(value)`: model rules, execution state, a
+     * `node-error` on failure). A NEVER node is skipped with an `event-dropped` (`mode`). A node that
+     * defines its own `onTrigger(value)` method gets that call instead, inside the same event entry.
      * @param {string} name - The title of the nodes to trigger.
-     * @param {any} value - The value to pass to the 'onTrigger' method of the nodes.
+     * @param {any} value - The value passed to the nodes (`param` of `onExecute`).
      */
     triggerInput(name, value) {
-        var nodes = this.findNodesByTitle(name);
-        for (var i = 0; i < nodes.length; ++i) {
-            nodes[i].onTrigger(value);
+        for (const node of this.findNodesByTitle(name)) {
+            if (node.mode === LiteGraph.NEVER) {
+                ExecutionEngine.drop(node, "mode", {
+                    message: `${node.type} ${node.id}: the node is NEVER; the trigger is not delivered`
+                });
+                continue;
+            }
+            if (typeof node.onTrigger === "function") node._dispatchEvent(() => node.onTrigger(value));
+            else if (node.onExecute) node.doExecute(value, {
+                action_call: `${node.id}_trigg_${LiteGraph.uuidv4()}`
+            });
         }
     }
 
@@ -8530,6 +8565,11 @@ class LGraph {
     /** the name of the execution model this graph runs under (resolved from the root's config) */
     get executionModel() {
         return ExecutionEngine.modelNameFor(this);
+    }
+
+    /** the same as `setExecutionModel(name)`: one undo step; an unknown name throws */
+    set executionModel(name) {
+        this.setExecutionModel(name);
     }
 
     /** the rules of this graph's execution model */
@@ -22366,7 +22406,8 @@ class LGraphNode {
      * Get a slot from his index or name
      * @param {boolean} is_input use look for input / output 
      * @param {number|string} slot_index_or_name 
-     * @returns 
+     * @param {boolean} [returnObj=false] return the slot object instead of its index
+     * @returns {number|Object} the slot index (or the slot with returnObj); -1 when not found
      */
     getSlot(is_input, slot_index_or_name, returnObj = false) {
         if (!is_input || is_input === LiteGraph.OUTPUT) {
@@ -30508,7 +30549,12 @@ class NodeSearch {
         return query;
     }
 
-    /** slot types of a registered type, from its definition or the slot-type registry */
+    /**
+     * Slot types of a registered type: from its definition, else from the slot-type registry, else from
+     * a probe instance (`new Class()`, cached per class) for types that declare no slots and were never
+     * created (outputs reach the registry only with `auto_load_slot_types`). A constructor that throws
+     * leaves the type without slot types.
+     */
     static _slotTypes(def, input) {
         const declared = input ? def.inputs : def.outputs;
         if (declared) return declared.map((slot) => String(slot.type ?? "").toLowerCase());
@@ -30517,7 +30563,30 @@ class NodeSearch {
         for (const [slotType, entry] of Object.entries(registry ?? {})) {
             if (entry?.nodes?.includes?.(def.type)) types.push(String(slotType).toLowerCase());
         }
-        return types;
+        if (types.length) return types;
+        const probed = NodeSearch._probeSlots(def.type);
+        return probed ? (input ? probed.inputs : probed.outputs) : types;
+    }
+
+    /** the slot types of one instance of a type, cached per class; null when it cannot be built */
+    static _probeSlots(type) {
+        const Class = LiteGraph.registered_node_types?.[type];
+        if (typeof Class !== "function") return null;
+        NodeSearch._probes ??= new WeakMap();
+        if (NodeSearch._probes.has(Class)) return NodeSearch._probes.get(Class);
+        let probed = null;
+        try {
+            const node = new Class();
+            const list = (slots) => (slots ?? []).flatMap((slot) => String(slot?.type ?? "").toLowerCase().split(","));
+            probed = {
+                inputs: list(node.inputs),
+                outputs: list(node.outputs)
+            };
+        } catch {
+            probed = null;
+        }
+        NodeSearch._probes.set(Class, probed);
+        return probed;
     }
 
     /** true when a definition passes the query's i:/o:/c:/s: filters */
