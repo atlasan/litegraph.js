@@ -38,6 +38,23 @@ export interface INodeSlot {
     exec?: 'trigger' | 'executed';
 }
 
+/** how a node pin is drawn (LGraphCanvas.drawNodePin) */
+export interface NodePinSpec {
+    shape?: 'circle' | 'square' | 'diamond' | 'triangle';
+    fill?: string | null;
+    stroke?: string | null;
+    lineWidth?: number;
+    alpha?: number;
+    size?: number;
+    glow?: { color: string; radius?: number; alpha?: number };
+    mark?: 'slash' | 'bar' | 'dot' | null;
+    markColor?: string;
+    /** keep redrawing (an animation such as a fading glow) */
+    redraw?: boolean;
+}
+/** a node pin style: the spec for a node, or null for the classic look */
+export type NodePinStyle = (node: LGraphNode, canvas: LGraphCanvas, info: { shape: number | string | undefined }) => NodePinSpec | null;
+
 /** where an exec slot sits: anchors plus offsets (canvas units or "N%"), and the side links attach */
 export interface ExecSlotPlacement {
     x?: 'left' | 'center' | 'right' | 'pin' | number;
@@ -497,6 +514,9 @@ export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     /** named exec-slot layouts ("edges" built in; "rows" is the classic look) */
     execSlotLayouts: Map<string, ExecSlotLayout>;
     registerExecSlotLayout(name: string, spec: ExecSlotLayout): () => void;
+    /** node pin (title box) styles for the setting LiteGraph.Node.PinStyle; "classic" is built in */
+    nodePinStyles: Map<string, NodePinStyle>;
+    registerNodePinStyle(name: string, style: NodePinStyle): () => void;
     resolveExecSlotLayout(nameOrSpec: string | ExecSlotLayout | null | undefined): ExecSlotLayout | null;
     execSlotLayoutName(): string | ExecSlotLayout;
     /** declares the execution needs of registered types (in-class form: static def.execution) */
@@ -998,6 +1018,8 @@ export declare class LGraphNode {
     getPath(): string;
     /** runtime execution state (not saved), set by runStep, reportProgress, setExecutionStatus or applyExecutionState */
     execution_state?: NodeExecutionState;
+    /** LiteGraph.getTime() when the node last executed or ran an action (the pin's recent-run state) */
+    last_run_time?: number;
     /** why the last changeMode was refused (it names LiteGraph.Execution.AllowAnyMode), or null */
     mode_refusal?: string | null;
     /** a short glyph or a loaded image drawn before the title (else the definition's icon) */
@@ -1948,6 +1970,17 @@ export declare class LGraphCanvas {
 
     /** returns true if a position (in graph space) is on top of a node little corner box */
     isOverNodeBox(node: LGraphNode, canvasX: number, canvasY: number): boolean;
+    /** true on a node's pin (the title box; a click there collapses the node) */
+    isOverNodePin(node: LGraphNode, canvasX: number, canvasY: number): boolean;
+    /** today's pin look: the execution status, boxcolor or mode colour, a circle or square */
+    classicNodePinStyle(node: LGraphNode, shape?: number | string): NodePinSpec;
+    /** the pin look from the style named by LiteGraph.Node.PinStyle, or classic */
+    resolveNodePinStyle(node: LGraphNode, shape?: number | string): NodePinSpec;
+    drawNodePin(ctx: CanvasRenderingContext2D, node: LGraphNode, title_height: number, shape?: number | string, low_quality?: boolean): void;
+    /** the "node-pin" menu items, then "More…" (the full node menu) */
+    getNodePinMenuOptions(node: LGraphNode): MenuItem[];
+    /** true when a right-click opens the pin quick menu (the pin, or the title with LiteGraph.Node.TitleQuickMenu) */
+    isNodePinMenuEvent(node: LGraphNode | null, event: { canvasX: number; canvasY: number }): boolean;
     /** returns true if a position (in graph space) is on top of a node input slot */
     isOverNodeInput(
         node: LGraphNode,
@@ -2156,7 +2189,8 @@ export declare class LGraphCanvas {
     /** Called by `getCanvasMenuOptions`, append to default options */
     getExtraMenuOptions?(): ContextMenuItem[];
     /** Called when mouse right click */
-    processContextMenu(node: LGraphNode, event: Event): void;
+    /** `full`: the node menu even on the pin */
+    processContextMenu(node: LGraphNode, event: Event, options?: { full?: boolean }): void;
 }
 
 export declare class ContextMenu {
@@ -3012,7 +3046,7 @@ export declare class NodePalette {
     insert(canvas: LGraphCanvas, type: string, pos: ArrayLike<number>): LGraphNode | null;
 }
 
-export type MenuLocation = 'canvas' | 'node';
+export type MenuLocation = 'canvas' | 'node' | 'node-pin';
 /** A ContextMenu item, `{command: id}` (runs a registered command), or null for a separator. */
 export type MenuItem = { command: string; content?: string; [key: string]: any } | { content: string; callback?: (...args: any[]) => any; [key: string]: any } | null;
 export type MenuProvider = (ctx: CommandContext & { node?: LGraphNode }) => MenuItem[] | null | undefined;
@@ -3022,6 +3056,8 @@ export declare class MenuRegistry {
     commands: CommandRegistry;
     register(location: MenuLocation, provider: MenuProvider): () => void;
     collect(location: MenuLocation, ctx?: object): MenuItem[];
+    /** true when a provider is registered for the location */
+    has(location: MenuLocation): boolean;
     contribute<T extends any[]>(location: MenuLocation, ctx: object, options: T): T;
 }
 

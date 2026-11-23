@@ -60,6 +60,23 @@ export declare function registerExtension_quickConnect(canvas?: LGraphCanvas): v
 export declare function registerExtension_subgraphTools(canvas?: LGraphCanvas): void;
 export declare function registerExtension_nodePacks(canvas?: LGraphCanvas): void;
 export declare function registerExtension_viewTools(canvas?: LGraphCanvas): void;
+export declare function registerExtension_nodePin(canvas?: LGraphCanvas): void;
+export declare function registerExtension_graphStatus(canvas?: LGraphCanvas): void;
+/** how each mode looks in the "modes" pin style */
+export declare const NODE_PIN_MODE_LOOKS: Record<number, { shape: string; color: string; fill: boolean; mark?: string }>;
+/** how long the pin glows after a run (ms) */
+export declare const NODE_PIN_RUN_GLOW_MS: number;
+/** the "modes" pin style */
+export declare function modesPinStyle(node: LGraphNode, canvas?: LGraphCanvas): object;
+/** sets the mode of nodes as one undo step; refusals shown by the canvas */
+export declare function setNodesMode(ctx: { graph?: LGraph; canvas?: LGraphCanvas }, nodes: LGraphNode[], mode: number): boolean;
+export declare const GRAPH_STATUS_SETTING: string;
+/** the graph status chip text: the execution model's title */
+export declare function graphStatusLabel(graph: LGraph): string;
+export declare function drawGraphStatus(canvas: LGraphCanvas, ctx: CanvasRenderingContext2D): void;
+/** the chip's menu: the models (current checked), then Start or Stop */
+export declare function graphStatusMenu(canvas: LGraphCanvas): Array<object | null>;
+export declare function isOverGraphStatus(canvas: LGraphCanvas, x: number, y: number): boolean;
 /** true when a link style is in the setting LiteGraph.Canvas.LinkStyles */
 export declare function isLinkStyleActive(name: string): boolean;
 /** adds or removes a link style in the setting; returns whether it is now active */
@@ -72,6 +89,8 @@ export declare const quickConnectExtension: ExtensionDefinition;
 export declare const subgraphToolsExtension: ExtensionDefinition;
 export declare const nodePacksExtension: ExtensionDefinition;
 export declare const viewToolsExtension: ExtensionDefinition;
+export declare const nodePinExtension: ExtensionDefinition;
+export declare const graphStatusExtension: ExtensionDefinition;
 /** Shows the missing-nodes report of a graph in a canvas panel; null without DOM or when nothing is missing. */
 export declare function showMissingNodesPanel(canvas: LGraphCanvas, graph?: LGraph, report?: object[]): HTMLElement | null;
 /** Connects nodes in order (each to the next through its first output with a compatible free input), one undo step; returns the links created. */

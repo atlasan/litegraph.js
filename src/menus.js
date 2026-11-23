@@ -10,13 +10,14 @@
  * ]);
  * ```
  *
- * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}) and "node" (ctx adds `node`).
+ * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}), "node" (ctx adds `node`) and
+ * "node-pin", the quick menu of a node's title box (same ctx; shown only when something is contributed).
  * Contributions are appended after the built-in items, in registration order. A failing provider
  * is skipped (and logged) so one extension cannot break the menu.
  */
 export class MenuRegistry {
 
-    static LOCATIONS = ["canvas", "node"];
+    static LOCATIONS = ["canvas", "node", "node-pin"];
 
     /** @param {import("./commands.js").CommandRegistry} commands */
     constructor(commands) {
@@ -26,7 +27,7 @@ export class MenuRegistry {
     }
 
     /**
-     * @param {"canvas"|"node"} location
+     * @param {"canvas"|"node"|"node-pin"} location
      * @param {(ctx: object) => Array<object|null>|null|undefined} provider
      * @returns {() => void} disposer
      */
@@ -40,6 +41,11 @@ export class MenuRegistry {
             const index = list.indexOf(provider);
             if (index !== -1) list.splice(index, 1);
         };
+    }
+
+    /** true when a provider is registered for the location */
+    has(location) {
+        return !!this._providers.get(location)?.length;
     }
 
     /** Converts `{command: id}` shorthands into ContextMenu items bound to the context. */
