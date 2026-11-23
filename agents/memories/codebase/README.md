@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-20 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
+> **Updated** 2026-11-23 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -12,9 +12,10 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
 | `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools` (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
-| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu from it and `LiteGraph.packs.listTemplates()` |
+| `lg.sh`, `lg.bat`, `tools/lg/` | Launcher: the wrappers pick Bun, else Node (`LG_RUNTIME`), and run `tools/lg/lg.mjs` (commands, menu); `core.mjs` (arguments, runtime choice, ports, app table), `state.mjs` (pid records, health, detached start, stop), `term.mjs` (colours, symbols). State in the git-ignored `.lg/` (`LG_STATE_DIR`) |
+| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`, which also serves `/docs` and `createEditorApp()`; runs on Node and Bun). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu from it and `LiteGraph.packs.listTemplates()` |
 | `apps/tester/` | Browser tester that generates per-node scenarios (also served at `/editor_tester/`) |
-| `apps/runner/` | WebSocket runner: Express + `ws`, one worker per graph; `headless/graphrunner/server/index.js` is a shim that starts it |
+| `apps/runner/` | WebSocket runner: Express + `ws`, one worker per graph, on Node or Bun; `headless/graphrunner/server/index.js` is a shim that starts it |
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
@@ -169,7 +170,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
 - **Tests:**
   - Jest: 45 files, 856 tests (26 golden snapshots, documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
-  - node:test: 20 files, 125 tests, in `tools/tests/`; covers the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
+  - node:test: 21 files, in `tools/tests/`; covers the launcher (`launcher`, also under `bun test`), the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 
@@ -177,6 +178,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Unbuilt node files:** five node files are in no build: `device`, `threejs`, `libraries/osc`, `libraries/udp`, `nodejs_mysql` (`jquery.js` was removed in Wave 4e).
 - **Renamed types (Wave 4e):** old names load through automatic replacement mappings registered next to the new types (`basic/watch_advanced`, `watch/value` → `basic/watch` with a `display`; network servers → `network/server/*`; `network/SocketIO` → `network/socketio`; `server/process/NodeProcessInfo` → `sys/processInfo`). `nodePolicy.RENAMED_TYPES` keeps the same table for runner settings.
 - **Gated families:** geometry, glfx and math3d register fewer types without `GL` or `glMatrix`.
+- **Bun:** `getRuntime()` returns `"bun"` there; a node's `runtime` / `executionEnvironment` of `"node"` matches Bun too (`LGraphNode.runtimeMatches`). Code that branches on `getRuntime() === "node"` alone misses Bun; use `isNode() || isBun()` as `getRuntimeCapabilities` does.
 - **`instanceof LGraphNode` is unreliable**, because registration copies methods. Use `LGraphCanvas.isNodeItem`.
 - **`active_canvas`** is set on pointer down and on keydown. Prefer `this`.
 - See also the gotchas in [AGENTS.md](../../../AGENTS.md#gotchas).

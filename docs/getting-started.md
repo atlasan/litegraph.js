@@ -85,12 +85,43 @@ npm run graphrunner   # runner:  http://127.0.0.1:3000/
 npm start             # both
 ```
 
+Or use [the launcher](#the-launcher): `./lg.sh start`, `./lg.sh open editor`.
+
 - **Apps:** the editor, tester and runner live in `apps/editor`, `apps/tester` and `apps/runner`; their old URLs and the old `headless/graphrunner/server/index.js` path keep working.
 - **Editor:** `editor_build.html` loads the bundle with the extensions, and `index.html` loads `src/` directly.
 - **Runner:** runs each graph in its own worker.
   - It only accepts its own page (Origin and Host checks).
   - It refuses dangerous node types; the refusal names the setting that allows them, for example `RUNNER_ALLOW_TYPES=@host-read`.
   - Script evaluation stays off unless `RUNNER_ALLOW_SCRIPTS=1`.
+
+## The launcher
+
+`lg.sh` (Linux, macOS, WSL, Git Bash) and `lg.bat` (Windows) start, stop and open the apps from one place. They run `tools/lg/lg.mjs` on Bun when it is installed, else on Node.js; `LG_RUNTIME=bun` or `LG_RUNTIME=node` picks one. Without either, they print where to get them. Install the dependencies first (`npm ci --ignore-scripts` or `bun install`).
+
+```sh
+./lg.sh               # a menu (on a terminal): start, stop, open, status, logs, info
+./lg.sh start         # editor and runner in the background
+./lg.sh open editor   # opens http://127.0.0.1:8000/editor/editor_build.html, starting the editor if needed
+./lg.sh status        # state, URL, pid, runtime and uptime of each server
+./lg.sh stop          # stops what lg started
+```
+
+On Windows use `lg` (or `.\lg.bat` in PowerShell) with the same commands; `npm run lg -- <command>` works everywhere with Node.
+
+| Command | What it does |
+|---|---|
+| `start [app\|all]`, `stop [app\|all]`, `restart [app\|all]` | Servers run in the background; `stop` only stops what `lg` started |
+| `status [--json]` | `running`, `starting`, `stopped`, or `other process` when something lg did not start holds the port |
+| `open <editor\|tester\|runner\|docs>` | Opens the page; `tester` and `docs` are served by the editor server (`/apps/tester/`, `/docs/`) |
+| `logs <app> [-n N]` | The last lines of a server's log |
+| `info [--json]` | Versions, runtimes found, the runtime the apps use, ports, URLs, runner opt-ins |
+
+- **Runtime of the apps:** the launcher's own (Bun under `lg.sh` when Bun is installed); `--runtime node|bun` or `LG_RUNTIME` overrides it. `npm run editor`, `npm run graphrunner` and `npm start` stay on Node; `npm run editor:bun` and `npm run graphrunner:bun` run the servers on Bun in the foreground.
+- **Ports:** 8000 (editor) and 3000 (runner); change them with `LG_EDITOR_PORT` / `LG_RUNNER_PORT` or `.lg/config.json` (`{"ports": {"editor": 8001}}`). A busy port is refused with the setting that changes it.
+- **State:** `.lg/` (git-ignored) holds `run/<app>.json` (pid, port, runtime) and `logs/<app>.log`; `LG_STATE_DIR` moves it.
+- **Terminals:** colours follow `NO_COLOR`, `FORCE_COLOR` and `--no-color`, and switch off without a TTY. Without a TTY the menu prints help and status instead of waiting for input. `--no-browser` (or `LG_NO_BROWSER=1`) prints URLs instead of opening a browser.
+- **Runner security** is unchanged on both runtimes: the Origin and Host checks, the node-type denylist (`RUNNER_ALLOW_TYPES`) and the script lockdown apply as with `npm run graphrunner`; the launcher adds no opt-in. Bun has no permission model of its own.
+- **Node-only node types** (`runtime = "node"`) also run on Bun; a type that declares `"bun"` runs only on Bun (`LGraphNode.runtimeMatches`).
 
 ## Next steps
 

@@ -1,6 +1,20 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased
+
+Plan: `agents/plans/2026-11-23-launcher-and-bun.md`.
+
+## Added
+
+* **Launcher:** `lg.sh` and `lg.bat` run `tools/lg/lg.mjs` on Bun when it is installed, else on Node.js (`LG_RUNTIME` picks one). Commands `start`, `stop`, `restart`, `status`, `open <editor|tester|runner|docs>`, `logs`, `info`, and a coloured menu without arguments. Servers run in the background with a pid record and a log in the git-ignored `.lg/`; ports from `LG_EDITOR_PORT` / `LG_RUNNER_PORT` or `.lg/config.json`. See `docs/getting-started.md#the-launcher`.
+* **npm scripts:** `lg`, `editor:bun`, `graphrunner:bun`.
+* **The editor server serves `/docs`** (the generated API and the reference pages) and resolves its paths from the repository root, so it starts from any working directory.
+
+## Changed
+
+* **Node types declared `runtime = "node"` (or `executionEnvironment = "node"`) also run on Bun**, which implements the Node.js APIs they use; before, they were disabled with "cannot run in bun". A `"bun"` declaration still means Bun only. `LGraphNode.runtimeMatches(declared, runtime)` holds the rule.
+
 # 0.18.0-dev.2 (2026-11-23): dev pre-release
 
 This is a pre-release for testers, to be tagged `v0.18.0-dev.2`; nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track and the panels track (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.
