@@ -343,12 +343,26 @@
 
         
             
-<h4 class="name" id="_packs"><span class="type-signature"></span>_packs<span class="type-signature"></span></h4>
+<h4 class="name" id="_packs"><span class="type-signature"></span>_packs<span class="type-signature"> :*</span></h4>
 
 
 
 
+<div class="description">
+    (type `Map<string, {manifest: object, state: string, types: Set<string>, error?: string}>`)
+</div>
 
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">*</span>
+
+
+        </li>
+    </ul>
 
 
 
@@ -996,7 +1010,7 @@
     
 
     
-    <h4 class="name" id="findPackForType"><span class="type-signature"></span>findPackForType<span class="signature">()</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="findPackForType"><span class="type-signature"></span>findPackForType<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
     
 
     
@@ -1077,7 +1091,23 @@ lists the type), then the index.
 <h5>Returns:</h5>
 
         
+<div class="param-desc">
+    (type `{id: string, version: string, installed: boolean, state?: string}|null`)
+</div>
 
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+
+
+    </dd>
+</dl>
 
     
 
@@ -1309,7 +1339,7 @@ lists the type), then the index.
     
 
     
-    <h4 class="name" id="index"><span class="type-signature"></span>index<span class="signature">(manifests)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="index"><span class="type-signature"></span>index<span class="signature">(manifests)</span><span class="type-signature"> &rarr; {function}</span></h4>
     
 
     
@@ -1442,7 +1472,23 @@ can name the pack that provides it.
 <h5>Returns:</h5>
 
         
+<div class="param-desc">
+    (type `() => void`) disposer
+</div>
 
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
+
+
+    </dd>
+</dl>
 
     
 
@@ -2046,7 +2092,7 @@ should use <a href="global.html#register">register</a>). Pair it with close.
     
 
     
-    <h4 class="name" id="register"><span class="type-signature"></span>register<span class="signature">(manifest, setup)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="register"><span class="type-signature"></span>register<span class="signature">(manifest, setup<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {function}</span></h4>
     
 
     
@@ -2081,6 +2127,8 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
         
 
@@ -2106,6 +2154,14 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -2121,13 +2177,28 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
 
             <td class="type">
             
+                
+<span class="param-type">function</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `(ctx: {manifest: object, registerNodeType: Function}) => *`)</td>
         </tr>
 
     
@@ -2196,7 +2267,23 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
 <h5>Returns:</h5>
 
         
+<div class="param-desc">
+    (type `() => void`) disposer: unregisters the pack's node types and forgets the pack
+</div>
 
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
+
+
+    </dd>
+</dl>
 
     
 
@@ -2210,7 +2297,7 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
     
 
     
-    <h4 class="name" id="registerReplacement"><span class="type-signature"></span>registerReplacement<span class="signature">(mapping)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="registerReplacement"><span class="type-signature"></span>registerReplacement<span class="signature">(mapping)</span><span class="type-signature"> &rarr; {function}</span></h4>
     
 
     
@@ -2259,13 +2346,26 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{old_type: string, new_type: string, inputs?: object, outputs?: object, properties?: object, widgets?: object, set?: {properties?: object}, auto?: boolean, reason?: string}`)
+  - inputs / outputs: old slot (name or index) → new slot (name or index), or null to drop.
+    Unlisted slots keep their name.
+  - properties: old name → new name, or null to drop. Unlisted properties keep their name
+    when the new type has them.
+  - widgets: old widget index → new widget index, or null to drop. Unlisted values keep
+    their position.
+  - set.properties: values written on the new node after the mapping.
+  - auto: replace on load, without asking (setting `LiteGraph.Packs.AutoReplace`).</td>
         </tr>
 
     
@@ -2334,7 +2434,23 @@ Refused (throws) when `requires.litegraph` does not match, unless the setting
 <h5>Returns:</h5>
 
         
+<div class="param-desc">
+    (type `() => void`) disposer
+</div>
 
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
+
+
+    </dd>
+</dl>
 
     
 
@@ -2647,7 +2763,7 @@ the setting `LiteGraph.Packs.Stamp` is on, otherwise null.
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

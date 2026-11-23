@@ -1569,7 +1569,7 @@ export class LiteGraphClass {
      * @param {*} y 
      * @param {*} maxWidth 
      * @param {*} lineHeight 
-     * @returns 
+     * @returns {Object} `{lines, height}`: the lines drawn and the total height (`max`: the width of the last wrapped line)
      */
     canvasFillTextMultiline(context, text, x, y, maxWidth, lineHeight) {
         var words = (text+"").trim().split(' ');

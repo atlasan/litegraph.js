@@ -6,7 +6,7 @@ This is the single place for the current status of planned work.
 
 - **Design reasoning and idea catalog:** [feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md).
 - **Evidence:** [ecosystem study](../memories/research/ecosystem-study/README.md) and [audits](../audits/README.md).
-- **Open items, classified:** the [state audit of 2026-11-23](../audits/2026-11-23-state-audit.md) (FIX D-4 to D-8, DECISION DEC-1 to DEC-5, NICE N-1 to N-12).
+- **Open items, classified:** the [state audit of 2026-11-23](../audits/2026-11-23-state-audit.md) (FIX D-4 to D-8, DECISION DEC-1 to DEC-5, NICE N-1 to N-12). D-5, D-6 and D-8 are fixed and D-7 was not reproducible ([record](../executions/2026-11-23-audit-fixes.md)); D-4 is flows step 4.
 
 ## Branch model
 
