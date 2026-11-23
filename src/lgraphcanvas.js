@@ -12,6 +12,15 @@ import { NodeSearch } from "./nodesearch.js";
 import { LGraphEventTarget } from "./eventtarget.js";
 
 /**
+ * onSelectionChange (with `selected_nodes`, as before), then `selection-changed {nodes, items}`.
+ * A function, not a method: the selection methods also run on canvas-like objects (`deselectNode.call(obj, node)`).
+ */
+function selectionChanged(canvas) {
+    CallbackHandler.fireHookThenEvent(canvas, "onSelectionChange", [canvas.selected_nodes], canvas, "selection-changed",
+        () => ({ nodes: Object.values(canvas.selected_nodes), items: canvas.selectedItems }));
+}
+
+/**
  * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
  * Valid callbacks are: onNodeSelected, onNodeDeselected, onShowNodePanel, onNodeDblClicked
  *
@@ -21,15 +30,6 @@ import { LGraphEventTarget } from "./eventtarget.js";
  * @param {LGraph} graph [optional]
  * @param {Object} options [optional] { skip_rendering, autoresize, viewport }
  */
-/**
- * onSelectionChange (with `selected_nodes`, as before), then `selection-changed {nodes, items}`.
- * A function, not a method: the selection methods also run on canvas-like objects (`deselectNode.call(obj, node)`).
- */
-function selectionChanged(canvas) {
-    CallbackHandler.fireHookThenEvent(canvas, "onSelectionChange", [canvas.selected_nodes], canvas, "selection-changed",
-        () => ({ nodes: Object.values(canvas.selected_nodes), items: canvas.selectedItems }));
-}
-
 export class LGraphCanvas {
     constructor(canvas, graph, options) {
         options ??= {

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: extensions/subgraph_tools.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: extensions/subgraph_tools.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { LiteGraph } from "../litegraph.js";
+import { SubgraphDefs } from "../subgraphdefs.js";
+
+/**
+ * Subgraph commands: open and close, convert and unpack, make unique, remove unused definitions,
+ * promote and unpromote a widget. The canvas keeps its own buttons and menus; these make the same
+ * actions available to key bindings, command palettes and scripts.
+ */
+
+const single = (ctx) => (ctx.selectedNodes?.length === 1 ? ctx.selectedNodes[0] : null);
+const isInstance = (node) => !!node?.subgraph &amp;&amp; typeof node.properties?.subgraph_id === "string";
+
+/** definitions of the root registry that no instance uses, directly or through another definition */
+export function unusedDefinitionIds(rootGraph) {
+    const used = new Set();
+    const use = (id) => {
+        if (used.has(id) || !rootGraph.subgraphs.has(id)) return;
+        used.add(id);
+        for (const next of SubgraphDefs.directDefinitionIds(rootGraph.subgraphs.get(id))) use(next);
+    };
+    const visit = (graph, depth) => {
+        if (depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+        for (const node of graph._nodes) {
+            if (typeof node?.properties?.subgraph_id === "string") use(node.properties.subgraph_id);
+            if (node?.subgraph) visit(node.subgraph, depth + 1);
+        }
+    };
+    visit(rootGraph, 0);
+    return [...rootGraph.subgraphs.keys()].filter((id) => !used.has(id));
+}
+
+/** removes the definitions nothing uses (one undo step); returns their ids */
+export function removeUnusedDefinitions(graph) {
+    const root = graph.rootGraph;
+    const unused = unusedDefinitionIds(root);
+    if (!unused.length) return [];
+    root.transact("removeUnusedDefinitions", () => {
+        for (const id of unused) root.subgraphs.delete(id);
+        root.onGraphChanged({ action: "removeUnusedDefinitions" });
+    });
+    return unused;
+}
+
+export const subgraphToolsExtension = {
+    name: "litegraph.subgraph_tools",
+    commands: [
+        {
+            id: "litegraph.subgraph.open",
+            label: "Open subgraph",
+            category: "subgraph",
+            when: (ctx) => !!single(ctx)?.subgraph &amp;&amp; !!ctx.canvas,
+            run(ctx) { ctx.canvas.openSubgraph(single(ctx).subgraph); return true; },
+        },
+        {
+            id: "litegraph.subgraph.close",
+            label: "Leave subgraph",
+            category: "subgraph",
+            when: (ctx) => (ctx.canvas?._graph_stack?.length ?? 0) > 0,
+            run(ctx) { ctx.canvas.closeSubgraph(); return true; },
+        },
+        {
+            id: "litegraph.subgraph.closeAll",
+            label: "Back to the root graph",
+            category: "subgraph",
+            when: (ctx) => (ctx.canvas?._graph_stack?.length ?? 0) > 0,
+            run(ctx) { ctx.canvas.closeSubgraphTo(0); return true; },
+        },
+        {
+            id: "litegraph.subgraph.convert",
+            label: "Convert selection to subgraph",
+            category: "subgraph",
+            when: (ctx) => !!ctx.graph &amp;&amp; (ctx.selectedNodes?.length ?? 0) > 0,
+            run(ctx) {
+                const node = ctx.graph.convertToSubgraph(ctx.selectedNodes);
+                if (node) ctx.canvas?.selectNodes?.([node]);
+                return !!node;
+            },
+        },
+        {
+            id: "litegraph.subgraph.unpack",
+            label: "Unpack subgraph",
+            category: "subgraph",
+            when: (ctx) => !!ctx.graph &amp;&amp; single(ctx)?.type === "graph/subgraph",
+            run(ctx) {
+                const nodes = ctx.graph.unpackSubgraph(single(ctx));
+                if (nodes?.length) ctx.canvas?.selectNodes?.(nodes);
+                return !!nodes?.length;
+            },
+        },
+        {
+            id: "litegraph.subgraph.makeUnique",
+            label: "Make subgraph unique",
+            category: "subgraph",
+            when: (ctx) => {
+                const node = single(ctx);
+                return isInstance(node) &amp;&amp; node.graph.rootGraph.findSubgraphInstances(node.properties.subgraph_id).length > 1;
+            },
+            run(ctx) { return !!single(ctx).makeUnique(); },
+        },
+        {
+            id: "litegraph.subgraph.updateFromSource",
+            label: "Update component from its registered revision",
+            category: "subgraph",
+            when: (ctx) => !!single(ctx)?.hasSourceUpdate?.(),
+            run(ctx) { return single(ctx).updateFromSource(); },
+        },
+        {
+            id: "litegraph.subgraph.removeUnusedDefinitions",
+            label: "Remove unused subgraph definitions",
+            category: "subgraph",
+            when: (ctx) => !!ctx.graph &amp;&amp; unusedDefinitionIds(ctx.graph.rootGraph).length > 0,
+            run(ctx) { return removeUnusedDefinitions(ctx.graph).length > 0; },
+        },
+    ],
+};
+
+/** Registers the extension once (the full bundles and the editor load it). */
+export function registerExtension_subgraphTools(graphcanvas) {
+    if (!LiteGraph.extensions?.has(subgraphToolsExtension.name)) LiteGraph.registerExtension(subgraphToolsExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
+
+registerExtension_subgraphTools();
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

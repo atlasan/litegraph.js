@@ -38,12 +38,15 @@ export class ContextMenu {
     * - callback: function to call when an option is clicked, it receives the item information
     * - ignore_item_callbacks: ignores the callback inside the item, it just calls the options.callback
     * - event: you can pass a MouseEvent, this way the ContextMenu appears in that position
+    * - isCustomEvent: added to allow not default events
     *
     *   Rendering notes: This is only relevant to rendered graphs, and is rendered using HTML+CSS+JS.
     */
     constructor(values, options = {}) {
         this.options = options;
         options.scroll_speed ??= 0.1;
+        options.filter_enabled ??= true;
+        this.menu_elements = [];
 
         this.#linkToParent();
         this.#validateEventClass();
@@ -53,6 +56,9 @@ export class ContextMenu {
         this.addItems(values);
         this.#insertMenu();
         this.#calculateBestPosition();
+        if(LiteGraph.context_menu_filter_enabled &amp;&amp; options.filter_enabled){
+            this.createFilter(values, options);
+        }
     }
 
     #createRoot() {
@@ -69,6 +75,8 @@ export class ContextMenu {
     #bindEvents() {
         const root = this.root;
 
+        LiteGraph.log_info("**contextmenu**", "binding events on root", root, this);
+
         root.style.pointerEvents = "none";
         setTimeout(() => {
             root.style.pointerEvents = "auto";
@@ -76,7 +84,7 @@ export class ContextMenu {
 
         // this prevents the default context browser menu to open in case this menu was created when pressing right button
         root.addEventListener("pointerup", (e) => {
-            // console.log("pointerevents: ContextMenu up root prevent");
+            // LiteGraph.log?.("pointerevents: ContextMenu up root prevent");
             e.preventDefault();
             return true;
         });
@@ -89,7 +97,7 @@ export class ContextMenu {
             return false;
         });
         root.addEventListener("pointerdown", (e) => {
-            // console.log("pointerevents: ContextMenu down");
+            // LiteGraph.log?.("pointerevents: ContextMenu down");
             if (e.button == 2) {
                 this.close();
                 e.preventDefault();
@@ -104,7 +112,7 @@ export class ContextMenu {
             return true;
         });
         root.addEventListener("pointerenter", (_event) => {
-            // console.log("pointerevents: ContextMenu enter");
+            // LiteGraph.log?.("pointerevents: ContextMenu enter");
             if (root.closing_timer) {
                 clearTimeout(root.closing_timer);
             }
@@ -116,7 +124,7 @@ export class ContextMenu {
         if (!parentMenu)
             return;
         if (parentMenu.constructor !== this.constructor) {
-            console.error("parentMenu must be of class ContextMenu, ignoring it");
+            LiteGraph.log_error("contextmenu", "linkToParent", "parentMenu must be of class ContextMenu, ignoring it");
             this.options.parentMenu = null;
             return;
         }
@@ -129,17 +137,165 @@ export class ContextMenu {
         if(!this.options.event)
             return;
 
+        if(this.options.isCustomEvent){
+            LiteGraph.log_verbose("contextmenu", "linkToParent", "Custom event for ContextMenu.", this.options.event);
+            return;
+        }
+
+        // why should we ignore other events ?
         // use strings because comparing classes between windows doesnt work
         const eventClass = this.options.event.constructor.name;
         if ( eventClass !== "MouseEvent" &amp;&amp;
             eventClass !== "CustomEvent" &amp;&amp;
             eventClass !== "PointerEvent"
         ) {
-            console.error(`Event passed to ContextMenu is not of type MouseEvent or CustomEvent. Ignoring it. (${eventClass})`);
-            this.options.event = null;
+            LiteGraph.log_warn(`Event passed to ContextMenu is not of type MouseEvent or CustomEvent. Was originally ignoring it. (${eventClass})`);
+            // this.options.event = null;
         }
     }
 
+    createFilter(values, options){
+        if(!values || !values.length || values.length == 1) return;
+
+        const filter = document.createElement("input");
+        filter.classList.add("context-menu-filter");
+        filter.placeholder = "Filter list";
+        this.root.prepend(filter);
+
+        const items = Array.from(this.root.querySelectorAll(".litemenu-entry"));
+        let displayedItems = [...items];
+        let itemCount = displayedItems.length;
+
+        console.info(options);
+
+        // We must request an animation frame for the current node of the active canvas to update.
+        requestAnimationFrame(() => {
+            const currentNode = options.extra; //LGraphCanvas.active_canvas.current_node;
+            const clickedComboValue = currentNode?.widgets
+                ?.filter(w => w.type === "combo" &amp;&amp; w.options.values.length === values.length)
+                .find(w => w.options.values.every((v, i) => v === values[i]))
+                ?.value;
+
+            let selectedIndex = clickedComboValue ? values.findIndex(v => v === clickedComboValue) : 0;
+            if (selectedIndex &lt; 0) {
+                selectedIndex = 0;
+            } 
+            let selectedItem = displayedItems[selectedIndex];
+            updateSelected();
+
+            // Apply highlighting to the selected item
+            function updateSelected() {
+                selectedItem?.style.setProperty("background-color", "");
+                selectedItem?.style.setProperty("color", "");
+                selectedItem = displayedItems[selectedIndex];
+                selectedItem?.style.setProperty("background-color", "#ccc", "important");
+                selectedItem?.style.setProperty("color", "#000", "important");
+            }
+
+            const positionList = () => {
+                const rect = this.root.getBoundingClientRect();
+
+                // If the top is off-screen then shift the element with scaling applied
+                if (rect.top &lt; 0) {
+                    const scale = 1 - this.root.getBoundingClientRect().height / this.root.clientHeight;
+                    const shift = (this.root.clientHeight * scale) / 2;
+                    this.root.style.top = -shift + "px";
+                }
+            }
+
+            // Arrow up/down to select items
+            filter.addEventListener("keydown", (event) => {
+                switch (event.key) {
+                    case "ArrowUp":
+                        event.preventDefault();
+                        if (selectedIndex === 0) {
+                            selectedIndex = itemCount - 1;
+                        } else {
+                            selectedIndex--;
+                        }
+                        updateSelected();
+                        break;
+                    case "ArrowRight":
+                        /* event.preventDefault();
+                        selectedIndex = itemCount - 1;
+                        updateSelected(); */
+                        selectedItem?.do_click(event); //click();
+                        break;
+                    case "ArrowDown":
+                        event.preventDefault();
+                        if (selectedIndex === itemCount - 1) {
+                            selectedIndex = 0;
+                        } else {
+                            selectedIndex++;
+                        }
+                        updateSelected();
+                        break;
+                    case "ArrowLeft": {
+                        const parentMenu = this.parentMenu;
+                        this.close(event, true);
+                        if(parentMenu){
+                            const parentFilter = Array.from(parentMenu.root.querySelectorAll(".context-menu-filter"));
+                            if(parentFilter &amp;&amp; parentFilter.length){
+                                parentFilter[0].style.display = "block";
+                                parentFilter[0].focus();
+                            }
+                        }
+                        /* event.preventDefault();
+                        selectedIndex = 0;
+                        updateSelected(); */
+                        break;
+                    }
+                    case "Enter":
+                        selectedItem?.do_click(event); //click();
+                        break;
+                    case "Escape":
+                        this.close();
+                        break;
+                }
+            });
+
+            filter.addEventListener("input", () => {
+                // Hide all items that don't match our filter
+                const term = filter.value.toLocaleLowerCase();
+                // When filtering, recompute which items are visible for arrow up/down and maintain selection.
+                displayedItems = items.filter(item => {
+                    const isVisible = !term || item.textContent.toLocaleLowerCase().includes(term);
+                    item.style.display = isVisible ? "block" : "none";
+                    return isVisible;
+                });
+
+                selectedIndex = 0;
+                if (displayedItems.includes(selectedItem)) {
+                    selectedIndex = displayedItems.findIndex(d => d === selectedItem);
+                }
+                itemCount = displayedItems.length;
+
+                updateSelected();
+
+                // If we have an event then we can try and position the list under the source
+                if (options.event) {
+                    let top = options.event.clientY - 10;
+
+                    const bodyRect = document.body.getBoundingClientRect();
+                    const rootRect = this.root.getBoundingClientRect();
+                    if (bodyRect.height &amp;&amp; top > bodyRect.height - rootRect.height - 10) {
+                        top = Math.max(0, bodyRect.height - rootRect.height - 10);
+                    }
+
+                    this.root.style.top = top + "px";
+                    positionList();
+                }
+            });
+
+            requestAnimationFrame(() => {
+                // Focus the filter box when opening
+                filter.focus();
+
+                positionList();
+            });
+        })
+    }
+    
     /**
      * Creates a title element if it doesn't have one.
      * Sets the title of the menu.
@@ -170,6 +326,8 @@ export class ContextMenu {
             }
 
             let value = values[i];
+            
+            // this.menu_elements.push(this.addItem(name, value, this.options));
             this.addItem(name, value, this.options);
         }
     }
@@ -177,6 +335,8 @@ export class ContextMenu {
     #insertMenu() {
         const doc = this.options.event?.target.ownerDocument ?? document;
         const parent = doc.fullscreenElement ?? doc.body;
+        const root = this.root;
+        const that = this;
         parent.appendChild(this.root);
     }
 
@@ -186,6 +346,8 @@ export class ContextMenu {
 
         let left = options.left || 0;
         let top = options.top || 0;
+        this.top_original = top;
+
         if (options.event) {
             left = options.event.clientX - 10;
             top = options.event.clientY - 10;
@@ -193,6 +355,7 @@ export class ContextMenu {
             if (options.title) {
                 top -= 20;
             }
+            this.top_original = top;
 
             if (options.parentMenu) {
                 const rect = options.parentMenu.root.getBoundingClientRect();
@@ -202,7 +365,7 @@ export class ContextMenu {
             const body_rect = document.body.getBoundingClientRect();
             const root_rect = root.getBoundingClientRect();
             if(body_rect.height === 0)
-                console.error("document.body height is 0. That is dangerous, set html,body { height: 100%; }");
+                LiteGraph.log_error("document.body height is 0. That is dangerous, set html,body { height: 100%; }");
 
             if (body_rect.width &amp;&amp; left > body_rect.width - root_rect.width - 10) {
                 left = body_rect.width - root_rect.width - 10;
@@ -210,13 +373,16 @@ export class ContextMenu {
             if (body_rect.height &amp;&amp; top > body_rect.height - root_rect.height - 10) {
                 top = body_rect.height - root_rect.height - 10;
             }
+        }else{
+            LiteGraph.log_debug("contextmenu", "calculateBestPosition", "has no event");
         }
 
         root.style.left = `${left}px`;
         root.style.top = `${top}px`;
 
         if (options.scale) {
-            root.style.transform = `scale(${options.scale})`;
+            // quarter steps keep text on the pixel grid (blurry fonts otherwise, Comfy 0b161c1)
+            root.style.transform = `scale(${Math.round(options.scale * 4) * 0.25})`;
         }
     }
 
@@ -229,10 +395,15 @@ export class ContextMenu {
      */
     addItem(name, value, options = {}) {
 
+        // value.callbacks_on_element_created ??= false; 
+
+        LiteGraph.log_verbose("contextmenu", "addItem", ...arguments);
+
         const element = document.createElement("div");
         element.className = "litemenu-entry submenu";
 
         let disabled = false;
+        var thisItem = element;
 
         if (value === null) {
             element.classList.add("separator");
@@ -260,11 +431,36 @@ export class ContextMenu {
             if (value.className) {
                 element.className += " " + value.className;
             }
+            // execute element additional construction function
+            if(typeof(value.callbacks_on_element_created)!=="undefined"){
+                if(typeof(value.callbacks_on_element_created)=="function"){
+                    value.callbacks_on_element_created = [value.callbacks_on_element_created];
+                }
+                var thisMenu = this;
+                value.callbacks_on_element_created.forEach((fun)=>{
+                    if(typeof(fun)=="function"){
+                        LiteGraph.log_debug("contextmenu", "addItem", "callbacks_on_element_created", element, fun);
+                        fun(element, thisMenu);
+                    }
+                })
+            }
         }
 
         this.root.appendChild(element);
+
         if (!disabled) {
             element.addEventListener("click", handleMenuItemClick);
+            element.do_click = function(event, ignore_parent_menu){
+                // LiteGraph.log_verbose("contextmenu", "addItem", "do_click", "handleMenuItemClick", "this", this, "thisItem", thisItem, "event", event, "ignore_parent_menu", ignore_parent_menu);
+                if(!event){
+                    LiteGraph.log_warn("contextmenu", "addItem", "do_click", "has no event", ...arguments);
+                }else if(!event.clientX){
+                    LiteGraph.log_warn("contextmenu", "addItem", "do_click", "event has no clientX info", event);
+                }else{
+                    LiteGraph.log_verbose("contextmenu", "addItem", "do_click", "has clientX", event);
+                }
+                handleMenuItemClick.call(thisItem, event, ignore_parent_menu);
+            };
         }
         if (!disabled &amp;&amp; options.autoopen) {
             element.addEventListener("pointerenter",(event) => {
@@ -283,29 +479,47 @@ export class ContextMenu {
             const value = this.value;
             let closeParent = true;
 
+            LiteGraph.log_debug("contextmenu", "handleMenuItemClick", "process", value,event,options,closeParent,this.current_submenu,this);
+
             // Close any current submenu
             that.current_submenu?.close(event);
 
+            // Hide filter
+            const thisFilter = Array.from(that.root.querySelectorAll(".context-menu-filter"));
+            if(thisFilter &amp;&amp; thisFilter.length){
+                thisFilter[0].style.display = "none";
+            }
+
             // Execute global callback
             if (options.callback) {
+                LiteGraph.log_debug("contextmenu", "handleMenuItemClick", "global callback",this,value,options,event,that,options.node);
+                
                 const globalCallbackResult = options.callback.call(this, value, options, event, that, options.node);
                 if (globalCallbackResult === true) {
+                    LiteGraph.log_debug("contextmenu", "handleMenuItemClick", "global callback processed, dont close parent?", globalCallbackResult);
                     closeParent = false;
+                }else{
+                    LiteGraph.log_debug("contextmenu", "handleMenuItemClick", "global callback processed, will close parent", globalCallbackResult);
                 }
             }
 
             // Handle special cases
             if (value) {
                 if (value.callback &amp;&amp; !options.ignore_item_callbacks &amp;&amp; value.disabled !== true) {
-                    // Execute item callback
+
+                    LiteGraph.log_debug("contextmenu", "handleMenuItemClick", "using value callback and !ignore_item_callbacks",this,value,options,event,that,options.node);
                     const itemCallbackResult = value.callback.call(this, value, options, event, that, options.extra);
                     if (itemCallbackResult === true) {
                         closeParent = false;
                     }
                 }
                 if (value.submenu) {
+                    LiteGraph.log_debug("contextmenu", "handleMenuItemClick", "SUBMENU",this,value,value.submenu.options,event,that,options);
+
                     if (!value.submenu.options) {
-                        throw new Error("ContextMenu submenu needs options");
+                        // throw new Error("contextmenu", "handleMenuItemClick", "submenu needs options");
+                        LiteGraph.log_warn("contextmenu", "handleMenuItemClick", "SUBMENU", "submenu needs options");
+                        return;
                     }
                     // Recursively create submenu
                     new that.constructor(value.submenu.options, {
@@ -326,6 +540,10 @@ export class ContextMenu {
                 that.close();
             }
         }
+        
+        // push to menu_elements here
+        this.menu_elements.push(element);
+
         return element;
     }
 
@@ -335,9 +553,6 @@ export class ContextMenu {
      * @param {boolean} [ignore_parent_menu=false] - Whether to ignore the parent menu when closing.
      */
     close(e, ignore_parent_menu) {
-
-        this.root.parentNode?.removeChild(this.root);
-
         if (this.parentMenu &amp;&amp; !ignore_parent_menu) {
             this.parentMenu.lock = false;
             this.parentMenu.current_submenu = null;
@@ -356,8 +571,9 @@ export class ContextMenu {
             clearTimeout(this.root.closing_timer);
         }
 
-        // TODO implement : LiteGraph.contextMenuClosed(); :: keep track of opened / closed / current ContextMenu
-        // on key press, allow filtering/selecting the context menu elements
+        if (this.root.parentNode) {
+            this.root.parentNode.removeChild(this.root);
+        }
     }
 
     /**
@@ -365,8 +581,8 @@ export class ContextMenu {
      * @param {Window} [ref_window=window] - The window object to search for open menus.
      */
     static closeAll = (ref_window = window) => {
-        const elements = ref_window.document.querySelectorAll(".litecontextmenu");
-        if (!elements.length)
+        const elements = ref_window?.document?.querySelectorAll(".litecontextmenu");
+        if (!elements || !elements.length)
             return;
 
         elements.forEach((element) => {
@@ -425,13 +641,13 @@ export class ContextMenu {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LiteGraph.html">LiteGraph</a></li></ul><h3>Global</h3><ul><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearRegisteredTypes">clearRegisteredTypes</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#disconnectInput">disconnectInput</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#start">start</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Sun May 19 2024 17:15:02 GMT-0600 (Mountain Daylight Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

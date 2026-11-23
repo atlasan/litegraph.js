@@ -133,7 +133,7 @@ The set-up and the options are in the [research note](../memories/research/2026-
 | 10 | low | `ancestors/check_subgraph` drops 3 events as `refreshing` under `ancestors`: an event fired while ancestors were being pulled | §3 | Fixed in `40df00a` (flows track, examples); was: open: investigate with the example |
 | 11 | low | Old examples saved in ALWAYS mode raise `pure-always` under `ancestors` until "Apply the model's node modes" is used; most examples are not in the Demo menu, and none states its flow style | §3; `apps/editor/js/code.js:124` | Fixed in `40df00a` (flows track: examples manifest, Demo menu by category); was: open: [FLW-22](../ideas/cards/FLW-22-node-reference-and-examples.md) |
 | 12 | low | No node reference (USE-06); builtin packs have no description; no test creates every type | `src/litegraph.js:384`; `src/packs.js` | Fixed in `879761a` (flows track: `npm run docs:nodes`, pack descriptions, catalog test); was: open: FLW-23 |
-| 13 | low | `docs/api/*.html` (generated) still shows the legacy flag code | `docs/api/litegraph.js.html:134` | open: regenerate with `npm run docs` |
+| 13 | low | `docs/api/*.html` (generated) still shows the legacy flag code | `docs/api/litegraph.js.html:134` | Fixed in the 0.18.0-dev.2 pre-release (D-3: `docs/api` regenerated) |
 
 ## Verdict
 
