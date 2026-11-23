@@ -303,6 +303,9 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 | FLW-22 | Examples library: a manifest with flow categories and profiles, a Demo menu built from it, a test that runs every example ([card](cards/FLW-22-node-reference-and-examples.md)) | P9 P10 | app | M | — | promoted | Audit finding 11; CFY-43; [plan](../plans/2026-11-22-flows-reference-examples.md) |
 | FLW-23 | Node reference per library, generated from `describeNodeType`, with pack descriptions and usage | P9 P10 | app | S | — | promoted | USE-06; audit finding 12; [plan](../plans/2026-11-22-flows-reference-examples.md) |
 | FLW-24 | Profile-aware palette and new-graph templates | P10 P9 | ext | S | — | seed | `src/palette.js`; pack `templates[]` |
+| FLW-25 | Node pin as mode and state indicator, with a quick menu (mode, bypass, mute, rename, run, info) | P10 P9 | ext | S | ref | promoted | Plan 2026-11-23 node pin track C; ComfyUI bypass and mute |
+| FLW-26 | Graph status chip: the execution model and run state on the canvas, click to switch | P10 P9 | ext | S | — | promoted | Plan 2026-11-23 node pin track C; FLW-08 profiles could show here |
+| FLW-27 | Native BYPASS mode (pass-through), as ComfyUI's mode 4 | P1 P10 | core | S | ref | promoted | Decision 0004 |
 
 ## Repository tooling (`DEV`)
 
