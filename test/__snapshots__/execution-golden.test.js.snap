@@ -808,7 +808,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -1227,7 +1227,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -1646,7 +1646,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -2065,7 +2065,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -4742,7 +4742,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -4754,7 +4754,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -4766,7 +4766,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -4924,7 +4924,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5123,7 +5123,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5135,7 +5135,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5147,7 +5147,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -5305,7 +5305,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5504,7 +5504,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5516,7 +5516,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5528,7 +5528,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -5686,7 +5686,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5885,7 +5885,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5897,7 +5897,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -5909,7 +5909,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -6067,7 +6067,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -8158,7 +8158,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -8403,7 +8403,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -8648,7 +8648,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -8893,7 +8893,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -12621,7 +12621,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -13040,7 +13040,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -13459,7 +13459,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -13878,7 +13878,7 @@ Object {
         "type": "basic/watch",
       },
       "5": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -16555,7 +16555,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -16567,7 +16567,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -16579,7 +16579,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -16737,7 +16737,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -16936,7 +16936,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -16948,7 +16948,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -16960,7 +16960,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -17118,7 +17118,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -17317,7 +17317,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -17329,7 +17329,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -17341,7 +17341,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -17499,7 +17499,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -17698,7 +17698,7 @@ Object {
         "type": "events/sequence",
       },
       "5cbdb32a-55d1-41d1-bbc3-f7bbe2ea68ea": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -17710,7 +17710,7 @@ Object {
         "type": "basic/variable",
       },
       "635df01f-f219-48a8-844f-57512c9b5f05": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -17722,7 +17722,7 @@ Object {
         "type": "basic/variable",
       },
       "68ce064f-aae2-45d7-bf5c-bcf0bd20d2a4": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
         ],
@@ -17880,7 +17880,7 @@ Object {
         "type": "logic/CycleWHILE",
       },
       "ddca99c4-c412-407b-9ff8-707f8a0180b1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -19971,7 +19971,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -20216,7 +20216,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -20461,7 +20461,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",
@@ -20706,7 +20706,7 @@ Object {
     },
     "nodes": Object {
       "1": Object {
-        "mode": 4,
+        "mode": 5,
         "outputs": Array [
           "<undefined>",
           "<undefined>",

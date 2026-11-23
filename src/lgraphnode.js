@@ -645,7 +645,7 @@ export class LGraphNode {
             // a forced pull runs the origin once per frame or call (or again on newer input data); under
             // the ancestors model only ON_REQUEST origins: ALWAYS nodes give this frame's value
             // a node that ticks (Timer, Delay) is never re-run by a pull
-            if (node.mode === LiteGraph.ON_REQUEST || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
+            if (node.mode === LiteGraph.ON_REQUEST || node.mode === LiteGraph.BYPASS || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
             return link.data;
         }
 
@@ -959,6 +959,8 @@ export class LGraphNode {
                 break;
             case LiteGraph.ON_REQUEST:
                 break;
+            case LiteGraph.BYPASS:
+                break;
 
             default:
                 return false;
@@ -1012,15 +1014,19 @@ export class LGraphNode {
         // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
         const reportRun = graph._step_node !== this && this._reportRunStart();
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onExecute", { def_cb: this.onExecute }, param, options);
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) ExecutionEngine.passThrough(this); // a wire: data only, its own code does not run
+            else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onExecute", { def_cb: this.onExecute }, param, options);
+            }
             if (!rules.legacy) ExecutionEngine.remember(this);
             this.exec_version = graph.iteration;
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            if (LiteGraph.properties_allow_output_binding && !bypassed) this.doUpdateBindedOutputProperties();
             this.execute_triggered = 2;
-            this.processCallbackHandlers("onAfterExecuteNode", { def_cb: this.onAfterExecuteNode }, param, options);
+            if (!bypassed) this.processCallbackHandlers("onAfterExecuteNode", { def_cb: this.onAfterExecuteNode }, param, options);
             if (reportRun) this._reportRunDone();
         } catch (error) {
             this.exec_version = previousExecution;
@@ -1118,13 +1124,19 @@ export class LGraphNode {
         ExecutionEngine._depth++;
         const reportRun = this._reportRunStart();
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onAction", { def_cb: this.onAction }, action, param, options, action_slot);
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) {
+                // a wire: data passes through and the event goes on to the event outputs
+                ExecutionEngine.passThrough(this, { events: true, param, options });
+            } else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onAction", { def_cb: this.onAction }, action, param, options, action_slot);
+                if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            }
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
             this.action_triggered = 2;
-            this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
+            if (!bypassed) this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
             if (reportRun) this._reportRunDone();
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
@@ -1243,7 +1255,11 @@ export class LGraphNode {
             }
             if (node.mode === LiteGraph.NEVER) { ExecutionEngine.drop(node, "mode", { message: `${node.type} ${node.id}: the node is NEVER; the event is not delivered` }); continue; }
             var target_slot = node.inputs[link_info.target_slot];
-            if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
+            if (node.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now
+                if (!options.action_call) options.action_call = `${this.id}_act_${LiteGraph.uuidv4()}`;
+                node.actionDo(target_slot?.name, param, options, link_info.target_slot);
+            } else if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
                 // generate unique trigger ID if not present
                 if (!options.action_call)
                     options.action_call = `${this.id}_trigg_${LiteGraph.uuidv4()}`; // TODO replace here and there fakeunique ID with real unique
@@ -3047,7 +3063,7 @@ export class LGraphNode {
 
         var optsAncestors = {
             modesSkip: [LiteGraph.NEVER, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER],
-            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST],
+            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST, LiteGraph.BYPASS],
             typesSkip: [LiteGraph.ACTION],
             typesOnly: [],
         };

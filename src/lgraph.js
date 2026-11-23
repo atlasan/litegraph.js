@@ -25,7 +25,7 @@ export class LGraph {
     static STATUS_RUNNING = 2;
 
     /** top-level document fields modelled by this runtime; any other loaded field is preserved verbatim on serialize */
-    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version"];
+    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version", "litegraph_modes"];
 
     /** fresh id counters; last_node_id/last_link_id are accessors over these */
     static createState() {
@@ -666,7 +666,8 @@ export class LGraph {
                     const node = nodes[index];
                     if (node.graph !== this) continue;
                     if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
-                    if (node.mode === LiteGraph.ALWAYS && node.doExecute) {
+                    // a BYPASS node takes the turn too, so the values it passes on stay current
+                    if ((node.mode === LiteGraph.ALWAYS || node.mode === LiteGraph.BYPASS) && node.doExecute) {
                         if (rules.frame_pull) ExecutionEngine.pull(node);
                         this._step_node = node; // its own turn: runStep reports it below
                         try { node.doExecute(); } finally { this._step_node = null; }
@@ -2531,6 +2532,7 @@ export class LGraph {
             extra: this._serializeExtra(),
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
+            litegraph_modes: LiteGraph.MODES_VERSION, // mode numbering (2: BYPASS = 4, ON_REQUEST = 5)
             state: { ...this.state }, // all id counters (nodes, links, groups, reroutes)
         });
         if (this.floating_links?.size || this._floating_links_field) {
@@ -2816,6 +2818,53 @@ export class LGraph {
         }
     }
 
+    /**
+     * Brings a document's node modes to the current numbering (BYPASS = 4, ON_REQUEST = 5), in place:
+     * the root, nested subgraphs and subgraph definitions. Which numbering a document uses:
+     * - `litegraph_modes` 2 or more: current, nothing to do;
+     * - `litegraph_version` without `litegraph_modes`: written by this library before the change,
+     *   where 4 was ON_REQUEST: 4 becomes 5;
+     * - neither (ComfyUI, upstream litegraph, other editors): 4 is BYPASS, as written, unless the
+     *   setting `LiteGraph.Compat.UnmarkedMode4` (or `options.unmarked`) is "on_request".
+     * In an old document, nodes listed in `extra.comfy_bypassed` (ComfyUI imports kept BYPASS as
+     * NEVER) become BYPASS and the list is removed. The document is then marked with the current
+     * `litegraph_modes`.
+     * @param {object} data - a graph document
+     * @param {{unmarked?: "bypass"|"on_request"}} [options]
+     * @returns {{numbering: "current"|"old"|"unmarked", changed: number}}
+     */
+    static migrateModes(data, options = {}) {
+        if (!data || typeof data !== "object") return { numbering: "current", changed: 0 };
+        let numbering = "current";
+        if (!(Number(data.litegraph_modes) >= 2)) numbering = data.litegraph_version ? "old" : "unmarked";
+        let unmarked = options.unmarked;
+        if (numbering === "unmarked" && !unmarked) {
+            try { unmarked = LiteGraph.settings?.get("LiteGraph.Compat.UnmarkedMode4"); } catch { unmarked = undefined; }
+        }
+        const renumber = numbering === "old" || (numbering === "unmarked" && unmarked === "on_request");
+        let changed = 0;
+        if (renumber) {
+            const seen = new Set();
+            const visit = (graph) => {
+                if (!graph || typeof graph !== "object" || seen.has(graph)) return;
+                seen.add(graph);
+                const bypassed = new Set(Array.isArray(graph.extra?.comfy_bypassed) ? graph.extra.comfy_bypassed : []);
+                if (bypassed.size) delete graph.extra.comfy_bypassed;
+                for (const node of Array.isArray(graph.nodes) ? graph.nodes : []) {
+                    if (!node || typeof node !== "object") continue;
+                    if (node.mode === 4) { node.mode = 5; changed++; }
+                    else if (node.mode === 2 && bypassed.has(node.id)) { node.mode = 4; changed++; }
+                    visit(node.subgraph);
+                }
+                for (const definition of graph.definitions?.subgraphs ?? []) visit(definition);
+            };
+            visit(data);
+            if (changed) LiteGraph.log_info?.("lgraph", "migrateModes", `${changed} node(s) in mode 4 (On Request in the old numbering) now use mode 5`);
+        }
+        data.litegraph_modes = LiteGraph.MODES_VERSION;
+        return { numbering, changed };
+    }
+
     /** true while this graph, or a graph containing it, is being configured (loading) */
     get isConfiguring() {
         for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
@@ -2836,6 +2885,9 @@ export class LGraph {
         if (!keep_old) {
             this.clear();
         }
+
+        // mode numbering: documents from before numbering 2 (ON_REQUEST was 4) are renumbered once, here
+        if (!this._subgraph_node) LGraph.migrateModes(data);
 
         // subgraph definitions: instances that reference one get their inner graph; the root keeps the registry
         let subgraphErrors = [];
