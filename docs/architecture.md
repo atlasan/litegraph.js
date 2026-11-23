@@ -16,7 +16,7 @@ How the library is put together, for readers who want to change it or build on i
 ```text
 platform     commands · key bindings · settings · menus · extensions · packs · node definitions · search
 graph        LGraph · LGraphNode · LLink · groups · reroutes · subgraphs and definitions · transactions
-execution    runStep · modes (ALWAYS, ON_EVENT, NEVER, ON_TRIGGER, ON_REQUEST) · events · deferred actions
+execution    runStep · modes (ALWAYS, ON_EVENT, NEVER, ON_TRIGGER, BYPASS, ON_REQUEST) · events · deferred actions
 canvas       LGraphCanvas · DragAndScale · CanvasPointer gestures · LinkConnector · widgets · panels
 apps         editor (Editor shell) · tester · runner (one worker per graph)
 ```
@@ -57,7 +57,7 @@ Events travel along links:
 
 Node types may declare what they need (`static def.execution`: valid models and modes, a default mode, `emit: "immediate"` for loops, `ticks` for timers, `pure` for nodes that are ON_REQUEST under `ancestors`). Mode changes check the declarations; `graph.checkExecution()` reports what does not fit. The model is shown and changed in the graph info (canvas menu "Options"). See [decision 0002](../agents/memories/decisions/0002-execution-models.md).
 
-Mode 4 is ON_REQUEST here; ComfyUI's BYPASS is mapped explicitly by the interop extension.
+Mode 4 is BYPASS, as in ComfyUI: the node passes its inputs on as a wire. ON_REQUEST is 5 since mode numbering 2, and `LGraph.migrateModes` renumbers older documents on load ([decision 0004](../agents/memories/decisions/0004-mode-4-bypass.md)).
 
 ## Subgraphs
 

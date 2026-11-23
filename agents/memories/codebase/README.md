@@ -106,7 +106,12 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Other modes:**
   - **ON_EVENT:** receives actions only.
   - **ON_TRIGGER:** executes when `triggerSlot` reaches it.
-  - **ON_REQUEST (4):** under `legacy`, runs only through `refreshAncestors` (`getInputData(slot, true, true)` or the `refreshAncestorsOn*` flags); under the models, through the engine's pulls.
+  - **BYPASS (4):** the node's code does not run.
+    - `doExecute` and `actionDo` call `ExecutionEngine.passThrough` instead: data outputs take their fitting input, and `actionDo` also forwards the event to the event outputs.
+    - Events to a bypassed node are delivered at once.
+    - It takes its step turn and is pulled through.
+  - **ON_REQUEST (5; 4 before mode numbering 2):** under `legacy`, runs only through `refreshAncestors` (`getInputData(slot, true, true)` or the `refreshAncestorsOn*` flags); under the models, through the engine's pulls.
+  - **Mode numbering:** `LGraph.migrateModes`, called by root `configure`, renumbers documents from before numbering 2 by their `litegraph_version` / `litegraph_modes` markers ([decision 0004](../decisions/0004-mode-4-bypass.md)).
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
 - **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
 - **Hooks and typed events share one core (Wave 7):**

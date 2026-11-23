@@ -341,7 +341,7 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 |---|---|---|---|---|---|---|
 | GRP-01 | Title-only group drag; a press in the body selects or pans (a setting) | P10 | core | S | ref | seed |
 | GRP-02 | Nested groups: containment tree, moving a group moves its child groups, depth drawing order | P10 | core | M | ref | seed |
-| GRP-03 | Group modes: bypass, mute or disable the contained nodes from the header (mode 4 caveat, D5) | P10 | core | S | ref | seed |
+| GRP-03 | Group modes: bypass, mute or disable the contained nodes from the header (BYPASS is native since decision 0004) | P10 | core | S | ref | seed |
 | GRP-04 | Group styling: palette colour, title font and size, alignment, kind (frame, note, region) | P10 | core | S | — | seed |
 | GRP-05 | Groups as comments: multiline text or sanitized markdown body, a mode that captures no nodes | P10 P9 | ext | S | — | seed |
 | GRP-06 | Better drag and resize: handles on every edge and corner, snapping, fit to nodes, locked groups | P10 | core | M | ref | seed |

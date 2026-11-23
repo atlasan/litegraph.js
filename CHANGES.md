@@ -3,16 +3,35 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 # Unreleased
 
-Plan: `agents/plans/2026-11-23-launcher-and-bun.md`.
+Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-node-pin-modes-exec-slots.md`.
+
+**Upgrade note: mode numbering 2.** `LiteGraph.BYPASS` is now 4, as in ComfyUI, and `LiteGraph.ON_REQUEST` moved from 4 to 5 ([decision 0004](agents/memories/decisions/0004-mode-4-bypass.md)).
+- **Code** that uses the constants keeps working; code that writes the number 4 for ON_REQUEST must use `LiteGraph.ON_REQUEST`.
+- **Saved documents** carry `litegraph_modes: 2`, and older ones are renumbered on load:
+  - a document with `litegraph_version` (saved since 2026-11-18) has its 4 turned into 5;
+  - a document without it is read as ComfyUI does, with 4 meaning BYPASS.
+- **Files from builds older than 2026-11-18:** set `LiteGraph.Compat.UnmarkedMode4` to `"on_request"`, or rewrite them with `node tools/migrate-modes.mjs --unmarked=on_request file.json`.
+- **Older builds** do not know mode 5.
 
 ## Added
 
 * **Launcher:** `lg.sh` and `lg.bat` run `tools/lg/lg.mjs` on Bun when it is installed, else on Node.js (`LG_RUNTIME` picks one). Commands `start`, `stop`, `restart`, `status`, `open <editor|tester|runner|docs>`, `logs`, `info`, and a coloured menu without arguments. Servers run in the background with a pid record and a log in the git-ignored `.lg/`; ports from `LG_EDITOR_PORT` / `LG_RUNNER_PORT` or `.lg/config.json`. See `docs/getting-started.md#the-launcher`.
 * **npm scripts:** `lg`, `editor:bun`, `graphrunner:bun`.
+* **Bypass mode** (`LiteGraph.BYPASS`, 4): the node's code does not run.
+  * Each data output takes the value of the input whose type fits.
+  * Events go on to its event outputs at once.
+  * It is valid under every execution model.
+  * `ExecutionEngine.passThrough` and `bypassSource` implement it.
+* **Mode migration:** `LGraph.migrateModes`, the setting `LiteGraph.Compat.UnmarkedMode4`, and `tools/migrate-modes.mjs` (`--check`, `--unmarked`). The examples and test fixtures are migrated.
 * **The editor server serves `/docs`** (the generated API and the reference pages) and resolves its paths from the repository root, so it starts from any working directory.
 
 ## Changed
 
+* **ComfyUI interop:**
+  * mode 4 imports and exports as native BYPASS instead of NEVER plus `extra.comfy_bypassed`;
+  * ON_REQUEST exports as ALWAYS with `litegraph_mode: 5`;
+  * an older `litegraph_mode: 4` marker still reads as ON_REQUEST.
+* **Bypassed nodes get no `onStart`**, like NEVER nodes. **`checkExecution` skips them.**
 * **Node types declared `runtime = "node"` (or `executionEnvironment = "node"`) also run on Bun**, which implements the Node.js APIs they use; before, they were disabled with "cannot run in bun". A `"bun"` declaration still means Bun only. `LGraphNode.runtimeMatches(declared, runtime)` holds the rule.
 
 # 0.18.0-dev.2 (2026-11-23): dev pre-release
