@@ -37,7 +37,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
 | Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
-| Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **In progress** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)); supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
+| Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Ready**: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -151,7 +151,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 ## Pre-releases
 
 - **0.18.0-dev.1** ([plan](2026-11-20-pre-release-0.18.0-dev.1.md), [record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)): Waves 4 and 5, D7 and the loose ends were done and the version was bumped on `LG/release_0.18.0-dev.1`. It was **never pushed or tagged**, and is **superseded** by 0.18.0-dev.2.
-- **0.18.0-dev.2** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)): everything on `LG/dev` (Waves 0–7, the flows and panels tracks), from the [state audit](../audits/2026-11-23-state-audit.md). Records hygiene, three pre-release fixes (D-1 to D-3), version and release checks on `LG/dev_release_0.18.0-dev.2`. Push, the PR to `master` and the tag `v0.18.0-dev.2` are each approved separately.
+- **0.18.0-dev.2** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)): everything on `LG/dev` (Waves 0–7, the flows and panels tracks), from the [state audit](../audits/2026-11-23-state-audit.md). Records hygiene, three pre-release fixes (D-1 to D-3), version and release checks on `LG/dev_release_0.18.0-dev.2`. **Done** and merged into `LG/dev` ([record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)). Push, the PR to `master` and the tag `v0.18.0-dev.2` are each approved separately.
 
 ## Wave 6: events and execution models (done)
 
