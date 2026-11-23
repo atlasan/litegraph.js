@@ -1,6 +1,6 @@
 # Ideas catalog
 
-> **Updated** 2026-11-22 · **Kind** idea catalog · **Status** living
+> **Updated** 2026-11-23 · **Kind** idea catalog · **Status** living
 
 One row per idea. The [README](README.md#conventions) defines the IDs, fields and lifecycle, and [purposes.md](purposes.md) defines P1 to P10. Details are in each idea's area document.
 
@@ -316,3 +316,34 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | DEV-04 | Source maps for `build/` bundles | P10 | runtime | S | — | seed |
 | DEV-05 | Release workflow: version alignment checklist, tag-triggered publish after `npm run check` | P10 | app | S | — | seed |
 | DEV-06 | Node and extension scaffolder (template, test stub, declaration entry) | P10 P9 | app | S | — | seed |
+
+## Launcher and command line (`LCH`)
+
+[landscape/launcher-cli.md](landscape/launcher-cli.md). From the user's findings of 2026-11-23.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| LCH-01 | Cross-OS launcher: `lg.sh` / `lg.bat` → one JS helper on Bun or Node; start, stop, restart, status, info, open, logs and a menu ([card](cards/LCH-01-cross-os-launcher.md)) | P10 P9 | app | M | — | promoted |
+| LCH-02 | Process state: pid and port records, HTTP health checks, a log per app, in a git-ignored state folder | P10 | app | S | — | promoted |
+| LCH-03 | Bun as an optional runtime for the apps (`--runtime`, `LG_RUNTIME`); npm scripts stay on Node | P10 P8 | runtime | S | — | promoted |
+| LCH-04 | `lg doctor`: runtimes, `node_modules`, free ports, build freshness, runner opt-ins in effect | P10 | app | S | — | seed |
+| LCH-05 | `lg logs <app>` (follow mode later) | P10 | app | S | — | promoted |
+| LCH-06 | The launcher as a single executable (`bun build --compile`) | P10 | app | S | — | seed |
+| LCH-07 | Launcher profiles: apps, ports and runner opt-ins per named profile | P10 P8 | app | S | — | seed |
+| LCH-08 | Shell completions (bash, zsh, fish, PowerShell) | P10 | app | S | — | seed |
+| LCH-09 | Watch mode in the launcher (`node --watch` / `bun --watch`) replacing nodemon | P10 | app | S | — | seed |
+
+## Groups, notes and reroutes (`GRP`)
+
+[landscape/groups-annotations.md](landscape/groups-annotations.md). From the user's findings of 2026-11-23; candidates C-1 and C-2 of the [launcher plan](../plans/2026-11-23-launcher-and-bun.md#candidates-for-later-plans-not-in-this-plan).
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| GRP-01 | Title-only group drag; a press in the body selects or pans (a setting) | P10 | core | S | ref | seed |
+| GRP-02 | Nested groups: containment tree, moving a group moves its child groups, depth drawing order | P10 | core | M | ref | seed |
+| GRP-03 | Group modes: bypass, mute or disable the contained nodes from the header (mode 4 caveat, D5) | P10 | core | S | ref | seed |
+| GRP-04 | Group styling: palette colour, title font and size, alignment, kind (frame, note, region) | P10 | core | S | — | seed |
+| GRP-05 | Groups as comments: multiline text or sanitized markdown body, a mode that captures no nodes | P10 P9 | ext | S | — | seed |
+| GRP-06 | Better drag and resize: handles on every edge and corner, snapping, fit to nodes, locked groups | P10 | core | M | ref | seed |
+| GRP-07 | Reroute audit: ComfyUI 0.4 and 1.0 round trips, legacy `Reroute` nodes, reroutes in subgraphs, tests | P10 | core | S | adapt | seed |
+| GRP-08 | Group actions: collapse, select contents, convert to subgraph, align contents | P10 | ext | M | ref | seed |
