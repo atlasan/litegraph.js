@@ -9,7 +9,7 @@
 | License of the inspiration | UE: proprietary, design reference only. KHR: open standard. Babylon.js FlowGraph: Apache-2.0, adaptable with attribution. Pd: BSD-3 |
 | Effort | M |
 | Maturity | sketched |
-| Depends on | Wave 6 (execution models, `_dispatchEvent`, `event-dropped`); proposed Wave 7 event integration (the listener engine that dispatchers should run on, [plan](../../plans/2026-11-22-event-integration.md)); FLW-01 (a new scope per event entry); FLW-08 (the blueprint profile) |
+| Depends on | Wave 6 (execution models, `_dispatchEvent`, `event-dropped`); Wave 7 event integration, done (the listener engine that dispatchers should run on, [plan](../../plans/2026-11-22-event-integration.md)); FLW-01 (a new scope per event entry); FLW-08 (the blueprint profile) |
 | Last reviewed | 2026-11-22 |
 
 ## Why

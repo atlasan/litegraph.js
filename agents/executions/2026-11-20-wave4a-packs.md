@@ -34,4 +34,4 @@ Port 8000 was taken by an editor serving the main checkout, so this worktree was
 
 - **Body right-click on a placeholder** opens no menu (title right-click does); not changed here.
 - **Pack enable/disable at runtime** needs a reload: `Disabled` is read when a pack registers. Builtin packs cannot be disabled until Wave 5 splits the catalog.
-- **4b–4e** are next (see the [roadmap](../plans/roadmap.md#wave-4-ecosystem-and-workspace-accepted)); 4e will register `auto` mappings for the catalog renames.
+- **4b–4e** are next (see the [roadmap](../plans/roadmap.md#wave-4-ecosystem-and-workspace-done)); 4e will register `auto` mappings for the catalog renames.

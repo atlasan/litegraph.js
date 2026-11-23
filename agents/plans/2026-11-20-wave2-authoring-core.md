@@ -1,6 +1,6 @@
 # Wave 2: authoring core
 
-> **Date** 2026-11-20 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `3aaf2e8`
+> **Date** 2026-11-20 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `3aaf2e8`
 
 This wave makes the everyday authoring operations work properly: turning a selection into a subgraph and back, working with groups, copying and pasting whole fragments, finding nodes, and dragging links. It builds on the Wave 1 platform (commands, transactions, selection, `CanvasPointer`). Several of these operations were broken or missing; "Convert to subgraph" threw and left an orphan node.
 
@@ -66,3 +66,4 @@ Each step: `npm run check`, a `feat:` commit and a `build:` commit. At the end o
 - 2026-11-20: accepted with the start of Wave 2; step 1 implemented on `LG/wave2_authoring`.
 - 2026-11-20: steps 1–4 (part 2a) done; see the [execution record](../executions/2026-11-20-wave2a-authoring.md).
 - 2026-11-20: steps 5–7 (part 2b) done, plus the group header toggle and reroute multi-select from the roadmap; see the [execution record](../executions/2026-11-20-wave2b-links.md). Folding DragAndScale's listeners into `CanvasPointer` and the RenderLink classes are carried over.
+- 2026-11-23: status set to done (both parts merged into `master` with [PR #9](https://github.com/atlasan/litegraph.js/pull/9)), from the [state audit](../audits/2026-11-23-state-audit.md).

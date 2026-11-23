@@ -1,11 +1,12 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-22 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows track done in `LG/dev`
+> **Updated** 2026-11-23 · **Kind** roadmap · **Status** living; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
 
 This is the single place for the current status of planned work.
 
 - **Design reasoning and idea catalog:** [feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md).
 - **Evidence:** [ecosystem study](../memories/research/ecosystem-study/README.md) and [audits](../audits/README.md).
+- **Open items, classified:** the [state audit of 2026-11-23](../audits/2026-11-23-state-audit.md) (FIX D-4 to D-8, DECISION DEC-1 to DEC-5, NICE N-1 to N-12).
 
 ## Branch model
 
@@ -34,7 +35,9 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 5 | Repository organization and packaging | **Done**: 5a packaging and 5b CI/docs ([record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)), 5c apps move ([record](../executions/2026-11-22-wave5c-apps-move.md)); in `LG/dev`. One tester controller deferred |
 | 6 | Events and execution models | **Done** (6a–6e merged into `LG/dev`; [plan](2026-11-22-events-execution.md), [summary](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)): per-document execution models with `ancestors` as the default, one execution engine, node execution declarations, `legacy` compatibility; see [Wave 6](#wave-6-events-and-execution-models-done) |
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
-| 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-items-deferred) |
+| 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
+| Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
+| Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **In progress** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)); supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
 ## Wave 0: safety and correctness (done)
 
@@ -59,7 +62,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 - Browser checks: editor multiview, search, subgraphs; runner own-origin and cross-origin connections.
 - The [independent review](../audits/2026-11-19-wave0-pr5-review.md).
 
-**Left open:** the advisories on `socket.io-parser`, `engine.io` and `osc` (a dependency check is needed first), (decision D1 is now settled, see below).
+**Left open at the time:** the advisories on `socket.io-parser`, `engine.io` and `osc`. They were fixed with D7 (`17e357a`, 12 findings to 0) before the 0.18.0-dev.1 checks. Decision D1 is settled, see below.
 
 ## Wave 1: platform layer (done)
 
@@ -97,7 +100,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 **Carried over to Wave 2** (they belong with the standalone ports):
 - Moving node, group and link dragging onto the gesture pattern (with the `LinkConnector` port).
 - Folding the canvas pointer flags and DragAndScale's own listeners into `CanvasPointer`.
-- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Core done in [Wave 7](#wave-7-event-integration-done-two-items-deferred).**
+- Collapsing CallbackHandler and `LGraphEventTarget` into a single pipe. Both are bridged through the extension context today, and the main points emit typed events. **Not done in Wave 2, and out of scope in Wave 6. Core done in [Wave 7](#wave-7-event-integration-done-two-leftovers-open).**
 
 ## Wave 2: authoring core (done)
 
@@ -142,12 +145,13 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 
 - **Packaging truthfulness:** an exports map without `./build/*` wildcards, real runtime dependencies, no `defaults_debug.js` in library builds.
 - **CI:** check that `build/` is fresh (`git diff --exit-code`).
-- **Documentation:** README, getting-started, architecture docs; generated API docs out of the authored tree.
-- **Applications:** move the editor, tester and runner apps into their own homes; one defaults module; one tester controller.
+- **Documentation:** README, getting-started, architecture docs; generated API docs out of the authored tree. **Not done:** the generated API is still in `docs/api/` (see the [state audit](../audits/2026-11-23-state-audit.md) §3); it is regenerated for 0.18.0-dev.2 (D-3).
+- **Applications:** move the editor, tester and runner apps into their own homes; one defaults module; one tester controller (**not done**: N-3).
 
-## Pre-release 0.18.0-dev.1
+## Pre-releases
 
-[Plan](2026-11-20-pre-release-0.18.0-dev.1.md) (accepted 2026-11-20): Waves 4 and 5, D7 and the loose ends are **done**, and the version is bumped on `LG/release_0.18.0-dev.1` ([record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)). Push, the release PR and the tag `v0.18.0-dev.1` wait for approval.
+- **0.18.0-dev.1** ([plan](2026-11-20-pre-release-0.18.0-dev.1.md), [record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)): Waves 4 and 5, D7 and the loose ends were done and the version was bumped on `LG/release_0.18.0-dev.1`. It was **never pushed or tagged**, and is **superseded** by 0.18.0-dev.2.
+- **0.18.0-dev.2** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)): everything on `LG/dev` (Waves 0–7, the flows and panels tracks), from the [state audit](../audits/2026-11-23-state-audit.md). Records hygiene, three pre-release fixes (D-1 to D-3), version and release checks on `LG/dev_release_0.18.0-dev.2`. Push, the PR to `master` and the tag `v0.18.0-dev.2` are each approved separately.
 
 ## Wave 6: events and execution models (done)
 
@@ -161,7 +165,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 6d | Graph info model combo; `execution-state` for action and pull runs; runner page overlay; runner parity | **Done** on `LG/wave6d_graphinfo`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6d-graphinfo-runner.md)) |
 | 6e | Deprecations; docs; decision record | **Done** on `LG/wave6e_polish`, merged into `LG/dev` ([record](../executions/2026-11-22-wave6e-polish.md), [decision 0002](../memories/decisions/0002-execution-models.md)) |
 
-## Wave 7: event integration (done, two items deferred)
+## Wave 7: event integration (done, two leftovers open)
 
 [Plan](2026-11-22-event-integration.md) (accepted 2026-11-22), from the [event handling audit](../audits/2026-11-22-event-handling.md). Implemented on `LG/wave7_events`, reviewed ([audit](../audits/2026-11-22-wave7-review.md)) and merged into `LG/dev` ([record](../executions/2026-11-22-wave7-event-core.md)).
 - **Target ("one core, two faces"):** the legacy `onX` callbacks, the CallbackHandler hooks and the typed events run on one listener engine. Hooks stay the intercept face and typed events the observe face, fired in one documented order. The API stays compatible.
@@ -185,7 +189,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 | 7b | `ListenerList` (the plan's `ListenerStore`) and the `installHooks` mixin; copy-on-write, error isolation, fast path, disposers | **Done** |
 | 7c | `CallbackHandler.is` / `handled` / `valueOf` (the plan's `hookResult`) on 21 sites, each keeping its rule; panel hook bypasses; E12 and E13 fixed; `objectOf` on the 8 menu-array sites | **Done** (menu sites on `LG/dev_events_deferred`, merged) |
 | 7d | Selection parity; `LiteGraph.events`; group events; `fireHookThenEvent` (hook → `onX` → event, event skipped after a veto) | **Done** (helper on `LG/dev_events_deferred`, merged) |
-| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md); the dispatch tap; typed hook maps and the declared-hooks check. Generated doc tables and deprecation logs are not done | **Mostly done** (tap and typing on `LG/dev_events_deferred`, merged) |
+| 7e | `ctx.listen`, `events.on("*")`, `priority`; the emitted-versus-declared event check; docs; decision [0003](../memories/decisions/0003-event-pipe.md); the dispatch tap; typed hook maps and the declared-hooks check. Generated doc tables and deprecation logs are not done (N-1 in the [state audit](../audits/2026-11-23-state-audit.md)) | **Done**, except those two leftovers (tap and typing on `LG/dev_events_deferred`, merged) |
 
 Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation).
 
@@ -218,14 +222,16 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 
 ## Open decisions
 
+**Two B-series:** `B1`–`B15` are the bugs of the [11-18 review](2026-11-18-repo-review-and-roadmap.md) (Wave 0's "B10 dispose"); `B1`–`B17` in Wave 6a are the findings of the [Wave 6 plan](2026-11-22-events-execution.md) ("6a: B10, B11, B15"). The same number names different items; cite the source with the ID.
+
 | # | Question | Recommendation |
 |---|---|---|
 | D1 | Should the runner also deny host-reading `sys/*` nodes, `mysql/*`, network servers and outbound request nodes ([review finding 3](../audits/2026-11-19-wave0-pr5-review.md))? | **Decided (2026-11-19, [PR #6](https://github.com/atlasan/litegraph.js/pull/6) + [PR #7](https://github.com/atlasan/litegraph.js/pull/7)):** all of them are denied by default, grouped in families (`@commands`, `@file-write`, `@host-read`, `@servers`, `@outbound`, `@databases`, `@remote-code`) and re-allowed with `RUNNER_ALLOW_TYPES` (types, prefixes or `@family`). Principle: safe by default, with each restriction liftable by a named setting that its refusal message names. |
 | D2 | When should [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | **Decided 2026-11-20: option B**, with the litegraph runtime kept (see the [Wave 3 plan](2026-11-20-wave3-subgraph-system.md)); ADR **accepted** after the 3a schema probe |
-| D3 | Porting style for SA modules | Adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
-| D4 | Node metadata direction | Hybrid (`static def` today); add `defineNodeType` later |
-| D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | Keep BYPASS as interop only; a native bypass mode would be a new number (5) |
+| D3 | Porting style for SA modules | **Pending** (recommendation followed in practice, never marked decided; DEC-3): adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
+| D4 | Node metadata direction | **Pending** (DEC-3): hybrid (`static def` today); add `defineNodeType` later |
+| D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | **Pending** (DEC-3; applied in `comfy_interop.js` and `AGENTS.md`): keep BYPASS as interop only; a native bypass mode would be a new number (5) |
 | D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
-| D7 | Upgrading the remaining runtime dependencies with advisories | Upgrade to releases at least 2 weeks old, after a changelog review |
+| D7 | Upgrading the remaining runtime dependencies with advisories | **Done** (`17e357a`, 12 findings to 0; [5a–5b record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)): releases at least 2 weeks old, after a changelog review |
 | D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | **Error policy decided (2026-11-22):** a handler error never stops the chain, and the first one is always rethrown after it (independent of `throw_errors`, so `runStep` still reports `node-error`). `"*"` per target, observe only: done. **Events after a veto decided (2026-11-22, as recommended):** a vetoing hook skips its typed event (`fireHookThenEvent`). Still open, with the plan's recommendations: making "handled" uniform in 0.20, no `node.events`, no async hooks |
 | D9 | Generated node reference `docs/nodes/`: commit it (GitHub renders it, `check:fresh` guards it) or generate it in CI only ([plan](2026-11-22-flows-reference-examples.md#user-decisions-2026-11-22)) | **Postponed (user, 2026-11-22):** generated locally with `npm run docs:nodes` and git-ignored; no CI. Propose again when the reference has settled |

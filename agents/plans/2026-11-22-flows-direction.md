@@ -19,7 +19,7 @@ Every node is described in a generated reference, and every flow style has runna
 
 ## Relation to Wave 7 (event integration)
 
-The roadmap's proposed [Wave 7](roadmap.md#wave-7-event-integration-proposed) ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md)) is about the **host** channels: legacy `onX`, CallbackHandler hooks and typed events on one listener engine. This proposal is about the **graph's** execution flows. The two touch in two places:
+The roadmap's proposed [Wave 7](roadmap.md#wave-7-event-integration-done-two-leftovers-open) ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md)) is about the **host** channels: legacy `onX`, CallbackHandler hooks and typed events on one listener engine. This proposal is about the **graph's** execution flows. The two touch in two places:
 - **Dispatchers (step 5):** they should run on Wave 7's listener engine rather than a second registry.
 - **`execution-state`, `event-dropped` and new flow events:** they are typed events, so they follow Wave 7's order and error policy (D8).
 
