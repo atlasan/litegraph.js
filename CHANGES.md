@@ -15,6 +15,12 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
 
 ## Added
 
+* **Editor starter workflows:** preview all registered types in a selected pack/category without constructing nodes, then insert available nodes in category groups as one transaction. Report setup-sensitive/unsupported types and creation failures; export inventory metadata and refresh from the registry as packs expand. No automatic execution or wiring.
+* **Explained essentials:** six new Demo examples (boolean/actions, structured watch, text watch, linked number widget, bypass and slot icons), with collapsible instructions, expected results and settings; editor toolbar controls stay reachable beside playback controls.
+* **Automatic Watch display:** opt-in `auto` on canonical `basic/watch`, with declared/observed type feedback and bounded, cycle-aware object previews that do not invoke getters. Existing displays/defaults remain available.
+* **Glyph slot labels:** optional `label_icon` and `label_mode`, node and canvas defaults, shared drawing/measurement text, original name/type in socket menus. SVG asset management is deferred.
+* **Everyday values:** boolean search aliases, usage, explicit true/false slot feedback and saved-property/widget agreement; linked `basic/const` widgets use the link while preserving their local fallback.
+
 * **Launcher:** `lg.sh` and `lg.bat` run `tools/lg/lg.mjs` on Bun when it is installed, else on Node.js (`LG_RUNTIME` picks one). Commands `start`, `stop`, `restart`, `status`, `open <editor|tester|runner|docs>`, `logs`, `info`, and a coloured menu without arguments. Servers run in the background with a pid record and a log in the git-ignored `.lg/`; ports from `LG_EDITOR_PORT` / `LG_RUNNER_PORT` or `.lg/config.json`. See `docs/getting-started.md#the-launcher`.
 * **npm scripts:** `lg`, `editor:bun`, `graphrunner:bun`.
 * **Bypass mode** (`LiteGraph.BYPASS`, 4): the node's code does not run.

@@ -80,6 +80,62 @@ export class NodePalette {
             .map((group) => ({ pack: group.pack, categories: [...group.categories].map(([category, items]) => ({ category, items })) }));
     }
 
+    /** Preview a section/pack inventory without constructing or executing any nodes. */
+    starterPreview({ pack, category } = {}) {
+        return this.host.listNodeDefinitions({ category }).filter((def) => !pack || def.pack?.id === pack)
+            .sort((a, b) => a.category.localeCompare(b.category) || a.type.localeCompare(b.type))
+            .map((def) => {
+                const sensitive = def.capabilities.filter((cap) => !["browser", "node"].includes(cap));
+                const reason = def.hidden || def.deprecated ? "Hidden or deprecated type"
+                    : ["graph/input", "graph/output"].includes(def.type) ? "Subgraph interface type"
+                    : !this.host.isNodeTypeSupported(def.type) ? "Unavailable in this host"
+                    : sensitive.length ? `Requires individual setup: ${sensitive.join(", ")}` : "";
+                return { type: def.type, title: def.title, category: def.category, pack: def.pack?.id ?? "",
+                    description: def.description, suggestedDescription: def.description ? "" : `Explore ${def.title} (${def.type}).`,
+                    usage: def.usage, reason };
+            });
+    }
+
+    /** Append an organized, disconnected inventory in one undo step. Never starts the graph. */
+    insertStarter(canvas, options = {}) {
+        const graph = canvas?.graph;
+        if (!graph || canvas.read_only) throw new Error("An editable graph is required");
+        if (graph.status === this.host.LGraph.STATUS_RUNNING) throw new Error("Stop the graph before adding a starter workflow");
+        const entries = this.starterPreview(options);
+        const nodes = [], skipped = entries.filter((entry) => entry.reason).map((entry) => ({ type: entry.type, reason: entry.reason }));
+        // Append below all existing content, preserving manual layouts and annotations.
+        let y = Math.max(80, ...graph._nodes.map((node) => node.pos[1] + node.size[1] + 120),
+            ...graph._groups.map((group) => group.pos[1] + group.size[1] + 120));
+        graph.transact("starterWorkflow", () => {
+            for (const category of new Set(entries.map((entry) => entry.category))) {
+                const section = [];
+                let x = 80, rowHeight = 0;
+                for (const entry of entries.filter((item) => item.category === category && !item.reason)) {
+                    let node;
+                    try { node = this.host.createNode(entry.type); }
+                    catch (error) { skipped.push({ type: entry.type, reason: String(error?.message ?? error) }); continue; }
+                    if (!node) { skipped.push({ type: entry.type, reason: "Constructor failed" }); continue; }
+                    node.pos = [x, y];
+                    graph.add(node);
+                    nodes.push(node);
+                    section.push(node);
+                    rowHeight = Math.max(rowHeight, node.size[1] + 70);
+                    x += Math.max(220, node.size[0] + 50);
+                    if (section.length % 3 === 0) { x = 80; y += rowHeight; rowHeight = 0; }
+                }
+                if (section.length) {
+                    const group = new this.host.LGraphGroup(category || "Nodes");
+                    group.resizeTo(section, 30);
+                    graph.add(group);
+                    y = Math.max(...section.map((node) => node.pos[1] + node.size[1])) + 140;
+                }
+            }
+        }, { rollback: true });
+        canvas.selectNodes?.(nodes);
+        canvas.setDirty?.(true, true);
+        return { nodes, skipped, entries };
+    }
+
     /** @returns {string[]} favourite node types */
     favorites() {
         return this._list("LiteGraph.Palette.Favorites");

@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-23 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
+> **Updated** 2026-11-24 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -13,7 +13,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools`, `node_pin` (pin style by mode and state, pin quick menu, node mode commands), `graph_status` (execution model chip) (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
 | `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
 | `lg.sh`, `lg.bat`, `tools/lg/` | Launcher: the wrappers pick Bun, else Node (`LG_RUNTIME`), and run `tools/lg/lg.mjs` (commands, menu); `core.mjs` (arguments, runtime choice, ports, app table), `state.mjs` (pid records, health, detached start, stop), `term.mjs` (colours, symbols). State in the git-ignored `.lg/` (`LG_STATE_DIR`) |
-| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`, which also serves `/docs` and `createEditorApp()`; runs on Node and Bun). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu from it and `LiteGraph.packs.listTemplates()` |
+| `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`, which also serves `/docs` and `createEditorApp()`; runs on Node and Bun). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu and collapsible example explanations from it and `LiteGraph.packs.listTemplates()`; `examples/essentials/` holds six focused lessons |
 | `apps/tester/` | Browser tester that generates per-node scenarios (also served at `/editor_tester/`) |
 | `apps/runner/` | WebSocket runner: Express + `ws`, one worker per graph, on Node or Bun; `headless/graphrunner/server/index.js` is a shim that starts it |
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
@@ -42,13 +42,13 @@ Listed in build order (`build.py` `lib_js_files`):
 | `librarymanager.js` | Optional library loading and manifest |
 | `executionstate.js` | `ExecutionState` (`LiteGraph.ExecutionState`): the v1 execution-state messages (`create`, `isMessage`, `apply` by path, `applyToNode`, `clear`) (Wave 4b) |
 | `linkrender.js`, `minimap.js` | `RenderLink`, `LinkRouterRegistry` (`LiteGraph.linkRouters`), `LinkStyleRegistry` (`LiteGraph.linkStyles`); `MiniMap` (Wave 4c) |
-| `layout.js`, `palette.js` | `LayoutRegistry` (`LiteGraph.layout`: dagre via LibraryManager, layered, ELK adapter); `NodePalette` (`LiteGraph.palette`) (Wave 4d) |
+| `layout.js`, `palette.js` | `LayoutRegistry` (`LiteGraph.layout`: dagre via LibraryManager, layered, ELK adapter); `NodePalette` (`LiteGraph.palette`): palette plus definition-only `starterPreview` and grouped, transactional `insertStarter` (HMD first pass) |
 | `packs.js` | `PackRegistry` (`LiteGraph.packs`): pack manifests, type attribution, index, version ranges, replacement mappings; `replaceNodeInGraph` (Wave 4a) |
 | `widgets.js` | `BaseWidget` and its subclasses (`ColorWidget`, `VectorWidget` included); `widgetImplementation` (follows a changed `type` on built-in instances; a plain object's own `draw`/`mouse` wins for types without a pre-value-types class); the safe arithmetic parser |
 | `valuetypes.js` | `ValueTypeRegistry` (`LiteGraph.valueTypes`): type → canvas widget, panel editor, options, coerce / validate / format / parse, help; aliases and base types; `resolveEditor`, `resolveWidgetClass` |
 | `panels.js` | `PanelBuilder` (what `createPanel` returns: sections, tabs, toolbar, typed rows; `showGraphOptions`, `showNode`), `PanelHost` (dock side, width, resize), `defaultPanelEditors`; contributed sections (`LiteGraph.panel_sections`) |
 | `init_litegraph.js` | Calls `LiteGraph.initialize()`; last in the build, so bundles initialize themselves |
-| `litegraph-editor.js` | `Editor` shell; included in full builds only |
+| `litegraph-editor.js` | `Editor` shell, including `showStarterGenerator` (pack/category preview, insertion and metadata export); included in full builds only |
 | `*.d.ts`, `*.d.cts` | Type declarations. `litegraph.d.cts` is the core one, checked for parity with runtime exports |
 
 ## Initialization
@@ -194,3 +194,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **`instanceof LGraphNode` is unreliable**, because registration copies methods. Use `LGraphCanvas.isNodeItem`.
 - **`active_canvas`** is set on pointer down and on keydown. Prefer `this`.
 - See also the gotchas in [AGENTS.md](../../../AGENTS.md#gotchas).
+
+## Human feedback usability additions
+
+The [first-pass plan](../../plans/2026-11-23-hmd-usability-first-pass.md) adds canonical Watch `auto` inspection in `src/nodes/base.js`, boolean state/usage improvements and linked-number widget fallback. `LiteGraph.getSlotLabel` resolves optional glyph labels for both `LGraphCanvas` drawing and `LGraphNode.computeSize`; precedence is slot, node property, canvas. UI/docs: [examples reference](../../../docs/examples.md).

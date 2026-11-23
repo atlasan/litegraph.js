@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-24 | [Human feedback usability first pass](2026-11-24-hmd-usability-first-pass.md): starter pack/section inventories, six explained examples, boolean/auto-watch improvements and glyph slots; full gate and browser acceptance | final |
 | 2026-11-23 | [HMD-06 starter workflow clarification](2026-11-23-hmd06-starter-workflow-clarification.md): auto workflow generator as an existing editor/runner feature; whole-section/pack coverage, organization and metadata suggestions, expanding packs | final; ideas only |
 | 2026-11-23 | [Human feedback usability intake](2026-11-23-human-feedback-usability-intake.md): seven idea sketches for examples, common base nodes, adaptive watches, slot icons and an editor-based workflow builder; branch `LG/dev_hmd_examples_nodes_icons` | final; ideas only |
 | 2026-11-23 | [Node pin, modes and exec slots](2026-11-23-node-pin-modes-exec-slots.md): mode 4 = BYPASS and ON_REQUEST = 5 with a migration and pass-through; exec slots on the node edges, created under `ancestors`; pin styles by mode and state, pin quick menu, graph status chip; branches `LG/dev_HMD_modes`, `LG/dev_HMD_exec_slots`, `LG/dev_HMD_node_pin` | final; track D (debugger) separate |
