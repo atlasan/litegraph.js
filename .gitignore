@@ -23,3 +23,6 @@ coverage/*
 
 # generated node reference (npm run docs:nodes); committing it is roadmap decision D9
 /docs/nodes/
+
+# launcher state (lg.sh / lg.bat): pid records, logs, local config
+/.lg/

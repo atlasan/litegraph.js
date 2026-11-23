@@ -884,6 +884,8 @@ export declare class LGraphNode {
     static title: string;
     static type: null | string;
     static widgets_up: boolean;
+    /** Whether a declared runtime matches the current one; "node" also matches Bun. */
+    static runtimeMatches(declared: string | undefined, runtime?: string): boolean;
     constructor(title?: string);
 
     title: string;
