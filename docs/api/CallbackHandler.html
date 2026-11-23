@@ -420,7 +420,7 @@ Listener storage, ordering and copy-on-write come from ListenerList (shared with
     
 
     
-    <h4 class="name" id="processCallbackHandlers"><span class="type-signature"></span>processCallbackHandlers<span class="signature">(name, opts, &hellip;args)</span><span class="type-signature"> &rarr; {any}</span></h4>
+    <h4 class="name" id="processCallbackHandlers"><span class="type-signature"></span>processCallbackHandlers<span class="signature">(name, opts<span class="signature-attributes">opt</span>, &hellip;args)</span><span class="type-signature"> &rarr; {any}</span></h4>
     
 
     
@@ -502,10 +502,17 @@ Listener storage, ordering and copy-on-write come from ListenerList (shared with
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
                 <td class="attributes">
+                
+                    &lt;optional><br>
                 
 
                 
@@ -516,7 +523,7 @@ Listener storage, ordering and copy-on-write come from ListenerList (shared with
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{def_cb?: Function|false, on_result?: (result: any) => void}`) def_cb is the classic `onX`</td>
         </tr>
 
     
@@ -1174,7 +1181,7 @@ Listener storage, ordering and copy-on-write come from ListenerList (shared with
     
 
     
-    <h4 class="name" id=".fireHookThenEvent"><span class="type-signature">(static) </span>fireHookThenEvent<span class="signature">(owner, name, args, emitter, type, detail, options)</span><span class="type-signature"> &rarr; {any}</span></h4>
+    <h4 class="name" id=".fireHookThenEvent"><span class="type-signature">(static) </span>fireHookThenEvent<span class="signature">(owner, name, args, emitter, type, detail, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {any}</span></h4>
     
 
     
@@ -1208,6 +1215,8 @@ result equal to it (plain or as `{return_value}`) skips the event.
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
         
 
@@ -1233,6 +1242,14 @@ result equal to it (plain or as `{return_value}`) skips the event.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -1255,6 +1272,14 @@ result equal to it (plain or as `{return_value}`) skips the event.
             
             </td>
 
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
             
 
             
@@ -1279,6 +1304,14 @@ result equal to it (plain or as `{return_value}`) skips the event.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -1294,13 +1327,26 @@ result equal to it (plain or as `{return_value}`) skips the event.
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{_emit?: Function}|null|undefined`) where the event goes: LiteGraph, a graph or a canvas</td>
         </tr>
 
     
@@ -1320,6 +1366,14 @@ result equal to it (plain or as `{return_value}`) skips the event.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -1335,13 +1389,26 @@ result equal to it (plain or as `{return_value}`) skips the event.
 
             <td class="type">
             
+                
+<span class="param-type">*</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `object|(() => object|null)`) the payload; a function is called after the hook, and null skips the event</td>
         </tr>
 
     
@@ -1353,13 +1420,28 @@ result equal to it (plain or as `{return_value}`) skips the event.
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{veto?: any, emit?: object}`) `emit` is passed on to `_emit` (`recorded`, `cancelable`)</td>
         </tr>
 
     
@@ -2058,7 +2140,7 @@ receives each dispatch with its duration (see ListenerList.tap).
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

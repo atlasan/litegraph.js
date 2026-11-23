@@ -23,6 +23,14 @@ Plan: `agents/plans/2026-11-23-pre-release-0.18.0-dev.2.md`; audit: `agents/audi
 * **The editor turned scripts back on after its presets (D-1):** `apps/editor/js/code.js` set `LiteGraph.allow_scripts = true` after `js/defaults.js`, overriding the `mobile` and `event_based` presets. `js/defaults.js` is now the only place (on for the default page, off for those presets).
 * **`apps/editor/editor_event_based.html` did not load (D-2):** it loaded ES modules as classic scripts and a missing jQuery file. It now loads modules like `index.html`, with the `event_based` preset.
 * **The generated API docs (`docs/api`) were stale (D-3):** regenerated with `npm run docs`; they now cover every `src/` module and the execution models. The `LGraphCanvas` class comment is attached to the class again, so its page is generated.
+* **`graph.triggerInput(name, value)` threw and bypassed the engine (D-5):** it called `onTrigger` on the nodes with that title, a method no bundled node has. It now runs each of them as a trigger does (`doExecute(value)`: model rules, execution state, `node-error`), drops NEVER nodes with `event-dropped` (`mode`), and still calls a node's own `onTrigger` method.
+* **Assigning `graph.executionModel` was silently ignored (D-6):** it now calls `setExecutionModel(name)` (one undo step; an unknown name throws).
+* **The `o:` and `i:` search filters missed types without `def` slots that were never created (D-8):** such a type is now probed once (`new Class()`, cached per class).
+* **`npm run docs` exited 1** on TypeScript-style type expressions: the plugin `docs/jsdoc-ts-types.cjs` turns them into types JSDoc accepts and keeps the original text in the description.
+
+## Added
+
+* **Library badges:** a node waiting for its libraries shows "loading libraries", one whose libraries failed shows "library error" with the message. Setting `LiteGraph.Node.LibraryBadge` (default on).
 
 # 0.18.0-dev.2: panels and widgets
 
