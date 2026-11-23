@@ -45,8 +45,8 @@ function updateEditorHiPPICanvas() {
   	return editor.canvas;
 }
 
-//enable scripting
-LiteGraph.allow_scripts = true;
+// allow_scripts is decided by js/defaults.js (on for the default page, off for the mobile and
+// event_based presets); do not set it here, this script runs after the presets.
 
 //test
 //editor.graphcanvas.viewport = [200,200,400,400];
