@@ -20241,12 +20241,21 @@ export class LGraphNode {
         this.size_basic ??= this.size;
     }
 
+    /**
+     * Whether a declared runtime ("node", "browser", "bun", "all", ...) matches the current one.
+     * Bun implements the Node.js APIs, so a "node" declaration also runs on Bun; "bun" means Bun only.
+     */
+    static runtimeMatches(declared, runtime = getRuntime()) {
+        return !declared || ["all", "both", "any", "*", runtime].includes(declared) ||
+            (declared === "node" && runtime === "bun");
+    }
+
     validateExecutionEnvironment() {
-        return !this.executionEnvironment || ["all", "both", "any", "*", getRuntime()].includes(this.executionEnvironment);
+        return LGraphNode.runtimeMatches(this.executionEnvironment);
     }
 
     validateRuntime() {
-        return !this.runtime || ["all", "both", "any", "*", getRuntime()].includes(this.runtime);
+        return LGraphNode.runtimeMatches(this.runtime);
     }
 
     /** Initialize exactly once; basic nodes are ready synchronously, dependencies asynchronously. */
