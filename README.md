@@ -35,6 +35,8 @@ npm run editor        # http://127.0.0.1:8000/editor/editor_build.html (apps/edi
 npm run graphrunner   # http://127.0.0.1:3000/
 ```
 
+Or with the launcher (Bun when installed, else Node): `./lg.sh` for a menu, `./lg.sh start`, `./lg.sh open editor`, `./lg.sh status`, `./lg.sh stop`; `lg` on Windows. See [the launcher](docs/getting-started.md#the-launcher).
+
 ## What this fork adds
 
 - **Execution:**

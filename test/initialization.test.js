@@ -185,3 +185,15 @@ test('clear detaches nodes after invoking removal with the original graph', () =
     expect(removed).toHaveBeenCalledWith(graph);
     expect(node.graph).toBeNull();
 });
+
+test('a "node" runtime declaration also runs on Bun; "bun" means Bun only', () => {
+    const matches = LGraphNode.runtimeMatches;
+    expect(matches(undefined, 'node')).toBe(true);
+    expect(matches('all', 'browser')).toBe(true);
+    expect(matches('node', 'node')).toBe(true);
+    expect(matches('node', 'bun')).toBe(true);
+    expect(matches('node', 'browser')).toBe(false);
+    expect(matches('bun', 'bun')).toBe(true);
+    expect(matches('bun', 'node')).toBe(false);
+    expect(matches('browser', 'bun')).toBe(false);
+});

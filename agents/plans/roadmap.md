@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-23 · **Kind** roadmap · **Status** living; launcher track in progress; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
+> **Updated** 2026-11-23 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
 
 This is the single place for the current status of planned work.
 
@@ -37,7 +37,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
 | Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
-| Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **In progress** on `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md)); intake of the 2026-11-23 findings done (`LCH`, `GRP` ideas, candidates C-1 to C-5) |
+| Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **Done**, merged into `LG/dev` from `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md), [record](../executions/2026-11-23-launcher-and-bun.md)); see [Launcher track](#launcher-track) |
 | Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Ready**: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
 ## Wave 0: safety and correctness (done)
@@ -216,6 +216,15 @@ Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, pro
 - panel editors and sections.
 
 Follow-ups: movable, dockable and configurable panels (X-13), multi-node editing, property presets (X-11), settings profiles (X-12).
+
+## Launcher track
+
+[Plan](2026-11-23-launcher-and-bun.md) accepted 2026-11-23 from the user's findings of that day; parallel work on `LG/dev_HMD_launcher_intake` (records) and `LG/dev_HMD_launcher` (code), both merged into `LG/dev` ([record](../executions/2026-11-23-launcher-and-bun.md)):
+- `lg.sh` / `lg.bat` → `tools/lg/lg.mjs` on Bun or Node: start, stop, restart, status, open, logs, info, menu; state in `.lg/`.
+- The apps run on Bun (`npm run editor:bun`, `graphrunner:bun`); `"node"` runtime declarations match Bun.
+- The editor server serves `/docs`.
+
+Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-09. Candidates for later plans from the same findings (C-1 to C-5): ComfyUI groups and reroutes, group UI, a ComfyUI custom-node survey, a compatibility charter, concept docs from a survey of visual programming systems.
 
 ## Deferred (each needs its own proposal)
 

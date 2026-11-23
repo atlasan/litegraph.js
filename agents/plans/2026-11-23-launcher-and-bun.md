@@ -1,6 +1,6 @@
 # Launcher and Bun commands
 
-> **Date** 2026-11-23 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `bb9af60`
+> **Date** 2026-11-23 · **Kind** plan · **Status** done · **Base** `LG/dev` @ `bb9af60`
 
 One command on every OS to start, stop, inspect and open the apps: `./lg.sh` and `lg.bat` run one dependency-free JS helper on Bun when it is installed, else on Node, with a coloured menu when called without arguments. The apps run on Bun as well as on Node. This is the user's priority finding of 2026-11-23; it is parallel work (a track, branch `LG/dev_HMD_launcher`), not a wave.
 
@@ -64,3 +64,4 @@ From the same findings; each needs its own proposal and the user's choices:
 ## History
 
 - 2026-11-23: proposed and accepted with the user's decisions above.
+- 2026-11-23: steps 1–7 done and merged into `LG/dev` ([record](../executions/2026-11-23-launcher-and-bun.md)). Added during the work: `LGraphNode.runtimeMatches`, because `"node"` node types were disabled under Bun. Candidates C-1 to C-5 stay open.

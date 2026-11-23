@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-23 | [Launcher and Bun commands](2026-11-23-launcher-and-bun.md): `lg.sh` / `lg.bat` and `tools/lg/` on Bun or Node (start, stop, restart, status, open, logs, info, menu), apps on Bun, `"node"` node types run on Bun, editor serves `/docs`; tests on Node and Bun | final; Windows and macOS not run |
 | 2026-11-23 | [State audit fixes before the release](2026-11-23-audit-fixes.md): D-5 `triggerInput` through the engine, D-6 `executionModel` setter, D-8 `o:`/`i:` probe, library badges, `npm run docs` exits 0; D-7 not reproducible | final |
 | 2026-11-23 | [Pre-release 0.18.0-dev.2](2026-11-23-pre-release-0.18.0-dev.2.md): records hygiene, D-1 to D-3 fixed, version, release checks (clean clone, packed install, ComfyUI probes, browser) | final; push/PR/tag pending |
 | 2026-11-22 | [Wave 7: the deferred items](2026-11-22-wave7-deferred.md): per-site result snapshot, hook/event order golden, `fireHookThenEvent` (events skipped after a veto), dispatch tap, typed hook maps and check, `objectOf` menu sites | final |
