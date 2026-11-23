@@ -35256,7 +35256,6 @@ class WidgetButton {
     }
 
     onMouseDown(e, local_pos) {
-        console.warn("DBG", "WidgetButton", "onMouseDown", this);
         if (
             local_pos[0] > 1 &&
             local_pos[1] > 1 &&
@@ -53115,7 +53114,7 @@ class LGAudio {
 
         // only process the outputs events
         if (connection != LiteGraph.OUTPUT) {
-            console.warn("LGAudio", "onConnectionsChange", "skip cheking INPUT");
+            console.debug("LGAudio", "onConnectionsChange", "skip checking INPUT"); // inputs are handled by the output side
             return;
         }
 
@@ -54643,9 +54642,11 @@ class LGWebSocket {
             }
         }
 
-        // If already connected, close existing connection.
+        // If already connected, close existing connection (cleared first, so it does not reconnect).
         if (this._ws) {
-            this._ws.close();
+            const previous = this._ws;
+            this._ws = null;
+            previous.close();
         }
 
         // Ensure a proper WebSocket constructor is available.
@@ -54751,13 +54752,17 @@ class LGWebSocket {
             this.boxcolor = "#E88";
         };
 
+        const socket = this._ws;
         this._ws.onclose = () => {
             console.log("WS connection closed");
             this.boxcolor = "#000";
-            // Optionally, auto-reconnect if enabled.
-            if (this.properties.auto_reconnect) {
-                setTimeout(() => {
-                    if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
+            // auto-reconnect only a socket that was not closed on purpose (disconnectSocket, a new
+            // connectSocket or the node's removal replace or clear this._ws first)
+            if (this.properties.auto_reconnect && this._ws === socket) {
+                clearTimeout(this._reconnect_timer);
+                this._reconnect_timer = setTimeout(() => {
+                    this._reconnect_timer = null;
+                    if (this._ws === socket && socket.readyState === WebSocket.CLOSED) {
                         console.log("Attempting to reconnect WS...");
                         this.connectSocket();
                     }
@@ -54767,10 +54772,13 @@ class LGWebSocket {
     }
 
     disconnectSocket() {
+        clearTimeout(this._reconnect_timer);
+        this._reconnect_timer = null;
         if (this._ws) {
             console.log("WS close connection");
-            this._ws.close();
+            const socket = this._ws;
             this._ws = null;
+            socket.close();
         } else {
             console.log("WS no connection to close");
         }
