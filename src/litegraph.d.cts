@@ -608,8 +608,8 @@ export declare class LGraph {
     /** Stops the execution loop of the graph */
     /** dropQueued: clear actions queued for deferred delivery (here and in inner graphs) */
     stop(options?: { dropQueued?: boolean }): void;
-    /** the execution model this graph runs under, resolved from the root's config.execution */
-    readonly executionModel: string;
+    /** the execution model this graph runs under, resolved from the root's config.execution; assigning it is `setExecutionModel(name)` (one undo step; an unknown name throws) */
+    executionModel: string;
     getExecutionRules(): ExecutionModel;
     /** sets the root's config.execution in one undo step; throws for an unknown model */
     setExecutionModel(name: string): boolean;
