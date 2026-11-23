@@ -51,5 +51,6 @@ None of these is part of this plan.
 
 ## History
 
+- 2026-11-23: release checks rerun on `LG/dev` @ `ce8c231` (after the [audit fixes](../executions/2026-11-23-audit-fixes.md) and the launcher intake, docs only): clean clone `npm ci --ignore-scripts`, `check` (933/933 Jest in 52 suites, 125/125 integration, 12 builds) and `check:fresh` all exit 0; `npm audit --omit=dev` 0 vulnerabilities; `npm pack` (21 files, 4.3 MB) installed with `--omit=optional`: no dependencies, ESM `.` `/core` deep import and CJS `.` `/node` at `0.18.0-dev.2`, `allow_scripts` false, `definitions`, `ancestors`, `src/` not exported; ComfyUI probes 79/79 and 0 of 41 with a content difference. Browser checks were not repeated.
 - 2026-11-23: steps 2–5 done on `LG/dev_release_0.18.0-dev.2` and merged into `LG/dev` ([record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); step 6 waits for the user.
 - 2026-11-23: accepted. The user chose `LG/dev` as `0.18.0-dev.2`, and the three pre-release fixes.
