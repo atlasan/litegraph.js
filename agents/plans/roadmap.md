@@ -259,6 +259,10 @@ Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-
 
 **D, debugger (deferred):** a research record and the FLW-16 card.
 
+## Human feedback usability track
+
+[Accepted plan](2026-11-23-hmd-usability-first-pass.md), authorized 2026-11-23. Feedback intake on `LG/dev_hmd_examples_nodes_icons`, then implementation on `LG/dev_hmd_usability`: pack/section starter workflows in the existing editor, six explained examples, boolean and bounded auto-watch improvements, optional glyph/emoji slot labels. SVG asset management, schema validation, automatic wiring and generated-workflow reconciliation stay deferred. This is a named track, not a wave.
+
 ## Deferred (each needs its own proposal)
 
 Virtual/broadcast links, link routing as default, app mode / published parameters, graph tabs, remote pack registry, TypeScript migration, renderer change, async workflow scheduler.

@@ -1,6 +1,6 @@
 # HMD-01: Broader, intentional example coverage
 
-> **Date** 2026-11-23 · **Kind** idea · **Status** sketched · **Base** `LG/dev` @ `d47f5ef`
+> **Date** 2026-11-23 · **Kind** idea · **Status** promoted · **Base** `LG/dev` @ `d47f5ef`
 
 | Field | Value |
 |---|---|
@@ -10,7 +10,7 @@
 | Inspiration | Direct human feedback in the Codex chat, 2026-11-23; preserved in the area document |
 | License of the inspiration | Own concept; reuse class: —; check any future third-party assets/code before reuse |
 | Effort | M |
-| Maturity | sketched |
+| Maturity | promoted (bounded first pass) |
 | Depends on | Related ideas below; no implementation dependency accepted yet |
 | Last reviewed | 2026-11-23 |
 
@@ -41,3 +41,5 @@ The repository's current implementations are the starting point; see the [checke
 ## History
 
 - 2026-11-23: captured as an idea on `LG/dev_hmd_examples_nodes_icons`; not promoted to a plan.
+
+- 2026-11-23: promoted into the [accepted first-pass plan](../../plans/2026-11-23-hmd-usability-first-pass.md); broader contracts remain deferred.

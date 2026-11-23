@@ -2,7 +2,7 @@
 
 > **Updated** 2026-11-23 · **Kind** idea area · **Status** living · **Base** `LG/dev` @ `d47f5ef`
 
-Ideas `HMD-01`–`HMD-07`, captured on `LG/dev_hmd_examples_nodes_icons`. Source: direct human feedback in the Codex chat on 2026-11-23. These are considerations, not accepted work or a new wave. The sketches below are proposals **[I]**; they do not describe implemented behaviour.
+Ideas `HMD-01`–`HMD-07`, captured on `LG/dev_hmd_examples_nodes_icons`. Source: direct human feedback in the Codex chat on 2026-11-23. The user subsequently authorized a bounded [implementation plan](../../plans/2026-11-23-hmd-usability-first-pass.md); the broader sketches remain considerations. The sketches below are proposals **[I]**; they do not describe implemented behaviour.
 
 ## Feedback preserved
 
@@ -41,4 +41,4 @@ Each card records the design, related ideas, open questions and a bounded experi
 
 ## Consideration order, not a delivery plan
 
-**[I]** First inventory examples and common-node friction (HMD-01/03); try one explained example and an adaptive-watch sketch (HMD-02/04). Agree a shared icon representation before slot-specific rendering (HMD-07 → HMD-05). Use selected node definitions and pack metadata to probe the starter-workflow generator in the existing editor/runner (HMD-06). Each experiment needs deliberate promotion into `agents/plans/` before implementation; no roadmap milestone is added by this intake.
+**[I]** First inventory examples and common-node friction (HMD-01/03); try one explained example and an adaptive-watch sketch (HMD-02/04). Agree a shared icon representation before slot-specific rendering (HMD-07 → HMD-05). Use selected node definitions and pack metadata to probe the starter-workflow generator in the existing editor/runner (HMD-06). The [first-pass plan](../../plans/2026-11-23-hmd-usability-first-pass.md) now selects the accepted subset; the remaining contracts stay deferred.

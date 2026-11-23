@@ -1,6 +1,6 @@
 # HMD-06: Editor-based workflow builder and runner
 
-> **Date** 2026-11-23 · **Kind** idea · **Status** sketched · **Base** `LG/dev_hmd_examples_nodes_icons` @ `5085614`
+> **Date** 2026-11-23 · **Kind** idea · **Status** promoted · **Base** `LG/dev_hmd_examples_nodes_icons` @ `5085614`
 
 | Field | Value |
 |---|---|
@@ -10,7 +10,7 @@
 | Inspiration | Direct human feedback and scope clarification in the Codex chat, 2026-11-23; preserved in the area document |
 | License of the inspiration | Own concept; reuse class: —; check any future third-party assets/code before reuse |
 | Effort | L |
-| Maturity | sketched |
+| Maturity | promoted (bounded first pass) |
 | Depends on | Existing editor/runner, node definitions and pack metadata; related ideas below |
 | Last reviewed | 2026-11-23 |
 
@@ -58,3 +58,5 @@ HMD-01 (example coverage), HMD-02 (explanations), FLW-22/23 (examples manifest a
 
 - 2026-11-23: captured as an idea on `LG/dev_hmd_examples_nodes_icons`; not promoted to a plan.
 - 2026-11-23: user clarified the primary feature: add all nodes of a section/pack to an initial workflow, propose organization/descriptions/metadata, and support current and expanding packs. Retained the editor/runner name as requested; the generator is one of its features.
+
+- 2026-11-23: promoted into the [accepted first-pass plan](../../plans/2026-11-23-hmd-usability-first-pass.md); broader contracts remain deferred.

@@ -22,11 +22,11 @@ This is a database of feature and integration ideas for this fork. It is grouped
 
 **Contents:**
 - **264 ideas**: 13 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries, 22 for the Bun runner, 27 for execution flows, 6 for repository tooling, 9 for the launcher, 8 for groups, notes and reroutes and 7 from human feedback on examples, everyday nodes and workflow authoring.
-- **Maturity:** 177 seed, 68 sketched, 6 investigated, 12 promoted and 1 parked (counted by script from the catalog).
+- **Maturity:** 177 seed, 61 sketched, 6 investigated, 19 promoted and 1 parked (counted by script from the catalog).
 - **Sources:** X-08 to X-12 and DEV-01 to DEV-06 include 11 open 2025 proposals that are still open; the [improvements ledger](../audits/2026-11-19-improvements-ledger.md) records what happened to the others.
 
 **What each area found:**
-- **Human feedback (2026-11-23):** seven sketches with current-code anchors, open questions and bounded experiments ([HMD-01–07](landscape/human-feedback-usability.md)); follow-ups to existing example, watch and icon foundations, not accepted implementation work.
+- **Human feedback (2026-11-23):** seven sketches with current-code anchors, open questions and bounded experiments ([HMD-01–07](landscape/human-feedback-usability.md)); follow-ups to existing example, watch and icon foundations, now promoted for a bounded [first pass](../plans/2026-11-23-hmd-usability-first-pass.md), with future contracts deferred.
 - **Census of litegraph users:** 40 projects across 9 purposes. Four projects left litegraph for Rete because it lacked:
   - a reliable change event
   - type rejection at connect time

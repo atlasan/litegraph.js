@@ -357,10 +357,10 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 
 | ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
 |---|---|---|---|---|---|---|
-| HMD-01 | Broader example coverage across features, settings, common nodes, packs and execution models ([card](cards/HMD-01-example-coverage.md)) | P9 P10 | app | M | — | sketched |
-| HMD-02 | Examples that explain features, settings and nodes through concise interactive presentation ([card](cards/HMD-02-explained-examples.md)) | P9 P10 | app | M | — | sketched |
-| HMD-03 | Everyday base-node upgrade, starting with boolean/toggle usability and consistent defaults ([card](cards/HMD-03-everyday-base-nodes.md)) | P9 P10 | node | M | — | sketched |
-| HMD-04 | Adaptive watch displays for simple and structured values, type awareness and explicit validation ([card](cards/HMD-04-adaptive-watch.md)) | P6 P9 P10 | node | L | — | sketched |
-| HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)) | P9 P10 | core | M | — | sketched |
-| HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)) | P9 P10 | app | L | — | sketched |
-| HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)) | P9 P10 | core | M | — | sketched |
+| HMD-01 | Broader example coverage across features, settings, common nodes, packs and execution models ([card](cards/HMD-01-example-coverage.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-02 | Examples that explain features, settings and nodes through concise interactive presentation ([card](cards/HMD-02-explained-examples.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-03 | Everyday base-node upgrade, starting with boolean/toggle usability and consistent defaults ([card](cards/HMD-03-everyday-base-nodes.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | node | M | — | promoted |
+| HMD-04 | Adaptive watch displays for simple and structured values, type awareness and explicit validation ([card](cards/HMD-04-adaptive-watch.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P6 P9 P10 | node | L | — | promoted |
+| HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
+| HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | L | — | promoted |
+| HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
