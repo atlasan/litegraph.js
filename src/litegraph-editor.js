@@ -120,6 +120,7 @@ export class Editor {
 
         // node palette (setting LiteGraph.Editor.Palette remembers whether it is open)
         if (!options.skip_palette) this.setupPalette();
+        this.addToolsButton("starter_button", "Starter workflow", "imgs/icon-gear.png", () => this.showStarterGenerator(), ".tools-left");
 
         // modified marker and draft autosave (settings LiteGraph.Editor.Autosave / AutosaveDelay)
         this.setupModifiedMarker();
@@ -151,6 +152,94 @@ export class Editor {
         }
         LiteGraph.settings?.set("LiteGraph.Editor.Palette", !!this.palette_panel);
         return !!this.palette_panel;
+    }
+
+    /** The existing editor's section/pack starter generator; previews use registry metadata only. */
+    showStarterGenerator() {
+        this.starter_panel?.remove();
+        const panel = this.starter_panel = document.createElement("section");
+        panel.className = "lg-starter-panel";
+        panel.setAttribute("aria-label", "Starter workflow generator");
+        const el = (tag, text, parent = panel) => {
+            const item = document.createElement(tag);
+            if (text) item.textContent = text;
+            parent.appendChild(item);
+            return item;
+        };
+        const heading = el("div", "");
+        el("h2", "Starter workflow", heading);
+        const close = el("button", "Close", heading);
+        close.onclick = () => { panel.remove(); this.starter_panel = null; };
+        el("p", "Explore a whole section or pack. Add an organized inventory of nodes to your graph, then build examples from it.");
+        const packLabel = el("label", "Node pack ");
+        const pack = el("select", "", packLabel);
+        pack.setAttribute("aria-label", "Node pack");
+        const categoryLabel = el("label", "Section ");
+        const category = el("select", "", categoryLabel);
+        category.setAttribute("aria-label", "Section");
+        const option = (select, value, text) => { const opt = el("option", text, select); opt.value = value; };
+        const scope = () => ({ pack: pack.value || undefined, category: category.value || undefined });
+        const status = el("p", "");
+        status.setAttribute("role", "status");
+        const list = el("div", "");
+        list.className = "lg-starter-list";
+        const actions = el("div", "");
+        const insert = el("button", "Add nodes to workflow", actions);
+        const refresh = el("button", "Refresh packs", actions);
+        const download = el("button", "Export metadata", actions);
+        el("p", "Nodes are grouped by section and added below existing content. Connections are left for you to build. Stop playback before adding nodes. Types needing devices, DOM, network or other setup are listed as skipped.");
+        let entries = [];
+        const render = () => {
+            entries = LiteGraph.palette.starterPreview(scope());
+            const skipped = entries.filter((entry) => entry.reason).length;
+            status.textContent = `${entries.length - skipped} available · ${skipped} skipped · ${entries.length} types in scope`;
+            insert.disabled = !entries.some((entry) => !entry.reason) || this.graphcanvas.read_only;
+            list.replaceChildren();
+            for (const entry of entries) {
+                const row = el("article", "", list);
+                el("strong", entry.title, row);
+                el("small", entry.type + (entry.reason ? ` — Skipped: ${entry.reason}` : ""), row);
+                el("p", entry.description || `Suggested description: ${entry.suggestedDescription}`, row);
+                if (entry.usage) el("small", entry.usage, row);
+            }
+        };
+        const reload = () => {
+            const previousPack = pack.value, previousCategory = category.value;
+            pack.replaceChildren(); category.replaceChildren();
+            option(pack, "", "All packs"); option(category, "", "All sections");
+            const defs = LiteGraph.listNodeDefinitions();
+            for (const id of [...new Set(defs.map((def) => def.pack?.id).filter(Boolean))].sort()) {
+                option(pack, id, LiteGraph.packs.get(id)?.title ?? id);
+            }
+            for (const name of [...new Set(defs.map((def) => def.category).filter(Boolean))].sort()) option(category, name, name);
+            if ([...pack.options].some((opt) => opt.value === previousPack)) pack.value = previousPack;
+            if ([...category.options].some((opt) => opt.value === previousCategory)) category.value = previousCategory;
+            render();
+        };
+        pack.onchange = category.onchange = render;
+        refresh.onclick = reload;
+        insert.onclick = () => {
+            try {
+                const result = LiteGraph.palette.insertStarter(this.graphcanvas, scope());
+                status.textContent = `Added ${result.nodes.length} nodes. ${result.skipped.length} skipped.`;
+                if (result.skipped.length) status.textContent += " " + result.skipped.map((item) => `${item.type}: ${item.reason}`).join("; ");
+            } catch (error) { status.textContent = error.message; }
+        };
+        download.onclick = () => {
+            const metadata = { format: "litegraph-starter-metadata", version: 1, scope: scope(), entries };
+            const url = URL.createObjectURL(new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" }));
+            const link = el("a", "");
+            link.href = url; link.download = "starter-metadata.json"; link.click(); link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+        panel.addEventListener("keydown", (event) => {
+            event.stopPropagation();
+            if (event.key === "Escape") { close.click(); this.root?.querySelector("#starter_button")?.focus(); }
+        });
+        this.content.appendChild(panel);
+        reload();
+        pack.focus();
+        return panel;
     }
 
     /** Shows "• modified" in the header and prefixes the page title while the document is modified. */

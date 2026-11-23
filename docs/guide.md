@@ -629,3 +629,27 @@ graph.configure(data);             // emits "configuring" (cancelable), then "co
 ```
 
 Typed events (`graph.events.on("changed", …)`) and [callback handlers](callbacks.md) report changes.
+
+## Everyday values and inspection
+
+`basic/boolean` is a persistent true/false value with a toggle widget. Its optional `toggle` action input inverts the stored value; it does not turn the boolean output into an event. Search for “toggle”, “bool”, “true” or “false”. The saved value is authoritative if a legacy document's widget value disagrees.
+
+`basic/const` can use a linked widget input (`node.addWidgetInput("value", "number")`). While linked, execution uses the incoming value and the widget is disabled. Disconnecting restores the saved local value; linking never overwrites that fallback.
+
+`basic/watch` keeps its existing `value`, `text` and `tree` displays. Choose `auto` for a declared/observed type summary and a bounded preview of scalars, arrays and objects. Auto reports simple known-type mismatches without coercing the value or rejecting the link. It distinguishes an unconnected input from a connected `undefined` value. It previews own enumerable data properties, marks accessors without invoking them, detects cycles, limits depth/entries/text and clips drawing to the node. Unknown/custom types are displayed without claiming schema validation. Auto gives a small node room when selected; live data never resizes it. Tree inspection still requires the watch pack.
+
+See [Examples and starter workflows](examples.md) for guided lessons and the editor's whole-section/pack inventory generator.
+
+## Glyph slot labels
+
+Slots may declare a `label_icon` string (a glyph or emoji) and optional `label_mode`: `"text"`, `"icon+text"` or `"icon"`.
+
+```js
+this.addInput("enabled", "boolean", { label_icon: "◉" });
+this.addOutput("result", "number", { label_icon: "🔢", label_mode: "icon" });
+this.properties.slot_label_mode = "icon+text"; // optional per-node default
+```
+
+Precedence is slot `label_mode`, node `properties.slot_label_mode`, then canvas `slot_label_mode` (default `"icon+text"`). The Canvas options panel exposes **Nodes → Slot labels**. Missing or unsupported icons fall back to text. `LiteGraph.getSlotLabel(node, slot, canvasMode)` supplies the display text used for drawing and minimum-size measurement. Original slot names, types and link anchors stay unchanged; right-click an icon-bearing socket to see its name and type. Widget inputs retain their widget labels and placed exec slots retain their existing arrow presentation.
+
+These are display-only strings, never HTML or asset URLs. Node-title icons continue to accept text/emoji or already loaded image objects through `node.icon` or `static def.icon`. SVG asset loading and an icon registry remain future work.

@@ -1,6 +1,6 @@
 # Human feedback: examples and everyday authoring, first pass
 
-> **Date** 2026-11-23 · **Kind** plan · **Status** accepted · **Base** `LG/dev_hmd_examples_nodes_icons` @ `6036090`
+> **Date** 2026-11-23 · **Kind** plan · **Status** done · **Base** `LG/dev_hmd_examples_nodes_icons` @ `6036090`
 
 Deliver the highest-value bounded improvements from HMD-01–07: explainable examples, a pack/section starter generator in the existing editor, clearer boolean behaviour, adaptive value inspection and optional glyph slot labels. The user authorized review, a plan, merge of the feedback into `LG/dev`, and prioritized implementation on 2026-11-23.
 
@@ -41,3 +41,5 @@ SVG loading/sanitization and an icon asset registry; OS-native icons; schema-bas
 ## History
 
 - 2026-11-23: reviewed and accepted under the user's instruction to prioritize and implement; future contracts explicitly deferred.
+
+- 2026-11-24: bounded first pass implemented and verified; [execution record](../executions/2026-11-24-hmd-usability-first-pass.md). Deferred contracts remain ideas.
