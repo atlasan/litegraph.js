@@ -2151,7 +2151,8 @@ export class LGraphNode {
      * Get a slot from his index or name
      * @param {boolean} is_input use look for input / output 
      * @param {number|string} slot_index_or_name 
-     * @returns 
+     * @param {boolean} [returnObj=false] return the slot object instead of its index
+     * @returns {number|Object} the slot index (or the slot with returnObj); -1 when not found
      */
     getSlot(is_input, slot_index_or_name, returnObj = false){
         if(!is_input || is_input===LiteGraph.OUTPUT){

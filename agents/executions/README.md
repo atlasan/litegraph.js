@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-23 | [State audit fixes before the release](2026-11-23-audit-fixes.md): D-5 `triggerInput` through the engine, D-6 `executionModel` setter, D-8 `o:`/`i:` probe, library badges, `npm run docs` exits 0; D-7 not reproducible | final |
 | 2026-11-23 | [Pre-release 0.18.0-dev.2](2026-11-23-pre-release-0.18.0-dev.2.md): records hygiene, D-1 to D-3 fixed, version, release checks (clean clone, packed install, ComfyUI probes, browser) | final; push/PR/tag pending |
 | 2026-11-22 | [Wave 7: the deferred items](2026-11-22-wave7-deferred.md): per-site result snapshot, hook/event order golden, `fireHookThenEvent` (events skipped after a veto), dispatch tap, typed hook maps and check, `objectOf` menu sites | final |
 | 2026-11-22 | [Panels and widgets](2026-11-22-panels-and-widgets.md): value types (type → canvas widget and panel editor), colour and vector widgets, options panel tabs, node details panel, panel editors and sections; branch `LG/dev_panel_and_widget`, merged into `LG/dev` | final |

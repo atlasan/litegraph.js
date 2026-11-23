@@ -2254,13 +2254,18 @@ link-drag handling of pointer move and up takes over.
 
             <td class="type">
             
+                
+<span class="param-type">function</span>
+
+
+            
             </td>
 
             
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `() => *`) - starts the drag on this.linkConnector</td>
         </tr>
 
     
@@ -2426,7 +2431,7 @@ link, else (over the node body, with LiteGraph.snap_link_to_slot) the slot a dro
     
 
     
-    <h4 class="name" id="applyWidgetValue"><span class="type-signature"></span>applyWidgetValue<span class="signature">(node, widget, value, context)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+    <h4 class="name" id="applyWidgetValue"><span class="type-signature"></span>applyWidgetValue<span class="signature">(node, widget, value, context<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
     
 
     
@@ -2461,6 +2466,8 @@ the widget callback runs. The canvas pointer handling and the node panel both us
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
         
 
@@ -2486,6 +2493,14 @@ the widget callback runs. The canvas pointer handling and the node panel both us
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -2508,6 +2523,14 @@ the widget callback runs. The canvas pointer handling and the node panel both us
             
             </td>
 
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
             
 
             
@@ -2532,6 +2555,14 @@ the widget callback runs. The canvas pointer handling and the node panel both us
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -2547,13 +2578,28 @@ the widget callback runs. The canvas pointer handling and the node panel both us
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{old_value?: *, pos?: number[], event?: Event}`) - old_value defaults to the widget's current value</td>
         </tr>
 
     
@@ -5234,7 +5280,7 @@ the title text.
     
 
     
-    <h4 class="name" id="insertFragment"><span class="type-signature"></span>insertFragment<span class="signature">(fragment, pos<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+    <h4 class="name" id="insertFragment"><span class="type-signature"></span>insertFragment<span class="signature">(fragment, pos<span class="signature-attributes">opt</span>, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
     
 
     
@@ -5345,15 +5391,22 @@ its top-left corner at `pos`, as one undo step.
 
         <tr>
             
-                <td class="name"><code></code></td>
+                <td class="name"><code>options</code></td>
             
 
             <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
             
             </td>
 
             
                 <td class="attributes">
+                
+                    &lt;optional><br>
                 
 
                 
@@ -5364,7 +5417,8 @@ its top-left corner at `pos`, as one undo step.
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{select?: boolean, connectUnselected?: boolean}`) - connectUnselected keeps
+  links that came from nodes outside the copied selection (the Ctrl+Shift+V behaviour)</td>
         </tr>
 
     
@@ -6800,13 +6854,18 @@ Without a DOM it only logs. The element has the class "litegraph-execution-notic
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{node, output?: object|null, input?: object|null}`) - from link-dropped-on-empty</td>
         </tr>
 
     
@@ -7630,7 +7689,7 @@ The node hooks onAddPropertyToPanel and onShowCustomPanelInfo still apply.
     
 
     
-    <h4 class="name" id=".clampWidgetNumber"><span class="type-signature">(static) </span>clampWidgetNumber<span class="signature">(value, options)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id=".clampWidgetNumber"><span class="type-signature">(static) </span>clampWidgetNumber<span class="signature">(value, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
     
 
     
@@ -7662,6 +7721,8 @@ The node hooks onAddPropertyToPanel and onShowCustomPanelInfo still apply.
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
         
 
@@ -7687,6 +7748,14 @@ The node hooks onAddPropertyToPanel and onShowCustomPanelInfo still apply.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -7702,13 +7771,28 @@ The node hooks onAddPropertyToPanel and onShowCustomPanelInfo still apply.
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{min?: number, max?: number}`)</td>
         </tr>
 
     
@@ -8384,7 +8468,7 @@ copies its methods), so this checks for node behaviour rather than the class.
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

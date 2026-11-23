@@ -746,6 +746,18 @@ export class LiteGraphClass {
                 if (def.experimental) return { text: "experimental", fgColor: "#FFE", bgColor: "rgba(120,100,30,0.8)" };
                 return null;
             });
+            // library state: a node waiting for its libraries, or whose libraries failed to load
+            this.settings.define({ id: "LiteGraph.Node.LibraryBadge", name: "Show library loading and error badges", default: true });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LibraryBadge")) return null;
+                if (!node.libraries?.length && !node.requiredLibraries?.length) return null;
+                if (node.initialization_state === "loading") return { text: "loading libraries", fgColor: "#DDE", bgColor: "rgba(40,60,110,0.85)" };
+                if (node.initialization_state === "error" && !node.wrong_environment) {
+                    const message = node.initialization_error?.message ?? String(node.initialization_error ?? "");
+                    return { text: "library error", title: message, fgColor: "#FDD", bgColor: "rgba(140,40,40,0.85)" };
+                }
+                return null;
+            });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? { text: `#${node.id}` } : null);
             this.settings.define({ id: "LiteGraph.Subgraph.UpdateBadge", name: "Show an update badge on components with a newer registered revision", default: true });
             this.nodeBadges.register((node) => (this.settings.get("LiteGraph.Subgraph.UpdateBadge") && node.hasSourceUpdate?.())
@@ -1557,7 +1569,7 @@ export class LiteGraphClass {
      * @param {*} y 
      * @param {*} maxWidth 
      * @param {*} lineHeight 
-     * @returns 
+     * @returns {Object} `{lines, height}`: the lines drawn and the total height (`max`: the width of the last wrapped line)
      */
     canvasFillTextMultiline(context, text, x, y, maxWidth, lineHeight) {
         var words = (text+"").trim().split(' ');

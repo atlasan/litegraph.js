@@ -21,7 +21,7 @@ npm run graphrunner  # http://127.0.0.1:3000/
 | `npm run check:fresh` | Rebuilds and fails when `build/` or `build_node/` differ from what is committed. CI runs the same check after `npm run check` |
 | `npm run check:types` | Strict ESM and CJS consumers against `src/litegraph.d.cts`, plus export parity with the built modules |
 | `npm run lint` | ESLint, with warnings (the gate fails on errors only) |
-| `npm run docs` | JSDoc from `src/` into [docs/api](api/index.html) |
+| `npm run docs` | JSDoc from `src/` into [docs/api](api/index.html); the plugin `docs/jsdoc-ts-types.cjs` turns TypeScript-style types JSDoc cannot parse into `function` / `Object` / `*` and keeps the original in the description |
 
 `--ignore-scripts` skips native integration bindings. Browser GPU, audio and MIDI nodes, and external services, are outside the gate.
 

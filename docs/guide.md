@@ -362,6 +362,7 @@ Badges that would cover the title text are left out; buttons are always drawn.
 | `LiteGraph.Node.IdBadge` | off | the node id |
 | `LiteGraph.Node.SourceBadge` | off | the node source, when it is not core |
 | `LiteGraph.Node.LifecycleBadge` | on | "deprecated" / "experimental" |
+| `LiteGraph.Node.LibraryBadge` | on | "loading libraries" while a node waits for its libraries, "library error" (with the message) when they failed |
 | `LiteGraph.Group.HeaderToggle` | on | a toggle in group titles that mutes and unmutes the group's nodes |
 
 ## Editing, undo and selection

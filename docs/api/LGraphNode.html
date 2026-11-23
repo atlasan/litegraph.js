@@ -250,7 +250,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2705">line 2705</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2706">line 2706</a>
     </li></ul></dd>
     
 
@@ -904,13 +904,18 @@ A button with the same name is replaced.
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{name: string, text: string, tooltip?: string, fgColor?: string, bgColor?: string, onClick?: (node: LGraphNode, canvas: object, e: Event) => void}`)</td>
         </tr>
 
     
@@ -1269,7 +1274,7 @@ A button with the same name is replaced.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2694">line 2694</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2695">line 2695</a>
     </li></ul></dd>
     
 
@@ -1357,7 +1362,7 @@ A button with the same name is replaced.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2254">line 2254</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2255">line 2255</a>
     </li></ul></dd>
     
 
@@ -1445,7 +1450,7 @@ A button with the same name is replaced.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2261">line 2261</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2262">line 2262</a>
     </li></ul></dd>
     
 
@@ -1588,7 +1593,7 @@ A button with the same name is replaced.
     
 
     
-    <h4 class="name" id="getSlot"><span class="type-signature"></span>getSlot<span class="signature">(is_input, slot_index_or_name)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="getSlot"><span class="type-signature"></span>getSlot<span class="signature">(is_input, slot_index_or_name, returnObj<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {number|Object}</span></h4>
     
 
     
@@ -1620,7 +1625,11 @@ A button with the same name is replaced.
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
+        
+        <th>Default</th>
         
 
         <th class="last">Description</th>
@@ -1645,7 +1654,19 @@ A button with the same name is replaced.
             </td>
 
             
+                <td class="attributes">
+                
 
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
             
 
             <td class="description last">use look for input / output</td>
@@ -1671,10 +1692,61 @@ A button with the same name is replaced.
             </td>
 
             
+                <td class="attributes">
+                
 
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
             
 
             <td class="description last"></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>returnObj</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">boolean</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    false
+                
+                </td>
+            
+
+            <td class="description last">return the slot object instead of its index</td>
         </tr>
 
     
@@ -1715,7 +1787,7 @@ A button with the same name is replaced.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2156">line 2156</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line2157">line 2157</a>
     </li></ul></dd>
     
 
@@ -1743,7 +1815,26 @@ A button with the same name is replaced.
 <h5>Returns:</h5>
 
         
+<div class="param-desc">
+    the slot index (or the slot with returnObj); -1 when not found
+</div>
 
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">number</span>
+|
+
+<span class="param-type">Object</span>
+
+
+    </dd>
+</dl>
 
     
 
@@ -2990,7 +3081,7 @@ sent to listeners of the root graph's `execution-state` event (the runner forwar
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line3235">line 3235</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line3236">line 3236</a>
     </li></ul></dd>
     
 
@@ -3226,7 +3317,7 @@ sent to listeners of the root graph's `execution-state` event (the runner forwar
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line3081">line 3081</a>
+        <a href="lgraphnode.js.html">lgraphnode.js</a>, <a href="lgraphnode.js.html#line3082">line 3082</a>
     </li></ul></dd>
     
 
@@ -3394,7 +3485,7 @@ row, and while it is linked the widget is disabled and the link provides the val
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

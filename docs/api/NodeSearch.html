@@ -160,12 +160,26 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
 
         
             
-<h4 class="name" id="_filters"><span class="type-signature"></span>_filters<span class="type-signature"></span></h4>
+<h4 class="name" id="_filters"><span class="type-signature"></span>_filters<span class="type-signature"> :*</span></h4>
 
 
 
 
+<div class="description">
+    (type `Map<string, {id: string, name: string, predicate: (def: object) => boolean, enabled: () => boolean}>`)
+</div>
 
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">*</span>
+
+
+        </li>
+    </ul>
 
 
 
@@ -418,7 +432,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
 
     
-    <h4 class="name" id="registerFilter"><span class="type-signature"></span>registerFilter<span class="signature">()</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="registerFilter"><span class="type-signature"></span>registerFilter<span class="signature">()</span><span class="type-signature"> &rarr; {function}</span></h4>
     
 
     
@@ -499,7 +513,23 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
 <h5>Returns:</h5>
 
         
+<div class="param-desc">
+    (type `() => void`) disposer
+</div>
 
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
+
+
+    </dd>
+</dl>
 
     
 
@@ -513,7 +543,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
 
     
-    <h4 class="name" id="search"><span class="type-signature"></span>search<span class="signature">(text)</span><span class="type-signature"> &rarr; {Array.&lt;{type: string, score: number, def: object}>}</span></h4>
+    <h4 class="name" id="search"><span class="type-signature"></span>search<span class="signature">(text, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array.&lt;{type: string, score: number, def: object}>}</span></h4>
     
 
     
@@ -545,6 +575,8 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
         
 
@@ -573,6 +605,14 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -583,18 +623,33 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
 
         <tr>
             
-                <td class="name"><code></code></td>
+                <td class="name"><code>options</code></td>
             
 
             <td class="type">
             
+                
+<span class="param-type">Object</span>
+
+
+            
             </td>
 
             
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
 
             
 
-            <td class="description last"></td>
+            <td class="description last">(type `{types?: string[], limit?: number, applyFilters?: boolean}`)</td>
         </tr>
 
     
@@ -635,7 +690,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line126">line 126</a>
+        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line151">line 151</a>
     </li></ul></dd>
     
 
@@ -689,7 +744,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
 
     
-    <h4 class="name" id="._slotTypes"><span class="type-signature">(static) </span>_slotTypes<span class="signature">()</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="._probeSlots"><span class="type-signature">(static) </span>_probeSlots<span class="signature">()</span><span class="type-signature"></span></h4>
     
 
     
@@ -697,7 +752,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
 
 
 <div class="description">
-    slot types of a registered type, from its definition or the slot-type registry
+    the slot types of one instance of a type, cached per class; null when it cannot be built
 </div>
 
 
@@ -741,7 +796,98 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line69">line 69</a>
+        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line88">line 88</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="._slotTypes"><span class="type-signature">(static) </span>_slotTypes<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Slot types of a registered type: from its definition, else from the slot-type registry, else from
+a probe instance (`new Class()`, cached per class) for types that declare no slots and were never
+created (outputs reach the registry only with `auto_load_slot_types`). A constructor that throws
+leaves the type without slot types.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line74">line 74</a>
     </li></ul></dd>
     
 
@@ -829,7 +975,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line81">line 81</a>
+        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line106">line 106</a>
     </li></ul></dd>
     
 
@@ -1140,7 +1286,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line97">line 97</a>
+        <a href="nodesearch.js.html">nodesearch.js</a>, <a href="nodesearch.js.html#line122">line 122</a>
     </li></ul></dd>
     
 
@@ -1192,7 +1338,7 @@ slot-type registry (filled as nodes are created). Results are sorted by score, t
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

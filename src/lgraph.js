@@ -1710,15 +1710,21 @@ export class LGraph {
     }
 
     /**
-     * Triggers the 'onTrigger' method on nodes with a specific title by passing a value to them.
-     * // TODO check this, investigate, _last_trigger_time ? who calls triggerInput ? who calls onTrigger ?
+     * Fires a trigger on the nodes with this title, as an event reaching their `onTrigger` input would:
+     * each runs through the execution engine (`doExecute(value)`: model rules, execution state, a
+     * `node-error` on failure). A NEVER node is skipped with an `event-dropped` (`mode`). A node that
+     * defines its own `onTrigger(value)` method gets that call instead, inside the same event entry.
      * @param {string} name - The title of the nodes to trigger.
-     * @param {any} value - The value to pass to the 'onTrigger' method of the nodes.
+     * @param {any} value - The value passed to the nodes (`param` of `onExecute`).
      */
     triggerInput(name, value) {
-        var nodes = this.findNodesByTitle(name);
-        for (var i = 0; i < nodes.length; ++i) {
-            nodes[i].onTrigger(value);
+        for (const node of this.findNodesByTitle(name)) {
+            if (node.mode === LiteGraph.NEVER) {
+                ExecutionEngine.drop(node, "mode", { message: `${node.type} ${node.id}: the node is NEVER; the trigger is not delivered` });
+                continue;
+            }
+            if (typeof node.onTrigger === "function") node._dispatchEvent(() => node.onTrigger(value));
+            else if (node.onExecute) node.doExecute(value, { action_call: `${node.id}_trigg_${LiteGraph.uuidv4()}` });
         }
     }
 
@@ -2552,6 +2558,11 @@ export class LGraph {
     /** the name of the execution model this graph runs under (resolved from the root's config) */
     get executionModel() {
         return ExecutionEngine.modelNameFor(this);
+    }
+
+    /** the same as `setExecutionModel(name)`: one undo step; an unknown name throws */
+    set executionModel(name) {
+        this.setExecutionModel(name);
     }
 
     /** the rules of this graph's execution model */
