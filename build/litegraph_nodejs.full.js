@@ -574,7 +574,7 @@ function createNodeBadgeRegistry() {
 
 export class LiteGraphClass {
 
-    VERSION = "0.18.0-dev.1";
+    VERSION = "0.18.0-dev.2";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
     /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
@@ -9351,16 +9351,6 @@ export class LGraph {
 installHooks(LGraph);
 
 /**
- * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
- * Valid callbacks are: onNodeSelected, onNodeDeselected, onShowNodePanel, onNodeDblClicked
- *
- * @class LGraphCanvas
- * @constructor
- * @param {HTMLCanvas} canvas the canvas where you want to render (it accepts a selector in string format or the canvas element itself)
- * @param {LGraph} graph [optional]
- * @param {Object} options [optional] { skip_rendering, autoresize, viewport }
- */
-/**
  * onSelectionChange (with `selected_nodes`, as before), then `selection-changed {nodes, items}`.
  * A function, not a method: the selection methods also run on canvas-like objects (`deselectNode.call(obj, node)`).
  */
@@ -9372,6 +9362,16 @@ function selectionChanged(canvas) {
         }));
 }
 
+/**
+ * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
+ * Valid callbacks are: onNodeSelected, onNodeDeselected, onShowNodePanel, onNodeDblClicked
+ *
+ * @class LGraphCanvas
+ * @constructor
+ * @param {HTMLCanvas} canvas the canvas where you want to render (it accepts a selector in string format or the canvas element itself)
+ * @param {LGraph} graph [optional]
+ * @param {Object} options [optional] { skip_rendering, autoresize, viewport }
+ */
 export class LGraphCanvas {
     constructor(canvas, graph, options) {
         options ??= {
