@@ -28,6 +28,7 @@ const RULE_DEFAULTS = Object.freeze({
     frame_pull: false,
     once_per_frame: false,
     default_mode: 0, // LiteGraph.ALWAYS
+    exec_slots: false, // create onTrigger / onExecuted when an event link is dropped on a node
 });
 
 export class ExecutionEngine {
@@ -100,6 +101,19 @@ export class ExecutionEngine {
         } catch {
             return fallback;
         }
+    }
+
+    /**
+     * Whether dropping an event link on a node creates its exec slots (`onTrigger`, `onExecuted`):
+     * the setting LiteGraph.Node.ExecSlots when "on" or "off"; else an assigned
+     * `LiteGraph.do_add_triggers_slots`; else the model's `exec_slots` rule (on under `ancestors`).
+     */
+    static execSlotsFor(graph) {
+        const setting = this.setting("LiteGraph.Node.ExecSlots", "auto");
+        if (setting === "on") return true;
+        if (setting === "off") return false;
+        if (LiteGraph._do_add_triggers_slots !== undefined) return LiteGraph._do_add_triggers_slots;
+        return !!this.rulesFor(graph).exec_slots;
     }
 
     static get maxEventDepth() { return Number(this.setting("LiteGraph.Execution.MaxEventDepth", 256)) || 256; }
@@ -500,7 +514,7 @@ export class ExecutionEngine {
 ExecutionEngine.registerModel("ancestors", {
     title: "Ancestors (pull)",
     description: "Events are delivered immediately; pure ON_REQUEST nodes run only when an action, a trigger or an ALWAYS node needs their data, once per frame or call.",
-    delivery: "immediate", refresh: "ancestors", frame_pull: true,
+    delivery: "immediate", refresh: "ancestors", frame_pull: true, exec_slots: true,
 });
 ExecutionEngine.registerModel("step", {
     title: "Step (deferred actions)",

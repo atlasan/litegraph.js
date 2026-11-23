@@ -34,6 +34,22 @@ export interface INodeSlot {
     shape?: SlotShape;
     locked?: boolean;
     nameLocked?: boolean;
+    /** a built-in exec slot (addOnTriggerInput / addOnExecutedOutput) */
+    exec?: 'trigger' | 'executed';
+}
+
+/** where an exec slot sits: anchors plus offsets (canvas units or "N%"), and the side links attach */
+export interface ExecSlotPlacement {
+    x?: 'left' | 'center' | 'right' | 'pin' | number;
+    y?: 'top' | 'title' | 'body' | 'middle' | 'bottom' | number;
+    dx?: number | string;
+    dy?: number | string;
+    dir?: number;
+}
+/** an exec-slot layout; `vertical` applies to nodes with `horizontal` slots (top and bottom) */
+export interface ExecSlotLayout {
+    normal?: { trigger?: ExecSlotPlacement; executed?: ExecSlotPlacement };
+    vertical?: { trigger?: ExecSlotPlacement; executed?: ExecSlotPlacement };
 }
 
 export interface INodeInputSlot extends INodeSlot {
@@ -474,6 +490,15 @@ export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     ExecutionEngine: typeof ExecutionEngine;
     registerExecutionModel(name: string, rules?: ExecutionModelRules): ExecutionModel;
     getExecutionModel(name: string): ExecutionModel | null;
+    /** create exec slots when an event link is dropped on a node; unassigned, the setting and the model decide (ExecutionEngine.execSlotsFor) */
+    do_add_triggers_slots: boolean;
+    /** the exec-slot layout of every node (a name or a spec); null: the setting LiteGraph.Node.ExecSlotLayout */
+    exec_slot_layout: string | ExecSlotLayout | null;
+    /** named exec-slot layouts ("edges" built in; "rows" is the classic look) */
+    execSlotLayouts: Map<string, ExecSlotLayout>;
+    registerExecSlotLayout(name: string, spec: ExecSlotLayout): () => void;
+    resolveExecSlotLayout(nameOrSpec: string | ExecSlotLayout | null | undefined): ExecSlotLayout | null;
+    execSlotLayoutName(): string | ExecSlotLayout;
     /** declares the execution needs of registered types (in-class form: static def.execution) */
     declareNodeExecution(types: string | string[], execution: NodeExecutionDeclaration): void;
     /** the modes a node may use under its graph's model */
@@ -1148,6 +1173,16 @@ export declare class LGraphNode {
     addCustomWidget<T extends IWidget>(customWidget: T): T;
     /** true for an input attached to a widget (`input.widget = {name}`) */
     static isWidgetInputSlot(slot: unknown): boolean;
+    /** "trigger" (onTrigger) or "executed" (onExecuted) for a built-in exec slot, else null */
+    static isExecSlot(slot: unknown): 'trigger' | 'executed' | null;
+    /** this node's exec-slot layout name or spec; overrides LiteGraph.exec_slot_layout and the setting */
+    exec_slot_layout?: string | ExecSlotLayout;
+    getExecSlotLayout(): ExecSlotLayout | null;
+    getExecSlotPlacement(is_input: boolean, slot: INodeSlot | undefined): ExecSlotPlacement | null;
+    /** an exec slot's position relative to the node, or null when it sits in the slot rows */
+    getExecSlotPos(is_input: boolean, slot_number: number, out?: number[]): number[] | null;
+    /** the side links attach to a slot (an exec placement's dir, the slot's dir, or the default) */
+    getSlotDir(is_input: boolean, slot_number: number): number;
     getWidgetFromSlot(slot: INodeInputSlot): IWidget | null;
     getSlotFromWidget(widget: IWidget): INodeInputSlot | null;
     isWidgetLinked(widget: IWidget): boolean;
@@ -1668,6 +1703,9 @@ export declare class LGraphCanvas {
     static search_limit: number;
     /** resolve a shape constant or shape name to a shape constant */
     static resolveShape(shape: number | string | undefined, fallback: number): number;
+    /** the unit vector an arrow slot points along (into the node for inputs) */
+    static slotFlow(is_input: boolean, dir?: number): [number, number];
+    static pathSlotArrow(ctx: CanvasRenderingContext2D, pos: ArrayLike<number>, flow: [number, number]): void;
     /** clamp a number to a widget's optional min/max */
     static clampWidgetNumber(value: number, options?: { min?: number; max?: number }): number;
     /** backing-store pixels per CSS pixel */
@@ -2831,6 +2869,8 @@ export interface ExecutionModelRules {
     once_per_frame?: boolean;
     /** the mode new nodes of undeclared types get */
     default_mode?: number;
+    /** dropping an event link on a node creates its exec slots (on for "ancestors") */
+    exec_slots?: boolean;
     title?: string;
     description?: string;
 }
@@ -2860,6 +2900,8 @@ export declare class ExecutionEngine {
     /** true for NEVER and BYPASS (the node's own code does not run) */
     static isInactiveMode(mode: number): boolean;
     static isEventType(type: unknown): boolean;
+    /** whether dropping an event link creates exec slots: setting LiteGraph.Node.ExecSlots, an assigned do_add_triggers_slots, then the model */
+    static execSlotsFor(graph: LGraph | null | undefined): boolean;
     static drop(node: LGraphNode | null, reason: EventDropReason, extra?: { setting?: string; message?: string }): false;
     static readonly maxEventDepth: number;
     static readonly maxEventPasses: number;

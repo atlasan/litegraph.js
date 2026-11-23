@@ -28,7 +28,8 @@ LiteGraph.slot_types_in = []; // slot types IN
 LiteGraph.slot_types_out = []; // slot types OUT*/
 
 LiteGraph.alt_drag_do_clone_nodes = true; // [true!] very handy; ALT click to clone and drag the new node
-LiteGraph.do_add_triggers_slots = false; // [true!] will create and connect event slots when using action/events connections; !WILL CHANGE node mode when using onTrigger (enable mode colors); onExecuted does not need this
+// LiteGraph.do_add_triggers_slots is left unassigned: the document's execution model decides (on under
+// ancestors), and the setting LiteGraph.Node.ExecSlots overrides it; presets below that assign it win
 LiteGraph.allow_multi_output_for_events = false; // [false!] being events; it is strongly reccomended to use them sequentially; one by one
 LiteGraph.middle_click_slot_add_default_node = true;  //[true!] allows to create and connect a ndoe clicking with the third button (wheel)
 LiteGraph.release_link_on_empty_shows_menu = true; //[true!] dragging a link to empty space will open a menu, add from list, search or defaults

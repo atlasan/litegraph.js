@@ -197,34 +197,44 @@ Object {
     "1": "default",
     "[list]": Array [
       "hooked",
+      "On Trigger",
     ],
     "false": "default",
     "no result": Array [
       "opt",
+      "On Trigger",
     ],
     "true": "default",
     "{return_value: 1}": "default",
     "{return_value: [list]}": Array [
       "hooked",
+      "On Trigger",
     ],
-    "{return_value: null}": null,
+    "{return_value: null}": Array [
+      "On Trigger",
+    ],
     "{return_value: true}": "default",
   },
   "node onGetOutputs (optional outputs menu)": Object {
     "1": "default",
     "[list]": Array [
       "hooked",
+      "On Executed",
     ],
     "false": "default",
     "no result": Array [
       "opt",
+      "On Executed",
     ],
     "true": "default",
     "{return_value: 1}": "default",
     "{return_value: [list]}": Array [
       "hooked",
+      "On Executed",
     ],
-    "{return_value: null}": null,
+    "{return_value: null}": Array [
+      "On Executed",
+    ],
     "{return_value: true}": "default",
   },
   "node onGetPropertyInfo": Object {
@@ -249,11 +259,13 @@ Object {
     "false": "default",
     "no result": Array [
       "opt",
+      "On Trigger",
     ],
     "true": "default",
     "{return_value: 1}": "default",
     "{return_value: [list]}": Array [
       "From hook",
+      "On Trigger",
     ],
     "{return_value: null}": "throws TypeError",
     "{return_value: true}": "default",
@@ -264,11 +276,13 @@ Object {
     "false": "default",
     "no result": Array [
       "opt",
+      "On Executed",
     ],
     "true": "default",
     "{return_value: 1}": "default",
     "{return_value: [list]}": Array [
       "From hook",
+      "On Executed",
     ],
     "{return_value: null}": "throws TypeError",
     "{return_value: true}": "default",

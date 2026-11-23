@@ -896,22 +896,111 @@ export class LGraphNode {
             .filter((target_node) => target_node);
     }
 
+    /**
+     * Adds the built-in exec input `onTrigger` (an event there executes the node) unless it exists.
+     * It is appended, so the indices of the other slots never change.
+     * @returns {number} its index
+     */
     addOnTriggerInput() {
         var trigS = this.findInputSlot("onTrigger");
         if (trigS == -1) { // !trigS ||
-            this.addInput("onTrigger", LiteGraph.EVENT, {removable: true, nameLocked: true});
+            this.addInput("onTrigger", LiteGraph.EVENT, {removable: true, nameLocked: true, exec: "trigger"});
             return this.findInputSlot("onTrigger");
         }
         return trigS;
     }
 
+    /**
+     * Adds the built-in exec output `onExecuted` (fired after the node executed or ran an action)
+     * unless it exists. It is appended, so the indices of the other slots never change.
+     * @returns {number} its index
+     */
     addOnExecutedOutput() {
         var trigS = this.findOutputSlot("onExecuted");
         if (trigS == -1) { // !trigS ||
-            this.addOutput("onExecuted", LiteGraph.ACTION, {removable: true, nameLocked: true});
+            this.addOutput("onExecuted", LiteGraph.ACTION, {removable: true, nameLocked: true, exec: "executed"});
             return this.findOutputSlot("onExecuted");
         }
         return trigS;
+    }
+
+    /**
+     * The kind of a built-in exec slot: "trigger" for `onTrigger`, "executed" for `onExecuted`, else
+     * null. Slots made by addOnTriggerInput / addOnExecutedOutput carry `slot.exec`; slots saved before
+     * the marker are recognised by name, event type and the helpers' flags (`nameLocked`, `removable`),
+     * so an `onTrigger` input a node type declares itself (e.g. logic/IF) is not one.
+     * @param {object} slot
+     * @returns {"trigger"|"executed"|null}
+     */
+    static isExecSlot(slot) {
+        if (!slot) return null;
+        if (slot.exec === "trigger" || slot.exec === "executed") return slot.exec;
+        if ((slot.type !== LiteGraph.EVENT && slot.type !== LiteGraph.ACTION) || !slot.nameLocked || !slot.removable) return null;
+        return slot.name === "onTrigger" ? "trigger" : slot.name === "onExecuted" ? "executed" : null;
+    }
+
+    /** the exec-slot layout this node uses (LiteGraph.resolveExecSlotLayout), or null for slot rows */
+    getExecSlotLayout() {
+        return LiteGraph.resolveExecSlotLayout(this.exec_slot_layout ?? this.constructor.exec_slot_layout ?? LiteGraph.execSlotLayoutName());
+    }
+
+    /**
+     * The placement of an exec slot under the node's layout: `{x, y, dx, dy, dir}`, or null when the
+     * slot is not an exec slot of that side or the layout keeps it in the slot rows.
+     */
+    getExecSlotPlacement(is_input, slot) {
+        const kind = LGraphNode.isExecSlot(slot);
+        if (!kind || (kind === "trigger") !== !!is_input) return null;
+        const layout = this.getExecSlotLayout();
+        return (this.horizontal ? layout?.vertical : layout?.normal)?.[kind] ?? null;
+    }
+
+    /**
+     * Where an exec slot sits, relative to the node (title above y = 0), or null when it is in the
+     * slot rows. x anchors: left, center, right, pin (the title box); y anchors: top (of the title),
+     * title (its middle), body (the line between title and body), middle, bottom. `dx` / `dy` are
+     * canvas units, or "N%" of the width / body height.
+     * @param {boolean} is_input
+     * @param {number} slot_number
+     * @param {number[]} [out]
+     * @returns {number[]|null}
+     */
+    getExecSlotPos(is_input, slot_number, out = [0, 0]) {
+        const place = this.getExecSlotPlacement(is_input, (is_input ? this.inputs : this.outputs)?.[slot_number]);
+        if (!place) return null;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        const [w, h] = this.size;
+        const anchorsX = { left: 0, center: w * 0.5, right: w, pin: title * 0.5 };
+        const anchorsY = { top: -title, title: -title * 0.5, body: 0, middle: h * 0.5, bottom: h };
+        const offset = (value, size) => (typeof value === "string" && value.trim().endsWith("%") ? (parseFloat(value) / 100) * size : Number(value) || 0);
+        out[0] = (typeof place.x === "number" ? place.x : anchorsX[place.x] ?? 0) + offset(place.dx, w);
+        out[1] = (typeof place.y === "number" ? place.y : anchorsY[place.y] ?? 0) + offset(place.dy, h);
+        return out;
+    }
+
+    /** the direction links leave or enter a slot: an exec layout's `dir`, the slot's own `dir`, or the default */
+    getSlotDir(is_input, slot_number) {
+        const slot = (is_input ? this.inputs : this.outputs)?.[slot_number];
+        const dir = this.getExecSlotPlacement(is_input, slot)?.dir ?? slot?.dir;
+        if (dir) return dir;
+        if (this.horizontal) return is_input ? LiteGraph.UP : LiteGraph.DOWN;
+        return is_input ? LiteGraph.LEFT : LiteGraph.RIGHT;
+    }
+
+    /** true when an exec slot of this node is placed by its exec-slot layout (not in the rows) */
+    _hasPlacedExecSlot() {
+        for (const slot of this.inputs ?? []) if ((slot?.exec || slot?.name === "onTrigger") && this.getExecSlotPlacement(true, slot)) return true;
+        for (const slot of this.outputs ?? []) if ((slot?.exec || slot?.name === "onExecuted") && this.getExecSlotPlacement(false, slot)) return true;
+        return false;
+    }
+
+    /**
+     * true when a slot takes a row (or a column on a vertical node): not a placed exec slot and, unless
+     * `widgetInputs` is true, not a widget input (those sit on their widget's row)
+     */
+    _takesSlotRow(is_input, slot, widgetInputs = false) {
+        if (is_input && !widgetInputs && LGraphNode.isWidgetInputSlot(slot)) return false;
+        return !LGraphNode.isExecSlot(slot) || !this.getExecSlotPlacement(is_input, slot);
     }
 
     onAfterExecuteNode(param, options) {
@@ -1666,7 +1755,7 @@ export class LGraphNode {
 
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
-                if (LGraphNode.isWidgetInputSlot(input)) return maxWidth; // label shown by the widget
+                if (!this._takesSlotRow(true, input)) return maxWidth; // labelled by its widget, or a placed exec slot
                 const text = input.label || input.name || "";
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
@@ -1674,6 +1763,7 @@ export class LGraphNode {
         }
         if (this.outputs) {
             output_width = this.outputs.reduce((maxWidth, output) => {
+                if (!this._takesSlotRow(false, output)) return maxWidth; // a placed exec slot has no label
                 const text = output.label || output.name || "";
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
@@ -1734,9 +1824,9 @@ export class LGraphNode {
     getSlotsHeight(){
         // minimum height calculated by slots or 1
         const rowHeight = Math.max(
-            // widget inputs sit on their widget rows, not in the slot rows
-            this.inputs ? this.inputs.filter((input) => !LGraphNode.isWidgetInputSlot(input)).length : 1,
-            this.outputs ? this.outputs.length : 1,
+            // widget inputs sit on their widget rows and placed exec slots on the edges, not in the slot rows
+            this.inputs ? this.inputs.filter((input) => this._takesSlotRow(true, input)).length : 1,
+            this.outputs ? this.outputs.filter((output) => this._takesSlotRow(false, output)).length : 1,
             1,
         ) * LiteGraph.NODE_SLOT_HEIGHT + 10;
         // add margin (should this be always?)
@@ -2052,6 +2142,9 @@ export class LGraphNode {
      * @return {boolean}
      */
     isPointInside(x, y, margin = 0, skip_title) {
+        // exec slots placed on the edges stick out: half a slot around the node belongs to it
+        // (groups borrow this method, so the helper may be missing)
+        if (this._hasPlacedExecSlot?.()) margin += LiteGraph.NODE_SLOT_HEIGHT * 0.5;
         var margin_top = this.graph && this.graph.isLive() ? 0 : LiteGraph.NODE_TITLE_HEIGHT;
         if (skip_title) {
             margin_top = 0;
@@ -2439,7 +2532,7 @@ export class LGraphNode {
         }
 
         if (opts.createEventInCase && source_slotType === LiteGraph.EVENT) {
-            if (LiteGraph.do_add_triggers_slots) {
+            if (ExecutionEngine.execSlotsFor(this.graph)) {
                 source_slot = source_node.addOnExecutedOutput();
                 return source_node.connect(source_slot, this, slot);
             }
@@ -2513,12 +2606,13 @@ export class LGraphNode {
 
         if (target_slot === LiteGraph.EVENT) {
 
-            if (LiteGraph.do_add_triggers_slots) {
-                // search for first slot with event? :: NO this is done outside
-                // LiteGraph.log?.("Connect: Creating triggerEvent");
-                // force mode
-                target_node.changeMode(LiteGraph.ON_TRIGGER);
-                target_slot = target_node.findInputSlot("onTrigger");
+            if (ExecutionEngine.execSlotsFor(this.graph)) {
+                // ON_TRIGGER adds both exec slots; a type that refuses the mode keeps its mode and still
+                // gets onTrigger (an event on an input named onTrigger executes the node in any mode)
+                if (!target_node.changeMode(LiteGraph.ON_TRIGGER)) {
+                    LiteGraph.log_info("lgraphnode", "connect", "onTrigger added without changing the mode", target_node.mode_refusal);
+                }
+                target_slot = target_node.addOnTriggerInput();
                 LiteGraph.log_debug("lgraphnode","connect", "Created onTrigger slot",target_slot);
             }else{
                 return null; // -- break --
@@ -2820,6 +2914,13 @@ export class LGraphNode {
             return out;
         }
 
+        // an exec slot placed by the exec-slot layout (LiteGraph.Node.ExecSlotLayout)
+        if (num_slots > slot_number && this.getExecSlotPos(is_input, slot_number, out)) {
+            out[0] += this.pos[0];
+            out[1] += this.pos[1];
+            return out;
+        }
+
         // hard-coded pos
         if (
             is_input &&
@@ -2839,10 +2940,26 @@ export class LGraphNode {
             return out;
         }
 
+        // slots before this one that take a row (placed exec slots and widget inputs do not)
+        const list = is_input ? this.inputs : this.outputs;
+        let row = 0;
+        let rows = 0;
+        for (let i = 0; i < num_slots; i++) {
+            // a vertical node spreads widget inputs with the others, as before
+            if (!this._takesSlotRow(is_input, list[i], !!this.horizontal)) continue;
+            if (i < slot_number) row++;
+            rows++;
+        }
+
         // horizontal distributed slots
         if (this.horizontal) {
+            // an exec slot placed in the pin column keeps that column: the others share the rest
+            const reserved = rows < num_slots && list.some((slot) => {
+                const x = this.getExecSlotPlacement(is_input, slot)?.x;
+                return x === "pin" || x === "left";
+            }) ? LiteGraph.NODE_TITLE_HEIGHT : 0;
             out[0] =
-                this.pos[0] + (slot_number + 0.5) * (this.size[0] / num_slots);
+                this.pos[0] + reserved + (row + 0.5) * ((this.size[0] - reserved) / Math.max(rows, 1));
             if (is_input) {
                 out[1] = this.pos[1] - LiteGraph.NODE_TITLE_HEIGHT;
             } else {
@@ -2863,18 +2980,13 @@ export class LGraphNode {
                     return out;
                 }
             }
-            // rows count only ordinary inputs
-            let row = 0;
-            for (let i = 0; i < slot_number; i++) {
-                if (!LGraphNode.isWidgetInputSlot(this.inputs[i])) row++;
-            }
             out[1] = this.pos[1] + (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + (this.constructor.slot_start_y || 0);
             return out;
         }
         out[0] = this.pos[0] + this.size[0] + 1 - offset;
         out[1] =
             this.pos[1] +
-            (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
+            (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
             (this.constructor.slot_start_y || 0);
         return out;
     }

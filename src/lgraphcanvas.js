@@ -2,6 +2,7 @@ import { LiteGraph } from "./litegraph.js";
 import { RenderLink, LinkRouterRegistry } from "./linkrender.js";
 import { MiniMap } from "./minimap.js";
 import { CallbackHandler, installHooks } from "./callbackhandler.js";
+import { ExecutionEngine } from "./execution.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CanvasPointer } from "./canvaspointer.js";
@@ -647,6 +648,28 @@ export class LGraphCanvas {
      * @param {number|string} shape - e.g. LiteGraph.BOX_SHAPE or "box"
      * @param {number} fallback - returned for unknown values
      */
+    /**
+     * The way an arrow slot points, as a unit vector: along the flow (into the node for an input,
+     * out of it for an output). `dir` is where links attach (LiteGraph.UP/DOWN/LEFT/RIGHT); without one
+     * the arrow points right, as in the slot rows.
+     */
+    static slotFlow(is_input, dir) {
+        const out = { [LiteGraph.UP]: [0, -1], [LiteGraph.DOWN]: [0, 1], [LiteGraph.LEFT]: [-1, 0], [LiteGraph.RIGHT]: [1, 0] }[dir];
+        if (!out) return [1, 0];
+        return is_input ? [-out[0], -out[1]] : out;
+    }
+
+    /** adds an arrow path at pos pointing along flow (tip 8 ahead, base 4 behind, 12 wide) */
+    static pathSlotArrow(ctx, pos, flow) {
+        const [fx, fy] = flow;
+        const tip = [pos[0] + fx * 8, pos[1] + fy * 8 + 0.5];
+        const base = [pos[0] - fx * 4, pos[1] - fy * 4 + 0.5];
+        ctx.moveTo(tip[0], tip[1]);
+        ctx.lineTo(base[0] - fy * 6, base[1] + fx * 6);
+        ctx.lineTo(base[0] + fy * 6, base[1] - fx * 6);
+        ctx.closePath();
+    }
+
     static resolveShape(shape, fallback) {
         if (typeof shape === "number" && shape > 0) return shape;
         const named = {
@@ -3717,7 +3740,7 @@ export class LGraphCanvas {
                 var connInOrOut = this.connecting_output || this.connecting_input;
 
                 var connType = connInOrOut.type;
-                var connDir = connInOrOut.dir;
+                var connDir = this.connecting_node?.getExecSlotPlacement?.(!this.connecting_output, connInOrOut)?.dir ?? connInOrOut.dir;
                 if(connDir == null) {
                     if (this.connecting_output)
                         connDir = this.connecting_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT;
@@ -4437,9 +4460,11 @@ export class LGraphCanvas {
                     let pos = node.getConnectionPos(true, i, slot_pos);
                     pos[0] -= node.pos[0];
                     pos[1] -= node.pos[1];
-                    // widget inputs sit on their widget rows: they must not push the widgets down
+                    // widget inputs sit on their widget rows and placed exec slots on the edges: they must not push the widgets down
                     const is_widget_input = LiteGraph.LGraphNode.isWidgetInputSlot(slot);
-                    if (!is_widget_input && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                    const exec_place = node.getExecSlotPlacement?.(true, slot);
+                    const is_exec = !!LiteGraph.LGraphNode.isExecSlot(slot) || slot.name == "onTrigger";
+                    if (!is_widget_input && !exec_place && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
                         max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
                     }
 
@@ -4447,7 +4472,7 @@ export class LGraphCanvas {
 
                     if (slot_type == "array") {
                         slot_shape = LiteGraph.GRID_SHAPE; // place in addInput? addOutput instead?
-                    } else if (slot.name == "onTrigger" || slot.name == "onExecuted") {
+                    } else if (is_exec) {
                         slot_shape = LiteGraph.ARROW_SHAPE;
                     } else if(slot_type === LiteGraph.EVENT || slot_type === LiteGraph.ACTION) {
                         slot_shape = LiteGraph.BOX_SHAPE;
@@ -4472,10 +4497,7 @@ export class LGraphCanvas {
                             );
                         }
                     } else if (slot_shape === LiteGraph.ARROW_SHAPE) {
-                        ctx.moveTo(pos[0] + 8, pos[1] + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] + 6 + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] - 6 + 0.5);
-                        ctx.closePath();
+                        LGraphCanvas.pathSlotArrow(ctx, pos, LGraphCanvas.slotFlow(true, exec_place?.dir));
                     } else if (slot_shape === LiteGraph.GRID_SHAPE) {
                         ctx.rect(pos[0] - 4, pos[1] - 4, 2, 2);
                         ctx.rect(pos[0] - 1, pos[1] - 4, 2, 2);
@@ -4496,9 +4518,7 @@ export class LGraphCanvas {
                     ctx.fill();
 
                     // render name (a widget input is labelled by its widget)
-                    if (render_text && !is_widget_input
-                        && !(slot.name == "onTrigger" || slot.name == "onExecuted")
-                    ) {
+                    if (render_text && !is_widget_input && !is_exec) {
                         let text = slot.label != null ? slot.label : slot.name;
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
@@ -4530,7 +4550,9 @@ export class LGraphCanvas {
                     let pos = node.getConnectionPos(false, i, slot_pos);
                     pos[0] -= node.pos[0];
                     pos[1] -= node.pos[1];
-                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                    const exec_place = node.getExecSlotPlacement?.(false, slot);
+                    const is_exec = !!LiteGraph.LGraphNode.isExecSlot(slot) || slot.name == "onExecuted";
+                    if (!exec_place && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
                         max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
                     }
 
@@ -4548,7 +4570,7 @@ export class LGraphCanvas {
 
                     if (slot_type == "array") {
                         slot_shape = LiteGraph.GRID_SHAPE;
-                    } else if (slot.name == "onTrigger" || slot.name == "onExecuted") {
+                    } else if (is_exec) {
                         slot_shape = LiteGraph.ARROW_SHAPE;
                     } else if(slot_type === LiteGraph.EVENT || slot_type === LiteGraph.ACTION) {
                         slot_shape = LiteGraph.BOX_SHAPE;
@@ -4573,10 +4595,7 @@ export class LGraphCanvas {
                             );
                         }
                     } else if (slot_shape === LiteGraph.ARROW_SHAPE) {
-                        ctx.moveTo(pos[0] + 8, pos[1] + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] + 6 + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] - 6 + 0.5);
-                        ctx.closePath();
+                        LGraphCanvas.pathSlotArrow(ctx, pos, LGraphCanvas.slotFlow(false, exec_place?.dir));
                     } else if (slot_shape === LiteGraph.GRID_SHAPE) {
                         ctx.rect(pos[0] - 4, pos[1] - 4, 2, 2);
                         ctx.rect(pos[0] - 1, pos[1] - 4, 2, 2);
@@ -4605,9 +4624,7 @@ export class LGraphCanvas {
                         ctx.stroke();
 
                     // render output name
-                    if (render_text
-                        && !(slot.name == "onTrigger" || slot.name == "onExecuted")
-                    ) {
+                    if (render_text && !is_exec) {
                         let text = slot.label != null ? slot.label : slot.name;
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
@@ -5277,12 +5294,10 @@ export class LGraphCanvas {
                 if (!start_slot || !end_slot) {
                     continue;
                 }
-                var start_dir =
-                    start_slot.dir ||
-                    (start_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT);
-                var end_dir =
-                    end_slot.dir ||
-                    (node.horizontal ? LiteGraph.UP : LiteGraph.LEFT);
+                var start_dir = start_node.getSlotDir ? start_node.getSlotDir(false, start_node_slot)
+                    : start_slot.dir || (start_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT);
+                var end_dir = node.getSlotDir ? node.getSlotDir(true, i)
+                    : end_slot.dir || (node.horizontal ? LiteGraph.UP : LiteGraph.LEFT);
 
                 const points = [start_node_slotpos, ...reroutes.map((reroute) => reroute.pos), end_node_slotpos];
                 this.renderLinkPath(ctx, points, link, false, 0, null, start_dir, end_dir);
@@ -6841,9 +6856,9 @@ export class LGraphCanvas {
         }, entries);
         entries = CallbackHandler.objectOf(r, entries);
 
-        if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
+        if (ExecutionEngine.execSlotsFor(node.graph)) { // LiteGraph.Node.ExecSlots, the flag or the model
             if (node.findInputSlot("onTrigger") == -1) {
-                entries.push({content: "On Trigger", value: ["onTrigger", LiteGraph.EVENT, {nameLocked: true, removable: true, optional: true}], className: "event"}); // , opts: {}
+                entries.push({content: "On Trigger", value: ["onTrigger", LiteGraph.EVENT, {nameLocked: true, removable: true, optional: true, exec: "trigger"}], className: "event"}); // , opts: {}
             }
         }
 
@@ -6944,7 +6959,7 @@ export class LGraphCanvas {
         }, entries);
         entries = CallbackHandler.objectOf(r, entries);
 
-        if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
+        if (ExecutionEngine.execSlotsFor(node.graph)) { // LiteGraph.Node.ExecSlots, the flag or the model
             if (node.findOutputSlot("onExecuted") == -1) {
                 entries.push({
                     content: "On Executed",
@@ -6955,6 +6970,7 @@ export class LGraphCanvas {
                             nameLocked: true,
                             removable: true,
                             optional: true,
+                            exec: "executed",
                         },
                     ],
                     className: "event",
@@ -9473,8 +9489,11 @@ export class LGraphCanvas {
         //     }
         // }
 
-        if (LiteGraph.do_add_triggers_slots)
-            options[1].disabled = false;
+        if (ExecutionEngine.execSlotsFor(node.graph)) {
+            // the Outputs entry can add onExecuted (a getMenuOptions hook may give its own list)
+            const outputsItem = options.find((item) => item?.callback === LGraphCanvas.showMenuNodeOptionalOutputs);
+            if (outputsItem) outputsItem.disabled = false;
+        }
 
         r = node.processCallbackHandlers("getExtraMenuOptions",{
             def_cb: node.getExtraMenuOptions
