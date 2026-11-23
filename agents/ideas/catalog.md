@@ -350,3 +350,17 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | GRP-06 | Better drag and resize: handles on every edge and corner, snapping, fit to nodes, locked groups | P10 | core | M | ref | seed |
 | GRP-07 | Reroute audit: ComfyUI 0.4 and 1.0 round trips, legacy `Reroute` nodes, reroutes in subgraphs, tests | P10 | core | S | adapt | seed |
 | GRP-08 | Group actions: collapse, select contents, convert to subgraph, align contents | P10 | ext | M | ref | seed |
+
+## Human feedback: examples, nodes and authoring (`HMD`)
+
+[landscape/human-feedback-usability.md](landscape/human-feedback-usability.md). Direct human feedback of 2026-11-23; sketches for consideration, not accepted work.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| HMD-01 | Broader example coverage across features, settings, common nodes, packs and execution models ([card](cards/HMD-01-example-coverage.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-02 | Examples that explain features, settings and nodes through concise interactive presentation ([card](cards/HMD-02-explained-examples.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-03 | Everyday base-node upgrade, starting with boolean/toggle usability and consistent defaults ([card](cards/HMD-03-everyday-base-nodes.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | node | M | — | promoted |
+| HMD-04 | Adaptive watch displays for simple and structured values, type awareness and explicit validation ([card](cards/HMD-04-adaptive-watch.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P6 P9 P10 | node | L | — | promoted |
+| HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
+| HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | L | — | promoted |
+| HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
