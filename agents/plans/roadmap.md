@@ -37,6 +37,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
 | Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
+| Track | Node pin, modes and exec slots | **In progress** ([plan](2026-11-23-node-pin-modes-exec-slots.md)): A (mode 4 = BYPASS, ON_REQUEST = 5, [decision 0004](../memories/decisions/0004-mode-4-bypass.md)) merged into `LG/dev` from `LG/dev_HMD_modes`; B (exec slots) and C (pin, graph status) next; D (debugger notes) proposed as its own session; see [Node pin track](#node-pin-modes-and-exec-slots-track) |
 | Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **Done**, merged into `LG/dev` from `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md), [record](../executions/2026-11-23-launcher-and-bun.md)); see [Launcher track](#launcher-track) |
 | Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Ready**: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); release checks rerun on `LG/dev` @ `ce8c231` after the [audit fixes](../executions/2026-11-23-audit-fixes.md) (see the plan's History); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
@@ -225,6 +226,31 @@ Follow-ups: movable, dockable and configurable panels (X-13), multi-node editing
 - The editor server serves `/docs`.
 
 Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-09. Candidates for later plans from the same findings (C-1 to C-5): ComfyUI groups and reroutes, group UI, a ComfyUI custom-node survey, a compatibility charter, concept docs from a survey of visual programming systems.
+
+## Node pin, modes and exec slots track
+
+[Plan](2026-11-23-node-pin-modes-exec-slots.md) accepted 2026-11-23 from the user's direction of that day. It is parallel work on `LG/dev_HMD_*` branches.
+
+**A, modes (done, `LG/dev_HMD_modes`):**
+- **Numbering:** `BYPASS = 4` (as in ComfyUI) and `ON_REQUEST = 5`, with [decision 0004](../memories/decisions/0004-mode-4-bypass.md) superseding D5.
+- **Bypass execution:** pass-through via `ExecutionEngine.passThrough`.
+- **Migration:**
+  - `LGraph.migrateModes` runs on load, keyed on the `litegraph_version` / `litegraph_modes` markers;
+  - the setting `LiteGraph.Compat.UnmarkedMode4` covers unmarked files;
+  - `tools/migrate-modes.mjs` rewrites files;
+  - the examples and fixtures are migrated.
+- **ComfyUI interop:** mode 4 is native.
+
+**B, exec slots (next, `LG/dev_HMD_exec_slots`):**
+- the `onTrigger` / `onExecuted` slots placed by anchor and offset (`"rows"` or `"edges"`);
+- the model rule `exec_slots`, on for `ancestors` (FLW-07).
+
+**C, pin (`LG/dev_HMD_node_pin`):**
+- core pin geometry, hit test and style registry;
+- the `node_pin` extension: mode and state styles, quick menu, commands;
+- the `graph_status` extension: model chip.
+
+**D, debugger (deferred):** a research record and the FLW-16 card.
 
 ## Deferred (each needs its own proposal)
 
