@@ -22,6 +22,14 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
   * Events go on to its event outputs at once.
   * It is valid under every execution model.
   * `ExecutionEngine.passThrough` and `bypassSource` implement it.
+* **Exec slot layouts:** the built-in `onTrigger` / `onExecuted` slots can sit on the node edges.
+  * Setting `LiteGraph.Node.ExecSlotLayout`: `rows` is the default, as before. `edges` puts them on the line between title and body at both ends; on vertical nodes they go above the pin and at the bottom.
+  * Custom layouts use anchors plus offsets (`LiteGraph.registerExecSlotLayout`, `node.exec_slot_layout`).
+  * One geometry is used by links, rows, sizes and hit tests: `LGraphNode.getExecSlotPos`, `getSlotDir`, `isExecSlot`.
+  * Slot indices never change.
+* **Exec slots per execution model:** dropping an event link on a node creates its exec slots under `ancestors` (model rule `exec_slots`).
+  * The setting `LiteGraph.Node.ExecSlots` (`auto` / `on` / `off`) overrides the rule, and so does an assigned `LiteGraph.do_add_triggers_slots`.
+  * `ExecutionEngine.execSlotsFor(graph)` resolves it.
 * **Mode migration:** `LGraph.migrateModes`, the setting `LiteGraph.Compat.UnmarkedMode4`, and `tools/migrate-modes.mjs` (`--check`, `--unmarked`). The examples and test fixtures are migrated.
 * **The editor server serves `/docs`** (the generated API and the reference pages) and resolves its paths from the repository root, so it starts from any working directory.
 
@@ -32,6 +40,13 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
   * ON_REQUEST exports as ALWAYS with `litegraph_mode: 5`;
   * an older `litegraph_mode: 4` marker still reads as ON_REQUEST.
 * **Bypassed nodes get no `onStart`**, like NEVER nodes. **`checkExecution` skips them.**
+* **`LiteGraph.do_add_triggers_slots` is unassigned by default**, so the document's model decides; the editor no longer sets it to false.
+  * A type that refuses ON_TRIGGER still gets `onTrigger` when an event link is dropped on it; before, the drop failed silently.
+  * Slots made by the helpers carry `exec: "trigger" | "executed"`.
+
+## Fixed
+
+* **The node menu no longer throws** when exec slots are on and a `getMenuOptions` hook returns its own short list (it set `options[1].disabled`).
 * **Node types declared `runtime = "node"` (or `executionEnvironment = "node"`) also run on Bun**, which implements the Node.js APIs they use; before, they were disabled with "cannot run in bun". A `"bun"` declaration still means Bun only. `LGraphNode.runtimeMatches(declared, runtime)` holds the rule.
 
 # 0.18.0-dev.2 (2026-11-23): dev pre-release

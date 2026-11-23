@@ -112,6 +112,9 @@ Listed in build order (`build.py` `lib_js_files`):
     - It takes its step turn and is pulled through.
   - **ON_REQUEST (5; 4 before mode numbering 2):** under `legacy`, runs only through `refreshAncestors` (`getInputData(slot, true, true)` or the `refreshAncestorsOn*` flags); under the models, through the engine's pulls.
   - **Mode numbering:** `LGraph.migrateModes`, called by root `configure`, renumbers documents from before numbering 2 by their `litegraph_version` / `litegraph_modes` markers ([decision 0004](../decisions/0004-mode-4-bypass.md)).
+- **Exec slots** (`onTrigger` / `onExecuted`, `LGraphNode.isExecSlot`):
+  - **Placement:** they are appended and placed by the exec-slot layout (`LiteGraph.execSlotLayouts`, setting `LiteGraph.Node.ExecSlotLayout`). `getExecSlotPos` feeds `getConnectionPos`, the row counts, `getSlotsHeight`, `computeSize`, `getSlotDir` (link curves) and `isPointInside`, which adds a half-slot margin.
+  - **Creation:** `ExecutionEngine.execSlotsFor(graph)` decides whether an event drop creates them: the setting `LiteGraph.Node.ExecSlots`, then an assigned `do_add_triggers_slots`, then the model rule `exec_slots`, which is on for `ancestors`.
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
 - **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
 - **Hooks and typed events share one core (Wave 7):**

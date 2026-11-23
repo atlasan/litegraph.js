@@ -200,6 +200,13 @@ class Player {
 ```
 
 - **Delivery** follows the document's model: immediate under `ancestors` and `event` (the target's ON_REQUEST inputs pulled first under `ancestors`); under `step` and `strict`, an action to a node that has an `onExecute` waits for its turn in the next frame (`graph.stop({dropQueued: true})` clears that queue). An input named `onTrigger` (or an ON_TRIGGER node without `onAction`) runs the node's `onExecute`.
+- **Exec slots** are any node's built-in `onTrigger` input (an event there runs `onExecute`) and `onExecuted` output (fired after the node executed or ran an action).
+  - **How they are made:** `node.addOnTriggerInput()` / `addOnExecutedOutput()` append them, so the indices of the other slots never change, and mark them with `slot.exec`.
+  - **Creating them on drop:** dropping an event link on a node's body creates them and switches the node to ON_TRIGGER (a type that refuses that mode keeps its mode and still gets `onTrigger`). This happens under the `ancestors` model (the model rule `exec_slots`), or when `LiteGraph.do_add_triggers_slots` is assigned true. The setting `LiteGraph.Node.ExecSlots` (`auto` / `on` / `off`) overrides both.
+  - **Where they sit:** the setting `LiteGraph.Node.ExecSlotLayout`.
+    - `rows` (default): in the slot rows, as before.
+    - `edges`: arrows without labels on the line between title and body, at both ends; on a vertical node (`horizontal` slots), `onTrigger` above the pin and `onExecuted` at the bottom in the same column. The other slots keep their rows.
+    - Your own layout: `LiteGraph.registerExecSlotLayout(name, {normal, vertical})`, where each slot is `{x, y, dx, dy, dir}`. Anchors are `left` / `center` / `right` / `pin` and `top` / `title` / `body` / `middle` / `bottom`; offsets are in canvas units or `"N%"`. `LiteGraph.exec_slot_layout`, `node.exec_slot_layout` or a class's static `exec_slot_layout` pick one.
 - **Subgraphs:** an event entering a subgraph node sees fresh interface data, and a subgraph node in any mode but NEVER delivers its inner events (bounded by `LiteGraph.Execution.MaxEventPasses` and `LiteGraph.subgraph_max_depth`).
 - **Refused events** emit `event-dropped {node, path, reason, setting?, message}` on the root graph (when someone listens) and warn once per node: `reentry`, `refreshing`, `no-handler`, `mode` (a NEVER target), `stopped-queue`, `max-passes`, `max-depth` (`LiteGraph.Execution.MaxEventDepth`, 256), `cycle`, `once-per-frame`.
 - **Errors** in an event chain outside a step are reported like errors in a step (`node-error` with the path, an `error` state); outside `legacy` they are rethrown only when `LiteGraph.throw_errors`.

@@ -285,7 +285,7 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 | FLW-04 | Property and widget version in the memo key | P10 | core | S | — | investigated | Audit finding 2; FLW-01 card |
 | FLW-05 | Lifecycle event nodes: `on_start`, `on_tick(dt, time)`, `on_stop`, `on_pause`/`on_resume` (KHR names as aliases) ([card](cards/FLW-05-lifecycle-and-custom-events.md)) | P3 P4 P9 | node | S | ref | sketched | Audit finding 6; 3D-01 |
 | FLW-06 | Custom events and dispatchers: `custom_event`, `call_event`, `dispatcher` (bind, unbind, unbind all, call), `bind_event`, an "Assign" helper | P3 P9 | node | M | ref | sketched | Audit finding 7; FLW-05 card; 3D-01 |
-| FLW-07 | Exec pins per document (`onTrigger`/`onExecuted`), set by the profile instead of a global flag | P3 P9 | core | S | — | sketched | Audit finding 8; FLW-08 |
+| FLW-07 | Exec pins per document (`onTrigger`/`onExecuted`), set by the profile instead of a global flag | P3 P9 | core | S | — | promoted | Audit finding 8; FLW-08 |
 | FLW-08 | Graph profiles: model + mode defaults + UI + packs + palette per document (mixed, blueprint, dataflow, realtime, stepped, reactive) ([card](cards/FLW-08-graph-profiles.md)) | P10 P2 P3 P4 P9 | core | M | ref | sketched | X-12 (per document); decision 0002 |
 | FLW-09 | Hot and cold data inputs, plus a Trigger node for ordered fan-out | P4 P9 | core | M | adapt | seed | Pd (BSD-3) |
 | FLW-10 | Latent nodes: a resumable line (`setDelay`/`cancelDelay`, async actions with success and fail outputs) | P3 P8 | core | M | ref | seed | `events/delay`; KHR `flow/setDelay` |
