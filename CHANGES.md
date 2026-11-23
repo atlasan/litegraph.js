@@ -1,7 +1,30 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
-# Unreleased: panels and widgets
+# 0.18.0-dev.2 (2026-11-23): dev pre-release
+
+This is a pre-release for testers, to be tagged `v0.18.0-dev.2`; nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track and the panels track (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.
+
+**Upgrade notes:**
+- **Execution model:** new graphs (`new LGraph()` and new editor documents) run under the `ancestors` execution model: an action reaches a node with an `onExecute` at once, and ON_REQUEST inputs are pulled before it. Opt out with `LiteGraph.default_execution_model = "legacy";`. Documents saved without `config.execution` load as `legacy`, and projects that assign a legacy flag get `legacy` automatically.
+- **Deprecated legacy flags:** `use_deferred_actions`, `refreshAncestorsOnActions`, `refreshAncestorsOnTriggers`, `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction` and `preventAncestorRecalculation` still work for `legacy` documents and log once when assigned. Removal no earlier than 0.20.
+- **Hook errors:** a throwing hook handler no longer stops the chain. The other handlers and the default `onX` run, then the first error is rethrown to the caller (Wave 7).
+- **`onShowNodePanel` returning `false`** no longer suppresses the built-in node panel; return a truthy value (such as `true`) to replace it.
+- **New APIs:** `LiteGraph.events` and the listener options (`onHook`, `once`, `signal`, `"*"`, `priority`, `ctx.listen`); execution models (`graph.setExecutionModel`, `LiteGraph.registerExecutionModel`) and node execution declarations; value types (`LiteGraph.valueTypes`, `registerValueType`) and the panels (`registerPanelEditor`, `registerPanelSection`, `PanelBuilder`).
+- **Optional dependencies:** the package has no required dependencies. Network and system integrations are optional, and a missing one is reported with its install command.
+- **From 0.18.0-dev.1** (below): subgraphs are saved as definitions (`LiteGraph.subgraph_format = "inline"` for older builds); full bundles no longer turn on `allow_scripts`, debug logging or the editor UX flags; exports list each bundle by path; apps live in `apps/`; some node types were renamed, with automatic replacements on load.
+
+# 0.18.0-dev.2: pre-release fixes
+
+Plan: `agents/plans/2026-11-23-pre-release-0.18.0-dev.2.md`; audit: `agents/audits/2026-11-23-state-audit.md`.
+
+## Fixed
+
+* **The editor turned scripts back on after its presets (D-1):** `apps/editor/js/code.js` set `LiteGraph.allow_scripts = true` after `js/defaults.js`, overriding the `mobile` and `event_based` presets. `js/defaults.js` is now the only place (on for the default page, off for those presets).
+* **`apps/editor/editor_event_based.html` did not load (D-2):** it loaded ES modules as classic scripts and a missing jQuery file. It now loads modules like `index.html`, with the `event_based` preset.
+* **The generated API docs (`docs/api`) were stale (D-3):** regenerated with `npm run docs`; they now cover every `src/` module and the execution models. The `LGraphCanvas` class comment is attached to the class again, so its page is generated.
+
+# 0.18.0-dev.2: panels and widgets
 
 Plan: `agents/plans/2026-11-22-panels-options-node-details.md`.
 
@@ -27,7 +50,7 @@ Plan: `agents/plans/2026-11-22-panels-options-node-details.md`.
 * The property dialog refused `vec3`, `color`, `int` and the other value types ("unknown type").
 * Node panel edits used `beforeChange`/`afterChange` without a transaction. They are now one undo step each, and those hooks still fire.
 
-# Unreleased: Wave 7 (event integration)
+# 0.18.0-dev.2: Wave 7 (event integration)
 
 Plan: `agents/plans/2026-11-22-event-integration.md`; audit: `agents/audits/2026-11-22-event-handling.md`.
 
@@ -68,7 +91,7 @@ Hooks (CallbackHandler) and typed events now run on one listener core (`Listener
 * **A `once` / `call_once` handler could run twice** when a handler dispatched the same name again (hooks and typed events).
 * **Removed listeners stayed attached to their `AbortSignal`**, so a long-lived signal kept them alive.
 
-# Unreleased: flows track (node reference, declarations, examples)
+# 0.18.0-dev.2: flows track (node reference, declarations, examples)
 
 Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
 
@@ -96,7 +119,7 @@ Plan: `agents/plans/2026-11-22-flows-reference-examples.md`.
 * **Examples test** (`tools/tests/examples.test.mjs`): every non-wip example loads without missing nodes and checks clean under `ancestors` after the model's modes are applied. It runs 5 steps without errors or dropped events, and its link data matches `tools/fixtures/examples-outputs.json`. Network and audio examples load and check only.
 * **Catalog test** (`tools/tests/node-catalog.test.mjs`): every bundled type is created (browser types with jsdom, Web Audio and WebGL stand-ins), described, in a described pack, and listed once in the reference.
 
-# Unreleased: Wave 6 (events and execution models)
+# 0.18.0-dev.2: Wave 6 (events and execution models)
 
 Plan: `agents/plans/2026-11-22-events-execution.md`.
 
@@ -138,9 +161,9 @@ Plan: `agents/plans/2026-11-22-events-execution.md`.
 * **Subgraph nodes in any mode deliver inner events (B6)** under the `step` and `strict` models (and `ancestors` / `event`, which deliver immediately); events entering a subgraph see fresh interface data.
 * A forced pull (`getInputData(slot, true, true)`) no longer logs a "CHECK THIS" warning on every call; the unused `LiteGraph.allowMultiOutputForEvents` flag is gone (B16; `allow_multi_output_for_events` is the real one).
 
-# 0.18.0-dev.1 (2026-11-22): first dev pre-release
+# 0.18.0-dev.1 (2026-11-22): never tagged, superseded by 0.18.0-dev.2
 
-This is a pre-release for testers, tagged `v0.18.0-dev.1`; nothing is published to npm. It contains roadmap Waves 0–5 (sections below, newest first):
+This pre-release was prepared but never pushed or tagged; its content ships in 0.18.0-dev.2. It contains roadmap Waves 0–5 (sections below, newest first):
 - the runner lockdown;
 - the platform layer;
 - authoring ports from the MIT standalone;
