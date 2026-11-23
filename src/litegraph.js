@@ -240,7 +240,20 @@ export class LiteGraphClass {
     alt_drag_do_clone_nodes = false; // [true!] very handy, ALT click to clone and drag the new node
     alt_shift_drag_connect_clone_with_input = true; // [true!] very handy, when cloning, keep input connections with SHIFT
 
-    do_add_triggers_slots = false; // [true!] will create and connect event slots when using action/events connections, !WILL CHANGE node mode when using onTrigger (enable mode colors), onExecuted does not need this
+    /**
+     * Create the exec slots (`onTrigger`, `onExecuted`) when an event link is dropped on a node, and
+     * switch the target to ON_TRIGGER. Unassigned (the default), the setting LiteGraph.Node.ExecSlots
+     * and the document's execution model decide (ExecutionEngine.execSlotsFor: on under `ancestors`);
+     * an assigned value wins over the model.
+     */
+    get do_add_triggers_slots() { return this._do_add_triggers_slots ?? false; }
+    set do_add_triggers_slots(value) { this._do_add_triggers_slots = value === undefined ? undefined : !!value; }
+
+    /**
+     * The exec-slot layout for every node, a name (LiteGraph.execSlotLayouts) or a spec; when null
+     * (the default) the setting LiteGraph.Node.ExecSlotLayout decides ("rows" unless changed).
+     */
+    exec_slot_layout = null;
 
     allow_multi_output_for_events = true; // [false!] being events, it is strongly reccomended to use them sequentially, one by one
 
@@ -435,6 +448,55 @@ export class LiteGraphClass {
             if (!base_class) continue;
             base_class.execution = { ...(base_class.execution ?? {}), ...execution };
             this.refreshNodeDefinition(type);
+        }
+    }
+
+    /**
+     * Named exec-slot layouts. A layout places the built-in `onTrigger` and `onExecuted` slots
+     * (LGraphNode.getExecSlotPos) instead of putting them in the slot rows:
+     * `{normal: {trigger, executed}, vertical: {trigger, executed}}`, each `{x, y, dx, dy, dir}`
+     * (vertical: nodes with `horizontal` slots, on top and bottom). "rows" is the classic look.
+     */
+    execSlotLayouts = new Map([
+        ["edges", Object.freeze({
+            // on the line between title and body, at both ends; arrows point the way the flow goes
+            normal: { trigger: { x: "left", y: "body", dir: 3 /* LEFT */ }, executed: { x: "right", y: "body", dir: 4 /* RIGHT */ } },
+            // above the pin, and at the bottom at the same offset
+            vertical: { trigger: { x: "pin", y: "top", dir: 1 /* UP */ }, executed: { x: "pin", y: "bottom", dir: 2 /* DOWN */ } },
+        })],
+    ]);
+
+    /**
+     * Registers a named exec-slot layout (see execSlotLayouts), for the setting LiteGraph.Node.ExecSlotLayout,
+     * `LiteGraph.exec_slot_layout`, `node.exec_slot_layout` or a node class's static `exec_slot_layout`.
+     * @returns {() => void} disposer
+     */
+    registerExecSlotLayout(name, spec) {
+        if (typeof name !== "string" || !name || name === "rows") throw new TypeError("exec slot layout: a name other than \"rows\" is required");
+        if (!spec || typeof spec !== "object") throw new TypeError(`exec slot layout ${name}: a spec object is required`);
+        const previous = this.execSlotLayouts.get(name);
+        this.execSlotLayouts.set(name, spec);
+        return () => {
+            if (this.execSlotLayouts.get(name) !== spec) return;
+            if (previous) this.execSlotLayouts.set(name, previous);
+            else this.execSlotLayouts.delete(name);
+        };
+    }
+
+    /** @returns {object|null} the layout spec for a name or spec; null for "rows", null or unknown names */
+    resolveExecSlotLayout(nameOrSpec) {
+        if (!nameOrSpec || nameOrSpec === "rows") return null;
+        if (typeof nameOrSpec === "object") return nameOrSpec;
+        return this.execSlotLayouts.get(nameOrSpec) ?? null;
+    }
+
+    /** the layout every node uses unless it has its own: `exec_slot_layout`, else the setting */
+    execSlotLayoutName() {
+        if (this.exec_slot_layout) return this.exec_slot_layout;
+        try {
+            return this.settings?.get("LiteGraph.Node.ExecSlotLayout") ?? "rows";
+        } catch {
+            return "rows";
         }
     }
 
@@ -728,6 +790,8 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });
             this.settings.define({ id: "LiteGraph.Execution.AllowAnyMode", name: "Allow node modes their type declares invalid", default: false });
+            this.settings.define({ id: "LiteGraph.Node.ExecSlots", name: "Create onTrigger / onExecuted slots when an event link is dropped on a node", type: "combo", options: ["auto", "on", "off"], default: "auto", tooltip: "auto: as the document's execution model says (on under ancestors), unless code assigned LiteGraph.do_add_triggers_slots." });
+            this.settings.define({ id: "LiteGraph.Node.ExecSlotLayout", name: "Where the onTrigger / onExecuted slots sit", type: "combo", options: ["rows", "edges"], default: "rows", tooltip: "rows: in the slot rows, as before. edges: on the line between title and body, at both ends (vertical nodes: above the pin and at the bottom)." });
             this.settings.define({ id: "LiteGraph.Compat.UnmarkedMode4", name: "Mode 4 in documents without a LiteGraph version means", type: "combo", options: ["bypass", "on_request"], default: "bypass", tooltip: "bypass: as in ComfyUI and current LiteGraph. on_request: for files saved by LiteGraph builds older than 2026-11-18, where mode 4 was On Request (tools/migrate-modes.mjs rewrites such files)." });
             this.settings.define({ id: "LiteGraph.Node.ExecutionBadge", name: "Show execution problems (graph.checkExecution) as node badges", default: false });
             // execution problems (graph.checkExecution), refreshed at most twice a second per document
