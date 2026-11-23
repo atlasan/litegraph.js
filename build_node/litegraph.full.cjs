@@ -648,13 +648,16 @@ class LiteGraphClass {
     EVENT = -1; // for outputs
     ACTION = -1; // for inputs
 
-    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "On Request"]; // helper
-    NODE_MODES_COLORS = ["#666", "#422", "#333", "#224", "#626"]; // use with node_box_coloured_by_mode
+    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "Bypass", "On Request"]; // names by mode number
+    NODE_MODES_COLORS = ["#666", "#422", "#333", "#224", "#535", "#626"]; // use with node_box_coloured_by_mode
     ALWAYS = 0;
     ON_EVENT = 1;
     NEVER = 2;
     ON_TRIGGER = 3;
-    ON_REQUEST = 4; // used from event-based nodes, where ancestors are recursively executed on needed
+    BYPASS = 4; // passes inputs to outputs of a matching type and forwards events; 4 as in ComfyUI
+    ON_REQUEST = 5; // runs only when a consumer needs its data (pull); was 4 before mode numbering 2
+    /** the mode numbering this runtime writes as `litegraph_modes` (2: BYPASS = 4, ON_REQUEST = 5) */
+    MODES_VERSION = 2;
 
     UP = 1;
     DOWN = 2;
@@ -1364,6 +1367,14 @@ class LiteGraphClass {
                 id: "LiteGraph.Execution.AllowAnyMode",
                 name: "Allow node modes their type declares invalid",
                 default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Compat.UnmarkedMode4",
+                name: "Mode 4 in documents without a LiteGraph version means",
+                type: "combo",
+                options: ["bypass", "on_request"],
+                default: "bypass",
+                tooltip: "bypass: as in ComfyUI and current LiteGraph. on_request: for files saved by LiteGraph builds older than 2026-11-18, where mode 4 was On Request (tools/migrate-modes.mjs rewrites such files)."
             });
             this.settings.define({
                 id: "LiteGraph.Node.ExecutionBadge",
@@ -2858,8 +2869,8 @@ class ExecutionEngine {
     // ---- pull ------------------------------------------------------------------------------------
 
     /**
-     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST nodes, and an
-     * ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
+     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST and BYPASS nodes,
+     * and an ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
      */
     static requestOrigins(node) {
         const graph = node.graph;
@@ -2873,7 +2884,8 @@ class ExecutionEngine {
             // would be dropped as "refreshing" (audit finding 10); both give their value at their turn
             const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks &&
                 !this.emitsEvents(origin);
-            if (origin.mode === LiteGraph.ON_REQUEST || firstValue) origins.push(origin);
+            // a bypassed node is a wire: pulling through it refreshes what it passes on
+            if (origin.mode === LiteGraph.ON_REQUEST || origin.mode === LiteGraph.BYPASS || firstValue) origins.push(origin);
         }
         return origins;
     }
@@ -2945,6 +2957,13 @@ class ExecutionEngine {
             const call = {
                 ...options
             };
+            if (target.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now, in every model
+                call.action_call ??= `${node.id}_act_${LiteGraph.uuidv4()}`;
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
+                target.actionDo(input?.name, param, call, link.target_slot);
+                continue;
+            }
             const asTrigger = input?.name === "onTrigger" || (target.mode === LiteGraph.ON_TRIGGER && !target.onAction);
             if (asTrigger) {
                 call.action_call ??= `${node.id}_trigg_${LiteGraph.uuidv4()}`;
@@ -3039,6 +3058,51 @@ class ExecutionEngine {
         }
     }
 
+    // ---- bypass ------------------------------------------------------------------------------------
+
+    /**
+     * What a BYPASS node does instead of its own code: every data output takes the value of the
+     * input it maps to (bypassSource), or undefined; with `events`, an event that reached the node
+     * is forwarded to its connected event outputs.
+     * @param {object} node
+     * @param {{events?: boolean, param?: any, options?: object}} [run]
+     */
+    static passThrough(node, {
+        events = false,
+        param,
+        options
+    } = {}) {
+        const outputs = node.outputs ?? [];
+        for (let index = 0; index < outputs.length; index++) {
+            if (this.isEventType(outputs[index].type)) continue;
+            const source = this.bypassSource(node, index);
+            node.setOutputData(index, source < 0 ? undefined : node.getInputData(source));
+        }
+        if (!events) return;
+        for (let index = 0; index < outputs.length; index++) {
+            if (this.isEventType(outputs[index].type) && outputs[index].links?.length) node.triggerSlot(index, param, null, {
+                ...options
+            });
+        }
+    }
+
+    /**
+     * The input a bypassed node passes to a data output: the input at the same index when its type
+     * fits, otherwise the first data input whose type fits; -1 when none does.
+     */
+    static bypassSource(node, outputIndex) {
+        const output = node.outputs?.[outputIndex];
+        const inputs = node.inputs ?? [];
+        if (!output) return -1;
+        const fits = (input) => !!input && !this.isEventType(input.type) && LiteGraph.isValidConnection(input.type, output.type);
+        if (fits(inputs[outputIndex])) return outputIndex;
+        return inputs.findIndex(fits);
+    }
+
+    static isEventType(type) {
+        return type === LiteGraph.EVENT || type === LiteGraph.ACTION;
+    }
+
     // ---- node declarations (static def.execution) -------------------------------------------------
 
     /**
@@ -3079,15 +3143,21 @@ class ExecutionEngine {
         return !!this.setting("LiteGraph.Execution.AllowAnyMode", false);
     }
 
-    /** the modes a node (or type) may use under a model; NEVER is always allowed */
+    /** the modes a node (or type) may use under a model; NEVER and BYPASS are always allowed */
     static validModes(nodeOrType, modelName) {
-        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST];
+        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.BYPASS, LiteGraph.ON_REQUEST];
         const decl = this.declarationOf(nodeOrType);
         if (!decl) return all;
         const per = decl.models?.[modelName];
-        if (per === false) return [LiteGraph.NEVER];
-        const modes = per?.modes ?? decl.modes ?? all;
-        return modes.includes(LiteGraph.NEVER) ? [...modes] : [...modes, LiteGraph.NEVER];
+        const modes = per === false ? [] : [...(per?.modes ?? decl.modes ?? all)];
+        for (const mode of [LiteGraph.NEVER, LiteGraph.BYPASS])
+            if (!modes.includes(mode)) modes.push(mode);
+        return modes;
+    }
+
+    /** true for modes in which the node's own code does not run (NEVER, BYPASS) */
+    static isInactiveMode(mode) {
+        return mode === LiteGraph.NEVER || mode === LiteGraph.BYPASS;
     }
 
     /** true when the node may use the mode under its graph's model (or LiteGraph.Execution.AllowAnyMode is on) */
@@ -3122,7 +3192,7 @@ class ExecutionEngine {
         const visit = (g) => {
             for (const node of g._nodes) {
                 const mode = this.declaredDefaultMode(node, rules);
-                if (mode != null && mode !== node.mode && node.mode !== LiteGraph.NEVER) out.push({
+                if (mode != null && mode !== node.mode && !this.isInactiveMode(node.mode)) out.push({
                     node,
                     mode
                 });
@@ -3153,7 +3223,7 @@ class ExecutionEngine {
         const visit = (g, parentMode) => {
             for (const node of g._nodes) {
                 const decl = this.declarationOf(node);
-                if (node.mode !== LiteGraph.NEVER) {
+                if (!this.isInactiveMode(node.mode)) {
                     if (decl?.models?.[model] === false) add(node, "invalid-model", `${node.type}: not valid under the "${model}" execution model`);
                     else if (!this.validModes(node, model).includes(node.mode)) add(node, "invalid-mode", this.modeRefusal(node, node.mode, root));
                     if (decl?.ticks && (node.mode !== LiteGraph.ALWAYS || (parentMode != null && parentMode !== LiteGraph.ALWAYS))) {
@@ -3169,7 +3239,7 @@ class ExecutionEngine {
                         add(node, "pure-always", `${node.type}: a pure node in ALWAYS mode runs every frame; ON_REQUEST runs it only when needed`);
                     }
                 }
-                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, node.mode === LiteGraph.NEVER ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, this.isInactiveMode(node.mode) ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
             }
         };
         visit(root, null);
@@ -5625,7 +5695,7 @@ class LGraph {
     static STATUS_RUNNING = 2;
 
     /** top-level document fields modelled by this runtime; any other loaded field is preserved verbatim on serialize */
-    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version"];
+    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version", "litegraph_modes"];
 
     /** fresh id counters; last_node_id/last_link_id are accessors over these */
     static createState() {
@@ -6369,7 +6439,8 @@ class LGraph {
                     const node = nodes[index];
                     if (node.graph !== this) continue;
                     if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
-                    if (node.mode === LiteGraph.ALWAYS && node.doExecute) {
+                    // a BYPASS node takes the turn too, so the values it passes on stay current
+                    if ((node.mode === LiteGraph.ALWAYS || node.mode === LiteGraph.BYPASS) && node.doExecute) {
                         if (rules.frame_pull) ExecutionEngine.pull(node);
                         this._step_node = node; // its own turn: runStep reports it below
                         try {
@@ -8529,6 +8600,7 @@ class LGraph {
             extra: this._serializeExtra(),
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
+            litegraph_modes: LiteGraph.MODES_VERSION, // mode numbering (2: BYPASS = 4, ON_REQUEST = 5)
             state: {
                 ...this.state
             }, // all id counters (nodes, links, groups, reroutes)
@@ -8878,6 +8950,68 @@ class LGraph {
         }
     }
 
+    /**
+     * Brings a document's node modes to the current numbering (BYPASS = 4, ON_REQUEST = 5), in place:
+     * the root, nested subgraphs and subgraph definitions. Which numbering a document uses:
+     * - `litegraph_modes` 2 or more: current, nothing to do;
+     * - `litegraph_version` without `litegraph_modes`: written by this library before the change,
+     *   where 4 was ON_REQUEST: 4 becomes 5;
+     * - neither (ComfyUI, upstream litegraph, other editors): 4 is BYPASS, as written, unless the
+     *   setting `LiteGraph.Compat.UnmarkedMode4` (or `options.unmarked`) is "on_request".
+     * In an old document, nodes listed in `extra.comfy_bypassed` (ComfyUI imports kept BYPASS as
+     * NEVER) become BYPASS and the list is removed. The document is then marked with the current
+     * `litegraph_modes`.
+     * @param {object} data - a graph document
+     * @param {{unmarked?: "bypass"|"on_request"}} [options]
+     * @returns {{numbering: "current"|"old"|"unmarked", changed: number}}
+     */
+    static migrateModes(data, options = {}) {
+        if (!data || typeof data !== "object") return {
+            numbering: "current",
+            changed: 0
+        };
+        let numbering = "current";
+        if (!(Number(data.litegraph_modes) >= 2)) numbering = data.litegraph_version ? "old" : "unmarked";
+        let unmarked = options.unmarked;
+        if (numbering === "unmarked" && !unmarked) {
+            try {
+                unmarked = LiteGraph.settings?.get("LiteGraph.Compat.UnmarkedMode4");
+            } catch {
+                unmarked = undefined;
+            }
+        }
+        const renumber = numbering === "old" || (numbering === "unmarked" && unmarked === "on_request");
+        let changed = 0;
+        if (renumber) {
+            const seen = new Set();
+            const visit = (graph) => {
+                if (!graph || typeof graph !== "object" || seen.has(graph)) return;
+                seen.add(graph);
+                const bypassed = new Set(Array.isArray(graph.extra?.comfy_bypassed) ? graph.extra.comfy_bypassed : []);
+                if (bypassed.size) delete graph.extra.comfy_bypassed;
+                for (const node of Array.isArray(graph.nodes) ? graph.nodes : []) {
+                    if (!node || typeof node !== "object") continue;
+                    if (node.mode === 4) {
+                        node.mode = 5;
+                        changed++;
+                    } else if (node.mode === 2 && bypassed.has(node.id)) {
+                        node.mode = 4;
+                        changed++;
+                    }
+                    visit(node.subgraph);
+                }
+                for (const definition of graph.definitions?.subgraphs ?? []) visit(definition);
+            };
+            visit(data);
+            if (changed) LiteGraph.log_info?.("lgraph", "migrateModes", `${changed} node(s) in mode 4 (On Request in the old numbering) now use mode 5`);
+        }
+        data.litegraph_modes = LiteGraph.MODES_VERSION;
+        return {
+            numbering,
+            changed
+        };
+    }
+
     /** true while this graph, or a graph containing it, is being configured (loading) */
     get isConfiguring() {
         for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
@@ -8903,6 +9037,9 @@ class LGraph {
         if (!keep_old) {
             this.clear();
         }
+
+        // mode numbering: documents from before numbering 2 (ON_REQUEST was 4) are renumbered once, here
+        if (!this._subgraph_node) LGraph.migrateModes(data);
 
         // subgraph definitions: instances that reference one get their inner graph; the root keeps the registry
         let subgraphErrors = [];
@@ -20793,7 +20930,7 @@ class LGraphNode {
             // a forced pull runs the origin once per frame or call (or again on newer input data); under
             // the ancestors model only ON_REQUEST origins: ALWAYS nodes give this frame's value
             // a node that ticks (Timer, Delay) is never re-run by a pull
-            if (node.mode === LiteGraph.ON_REQUEST || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
+            if (node.mode === LiteGraph.ON_REQUEST || node.mode === LiteGraph.BYPASS || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
             return link.data;
         }
 
@@ -21118,6 +21255,8 @@ class LGraphNode {
                 break;
             case LiteGraph.ON_REQUEST:
                 break;
+            case LiteGraph.BYPASS:
+                break;
 
             default:
                 return false;
@@ -21179,17 +21318,21 @@ class LGraphNode {
         // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
         const reportRun = graph._step_node !== this && this._reportRunStart();
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onExecute", {
-                def_cb: this.onExecute
-            }, param, options);
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) ExecutionEngine.passThrough(this); // a wire: data only, its own code does not run
+            else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onExecute", {
+                    def_cb: this.onExecute
+                }, param, options);
+            }
             if (!rules.legacy) ExecutionEngine.remember(this);
             this.exec_version = graph.iteration;
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            if (LiteGraph.properties_allow_output_binding && !bypassed) this.doUpdateBindedOutputProperties();
             this.execute_triggered = 2;
-            this.processCallbackHandlers("onAfterExecuteNode", {
+            if (!bypassed) this.processCallbackHandlers("onAfterExecuteNode", {
                 def_cb: this.onAfterExecuteNode
             }, param, options);
             if (reportRun) this._reportRunDone();
@@ -21303,15 +21446,25 @@ class LGraphNode {
         ExecutionEngine._depth++;
         const reportRun = this._reportRunStart();
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onAction", {
-                def_cb: this.onAction
-            }, action, param, options, action_slot);
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) {
+                // a wire: data passes through and the event goes on to the event outputs
+                ExecutionEngine.passThrough(this, {
+                    events: true,
+                    param,
+                    options
+                });
+            } else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onAction", {
+                    def_cb: this.onAction
+                }, action, param, options, action_slot);
+                if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            }
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
             this.action_triggered = 2;
-            this.processCallbackHandlers("onAfterActionedNode", {
+            if (!bypassed) this.processCallbackHandlers("onAfterActionedNode", {
                 def_cb: this.onAfterActionedNode
             }, param, options);
             if (reportRun) this._reportRunDone();
@@ -21442,7 +21595,11 @@ class LGraphNode {
                 continue;
             }
             var target_slot = node.inputs[link_info.target_slot];
-            if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
+            if (node.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now
+                if (!options.action_call) options.action_call = `${this.id}_act_${LiteGraph.uuidv4()}`;
+                node.actionDo(target_slot?.name, param, options, link_info.target_slot);
+            } else if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
                 // generate unique trigger ID if not present
                 if (!options.action_call)
                     options.action_call = `${this.id}_trigg_${LiteGraph.uuidv4()}`; // TODO replace here and there fakeunique ID with real unique
@@ -23355,7 +23512,7 @@ class LGraphNode {
 
         var optsAncestors = {
             modesSkip: [LiteGraph.NEVER, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER],
-            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST],
+            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST, LiteGraph.BYPASS],
             typesSkip: [LiteGraph.ACTION],
             typesOnly: [],
         };
@@ -60545,11 +60702,12 @@ registerExtension_viewTools();
  * ComfyUI-shaped documents. Node types unknown to this runtime become hidden placeholder types
  * that keep every stored field. Importing has no global effect until it is called.
  *
- * Mode 4 means different things: LiteGraph ON_REQUEST vs ComfyUI BYPASS. The mapping is explicit:
- * - import: Comfy BYPASS (4) -> LiteGraph NEVER (2); the node ids are remembered in
- *   graph.extra.comfy_bypassed so export restores 4 while the node is still NEVER.
- * - export: LiteGraph ON_REQUEST (4) -> Comfy ALWAYS (0) plus a `litegraph_mode: 4` marker
- *   that import restores.
+ * Modes 0 to 4 mean the same in both (4 is BYPASS since mode numbering 2). LiteGraph's ON_REQUEST (5)
+ * has no ComfyUI equivalent:
+ * - export: ON_REQUEST -> Comfy ALWAYS (0) plus a `litegraph_mode: 5` marker that import restores;
+ * - import: a `litegraph_mode: 4` marker (written by builds before numbering 2) means ON_REQUEST.
+ * Earlier imports turned BYPASS into NEVER and listed the nodes in `extra.comfy_bypassed`;
+ * LGraph.migrateModes turns those back into BYPASS, and export still writes 4 for a listed NEVER node.
  *
  * Designed after ComfyUI's documented workflow schema; no ComfyUI code is included.
  */
@@ -60643,23 +60801,17 @@ const ComfyInterop = {
                     placeholderTypes.push(node.type);
                 }
                 if (typeof node.litegraph_mode === "number") {
-                    node.mode = node.litegraph_mode; // round-tripped LiteGraph mode (e.g. ON_REQUEST)
+                    // round-tripped LiteGraph mode; 4 was ON_REQUEST before mode numbering 2
+                    node.mode = node.litegraph_mode === 4 ? LiteGraph.ON_REQUEST : node.litegraph_mode;
                     delete node.litegraph_mode;
                 } else if (node.mode === ComfyInterop.COMFY_MODE.BYPASS) {
-                    node.mode = LiteGraph.NEVER;
-                    bypassedHere.push(node.id);
+                    bypassedHere.push(node.id); // BYPASS is native: the mode is kept as it is
                 }
             }
             return bypassedHere;
         };
         const bypassed = importNodes(data);
-        for (const definition of definitions) {
-            const inner = importNodes(definition);
-            if (inner.length) definition.extra = {
-                ...(definition.extra ?? {}),
-                comfy_bypassed: inner
-            };
-        }
+        for (const definition of definitions) importNodes(definition);
         // version 1 keeps a link's reroute parent on the link; LLink does not model it, so keep it
         // as a 0.4-style link extension that export converts back
         if (data.version === 1 && Array.isArray(data.links)) {
@@ -60675,12 +60827,8 @@ const ComfyInterop = {
                 };
             }
         }
-        if (bypassed.length) {
-            data.extra = {
-                ...(data.extra ?? {}),
-                comfy_bypassed: bypassed
-            };
-        }
+        // the modes above are in the current numbering (an unmarked document would follow LiteGraph.Compat.UnmarkedMode4)
+        data.litegraph_modes = LiteGraph.MODES_VERSION;
         const error = graph.configure(data);
         return {
             error: !!error,
@@ -60722,6 +60870,7 @@ const ComfyInterop = {
             format: "definitions"
         }));
         delete data.litegraph_version; // marks documents written by this runtime (see isComfyWorkflow)
+        delete data.litegraph_modes; // ComfyUI numbers modes 0 to 4 the same way
         const extra = data.extra = {
             ...(data.extra ?? {})
         };

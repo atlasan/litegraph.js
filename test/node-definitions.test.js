@@ -105,15 +105,15 @@ describe('execution declarations (Wave 6c)', () => {
         g.add(timer);
         expect(timer.changeMode(LiteGraph.ON_EVENT)).toBe(false);
         expect(timer.mode).toBe(LiteGraph.ALWAYS);
-        expect(timer.mode_refusal).toBe('events/timer: mode "On Event" is not valid for this node under the "ancestors" execution model (valid: Always, Never); set LiteGraph.Execution.AllowAnyMode to allow any mode');
+        expect(timer.mode_refusal).toBe('events/timer: mode "On Event" is not valid for this node under the "ancestors" execution model (valid: Always, Never, Bypass); set LiteGraph.Execution.AllowAnyMode to allow any mode');
         expect(timer.changeMode(LiteGraph.NEVER)).toBe(true);
         LiteGraph.settings.set('LiteGraph.Execution.AllowAnyMode', true);
         expect(timer.changeMode(LiteGraph.ON_EVENT)).toBe(true);
-        expect(LiteGraph.getValidNodeModes(LiteGraph.createNode('basic/const'))).toEqual([0, 1, 2, 3, 4]);
-        // a model a type declares invalid leaves only NEVER
+        expect(LiteGraph.getValidNodeModes(LiteGraph.createNode('basic/const'))).toEqual([0, 1, 2, 3, 4, 5]);
+        // a model a type declares invalid leaves only NEVER and BYPASS
         const w = LiteGraph.createNode('logic/CycleWHILE');
         graph('strict').add(w);
-        expect(LiteGraph.getValidNodeModes(w)).toEqual([LiteGraph.NEVER]);
+        expect(LiteGraph.getValidNodeModes(w)).toEqual([LiteGraph.NEVER, LiteGraph.BYPASS]);
     });
 
     test('a group mode change reports the nodes it skipped', async () => {

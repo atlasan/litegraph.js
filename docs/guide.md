@@ -81,9 +81,18 @@ LiteGraph.registerNodeType("math/my_sum", Sum);
 | `ON_EVENT` (1) | Only when an action reaches it |
 | `NEVER` (2) | Never (muted) |
 | `ON_TRIGGER` (3) | When an event arrives on its trigger input (`onTrigger`) |
-| `ON_REQUEST` (4) | Only when a node downstream needs its value (a pull) |
+| `BYPASS` (4) | Its code never runs; it acts as a wire (below) |
+| `ON_REQUEST` (5) | Only when a node downstream needs its value (a pull) |
 
-Mode 4 means ON_REQUEST here, and BYPASS in ComfyUI. `comfy_interop.js` maps between the two.
+**Bypass** is ComfyUI's mode 4.
+- **Data:** a bypassed node gives each data output the value of the input whose type fits, taking the input at the same index first, then the first input of a fitting type. An output with no fitting input gets `undefined`.
+- **Events:** an event that reaches it goes on to its connected event outputs, at once in every execution model.
+- **What does not run:** its own code (`onExecute`, `onAction`) and `onStart`.
+- **Modes:** BYPASS is valid under every model, like NEVER.
+
+**Mode numbering 2.** Before 2026-11-23, ON_REQUEST was 4 here ([decision 0004](../agents/memories/decisions/0004-mode-4-bypass.md)). Saved documents carry `litegraph_modes: 2`, and `configure` renumbers older ones:
+- a document with `litegraph_version` but no `litegraph_modes` was written by this library before the change, so its 4 becomes 5;
+- a document with neither (ComfyUI, upstream litegraph) keeps 4 as BYPASS. For files saved by builds older than 2026-11-18, set `LiteGraph.Compat.UnmarkedMode4` to `"on_request"`, or rewrite them with `node tools/migrate-modes.mjs --unmarked=on_request file.json`.
 
 ### Execution models
 

@@ -406,7 +406,7 @@
    ],
    "flags": {},
    "order": 9,
-   "mode": 4,
+   "mode": 5,
    "inputs": [
     {
      "name": "A",
@@ -608,5 +608,6 @@
   "lastLinkId": 14,
   "lastGroupId": 0,
   "lastRerouteId": 0
- }
+ },
+ "litegraph_modes": 2
 }

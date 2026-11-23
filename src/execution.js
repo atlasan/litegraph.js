@@ -171,8 +171,8 @@ export class ExecutionEngine {
     // ---- pull ------------------------------------------------------------------------------------
 
     /**
-     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST nodes, and an
-     * ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
+     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST and BYPASS nodes,
+     * and an ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
      */
     static requestOrigins(node) {
         const graph = node.graph;
@@ -186,7 +186,8 @@ export class ExecutionEngine {
             // would be dropped as "refreshing" (audit finding 10); both give their value at their turn
             const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks
                 && !this.emitsEvents(origin);
-            if (origin.mode === LiteGraph.ON_REQUEST || firstValue) origins.push(origin);
+            // a bypassed node is a wire: pulling through it refreshes what it passes on
+            if (origin.mode === LiteGraph.ON_REQUEST || origin.mode === LiteGraph.BYPASS || firstValue) origins.push(origin);
         }
         return origins;
     }
@@ -245,6 +246,13 @@ export class ExecutionEngine {
             if (target.mode === LiteGraph.NEVER) { this.drop(target, "mode", { message: `${target.type} ${target.id}: the node is NEVER; the event is not delivered` }); continue; }
             const input = target.inputs?.[link.target_slot];
             const call = { ...options };
+            if (target.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now, in every model
+                call.action_call ??= `${node.id}_act_${LiteGraph.uuidv4()}`;
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
+                target.actionDo(input?.name, param, call, link.target_slot);
+                continue;
+            }
             const asTrigger = input?.name === "onTrigger" || (target.mode === LiteGraph.ON_TRIGGER && !target.onAction);
             if (asTrigger) {
                 call.action_call ??= `${node.id}_trigg_${LiteGraph.uuidv4()}`;
@@ -320,6 +328,45 @@ export class ExecutionEngine {
         }
     }
 
+    // ---- bypass ------------------------------------------------------------------------------------
+
+    /**
+     * What a BYPASS node does instead of its own code: every data output takes the value of the
+     * input it maps to (bypassSource), or undefined; with `events`, an event that reached the node
+     * is forwarded to its connected event outputs.
+     * @param {object} node
+     * @param {{events?: boolean, param?: any, options?: object}} [run]
+     */
+    static passThrough(node, { events = false, param, options } = {}) {
+        const outputs = node.outputs ?? [];
+        for (let index = 0; index < outputs.length; index++) {
+            if (this.isEventType(outputs[index].type)) continue;
+            const source = this.bypassSource(node, index);
+            node.setOutputData(index, source < 0 ? undefined : node.getInputData(source));
+        }
+        if (!events) return;
+        for (let index = 0; index < outputs.length; index++) {
+            if (this.isEventType(outputs[index].type) && outputs[index].links?.length) node.triggerSlot(index, param, null, { ...options });
+        }
+    }
+
+    /**
+     * The input a bypassed node passes to a data output: the input at the same index when its type
+     * fits, otherwise the first data input whose type fits; -1 when none does.
+     */
+    static bypassSource(node, outputIndex) {
+        const output = node.outputs?.[outputIndex];
+        const inputs = node.inputs ?? [];
+        if (!output) return -1;
+        const fits = (input) => !!input && !this.isEventType(input.type) && LiteGraph.isValidConnection(input.type, output.type);
+        if (fits(inputs[outputIndex])) return outputIndex;
+        return inputs.findIndex(fits);
+    }
+
+    static isEventType(type) {
+        return type === LiteGraph.EVENT || type === LiteGraph.ACTION;
+    }
+
     // ---- node declarations (static def.execution) -------------------------------------------------
 
     /**
@@ -355,15 +402,20 @@ export class ExecutionEngine {
 
     static get allowAnyMode() { return !!this.setting("LiteGraph.Execution.AllowAnyMode", false); }
 
-    /** the modes a node (or type) may use under a model; NEVER is always allowed */
+    /** the modes a node (or type) may use under a model; NEVER and BYPASS are always allowed */
     static validModes(nodeOrType, modelName) {
-        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST];
+        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.BYPASS, LiteGraph.ON_REQUEST];
         const decl = this.declarationOf(nodeOrType);
         if (!decl) return all;
         const per = decl.models?.[modelName];
-        if (per === false) return [LiteGraph.NEVER];
-        const modes = per?.modes ?? decl.modes ?? all;
-        return modes.includes(LiteGraph.NEVER) ? [...modes] : [...modes, LiteGraph.NEVER];
+        const modes = per === false ? [] : [...(per?.modes ?? decl.modes ?? all)];
+        for (const mode of [LiteGraph.NEVER, LiteGraph.BYPASS]) if (!modes.includes(mode)) modes.push(mode);
+        return modes;
+    }
+
+    /** true for modes in which the node's own code does not run (NEVER, BYPASS) */
+    static isInactiveMode(mode) {
+        return mode === LiteGraph.NEVER || mode === LiteGraph.BYPASS;
     }
 
     /** true when the node may use the mode under its graph's model (or LiteGraph.Execution.AllowAnyMode is on) */
@@ -398,7 +450,7 @@ export class ExecutionEngine {
         const visit = (g) => {
             for (const node of g._nodes) {
                 const mode = this.declaredDefaultMode(node, rules);
-                if (mode != null && mode !== node.mode && node.mode !== LiteGraph.NEVER) out.push({ node, mode });
+                if (mode != null && mode !== node.mode && !this.isInactiveMode(node.mode)) out.push({ node, mode });
                 if (node.subgraph && node.subgraph !== g) visit(node.subgraph);
             }
         };
@@ -421,7 +473,7 @@ export class ExecutionEngine {
         const visit = (g, parentMode) => {
             for (const node of g._nodes) {
                 const decl = this.declarationOf(node);
-                if (node.mode !== LiteGraph.NEVER) {
+                if (!this.isInactiveMode(node.mode)) {
                     if (decl?.models?.[model] === false) add(node, "invalid-model", `${node.type}: not valid under the "${model}" execution model`);
                     else if (!this.validModes(node, model).includes(node.mode)) add(node, "invalid-mode", this.modeRefusal(node, node.mode, root));
                     if (decl?.ticks && (node.mode !== LiteGraph.ALWAYS || (parentMode != null && parentMode !== LiteGraph.ALWAYS))) {
@@ -437,7 +489,7 @@ export class ExecutionEngine {
                         add(node, "pure-always", `${node.type}: a pure node in ALWAYS mode runs every frame; ON_REQUEST runs it only when needed`);
                     }
                 }
-                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, node.mode === LiteGraph.NEVER ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, this.isInactiveMode(node.mode) ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
             }
         };
         visit(root, null);

@@ -143,13 +143,16 @@ export class LiteGraphClass {
     EVENT = -1; // for outputs
     ACTION = -1; // for inputs
 
-    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "On Request"]; // helper
-    NODE_MODES_COLORS = ["#666","#422","#333","#224","#626"]; // use with node_box_coloured_by_mode
+    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "Bypass", "On Request"]; // names by mode number
+    NODE_MODES_COLORS = ["#666","#422","#333","#224","#535","#626"]; // use with node_box_coloured_by_mode
     ALWAYS = 0;
     ON_EVENT = 1;
     NEVER = 2;
     ON_TRIGGER = 3;
-    ON_REQUEST = 4; // used from event-based nodes, where ancestors are recursively executed on needed
+    BYPASS = 4; // passes inputs to outputs of a matching type and forwards events; 4 as in ComfyUI
+    ON_REQUEST = 5; // runs only when a consumer needs its data (pull); was 4 before mode numbering 2
+    /** the mode numbering this runtime writes as `litegraph_modes` (2: BYPASS = 4, ON_REQUEST = 5) */
+    MODES_VERSION = 2;
 
     UP = 1;
     DOWN = 2;
@@ -725,6 +728,7 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });
             this.settings.define({ id: "LiteGraph.Execution.AllowAnyMode", name: "Allow node modes their type declares invalid", default: false });
+            this.settings.define({ id: "LiteGraph.Compat.UnmarkedMode4", name: "Mode 4 in documents without a LiteGraph version means", type: "combo", options: ["bypass", "on_request"], default: "bypass", tooltip: "bypass: as in ComfyUI and current LiteGraph. on_request: for files saved by LiteGraph builds older than 2026-11-18, where mode 4 was On Request (tools/migrate-modes.mjs rewrites such files)." });
             this.settings.define({ id: "LiteGraph.Node.ExecutionBadge", name: "Show execution problems (graph.checkExecution) as node badges", default: false });
             // execution problems (graph.checkExecution), refreshed at most twice a second per document
             this.nodeBadges.register((node) => {

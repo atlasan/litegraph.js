@@ -37,6 +37,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
 | Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
+| Track | Node pin, modes and exec slots | **In progress** ([plan](2026-11-23-node-pin-modes-exec-slots.md)): A (mode 4 = BYPASS, ON_REQUEST = 5, [decision 0004](../memories/decisions/0004-mode-4-bypass.md)) merged into `LG/dev` from `LG/dev_HMD_modes`; B (exec slots) and C (pin, graph status) next; D (debugger notes) proposed as its own session; see [Node pin track](#node-pin-modes-and-exec-slots-track) |
 | Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **Done**, merged into `LG/dev` from `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md), [record](../executions/2026-11-23-launcher-and-bun.md)); see [Launcher track](#launcher-track) |
 | Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Ready**: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); release checks rerun on `LG/dev` @ `ce8c231` after the [audit fixes](../executions/2026-11-23-audit-fixes.md) (see the plan's History); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
@@ -226,6 +227,31 @@ Follow-ups: movable, dockable and configurable panels (X-13), multi-node editing
 
 Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-09. Candidates for later plans from the same findings (C-1 to C-5): ComfyUI groups and reroutes, group UI, a ComfyUI custom-node survey, a compatibility charter, concept docs from a survey of visual programming systems.
 
+## Node pin, modes and exec slots track
+
+[Plan](2026-11-23-node-pin-modes-exec-slots.md) accepted 2026-11-23 from the user's direction of that day. It is parallel work on `LG/dev_HMD_*` branches.
+
+**A, modes (done, `LG/dev_HMD_modes`):**
+- **Numbering:** `BYPASS = 4` (as in ComfyUI) and `ON_REQUEST = 5`, with [decision 0004](../memories/decisions/0004-mode-4-bypass.md) superseding D5.
+- **Bypass execution:** pass-through via `ExecutionEngine.passThrough`.
+- **Migration:**
+  - `LGraph.migrateModes` runs on load, keyed on the `litegraph_version` / `litegraph_modes` markers;
+  - the setting `LiteGraph.Compat.UnmarkedMode4` covers unmarked files;
+  - `tools/migrate-modes.mjs` rewrites files;
+  - the examples and fixtures are migrated.
+- **ComfyUI interop:** mode 4 is native.
+
+**B, exec slots (next, `LG/dev_HMD_exec_slots`):**
+- the `onTrigger` / `onExecuted` slots placed by anchor and offset (`"rows"` or `"edges"`);
+- the model rule `exec_slots`, on for `ancestors` (FLW-07).
+
+**C, pin (`LG/dev_HMD_node_pin`):**
+- core pin geometry, hit test and style registry;
+- the `node_pin` extension: mode and state styles, quick menu, commands;
+- the `graph_status` extension: model chip.
+
+**D, debugger (deferred):** a research record and the FLW-16 card.
+
 ## Deferred (each needs its own proposal)
 
 Virtual/broadcast links, link routing as default, app mode / published parameters, graph tabs, remote pack registry, TypeScript migration, renderer change, async workflow scheduler.
@@ -240,7 +266,7 @@ Virtual/broadcast links, link routing as default, app mode / published parameter
 | D2 | When should [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) be decided (definitions, option B)? | **Decided 2026-11-20: option B**, with the litegraph runtime kept (see the [Wave 3 plan](2026-11-20-wave3-subgraph-system.md)); ADR **accepted** after the 3a schema probe |
 | D3 | Porting style for SA modules | **Pending** (recommendation followed in practice, never marked decided; DEC-3): adapt module by module into ES6 with attribution (as for `reroute.js`/`linkconnector.js`) |
 | D4 | Node metadata direction | **Pending** (DEC-3): hybrid (`static def` today); add `defineNodeType` later |
-| D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | **Pending** (DEC-3; applied in `comfy_interop.js` and `AGENTS.md`): keep BYPASS as interop only; a native bypass mode would be a new number (5) |
+| D5 | Mode 4: ON_REQUEST here vs BYPASS in Comfy | **Superseded** 2026-11-23 by [decision 0004](../memories/decisions/0004-mode-4-bypass.md): BYPASS = 4 (as in ComfyUI), ON_REQUEST = 5, documents migrated on load (the D5 part of DEC-3 is settled) |
 | D6 | Large built-in node catalog | **Decided 2026-11-20 (W4-6):** each family is declared as a builtin pack in 4a; the physical split into files and bundles is Wave 5 |
 | D7 | Upgrading the remaining runtime dependencies with advisories | **Done** (`17e357a`, 12 findings to 0; [5a–5b record](../executions/2026-11-21-wave5ab-packaging-ci-docs.md)): releases at least 2 weeks old, after a changelog review |
 | D8 | Wave 7: the error policy for hooks; making the rule for "handled" uniform; events after a veto; per-node `node.events`; wildcard scope; async hooks ([plan](2026-11-22-event-integration.md#open-decisions-each-with-a-recommendation)) | **Error policy decided (2026-11-22):** a handler error never stops the chain, and the first one is always rethrown after it (independent of `throw_errors`, so `runStep` still reports `node-error`). `"*"` per target, observe only: done. **Events after a veto decided (2026-11-22, as recommended):** a vetoing hook skips its typed event (`fireHookThenEvent`). Still open, with the plan's recommendations: making "handled" uniform in 0.20, no `node.events`, no async hooks |

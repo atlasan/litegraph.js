@@ -204,7 +204,12 @@ export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     ON_EVENT: 1;
     NEVER: 2;
     ON_TRIGGER: 3;
-    ON_REQUEST: 4;
+    /** passes inputs to outputs of a matching type and forwards events (4 as in ComfyUI) */
+    BYPASS: 4;
+    /** runs only when a consumer needs its data; was 4 before mode numbering 2 */
+    ON_REQUEST: 5;
+    /** the mode numbering written as `litegraph_modes` (2: BYPASS = 4, ON_REQUEST = 5) */
+    MODES_VERSION: number;
 
     UP: 1;
     DOWN: 2;
@@ -504,6 +509,8 @@ export type serializedLGraph<
     version: number;
     /** library version that wrote the document */
     litegraph_version?: string;
+    /** mode numbering of the document (2: BYPASS = 4, ON_REQUEST = 5); absent before numbering 2 */
+    litegraph_modes?: number;
     /** fields from other editors are preserved verbatim */
     [foreignField: string]: unknown;
 };
@@ -524,6 +531,12 @@ export declare class LGraph {
 
     /** fresh id counters */
     static createState(): LGraphState;
+    /**
+     * Brings a document's node modes to the current numbering, in place (configure calls it):
+     * `litegraph_version` without `litegraph_modes` means the old numbering (4 was ON_REQUEST);
+     * an unmarked document keeps 4 as BYPASS unless `unmarked` (or LiteGraph.Compat.UnmarkedMode4) is "on_request".
+     */
+    static migrateModes(data: object, options?: { unmarked?: 'bypass' | 'on_request' }): { numbering: 'current' | 'old' | 'unmarked'; changed: number };
     /** document identity (uuid) */
     id: string;
     /** number of saved changes to the document */
@@ -931,6 +944,7 @@ export declare class LGraphNode {
         | typeof LiteGraph.ON_TRIGGER
         | typeof LiteGraph.NEVER
         | typeof LiteGraph.ALWAYS
+        | typeof LiteGraph.BYPASS
         | typeof LiteGraph.ON_REQUEST;
 
     /** If set to true widgets do not start after the slots */
@@ -2839,6 +2853,13 @@ export declare class ExecutionEngine {
     /** pulls a node's ON_REQUEST data ancestors (memo per frame and call, link data versions) */
     static pull(node: LGraphNode): void;
     static ensureFresh(node: LGraphNode): void;
+    /** what a BYPASS node does instead of its code: data outputs take their mapped input; with events, events go on to the event outputs */
+    static passThrough(node: LGraphNode, run?: { events?: boolean; param?: unknown; options?: object }): void;
+    /** the input a bypassed node passes to a data output (same index first, then the first fitting type), or -1 */
+    static bypassSource(node: LGraphNode, outputIndex: number): number;
+    /** true for NEVER and BYPASS (the node's own code does not run) */
+    static isInactiveMode(mode: number): boolean;
+    static isEventType(type: unknown): boolean;
     static drop(node: LGraphNode | null, reason: EventDropReason, extra?: { setting?: string; message?: string }): false;
     static readonly maxEventDepth: number;
     static readonly maxEventPasses: number;

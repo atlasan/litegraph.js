@@ -57,7 +57,7 @@ The full conventions are in [agents/README.md](agents/README.md).
   - Check the license of every plugin before reusing anything; see the license tables in the ecosystem study.
 - **Dependencies:** pick versions that are at least two weeks old, and read the changelog before upgrading.
 - **Runner security:** `apps/runner` executes pushed graphs. Keep the Origin/Host checks, the recursive node-type denylist (`nodePolicy.js`) and the script lockdown (`LiteGraph.allow_scripts` is off unless `RUNNER_ALLOW_SYS=1`).
-- **Mode 4:** mode 4 means ON_REQUEST here and BYPASS in ComfyUI. `comfy_interop.js` maps them explicitly; never reuse 4 for bypass.
+- **Modes 4 and 5:** mode 4 is BYPASS (as in ComfyUI) and 5 is ON_REQUEST since mode numbering 2 ([decision 0004](agents/memories/decisions/0004-mode-4-bypass.md)). Use the constants, never the numbers. Documents from before are renumbered on load by `LGraph.migrateModes`; `tools/migrate-modes.mjs` rewrites files.
 
 ## Gotchas
 

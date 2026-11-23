@@ -402,11 +402,12 @@ describe.each(Object.keys(PRESETS))('configuration %s', (preset) => {
         expect(b.execution_state?.status).toBe('error');
     });
 
-    test('B10: onStart reaches every node that is not NEVER', () => {
+    test('B10: onStart reaches every node that is not NEVER or BYPASS', () => {
         const g = setup(preset);
-        for (const mode of [0, 1, 2, 3, 4]) make(g, 'evm/starter', {}, mode);
+        const { ALWAYS, ON_EVENT, NEVER, ON_TRIGGER, BYPASS, ON_REQUEST } = LiteGraph;
+        for (const mode of [ALWAYS, ON_EVENT, NEVER, ON_TRIGGER, BYPASS, ON_REQUEST]) make(g, 'evm/starter', {}, mode);
         g.start(1000); g.stop();
-        expect(LiteGraph.registered_node_types['evm/starter'].seen.sort()).toEqual([0, 1, 3, 4]);
+        expect(LiteGraph.registered_node_types['evm/starter'].seen.sort()).toEqual([ALWAYS, ON_EVENT, ON_TRIGGER, ON_REQUEST].sort());
     });
 
     test('B12: a deferred action sent while stopped waits in the queue', () => {
