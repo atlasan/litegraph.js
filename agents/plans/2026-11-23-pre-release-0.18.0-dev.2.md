@@ -51,4 +51,5 @@ None of these is part of this plan.
 
 ## History
 
+- 2026-11-23: steps 2–5 done on `LG/dev_release_0.18.0-dev.2` and merged into `LG/dev` ([record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); step 6 waits for the user.
 - 2026-11-23: accepted. The user chose `LG/dev` as `0.18.0-dev.2`, and the three pre-release fixes.

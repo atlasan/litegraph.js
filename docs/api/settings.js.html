@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: settings.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: settings.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Declared, persistent settings.
+ *
+ * `define({id, default, type?, name?, tooltip?, category?, options?, migrate?, onChange?, bind?})`
+ * - `id` is dotted ("LiteGraph.Canvas.SnapToGrid"); its first segments give a default category.
+ * - `migrate(storedValue)` upgrades a value saved by an older version; the result is saved back.
+ * - `onChange(value, previous)` runs on every change (and once at define time with the loaded value).
+ * - `bind: {target, key}` mirrors the value onto an existing property (e.g. a `LiteGraph.*` flag):
+ *   the property's current value is the default unless `default` is given, and set() writes it.
+ *
+ * Values are kept even for settings not defined yet, so a stored value can be loaded before the
+ * extension that defines it. Persistence goes through a storage adapter `{load(): object, save(values)}`.
+ */
+export class SettingsRegistry {
+
+    constructor(storage = null) {
+        /** @type {Map&lt;string, object>} */
+        this._defs = new Map();
+        /** @type {Record&lt;string, *>} */
+        this._values = {};
+        this._storage = null;
+        if (storage) this.setStorage(storage);
+    }
+
+    /** An adapter over `localStorage` (no-op when storage is unavailable). */
+    static localStorageAdapter(key = "litegraph.settings") {
+        return {
+            load() {
+                try { return JSON.parse(globalThis.localStorage?.getItem(key) ?? "null") ?? {}; } catch { return {}; }
+            },
+            save(values) {
+                try { globalThis.localStorage?.setItem(key, JSON.stringify(values)); } catch { /* unavailable: keep in memory */ }
+            },
+        };
+    }
+
+    /** Uses a storage adapter and loads its values (defined settings are re-applied). */
+    setStorage(storage) {
+        this._storage = storage;
+        // values as they were before the switch, so onChange reports what actually changed
+        const before = new Map([...this._defs.keys()].map((id) => [id, this.get(id)]));
+        const loaded = storage?.load?.() ?? {};
+        this._values = (loaded &amp;&amp; typeof loaded === "object") ? { ...loaded } : {};
+        for (const def of this._defs.values()) this._applyLoaded(def, before.get(def.id));
+    }
+
+    _save() {
+        this._storage?.save?.({ ...this._values });
+    }
+
+    _applyLoaded(def, previousValue) {
+        // the first application reports no previous value; a storage switch passes the old value
+        const previous = arguments.length > 1 ? previousValue : (def._initialized === true ? this.get(def.id) : undefined);
+        if (Object.hasOwn(this._values, def.id) &amp;&amp; typeof def.migrate === "function") {
+            const migrated = def.migrate(this._values[def.id]);
+            if (migrated !== this._values[def.id]) {
+                this._values[def.id] = migrated;
+                this._save();
+            }
+        }
+        const value = this.get(def.id);
+        if (def.bind) def.bind.target[def.bind.key] = value;
+        if (value !== previous || def._initialized !== true) {
+            def._initialized = true;
+            this._notify(def, value, previous);
+        }
+    }
+
+    _notify(def, value, previous) {
+        if (typeof def.onChange !== "function") return;
+        try { def.onChange(value, previous); } catch (error) { console.error?.(`setting ${def.id}: onChange failed`, error); }
+    }
+
+    /**
+     * @param {object} def
+     * @returns {() => void} disposer removing the definition (a stored value is kept)
+     */
+    define(def) {
+        if (!def || typeof def.id !== "string" || !def.id) throw new TypeError("setting id must be a non-empty string");
+        if (this._defs.has(def.id)) throw new Error(`setting ${def.id} is already defined`);
+        if (def.bind &amp;&amp; (typeof def.bind.target !== "object" &amp;&amp; typeof def.bind.target !== "function" || !def.bind.key)) {
+            throw new TypeError(`setting ${def.id}: bind needs {target, key}`);
+        }
+        const defaultValue = def.default !== undefined ? def.default : def.bind ? def.bind.target[def.bind.key] : undefined;
+        const entry = {
+            type: typeof defaultValue === "boolean" ? "boolean" : typeof defaultValue === "number" ? "number" : "text",
+            name: def.id,
+            category: def.id.split(".").slice(0, -1),
+            ...def,
+            default: defaultValue,
+        };
+        this._defs.set(def.id, entry);
+        this._applyLoaded(entry);
+        return () => {
+            if (this._defs.get(def.id) === entry) this._defs.delete(def.id);
+        };
+    }
+
+    has(id) {
+        return this._defs.has(id);
+    }
+
+    /** @returns {object|null} definition */
+    getDefinition(id) {
+        return this._defs.get(id) ?? null;
+    }
+
+    /** @returns {object[]} definitions, optionally only those whose id starts with a prefix */
+    list(prefix = "") {
+        return [...this._defs.values()].filter((def) => def.id.startsWith(prefix));
+    }
+
+    /** Current value: stored value if any, else the default. */
+    get(id) {
+        if (Object.hasOwn(this._values, id)) return this._values[id];
+        const def = this._defs.get(id);
+        if (!def) return undefined;
+        return typeof def.default === "function" ? def.default() : def.default;
+    }
+
+    /**
+     * Sets and persists a value. Combo settings refuse values outside their options.
+     * @returns {boolean} true when the value changed
+     */
+    set(id, value) {
+        const def = this._defs.get(id);
+        if (def?.type === "combo" &amp;&amp; Array.isArray(def.options)) {
+            const allowed = def.options.map((option) => (option &amp;&amp; typeof option === "object" ? option.value : option));
+            if (!allowed.includes(value)) throw new RangeError(`setting ${id}: ${JSON.stringify(value)} is not an option`);
+        }
+        const previous = this.get(id);
+        this._values[id] = value;
+        this._save();
+        if (def?.bind) def.bind.target[def.bind.key] = value;
+        if (def &amp;&amp; previous !== value) this._notify(def, value, previous);
+        return previous !== value;
+    }
+
+    /** Forgets the stored value, going back to the default. */
+    reset(id) {
+        if (!Object.hasOwn(this._values, id)) return false;
+        const previous = this.get(id);
+        delete this._values[id];
+        this._save();
+        const def = this._defs.get(id);
+        const value = this.get(id);
+        if (def?.bind) def.bind.target[def.bind.key] = value;
+        if (def &amp;&amp; value !== previous) this._notify(def, value, previous);
+        return true;
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 16:42:01 GMT+0100 (Central European Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -18,11 +18,11 @@ This is a database of feature and integration ideas for this fork. It is grouped
 | [landscape/](#landscape-investigations) | The investigations behind the ideas, one document per area |
 | [cards/](#cards) | Ideas that outgrew a row: design sketches, open questions, experiments |
 
-## State on 2026-11-22
+## State on 2026-11-23
 
 **Contents:**
-- **236 ideas**: 12 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries, 22 for the Bun runner, 24 for execution flows and 6 for repository tooling.
-- **Maturity:** 164 seed, 64 sketched, 6 investigated, 1 promoted and 1 parked (counted by script from the catalog).
+- **237 ideas**: 13 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries, 22 for the Bun runner, 24 for execution flows and 6 for repository tooling.
+- **Maturity:** 164 seed, 62 sketched, 6 investigated, 4 promoted and 1 parked (counted by script from the catalog).
 - **Sources:** the 11 newest ideas (X-08 to X-12, DEV-01 to DEV-06) are 2025 proposals that are still open; the [improvements ledger](../audits/2026-11-19-improvements-ledger.md) records what happened to the others.
 
 **What each area found:**

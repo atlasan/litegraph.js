@@ -1,6 +1,6 @@
 # Pre-release 0.18.0-dev.1
 
-> **Date** 2026-11-20 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `5b8c25e`
+> **Date** 2026-11-20 · **Kind** plan · **Status** superseded by [pre-release 0.18.0-dev.2](2026-11-23-pre-release-0.18.0-dev.2.md); never tagged · **Base** `LG/dev` @ `5b8c25e`
 
 **Outcome:** the first testable dev pre-release, `0.18.0-dev.1`, published as an annotated git tag on `master`, with no GitHub release page and no npm publish. It contains every planned wave (0–5) and closes the loose ends found by the audit below. The user chose the version name, the channel, and the decision to include the Wave 5 apps move (last).
 
@@ -37,5 +37,6 @@ These are not part of any accepted plan:
 
 ## History
 
+- 2026-11-23: superseded by the [0.18.0-dev.2 plan](2026-11-23-pre-release-0.18.0-dev.2.md). Step 7 (push, PR, tag) never ran; `0.18.0-dev.1` was never tagged ([state audit](../audits/2026-11-23-state-audit.md)).
 - 2026-11-22: steps 1–6 done and the version bumped ([record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)); step 7 (push, PR, tag) waits for the user. The single tester controller is deferred.
 - 2026-11-20: proposed and accepted. The user asked to finish the planned actions and cut a first dev pre-release, and chose the version `0.18.0-dev.1`, a tag only, and the apps move included last.

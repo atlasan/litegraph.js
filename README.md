@@ -25,7 +25,7 @@ The package has three entries:
 
 Each entry works with ESM and CommonJS. In the browser, the bundles are ES modules: load `build/litegraph.js` with `<script type="module">`, plus `css/litegraph.css`. The library has no required dependencies; the network and system nodes use optional packages that npm installs by default.
 
-**Status:** `0.18.0-dev.1` is the first dev pre-release of this line, for testers. Start with [getting started](docs/getting-started.md).
+**Status:** `0.18.0-dev.2` is the dev pre-release of this line to be tagged, for testers (`0.18.0-dev.1` was never tagged). Start with [getting started](docs/getting-started.md).
 
 To run locally:
 
