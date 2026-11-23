@@ -978,6 +978,27 @@ export class LiteGraphClass {
     }
 
     /**
+     * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
+     * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`
+     * (null: classic), spec `{shape: "circle"|"square"|"diamond"|"triangle", fill, stroke, lineWidth,
+     * alpha, size, glow: {color, radius, alpha}, mark: "slash"|"bar"|"dot", markColor, redraw}`.
+     */
+    nodePinStyles = new Map();
+
+    /** @returns {() => void} disposer */
+    registerNodePinStyle(name, style) {
+        if (typeof name !== "string" || !name || name === "classic") throw new TypeError("node pin style: a name other than \"classic\" is required");
+        if (typeof style !== "function") throw new TypeError(`node pin style ${name}: a function is required`);
+        const previous = this.nodePinStyles.get(name);
+        this.nodePinStyles.set(name, style);
+        return () => {
+            if (this.nodePinStyles.get(name) !== style) return;
+            if (previous) this.nodePinStyles.set(name, previous);
+            else this.nodePinStyles.delete(name);
+        };
+    }
+
+    /**
      * Named exec-slot layouts. A layout places the built-in `onTrigger` and `onExecuted` slots
      * (LGraphNode.getExecSlotPos) instead of putting them in the slot rows:
      * `{normal: {trigger, executed}, vertical: {trigger, executed}}`, each `{x, y, dx, dy, dir}`
@@ -1455,6 +1476,20 @@ export class LiteGraphClass {
                 id: "LiteGraph.Execution.AllowAnyMode",
                 name: "Allow node modes their type declares invalid",
                 default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.PinStyle",
+                name: "Node pin (title box) style",
+                type: "combo",
+                options: ["classic", "modes"],
+                default: "classic",
+                tooltip: "classic: as before. modes: shape and colour by node mode, with run state rings (needs the node_pin extension; otherwise classic)."
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.TitleQuickMenu",
+                name: "Right-click on a node title opens the pin quick menu",
+                default: false,
+                tooltip: "The pin (title box) always opens it when an extension contributes items; \"More…\" opens the full node menu."
             });
             this.settings.define({
                 id: "LiteGraph.Node.ExecSlots",
@@ -3883,13 +3918,14 @@ export class SettingsRegistry {
  * ]);
  * ```
  *
- * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}) and "node" (ctx adds `node`).
+ * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}), "node" (ctx adds `node`) and
+ * "node-pin", the quick menu of a node's title box (same ctx; shown only when something is contributed).
  * Contributions are appended after the built-in items, in registration order. A failing provider
  * is skipped (and logged) so one extension cannot break the menu.
  */
 export class MenuRegistry {
 
-    static LOCATIONS = ["canvas", "node"];
+    static LOCATIONS = ["canvas", "node", "node-pin"];
 
     /** @param {import("./commands.js").CommandRegistry} commands */
     constructor(commands) {
@@ -3899,7 +3935,7 @@ export class MenuRegistry {
     }
 
     /**
-     * @param {"canvas"|"node"} location
+     * @param {"canvas"|"node"|"node-pin"} location
      * @param {(ctx: object) => Array<object|null>|null|undefined} provider
      * @returns {() => void} disposer
      */
@@ -3913,6 +3949,11 @@ export class MenuRegistry {
             const index = list.indexOf(provider);
             if (index !== -1) list.splice(index, 1);
         };
+    }
+
+    /** true when a provider is registered for the location */
+    has(location) {
+        return !!this._providers.get(location)?.length;
     }
 
     /** Converts `{command: id}` shorthands into ContextMenu items bound to the context. */
@@ -11681,7 +11722,7 @@ export class LGraphCanvas {
                 if (
                     node &&
                     e.click_time < 300 && !gesture.dragged &&
-                    LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT)
+                    this.isOverNodePin(node, e.canvasX, e.canvasY)
                 ) {
                     node.collapse();
                 }
@@ -11853,6 +11894,160 @@ export class LGraphCanvas {
 
         e.preventDefault();
         return false; // prevent default
+    }
+
+    /** true when a graph-space position is on a node's pin (the title box; a click there collapses the node) */
+    isOverNodePin(node, canvasx, canvasy) {
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        return LiteGraph.isInsideRectangle(canvasx, canvasy, node.pos[0], node.pos[1] - title, title, title);
+    }
+
+    /**
+     * The pin's look for the classic style: today's colour chain (execution status, `boxcolor`, the
+     * mode colour with node_box_coloured_by_mode, the run flash with node_box_coloured_when_on) and a
+     * circle or square after the node shape.
+     */
+    classicNodePinStyle(node, shape) {
+        let fill = false;
+        if (LiteGraph.node_box_coloured_by_mode && LiteGraph.NODE_MODES_COLORS[node.mode]) fill = LiteGraph.NODE_MODES_COLORS[node.mode];
+        if (LiteGraph.node_box_coloured_when_on) fill = node.action_triggered ? "#FFF" : (node.execute_triggered ? "#AAA" : fill);
+        const statusColor = this.executionOverlaysEnabled() ? LGraphCanvas.EXECUTION_STATUS_COLORS[node.execution_state?.status] : null;
+        const round = shape == LiteGraph.ROUND_SHAPE || shape == LiteGraph.CIRCLE_SHAPE || shape == LiteGraph.CARD_SHAPE;
+        return {
+            shape: round ? "circle" : "square",
+            fill: (statusColor || node.boxcolor || fill) || LiteGraph.NODE_DEFAULT_BOXCOLOR
+        };
+    }
+
+    /**
+     * The pin's look: the style named by the setting LiteGraph.Node.PinStyle (LiteGraph.registerNodePinStyle),
+     * or classic. A style returns `{shape, fill, stroke, lineWidth, alpha, size, glow: {color, radius, alpha},
+     * mark, markColor, redraw}` or null for classic.
+     */
+    resolveNodePinStyle(node, shape) {
+        let name = "classic";
+        try {
+            name = LiteGraph.settings?.get("LiteGraph.Node.PinStyle") ?? "classic";
+        } catch {
+            /* no platform */ }
+        const style = name !== "classic" ? LiteGraph.nodePinStyles?.get(name) : null;
+        if (style) {
+            try {
+                const spec = style(node, this, {
+                    shape
+                });
+                if (spec) return spec;
+            } catch (error) {
+                LiteGraph.log_warn?.("lgraphcanvas", "pin style failed", name, error);
+            }
+        }
+        return this.classicNodePinStyle(node, shape);
+    }
+
+    /** Draws a node's pin centred in the title box (node space, title above y = 0). */
+    drawNodePin(ctx, node, title_height, shape, low_quality) {
+        const spec = this.resolveNodePinStyle(node, shape);
+        const size = spec.size ?? 10;
+        const half = size * 0.5;
+        const cx = title_height * 0.5;
+        const cy = title_height * -0.5;
+        if (low_quality) {
+            // a black backing and a square, whatever the style
+            ctx.fillStyle = "black";
+            ctx.fillRect(cx - half - 1, cy - half - 1, size + 2, size + 2);
+            ctx.fillStyle = spec.fill || spec.stroke || LiteGraph.NODE_DEFAULT_BOXCOLOR;
+            ctx.fillRect(cx - half, cy - half, size, size);
+            return;
+        }
+        const alpha = ctx.globalAlpha;
+        if (spec.glow?.color) {
+            ctx.globalAlpha = alpha * (spec.glow.alpha ?? 0.5);
+            ctx.fillStyle = spec.glow.color;
+            ctx.beginPath();
+            ctx.arc(cx, cy, half + (spec.glow.radius ?? 4), 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = alpha * (spec.alpha ?? 1);
+        ctx.beginPath();
+        switch (spec.shape) {
+            case "square":
+                ctx.rect(cx - half, cy - half, size, size);
+                break;
+            case "diamond":
+                ctx.moveTo(cx, cy - half - 1);
+                ctx.lineTo(cx + half + 1, cy);
+                ctx.lineTo(cx, cy + half + 1);
+                ctx.lineTo(cx - half - 1, cy);
+                ctx.closePath();
+                break;
+            case "triangle":
+                ctx.moveTo(cx + half + 1, cy);
+                ctx.lineTo(cx - half + 1, cy - half);
+                ctx.lineTo(cx - half + 1, cy + half);
+                ctx.closePath();
+                break;
+            default:
+                ctx.arc(cx, cy, half, 0, Math.PI * 2);
+        }
+        if (spec.fill) {
+            ctx.fillStyle = spec.fill;
+            ctx.fill();
+        }
+        if (spec.stroke) {
+            ctx.strokeStyle = spec.stroke;
+            ctx.lineWidth = spec.lineWidth ?? 1.5;
+            ctx.stroke();
+        }
+        if (spec.mark) {
+            ctx.strokeStyle = spec.markColor ?? spec.stroke ?? "#000";
+            ctx.fillStyle = spec.markColor ?? spec.stroke ?? "#000";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            if (spec.mark === "slash") {
+                ctx.moveTo(cx - half, cy + half);
+                ctx.lineTo(cx + half, cy - half);
+                ctx.stroke();
+            } else if (spec.mark === "bar") {
+                ctx.moveTo(cx - half - 2, cy);
+                ctx.lineTo(cx + half + 2, cy);
+                ctx.stroke();
+            } else if (spec.mark === "dot") {
+                ctx.arc(cx, cy, Math.max(1.5, half * 0.4), 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1;
+        if (spec.redraw) this.dirty_canvas = true; // an animated pin (e.g. a fading run glow)
+    }
+
+    /**
+     * The quick menu of the pin (right-click on the title box, or on the title with the setting
+     * LiteGraph.Node.TitleQuickMenu): the items contributed to the "node-pin" menu location, then
+     * "More…" for the full node menu.
+     */
+    getNodePinMenuOptions(node) {
+        const items = LiteGraph.menus?.collect("node-pin", LiteGraph.commands.contextFor(this, {
+            node
+        })) ?? [];
+        return [...items, null, {
+            content: "More…",
+            callback: (_value, _options, e) => this.processContextMenu(node, e, {
+                full: true
+            })
+        }];
+    }
+
+    /** true when a right-click at the event opens the pin's quick menu instead of the node menu */
+    isNodePinMenuEvent(node, event) {
+        if (!node || !LiteGraph.menus?.has?.("node-pin")) return false;
+        if (this.isOverNodePin(node, event.canvasX, event.canvasY)) return true;
+        let titleQuick = false;
+        try {
+            titleQuick = !!LiteGraph.settings?.get("LiteGraph.Node.TitleQuickMenu");
+        } catch {
+            /* no platform */ }
+        return titleQuick && event.canvasY < node.pos[1] && event.canvasY >= node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT;
     }
 
     /**
@@ -12881,7 +13076,7 @@ export class LGraphCanvas {
             this.dirty_bgcanvas = true;
         };
         pointer.onClick = (e) => {
-            if (LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT)) {
+            if (this.isOverNodePin(node, e.canvasX, e.canvasY)) {
                 node.collapse();
                 this.setDirty(true, true);
             }
@@ -14778,73 +14973,11 @@ export class LGraphCanvas {
                 ctx.shadowColor = "transparent";
             }
 
-            let colState = false;
-            if (LiteGraph.node_box_coloured_by_mode && LiteGraph.NODE_MODES_COLORS[node.mode]) {
-                colState = LiteGraph.NODE_MODES_COLORS[node.mode];
-            }
-            if (LiteGraph.node_box_coloured_when_on) {
-                colState = node.action_triggered ? "#FFF" : (node.execute_triggered ? "#AAA" : colState);
-            }
-            const statusColor = this.executionOverlaysEnabled() ? LGraphCanvas.EXECUTION_STATUS_COLORS[node.execution_state?.status] : null;
-            if (statusColor) colState = statusColor;
-
-            // title box
-            var box_size = 10;
+            // title box (the pin): the onDrawTitleBox hook, else the pin style (LiteGraph.Node.PinStyle)
             r = node.processCallbackHandlers("onDrawTitleBox", {
                 def_cb: node.onDrawTitleBox
             }, ctx, title_height, size, this.ds.scale);
-            if (CallbackHandler.is(r, true)) {
-                // managed
-            } else if (
-                shape == LiteGraph.ROUND_SHAPE ||
-                shape == LiteGraph.CIRCLE_SHAPE ||
-                shape == LiteGraph.CARD_SHAPE
-            ) {
-                if (low_quality) {
-                    ctx.fillStyle = "black";
-                    ctx.beginPath();
-                    ctx.arc(
-                        title_height * 0.5,
-                        title_height * -0.5,
-                        box_size * 0.5 + 1,
-                        0,
-                        Math.PI * 2,
-                    );
-                    ctx.fill();
-                }
-
-                ctx.fillStyle = (statusColor || node.boxcolor || colState) || LiteGraph.NODE_DEFAULT_BOXCOLOR;
-                if (low_quality)
-                    ctx.fillRect(title_height * 0.5 - box_size * 0.5, title_height * -0.5 - box_size * 0.5, box_size, box_size);
-                else {
-                    ctx.beginPath();
-                    ctx.arc(
-                        title_height * 0.5,
-                        title_height * -0.5,
-                        box_size * 0.5,
-                        0,
-                        Math.PI * 2,
-                    );
-                    ctx.fill();
-                }
-            } else {
-                if (low_quality) {
-                    ctx.fillStyle = "black";
-                    ctx.fillRect(
-                        (title_height - box_size) * 0.5 - 1,
-                        (title_height + box_size) * -0.5 - 1,
-                        box_size + 2,
-                        box_size + 2,
-                    );
-                }
-                ctx.fillStyle = (statusColor || node.boxcolor || colState) || LiteGraph.NODE_DEFAULT_BOXCOLOR;
-                ctx.fillRect(
-                    (title_height - box_size) * 0.5,
-                    (title_height + box_size) * -0.5,
-                    box_size,
-                    box_size,
-                );
-            }
+            if (!CallbackHandler.is(r, true)) this.drawNodePin(ctx, node, title_height, shape, low_quality);
             ctx.globalAlpha = old_alpha;
 
             // title text
@@ -19638,7 +19771,9 @@ export class LGraphCanvas {
         return o;
     }
 
-    processContextMenu(node, event) {
+    processContextMenu(node, event, {
+        full = false
+    } = {}) {
         var that = this;
         var canvas = LGraphCanvas.active_canvas;
         var ref_window = canvas.getCanvasWindow();
@@ -19713,6 +19848,10 @@ export class LGraphCanvas {
             } else if (slotOb.type == LiteGraph.EVENT) {
                 options.title = "Event";
             }
+        } else if (!full && this.isNodePinMenuEvent(node, event)) {
+            // on the pin (or the title, with LiteGraph.Node.TitleQuickMenu): the quick menu
+            menu_info = this.getNodePinMenuOptions(node);
+            options.title = node.title || node.type;
         } else {
             if (node) {
                 // on node
@@ -21564,6 +21703,7 @@ export class LGraphNode {
         ExecutionEngine._depth++;
         // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
         const reportRun = graph._step_node !== this && this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
             const bypassed = this.mode === LiteGraph.BYPASS;
             if (bypassed) ExecutionEngine.passThrough(this); // a wire: data only, its own code does not run
@@ -21692,6 +21832,7 @@ export class LGraphNode {
         graph.nodes_actioning[this.id] = options.action_call;
         ExecutionEngine._depth++;
         const reportRun = this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
             const bypassed = this.mode === LiteGraph.BYPASS;
             if (bypassed) {
@@ -61836,6 +61977,16 @@ export class Editor {
         // the Editor shows execution problems as badges by default (a stored choice wins)
         const badgeSetting = LiteGraph.settings?.getDefinition("LiteGraph.Node.ExecutionBadge");
         if (badgeSetting) badgeSetting.default = true;
+        // and the pin by mode and state, and the graph status chip (extensions node_pin, graph_status)
+        const pinSetting = LiteGraph.settings?.getDefinition("LiteGraph.Node.PinStyle");
+        if (pinSetting) pinSetting.default = "modes";
+        if (LiteGraph.settings && !LiteGraph.settings.has("LiteGraph.Canvas.GraphStatus")) {
+            LiteGraph.settings.define({
+                id: "LiteGraph.Canvas.GraphStatus",
+                name: "Show the graph's execution model and run state on the canvas",
+                default: true
+            });
+        }
 
         const canvas = this.canvas = root.querySelector(".graphcanvas");
         const graph = this.graph = new LGraph();
@@ -63433,6 +63584,409 @@ export function registerExtension_viewTools(graphcanvas) {
 }
 
 registerExtension_viewTools();
+
+/**
+ * The node pin (the title box) as a mode and state indicator, with a quick menu.
+ *
+ * - Pin style "modes" (setting LiteGraph.Node.PinStyle): one shape and colour per mode, a run-state
+ *   ring on top, and a glow that fades after each run (`node.last_run_time`). A node's `boxcolor`
+ *   still fills the pin, so nodes that signal through it keep doing so.
+ * - Quick menu on the pin (menu location "node-pin"): Mode ▸, Bypass, Mute, Rename, Collapse,
+ *   Run now, Info, then "More…" (the full node menu, added by the canvas).
+ * - Commands (each one undo step, for the node and the rest of the selection):
+ *   `litegraph.node.setMode` (ctx.mode), `litegraph.node.toggleBypass` (Ctrl+B),
+ *   `litegraph.node.toggleMute` (Ctrl+M), `litegraph.node.run`, `litegraph.node.info`.
+ */
+
+/** how each mode looks: shape, colour, and an optional mark */
+export const NODE_PIN_MODE_LOOKS = {
+    [LiteGraph.ALWAYS]: {
+        shape: "circle",
+        color: "#7a7",
+        fill: true
+    },
+    [LiteGraph.ON_EVENT]: {
+        shape: "diamond",
+        color: "#d93",
+        fill: true
+    },
+    [LiteGraph.ON_TRIGGER]: {
+        shape: "triangle",
+        color: "#5af",
+        fill: true
+    },
+    [LiteGraph.ON_REQUEST]: {
+        shape: "circle",
+        color: "#5cc",
+        fill: false
+    },
+    [LiteGraph.NEVER]: {
+        shape: "circle",
+        color: "#666",
+        fill: false,
+        mark: "slash"
+    },
+    [LiteGraph.BYPASS]: {
+        shape: "circle",
+        color: "#b6e",
+        fill: false,
+        mark: "bar"
+    },
+};
+
+/** how each execution state rings the pin */
+const NODE_PIN_STATE_RINGS = {
+    running: {
+        color: "#fc3",
+        width: 2.5
+    },
+    error: {
+        color: "#e44",
+        width: 2.5
+    },
+    queued: {
+        color: "#999",
+        width: 1.5
+    },
+};
+
+/** how long the glow after a run lasts (ms) */
+export const NODE_PIN_RUN_GLOW_MS = 600;
+
+/** The "modes" pin style (LiteGraph.registerNodePinStyle). */
+export function modesPinStyle(node, canvas) {
+    const look = NODE_PIN_MODE_LOOKS[node.mode] ?? NODE_PIN_MODE_LOOKS[LiteGraph.ALWAYS];
+    const spec = {
+        shape: look.shape,
+        fill: node.boxcolor || (look.fill ? look.color : null),
+        stroke: look.color,
+        lineWidth: 1.5,
+        mark: look.mark ?? null,
+        markColor: look.color,
+    };
+    const status = canvas?.executionOverlaysEnabled?.() !== false ? node.execution_state?.status : null;
+    const ring = NODE_PIN_STATE_RINGS[status];
+    if (ring) {
+        spec.stroke = ring.color;
+        spec.lineWidth = ring.width;
+        if (status === "error") spec.fill = ring.color;
+    }
+    const since = LiteGraph.getTime() - (node.last_run_time ?? -Infinity);
+    if (since >= 0 && since < NODE_PIN_RUN_GLOW_MS) {
+        spec.glow = {
+            color: "#fff",
+            radius: 4,
+            alpha: 0.55 * (1 - since / NODE_PIN_RUN_GLOW_MS)
+        };
+        spec.redraw = true; // keep drawing until the glow is gone
+    }
+    return spec;
+}
+
+/** the nodes a command acts on: the node and, when it is selected, the rest of the selection */
+function nodePinTargets(ctx) {
+    const selected = ctx.selectedNodes ?? Object.values(ctx.canvas?.selected_nodes ?? {});
+    if (ctx.node) return selected.includes(ctx.node) ? selected : [ctx.node];
+    return selected;
+}
+
+/** sets the mode of nodes as one undo step; refusals are reported by the canvas */
+export function setNodesMode(ctx, nodes, mode) {
+    const graph = ctx.graph ?? nodes[0]?.graph;
+    if (!graph || !nodes.length) return false;
+    const refusals = [];
+    const apply = () => {
+        for (const node of nodes) {
+            if (node.mode === mode) continue;
+            if (node.changeMode(mode) === false && node.mode_refusal) refusals.push(node.mode_refusal);
+        }
+        graph.onGraphChanged?.({
+            action: "nodeMode"
+        });
+    };
+    if (graph.transact) graph.transact("nodeMode", apply);
+    else apply();
+    if (refusals.length) ctx.canvas?.showExecutionNotice?.(refusals[0] + (refusals.length > 1 ? ` (+${refusals.length - 1} more)` : ""));
+    ctx.canvas?.setDirty?.(true, true);
+    return true;
+}
+
+/** toggles nodes between a mode and ALWAYS (all go to the mode unless all already have it) */
+function toggleNodesMode(ctx, mode) {
+    const nodes = nodePinTargets(ctx);
+    const allOn = nodes.length > 0 && nodes.every((node) => node.mode === mode);
+    return setNodesMode(ctx, nodes, allOn ? LiteGraph.ALWAYS : mode);
+}
+
+const nodePinHasNodes = (ctx) => !!ctx.graph && nodePinTargets(ctx).length > 0 && !ctx.canvas?.read_only;
+const nodePinChecked = (on, label) => `${on ? "✓ " : ""}${label}`;
+
+export const nodePinExtension = {
+    name: "litegraph.node_pin",
+    commands: [{
+            id: "litegraph.node.setMode",
+            label: "Set mode",
+            category: "node",
+            when: nodePinHasNodes,
+            run: (ctx) => Number.isInteger(ctx.mode) && setNodesMode(ctx, nodePinTargets(ctx), ctx.mode),
+        },
+        {
+            id: "litegraph.node.toggleBypass",
+            label: (ctx) => nodePinChecked(ctx.node?.mode === LiteGraph.BYPASS, "Bypass"),
+            category: "node",
+            when: nodePinHasNodes,
+            run: (ctx) => toggleNodesMode(ctx, LiteGraph.BYPASS),
+        },
+        {
+            id: "litegraph.node.toggleMute",
+            label: (ctx) => nodePinChecked(ctx.node?.mode === LiteGraph.NEVER, "Mute (Never)"),
+            category: "node",
+            when: nodePinHasNodes,
+            run: (ctx) => toggleNodesMode(ctx, LiteGraph.NEVER),
+        },
+        {
+            id: "litegraph.node.collapse",
+            label: (ctx) => (ctx.node?.flags?.collapsed ? "Expand" : "Collapse"),
+            category: "node",
+            when: nodePinHasNodes,
+            run(ctx) {
+                for (const node of nodePinTargets(ctx)) node.collapse();
+                ctx.canvas?.setDirty?.(true, true);
+                return true;
+            },
+        },
+        {
+            id: "litegraph.node.run",
+            label: "Run now",
+            category: "node",
+            when: (ctx) => nodePinHasNodes(ctx) && nodePinTargets(ctx).some((node) => node.onExecute),
+            /** runs each node's onExecute as one event entry (its ON_REQUEST inputs pulled first under ancestors) */
+            run(ctx) {
+                const engine = LiteGraph.ExecutionEngine;
+                for (const node of nodePinTargets(ctx)) {
+                    if (!node.onExecute || !node.graph) continue;
+                    node._dispatchEvent(() => {
+                        if (engine?.rulesFor(node.graph).refresh === "ancestors") engine.pull(node);
+                        node.doExecute(undefined, {
+                            action_call: `${node.id}_run_${LiteGraph.uuidv4()}`
+                        });
+                    });
+                }
+                ctx.canvas?.setDirty?.(true, true);
+                return true;
+            },
+        },
+        {
+            id: "litegraph.node.info",
+            label: "Info…",
+            category: "node",
+            when: (ctx) => !!ctx.node && typeof ctx.canvas?.openNodePanel === "function",
+            run: (ctx) => {
+                ctx.canvas.openNodePanel(ctx.node);
+                return true;
+            },
+        },
+    ],
+    keybindings: [{
+            combo: "ctrl+b",
+            commandId: "litegraph.node.toggleBypass"
+        },
+        {
+            combo: "ctrl+m",
+            commandId: "litegraph.node.toggleMute"
+        },
+    ],
+    setup(ctx) {
+        ctx.addDisposer(LiteGraph.registerNodePinStyle("modes", modesPinStyle));
+        ctx.menus.register("node-pin", (menuCtx) => {
+            const node = menuCtx.node;
+            if (!node) return [];
+            const valid = LiteGraph.getValidNodeModes?.(node) ?? LiteGraph.NODE_MODES.map((_, mode) => mode);
+            return [{
+                    content: `Mode: ${LiteGraph.NODE_MODES[node.mode] ?? node.mode}`,
+                    has_submenu: true,
+                    callback: (_value, _options, e, menu) => {
+                        const items = valid.map((mode) => ({
+                            content: nodePinChecked(node.mode === mode, LiteGraph.NODE_MODES[mode]),
+                            mode
+                        }));
+                        LiteGraph.ContextMenu(items, {
+                            event: e,
+                            parentMenu: menu,
+                            callback: (item) => item && setNodesMode(menuCtx, nodePinTargets(menuCtx), item.mode),
+                        });
+                        return false;
+                    },
+                },
+                {
+                    command: "litegraph.node.toggleBypass"
+                },
+                {
+                    command: "litegraph.node.toggleMute"
+                },
+                null,
+                {
+                    command: "litegraph.rename"
+                },
+                {
+                    command: "litegraph.node.collapse"
+                },
+                {
+                    command: "litegraph.node.run"
+                },
+                {
+                    command: "litegraph.node.info"
+                },
+            ];
+        });
+    },
+};
+
+/** Registers the extension once (the full bundles and the editor load it). */
+export function registerExtension_nodePin(graphcanvas) {
+    if (!LiteGraph.extensions?.has(nodePinExtension.name)) LiteGraph.registerExtension(nodePinExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
+
+registerExtension_nodePin();
+
+/**
+ * The graph's own mode on the canvas: a chip at the top left with the document's execution model
+ * (`ancestors`, `step`, ...) and whether the graph runs. Clicking it opens a menu to switch the model
+ * (one undo step, graph.setExecutionModel) or to start and stop the graph.
+ * Shown when the setting LiteGraph.Canvas.GraphStatus is on (off by default; the Editor turns it on).
+ */
+
+export const GRAPH_STATUS_SETTING = "LiteGraph.Canvas.GraphStatus";
+
+const GRAPH_STATUS_PAD = 8;
+const GRAPH_STATUS_HEIGHT = 22;
+
+const graphStatusRoot = (canvas) => canvas?.graph?.rootGraph ?? canvas?.graph ?? null;
+const graphStatusRunning = (graph) => graph?.status === (graph?.constructor?.STATUS_RUNNING ?? 2);
+
+/** the chip's text: the model title (or name) */
+export function graphStatusLabel(graph) {
+    const engine = LiteGraph.ExecutionEngine;
+    const name = engine?.modelNameFor(graph) ?? "legacy";
+    const model = engine?.getModel(name);
+    return model?.title ?? name;
+}
+
+function graphStatusEnabled() {
+    try {
+        return !!LiteGraph.settings?.get(GRAPH_STATUS_SETTING);
+    } catch {
+        return false;
+    }
+}
+
+/** draws the chip in screen space and remembers where it is (canvas._graph_status_rect) */
+export function drawGraphStatus(canvas, ctx) {
+    canvas._graph_status_rect = null;
+    const graph = graphStatusRoot(canvas);
+    if (!graph || !graphStatusEnabled()) return;
+    const running = graphStatusRunning(graph);
+    const text = graphStatusLabel(graph);
+    ctx.save();
+    ctx.font = "12px Arial";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    const width = (ctx.measureText?.(text)?.width ?? text.length * 6) + GRAPH_STATUS_PAD * 2 + 14;
+    // below the subgraph breadcrumb when there is one
+    const x = 10;
+    const y = canvas._graph_stack?.length ? 56 : 10;
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#222";
+    ctx.strokeStyle = running ? "#5c5" : "#555";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, width, GRAPH_STATUS_HEIGHT, 6);
+    else ctx.rect(x, y, width, GRAPH_STATUS_HEIGHT);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = running ? "#5c5" : "#888";
+    ctx.beginPath();
+    ctx.arc(x + GRAPH_STATUS_PAD + 4, y + GRAPH_STATUS_HEIGHT * 0.5, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ddd";
+    ctx.fillText(text, x + GRAPH_STATUS_PAD + 14, y + GRAPH_STATUS_HEIGHT * 0.5 + 1);
+    ctx.restore();
+    canvas._graph_status_rect = [x, y, width, GRAPH_STATUS_HEIGHT];
+}
+
+/** the menu the chip opens: the models (current one checked), then Start or Stop */
+export function graphStatusMenu(canvas) {
+    const graph = graphStatusRoot(canvas);
+    const engine = LiteGraph.ExecutionEngine;
+    if (!graph || !engine) return [];
+    const current = engine.modelNameFor(graph);
+    const items = engine.listModels().map((model) => ({
+        content: `${model.name === current ? "✓ " : ""}${model.title ?? model.name}`,
+        callback: () => {
+            if (model.name !== current) graph.setExecutionModel(model.name);
+            canvas.setDirty(true, true);
+        },
+    }));
+    items.push(null, graphStatusRunning(graph) ?
+        {
+            content: "Stop",
+            callback: () => {
+                graph.stop();
+                canvas.setDirty(true, true);
+            }
+        } :
+        {
+            content: "Start",
+            callback: () => {
+                graph.start();
+                canvas.setDirty(true, true);
+            }
+        });
+    return items;
+}
+
+/** true when a canvas-relative CSS position is on the chip */
+export function isOverGraphStatus(canvas, x, y) {
+    const rect = canvas?._graph_status_rect;
+    return !!rect && x >= rect[0] && x <= rect[0] + rect[2] && y >= rect[1] && y <= rect[1] + rect[3];
+}
+
+export const graphStatusExtension = {
+    name: "litegraph.graph_status",
+    setup(ctx) {
+        // the Editor may have defined it first, with its own default
+        if (!ctx.host.settings?.has?.(GRAPH_STATUS_SETTING)) {
+            ctx.settings.define({
+                id: GRAPH_STATUS_SETTING,
+                name: "Show the graph's execution model and run state on the canvas",
+                default: false
+            });
+        }
+        ctx.onCanvas((canvas, canvasCtx) => {
+            canvasCtx.on("onDrawOverlay", (_info, c2d) => drawGraphStatus(canvas, c2d));
+            canvasCtx.on("onMouse", (_info, e) => {
+                if (e?.button !== undefined && e.button !== 0) return undefined;
+                const [x, y] = canvas.last_mouse_position ?? [];
+                if (!isOverGraphStatus(canvas, x, y)) return undefined;
+                LiteGraph.ContextMenu(graphStatusMenu(canvas), {
+                    event: e,
+                    title: "Execution model"
+                });
+                return false; // handled: the canvas does not start a gesture
+            });
+        });
+    },
+};
+
+/** Registers the extension once (the full bundles and the editor load it). */
+export function registerExtension_graphStatus(graphcanvas) {
+    if (!LiteGraph.extensions?.has(graphStatusExtension.name)) LiteGraph.registerExtension(graphStatusExtension);
+    if (graphcanvas) LiteGraph.extensions.attachCanvas(graphcanvas);
+}
+
+registerExtension_graphStatus();
 
 /**
  * Optional ComfyUI workflow interoperability.

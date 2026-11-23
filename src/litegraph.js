@@ -452,6 +452,27 @@ export class LiteGraphClass {
     }
 
     /**
+     * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
+     * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`
+     * (null: classic), spec `{shape: "circle"|"square"|"diamond"|"triangle", fill, stroke, lineWidth,
+     * alpha, size, glow: {color, radius, alpha}, mark: "slash"|"bar"|"dot", markColor, redraw}`.
+     */
+    nodePinStyles = new Map();
+
+    /** @returns {() => void} disposer */
+    registerNodePinStyle(name, style) {
+        if (typeof name !== "string" || !name || name === "classic") throw new TypeError("node pin style: a name other than \"classic\" is required");
+        if (typeof style !== "function") throw new TypeError(`node pin style ${name}: a function is required`);
+        const previous = this.nodePinStyles.get(name);
+        this.nodePinStyles.set(name, style);
+        return () => {
+            if (this.nodePinStyles.get(name) !== style) return;
+            if (previous) this.nodePinStyles.set(name, previous);
+            else this.nodePinStyles.delete(name);
+        };
+    }
+
+    /**
      * Named exec-slot layouts. A layout places the built-in `onTrigger` and `onExecuted` slots
      * (LGraphNode.getExecSlotPos) instead of putting them in the slot rows:
      * `{normal: {trigger, executed}, vertical: {trigger, executed}}`, each `{x, y, dx, dy, dir}`
@@ -790,6 +811,8 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });
             this.settings.define({ id: "LiteGraph.Execution.AllowAnyMode", name: "Allow node modes their type declares invalid", default: false });
+            this.settings.define({ id: "LiteGraph.Node.PinStyle", name: "Node pin (title box) style", type: "combo", options: ["classic", "modes"], default: "classic", tooltip: "classic: as before. modes: shape and colour by node mode, with run state rings (needs the node_pin extension; otherwise classic)." });
+            this.settings.define({ id: "LiteGraph.Node.TitleQuickMenu", name: "Right-click on a node title opens the pin quick menu", default: false, tooltip: "The pin (title box) always opens it when an extension contributes items; \"More…\" opens the full node menu." });
             this.settings.define({ id: "LiteGraph.Node.ExecSlots", name: "Create onTrigger / onExecuted slots when an event link is dropped on a node", type: "combo", options: ["auto", "on", "off"], default: "auto", tooltip: "auto: as the document's execution model says (on under ancestors), unless code assigned LiteGraph.do_add_triggers_slots." });
             this.settings.define({ id: "LiteGraph.Node.ExecSlotLayout", name: "Where the onTrigger / onExecuted slots sit", type: "combo", options: ["rows", "edges"], default: "rows", tooltip: "rows: in the slot rows, as before. edges: on the line between title and body, at both ends (vertical nodes: above the pin and at the bottom)." });
             this.settings.define({ id: "LiteGraph.Compat.UnmarkedMode4", name: "Mode 4 in documents without a LiteGraph version means", type: "combo", options: ["bypass", "on_request"], default: "bypass", tooltip: "bypass: as in ComfyUI and current LiteGraph. on_request: for files saved by LiteGraph builds older than 2026-11-18, where mode 4 was On Request (tools/migrate-modes.mjs rewrites such files)." });

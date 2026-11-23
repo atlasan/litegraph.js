@@ -30,6 +30,17 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
 * **Exec slots per execution model:** dropping an event link on a node creates its exec slots under `ancestors` (model rule `exec_slots`).
   * The setting `LiteGraph.Node.ExecSlots` (`auto` / `on` / `off`) overrides the rule, and so does an assigned `LiteGraph.do_add_triggers_slots`.
   * `ExecutionEngine.execSlotsFor(graph)` resolves it.
+* **Node pin (the title box):**
+  * Core:
+    * `LGraphCanvas.drawNodePin`, `isOverNodePin` and the style registry (`LiteGraph.registerNodePinStyle`, setting `LiteGraph.Node.PinStyle`; `classic` is the look of before);
+    * `node.last_run_time`;
+    * the menu location `"node-pin"` (`LiteGraph.menus.has`), opened by a right-click on the pin, or on the title with `LiteGraph.Node.TitleQuickMenu`, with "More…" for the full menu.
+  * The `node_pin` extension:
+    * the `modes` style: a shape and colour per mode, run-state rings, a run glow;
+    * the quick menu: Mode, Bypass, Mute, Rename, Collapse, Run now, Info;
+    * the commands `litegraph.node.setMode`, `toggleBypass` (Ctrl+B), `toggleMute` (Ctrl+M), `collapse`, `run`, `info`.
+* **Graph status chip** (`graph_status` extension, setting `LiteGraph.Canvas.GraphStatus`): the execution model and run state on the canvas; a click switches the model or starts and stops the graph.
+* **Editor:** the `modes` pin style and the graph status chip are on by default.
 * **Mode migration:** `LGraph.migrateModes`, the setting `LiteGraph.Compat.UnmarkedMode4`, and `tools/migrate-modes.mjs` (`--check`, `--unmarked`). The examples and test fixtures are migrated.
 * **The editor server serves `/docs`** (the generated API and the reference pages) and resolves its paths from the repository root, so it starts from any working directory.
 

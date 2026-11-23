@@ -381,6 +381,27 @@ Badges that would cover the title text are left out; buttons are always drawn.
 | `LiteGraph.Node.LibraryBadge` | on | "loading libraries" while a node waits for its libraries, "library error" (with the message) when they failed |
 | `LiteGraph.Group.HeaderToggle` | on | a toggle in group titles that mutes and unmutes the group's nodes |
 
+**The node pin** is the box at the left of the title. A click there collapses the node.
+- **Look:** the setting `LiteGraph.Node.PinStyle` picks a style.
+  - `classic` is the default and the look of before: the execution status, the node's `boxcolor`, or a mode colour with `LiteGraph.node_box_coloured_by_mode`, and a flash on runs with `node_box_coloured_when_on`.
+  - `modes` comes with the `node_pin` extension and is on in the Editor. Its shapes are:
+    - ALWAYS: a green dot
+    - ON_EVENT: an orange diamond
+    - ON_TRIGGER: a blue triangle
+    - ON_REQUEST: a teal ring
+    - NEVER: a grey ring with a slash
+    - BYPASS: a violet ring with a bar
+
+    A ring shows the run state (running, error, queued), a glow fades after each run (`node.last_run_time`), and a node's `boxcolor` still fills the pin.
+  - Your own styles: `LiteGraph.registerNodePinStyle(name, (node, canvas) => ({shape, fill, stroke, glow, mark}))`.
+  - A node can still draw its own pin with `onDrawTitleBox`.
+- **Quick menu:** a right-click on the pin opens the items contributed to the `"node-pin"` menu location, then "More…" for the full node menu. With nothing contributed, it is the node menu as before. The setting `LiteGraph.Node.TitleQuickMenu` opens the quick menu from the whole title.
+- **The `node_pin` extension** contributes:
+  - Mode ▸, Bypass, Mute, Rename, Collapse, Run now, Info…;
+  - the commands `litegraph.node.setMode`, `toggleBypass` (Ctrl+B), `toggleMute` (Ctrl+M), `collapse`, `run` and `info`. Each acts on the node and the rest of the selection as one undo step, and a refused mode is shown with the setting that lifts it.
+
+**The graph status chip** (the `graph_status` extension, setting `LiteGraph.Canvas.GraphStatus`, on in the Editor) shows the document's execution model and whether the graph runs, at the top left of the canvas. A click opens a menu to switch the model (one undo step) or to start and stop the graph.
+
 ## Editing, undo and selection
 
 **Undo:** wrap programmatic edits in a transaction so they undo as one step. Undo history is recorded when `LiteGraph.actionHistory_enabled` is set (the editor defaults set it).

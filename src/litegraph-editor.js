@@ -33,6 +33,12 @@ export class Editor {
         // the Editor shows execution problems as badges by default (a stored choice wins)
         const badgeSetting = LiteGraph.settings?.getDefinition("LiteGraph.Node.ExecutionBadge");
         if (badgeSetting) badgeSetting.default = true;
+        // and the pin by mode and state, and the graph status chip (extensions node_pin, graph_status)
+        const pinSetting = LiteGraph.settings?.getDefinition("LiteGraph.Node.PinStyle");
+        if (pinSetting) pinSetting.default = "modes";
+        if (LiteGraph.settings && !LiteGraph.settings.has("LiteGraph.Canvas.GraphStatus")) {
+            LiteGraph.settings.define({ id: "LiteGraph.Canvas.GraphStatus", name: "Show the graph's execution model and run state on the canvas", default: true });
+        }
 
         const canvas = this.canvas = root.querySelector(".graphcanvas");
         const graph = this.graph = new LGraph();

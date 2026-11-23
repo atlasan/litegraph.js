@@ -37,7 +37,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Track | Flows: node reference, declarations, examples | **Done** (in `LG/dev`) ([plan](2026-11-22-flows-reference-examples.md); steps 1–3 of the [flows direction](2026-11-22-flows-direction.md)); see [Flows track](#flows-track-reference-declarations-examples) |
 | 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
 | Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
-| Track | Node pin, modes and exec slots | **In progress** ([plan](2026-11-23-node-pin-modes-exec-slots.md)): A (mode 4 = BYPASS, ON_REQUEST = 5, [decision 0004](../memories/decisions/0004-mode-4-bypass.md)) merged into `LG/dev` from `LG/dev_HMD_modes`; B (exec slots: layouts, per-model creation) merged from `LG/dev_HMD_exec_slots`; C (pin, graph status) next; D (debugger notes) proposed as its own session; see [Node pin track](#node-pin-modes-and-exec-slots-track) |
+| Track | Node pin, modes and exec slots | **Done** except D ([plan](2026-11-23-node-pin-modes-exec-slots.md)): A (mode 4 = BYPASS, ON_REQUEST = 5, [decision 0004](../memories/decisions/0004-mode-4-bypass.md)) merged into `LG/dev` from `LG/dev_HMD_modes`; B (exec slots: layouts, per-model creation) merged from `LG/dev_HMD_exec_slots`; C (pin styles and quick menu, graph status chip) merged from `LG/dev_HMD_node_pin`; D (debugger notes) proposed as its own session; see [Node pin track](#node-pin-modes-and-exec-slots-track) |
 | Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **Done**, merged into `LG/dev` from `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md), [record](../executions/2026-11-23-launcher-and-bun.md)); see [Launcher track](#launcher-track) |
 | Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Ready**: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); release checks rerun on `LG/dev` @ `ce8c231` after the [audit fixes](../executions/2026-11-23-audit-fixes.md) (see the plan's History); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
@@ -247,10 +247,15 @@ Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-
 - the model rule `exec_slots`, on for `ancestors` (FLW-07 promoted);
 - the setting `LiteGraph.Node.ExecSlots`.
 
-**C, pin (`LG/dev_HMD_node_pin`):**
-- core pin geometry, hit test and style registry;
-- the `node_pin` extension: mode and state styles, quick menu, commands;
-- the `graph_status` extension: model chip.
+**C, pin (done, `LG/dev_HMD_node_pin`):**
+- **Core:**
+  - `drawNodePin`, `isOverNodePin`;
+  - the pin style registry (`LiteGraph.registerNodePinStyle`, setting `LiteGraph.Node.PinStyle`, `classic` built in);
+  - `node.last_run_time`;
+  - the `"node-pin"` menu location, with the setting `LiteGraph.Node.TitleQuickMenu`.
+- **`node_pin` extension:** the `modes` style (a shape and colour per mode, state rings, a run glow), the quick menu, and the node mode commands (Ctrl+B bypass, Ctrl+M mute).
+- **`graph_status` extension:** the execution model chip, with a menu to switch the model and to start or stop.
+- **Editor:** both are on.
 
 **D, debugger (deferred):** a research record and the FLW-16 card.
 

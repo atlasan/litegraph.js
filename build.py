@@ -139,6 +139,8 @@ lib_extensions_files = [
     "./src/extensions/subgraph_tools.js",
     "./src/extensions/node_packs.js",
     "./src/extensions/view_tools.js",
+    "./src/extensions/node_pin.js",
+    "./src/extensions/graph_status.js",
     "./src/extensions/comfy_interop.js",
 ]
 

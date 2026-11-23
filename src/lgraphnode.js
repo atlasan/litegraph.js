@@ -1102,6 +1102,7 @@ export class LGraphNode {
         ExecutionEngine._depth++;
         // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
         const reportRun = graph._step_node !== this && this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
             const bypassed = this.mode === LiteGraph.BYPASS;
             if (bypassed) ExecutionEngine.passThrough(this); // a wire: data only, its own code does not run
@@ -1212,6 +1213,7 @@ export class LGraphNode {
         graph.nodes_actioning[this.id] = options.action_call;
         ExecutionEngine._depth++;
         const reportRun = this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
             const bypassed = this.mode === LiteGraph.BYPASS;
             if (bypassed) {

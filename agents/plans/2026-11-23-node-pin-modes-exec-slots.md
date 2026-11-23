@@ -1,6 +1,6 @@
 # Node pin states, mode 4 as Bypass, exec slots on the edges
 
-> **Date** 2026-11-23 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `96c8cba`
+> **Date** 2026-11-23 · **Kind** plan · **Status** done except D (debugger notes) · **Base** `LG/dev` @ `96c8cba`
 
 The node pin (the top-left title box) shows each node's mode and run state, and has a quick menu. Mode 4 becomes BYPASS, as in ComfyUI, and ON_REQUEST moves to 5. The built-in `onTrigger` / `onExecuted` slots can sit on the node edges, and are created by default under the `ancestors` model. The step debugger is analysed and deferred. Every visual change is opt-in. This is parallel work: three tracks on `LG/dev_HMD_*` branches, no wave number.
 
@@ -94,3 +94,9 @@ The user's direction of 2026-11-23 asked for five things:
 ## History
 
 - 2026-11-23: proposed and accepted; the user decided the exec-slot geometry, the mode renumbering, deferring the debugger, and opt-in visuals.
+- 2026-11-23: tracks A, B and C done and merged into `LG/dev` ([record](../executions/2026-11-23-node-pin-modes-exec-slots.md)).
+  - **Changes during the work:**
+    - nodes with exec slots on the edges get a half-slot hit-test margin, because a drop above the pin was missed;
+    - vertical nodes keep the pin column free;
+    - the pin style registry lives on `LiteGraph`, because pages mixing the bundle and `src/` load two copies of the classes.
+  - **D (the debugger notes)** was proposed as its own session.
