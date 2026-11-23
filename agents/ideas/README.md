@@ -59,7 +59,7 @@ This is a database of feature and integration ideas for this fork. It is grouped
 | [js-libraries.md](landscape/js-libraries.md) | Audio, devices, data, ML, LLM, collaboration and more | Which JS libraries make good node families, widgets or runtimes? |
 | [bun-process-runner.md](landscape/bun-process-runner.md) | Bun runtime, durable workflows | What would a Bun-powered process designer and runner look like? |
 | [launcher-cli.md](landscape/launcher-cli.md) | Launcher, command line, process control | How does a fresh clone start, stop and open the apps on every OS, with Bun or Node? |
-| [human-feedback-usability.md](landscape/human-feedback-usability.md) | Human feedback: examples, everyday nodes, slot labels/icons and workflow authoring | How can examples explain more, common nodes feel better, and the existing editor guide workflow creation? |
+| [human-feedback-usability.md](landscape/human-feedback-usability.md) | Human feedback: examples, everyday nodes, slot labels/icons and workflow authoring | How can examples explain more, common nodes feel better, and the editor/runner seed starter workflows from whole node sections and packs? |
 | [groups-annotations.md](landscape/groups-annotations.md) | Groups, comments, reroutes | How should groups grow into frames, comments, bypass regions and nested sections, compatible with ComfyUI and legacy documents? |
 | [execution-flows.md](landscape/execution-flows.md) | Unreal Engine, Unity, Blender, Houdini, TouchDesigner, Pd, Node-RED, ComfyUI, Rete, KHR_interactivity and others | How do node systems run their graphs (exec pins, pure values, lifecycles, custom events), and which flow categories and profiles should this fork offer? |
 

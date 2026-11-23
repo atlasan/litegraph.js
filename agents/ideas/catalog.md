@@ -362,5 +362,5 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | HMD-03 | Everyday base-node upgrade, starting with boolean/toggle usability and consistent defaults ([card](cards/HMD-03-everyday-base-nodes.md)) | P9 P10 | node | M | — | sketched |
 | HMD-04 | Adaptive watch displays for simple and structured values, type awareness and explicit validation ([card](cards/HMD-04-adaptive-watch.md)) | P6 P9 P10 | node | L | — | sketched |
 | HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)) | P9 P10 | core | M | — | sketched |
-| HMD-06 | Editor-based workflow builder/runner panel using node and pack metadata, recipes and suggested settings ([card](cards/HMD-06-workflow-builder-runner.md)) | P8 P9 P10 | app | L | — | sketched |
+| HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)) | P9 P10 | app | L | — | sketched |
 | HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)) | P9 P10 | core | M | — | sketched |
