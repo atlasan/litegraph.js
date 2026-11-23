@@ -23,6 +23,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
+| 2026-11-23 | [Launcher and Bun commands](2026-11-23-launcher-and-bun.md): `lg.sh` / `lg.bat` and one JS helper on Bun or Node (start, stop, restart, status, info, open, logs, menu), apps on Bun, `/docs` served; intake of the 2026-11-23 findings (`LCH`, `GRP`) with candidates for later plans; branch `LG/dev_HMD_launcher` | accepted |
 | 2026-11-23 | [Pre-release 0.18.0-dev.2](2026-11-23-pre-release-0.18.0-dev.2.md): everything on `LG/dev`; records hygiene, three pre-release fixes, version, release checks, PR and tag | accepted |
 | 2026-11-22 | [Flows track: node reference, declarations, examples](2026-11-22-flows-reference-examples.md): `docs:nodes` reference from the registry, pack descriptions and `def.usage`, a catalog test, the declaration pass, the examples manifest and Demo menu, an examples test (steps 1–3 of the flows direction) | done |
 | 2026-11-22 | [Flows direction](2026-11-22-flows-direction.md): node reference, declarations, examples, call scopes, lifecycle and custom events, graph profiles (from the event flows audit) | proposed; steps 1–3 promoted |
