@@ -61,7 +61,6 @@ class WidgetButton {
     }
 
     onMouseDown(e, local_pos) {
-        console.warn("DBG","WidgetButton","onMouseDown",this);
         if (
             local_pos[0] > 1 &&
             local_pos[1] > 1 &&
