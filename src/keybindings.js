@@ -41,6 +41,7 @@ export class KeybindingRegistry {
      * @returns {string}
      */
     static normalize(combo) {
+        if (combo === " ") combo = "space"; // the key of a space KeyboardEvent
         if (typeof combo !== "string" || !combo.trim()) throw new TypeError("combo must be a non-empty string");
         const parts = combo.toLowerCase().split("+").map((part) => part.trim());
         // "ctrl++" means ctrl and the plus key
@@ -64,7 +65,8 @@ export class KeybindingRegistry {
 
     /** @param {KeyboardEvent} event @returns {string|null} normalized combo, null for a bare modifier */
     static fromEvent(event) {
-        const key = String(event.key ?? "").toLowerCase();
+        let key = String(event.key ?? "").toLowerCase();
+        if (key === " ") key = "space"; // a bare " " would not survive normalize
         if (!key || ["control", "alt", "shift", "meta"].includes(key)) return null;
         const mods = [];
         if (event.ctrlKey) mods.push("ctrl");

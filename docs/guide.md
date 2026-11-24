@@ -379,7 +379,7 @@ Badges that would cover the title text are left out; buttons are always drawn.
 | `LiteGraph.Node.SourceBadge` | off | the node source, when it is not core |
 | `LiteGraph.Node.LifecycleBadge` | on | "deprecated" / "experimental" |
 | `LiteGraph.Node.LibraryBadge` | on | "loading libraries" while a node waits for its libraries, "library error" (with the message) when they failed |
-| `LiteGraph.Group.HeaderToggle` | on | a toggle in group titles that mutes and unmutes the group's nodes |
+| `LiteGraph.Group.HeaderToggle` | on | a toggle at the right end of group titles that mutes and unmutes the group's nodes (see Groups) |
 
 **The node pin** is the box at the left of the title. A click there collapses the node.
 - **Look:** the setting `LiteGraph.Node.PinStyle` picks a style.
@@ -441,6 +441,14 @@ graph.transact("Add pair", () => { graph.add(a); graph.add(b); a.connect(0, b, 0
 **Function nodes:** `graph/function` calls a definition of the document. Pick it in the node's `function` combo; `call` (action input or button) pushes the inputs, runs it once, pulls the outputs and fires `done`. Each function node keeps its own state between calls. A function cannot call a definition it is inside of.
 
 **Groups:** `group.resizeTo(items)` and `group.fitToContents()` change a group's size; `group.setNodesMode(mode)` sets the mode of every node inside. The group menu offers "Fit to contents" and "Mode for all nodes".
+- **Dragging:**
+  - the title bar moves the group with what is inside it (as in ComfyUI); Ctrl on the title moves the group alone;
+  - the empty body pans the view, like empty canvas; Alt+drag on the body moves the group; Ctrl+drag on the body box-selects;
+  - the corner handle resizes.
+
+  The setting `LiteGraph.Group.BodyDrag` is `pan` (default) or `move`, where a body drag moves the group as in older LiteGraph.
+- **Title size:** with `LiteGraph.Group.TitleScale` (on by default) the title stays between `LiteGraph.Group.TitleMinPx` (12) and `TitleMaxPx` (48) pixels on screen: readable when zoomed out, not huge when zoomed in. Off, it scales with the canvas as before. The title band (selection and title drag) follows the drawn size: `canvas.getGroupTitleFontSize(group)`, `getGroupTitleHeight`, `isOverGroupTitle`.
+- **Header toggle** (`LiteGraph.Group.HeaderToggle`): a dot like the node pin (a ring when the group's nodes are all muted); a click mutes or unmutes them. It is `LGraphGroup.opts.toggle_size` (10) graph units, at most `toggle_max_px` (14) pixels on screen, and hidden below `toggle_min_px` (6). The title is wrapped and clipped left of it.
 
 **Clipboard and fragments:** `canvas.serializeSelection()` returns a fragment: nodes, their links, reroute chains and the selected groups. `canvas.insertFragment(fragment, pos)` inserts it with fresh ids as one undo step, so snippets and templates use the same path as paste.
 
@@ -464,7 +472,8 @@ Deprecated nodes are hidden unless the setting `LiteGraph.Search.ShowDeprecated`
 | Ctrl+C, Ctrl+V | Copy, paste |
 | Ctrl+Shift+V | Paste, keeping links from unselected nodes |
 | Delete | Delete selection |
-| Space + drag | Pan |
+| Space + move or drag | Pan (also over nodes and groups) |
+| Drag on a group's body / title | Pan / move the group (Alt+drag on the body moves it) |
 | Ctrl/Shift + click | Add to selection |
 
 With the bundled extensions (full builds, or `editor_build.html`), these keys are added:

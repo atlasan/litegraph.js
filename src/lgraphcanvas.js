@@ -555,6 +555,7 @@ export class LGraphCanvas {
         // Keyboard
         canvas.addEventListener("keydown", this.processKey);
         document.addEventListener("keyup", this.processKey); // in document, otherwise it doesn't fire keyup
+        canvas.addEventListener("blur", this._endSpacePan); // a space released elsewhere does not keep panning
 
         // Drop
         canvas.addEventListener("dragover", this._doNothing, false);
@@ -593,6 +594,7 @@ export class LGraphCanvas {
         // Keyboard
         canvas.removeEventListener("keydown", this.processKey);
         document.removeEventListener("keyup", this.processKey);
+        canvas.removeEventListener("blur", this._endSpacePan);
 
         // Drop
         canvas.removeEventListener("dragover", this._doNothing, false);
@@ -995,13 +997,18 @@ export class LGraphCanvas {
             return;
         }
 
+        // space held: a press pans the view, whatever is under the pointer
+        if (e.which == 1 && !this.userInput_isNotPrimary && this._space_pan && this.allow_dragcanvas) {
+            this._dragCanvasGesture(e, false);
+        } else
+
         // left button mouse / single finger
         if (e.which == 1 && !this.userInput_isNotPrimary) {
 
             // Ctrl: a box selection, except on a group's title band, where it moves the group
             // without its nodes (the group drag reads Ctrl while moving)
             const ctrlGroup = e.ctrlKey && !node ? this.graph.getGroupOnPos(e.canvasX, e.canvasY) : null;
-            const ctrlOnGroupTitle = ctrlGroup && e.canvasY < ctrlGroup.pos[1] + (ctrlGroup.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
+            const ctrlOnGroupTitle = ctrlGroup && this.isOverGroupTitle(ctrlGroup, e.canvasX, e.canvasY);
             if (e.ctrlKey && !ctrlOnGroupTitle) {
                 LiteGraph.log_debug("lgraphcanvas", "processMouseDown","starting box selection");
                 this.dragging_rectangle = new Float32Array(4);
@@ -1392,14 +1399,20 @@ export class LGraphCanvas {
                             this.pointer.onClick = () => this.toggleGroupMuted(group);
                             skip_action = true;
                         } else {
+                            const group = this.selected_group;
+                            const onTitle = this.isOverGroupTitle(group, e.canvasX, e.canvasY);
                             // clicking the title band selects the group (shift/ctrl adds to the selection)
-                            const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
-                            if (e.canvasY < this.selected_group.pos[1] + title_height) {
-                                this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
+                            if (onTitle) {
+                                this.selectItem(group, e.shiftKey || e.ctrlKey);
                             }
-
-                            var dist = LiteGraph.distance( [e.canvasX, e.canvasY], [ this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1] ] );
-                            this._dragGroupGesture(this.selected_group, dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15));
+                            const dist = LiteGraph.distance( [e.canvasX, e.canvasY], [ group.pos[0] + group.size[0], group.pos[1] + group.size[1] ] );
+                            const resizing = dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15);
+                            if (resizing || this.groupPressMoves(group, e, onTitle)) {
+                                this._dragGroupGesture(group, resizing);
+                            } else {
+                                // the body pans the view (LiteGraph.Group.BodyDrag "pan"), as empty canvas does
+                                this.selected_group = null;
+                            }
                         }
                     }
 
@@ -2054,6 +2067,7 @@ export class LGraphCanvas {
             this.pointer_is_down = false;
             this.pointer_is_double = false;
         }
+        if (this._space_pan) this.dragging_canvas = true; // space still held: moving keeps panning
 
         this.graph.change();
 
@@ -2382,6 +2396,13 @@ export class LGraphCanvas {
      * TODO : processKey save keys being down, fire single first keyDown instead of constantly pressed (use new event and promote that), clean on up
      * NOTE should use event.repeat meanwhile
      */
+    /** space released (or focus lost): stop panning; a pan gesture in progress clears the flag when it ends */
+    _endSpacePan = () => {
+        if (!this._space_pan) return;
+        this._space_pan = false;
+        if (!(this.pointer?.isDown && this.pointer.hasHandlers)) this.dragging_canvas = false;
+    };
+
     processKey = (e) => {
         if (!this.graph) {
             return;
@@ -2410,7 +2431,8 @@ export class LGraphCanvas {
         if (e.type == "keydown") {
             
             if (e.keyCode == 32) {
-                // space
+                // space: moving the pointer pans (legacy flag), a press pans as a gesture (processMouseDown)
+                this._space_pan = true;
                 this.dragging_canvas = true;
                 block_default = true;
             }
@@ -2500,8 +2522,7 @@ export class LGraphCanvas {
 
         } else if (e.type == "keyup") {
             if (e.keyCode == 32) {
-                // space
-                this.dragging_canvas = false;
+                this._endSpacePan();
             }
 
             if (this.selected_nodes) {
@@ -3192,7 +3213,7 @@ export class LGraphCanvas {
             pointer.onClick = () => this.deselectAllNodes(); // a click is short (CanvasPointer.click_time) and still
         }
         pointer.finally = () => {
-            this.dragging_canvas = false;
+            this.dragging_canvas = !!this._space_pan; // space still held: moving keeps panning
             this.dirty_canvas = true;
         };
     }
@@ -6313,33 +6334,91 @@ export class LGraphCanvas {
             ctx.lineTo(pos[0] + size[0], pos[1] + size[1] - this.options.groups_triangle_handler_size);
             ctx.fill();
 
-            var font_size = group.font_size || this.options.groups_title_font_size || LiteGraph.DEFAULT_GROUP_FONT_SIZE;
+            // the title, kept left of the header toggle (clipped there, so it never runs under it)
+            var font_size = this.getGroupTitleFontSize(group);
+            const toggleRect = this.getGroupToggleRect(group);
+            const textWidth = Math.max(0, (toggleRect ? toggleRect[0] - 4 / this.ds.scale : pos[0] + size[0]) - pos[0] - 4);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(pos[0], pos[1], textWidth + 4, size[1]);
+            ctx.clip();
             ctx.font = font_size + "px "+this.options.groups_title_font;
             ctx.textAlign = this.options.groups_title_alignment;
             if(this.options.groups_title_wrap){
-                // wrap inside the group: 4 px in from each side, and clear of the header toggle
-                const toggle = this.getGroupToggleRect(group);
-                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, size[0] - 8 - (toggle ? toggle[2] + 5 : 0), font_size);
+                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, textWidth, font_size);
             }else{
                 ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
             }
-            this.drawGroupToggle(group, ctx);
+            ctx.restore();
+            this.drawGroupToggle(group, ctx, toggleRect);
         }
 
         ctx.restore();
     }
 
+    /** a LiteGraph.Group.* setting, or the fallback when there is no settings registry */
+    _groupSetting(name, fallback) {
+        try {
+            const value = LiteGraph.settings?.get?.("LiteGraph.Group." + name);
+            return value ?? fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
+    /**
+     * The font size a group's title is drawn with, in graph units. With LiteGraph.Group.TitleScale
+     * (default on) its on-screen size is kept between LiteGraph.Group.TitleMinPx and TitleMaxPx;
+     * off, it is the group's font_size at every zoom (legacy).
+     */
+    getGroupTitleFontSize(group) {
+        const base = group.font_size || this.options.groups_title_font_size || LiteGraph.DEFAULT_GROUP_FONT_SIZE || LiteGraph.DEFAULT_GROUP_FONT || 24;
+        const scale = this.ds?.scale || 1;
+        if (!this._groupSetting("TitleScale", true)) return base;
+        const min = Number(this._groupSetting("TitleMinPx", 12)) || 0;
+        const max = Number(this._groupSetting("TitleMaxPx", 48)) || Infinity;
+        const px = Math.min(Math.max(base * scale, min), Math.max(min, max));
+        return px / scale;
+    }
+
+    /** height of a group's title band in graph units (first title line) */
+    getGroupTitleHeight(group) {
+        return this.getGroupTitleFontSize(group) * 1.4;
+    }
+
+    /** true when a graph-space position is on the group's title band */
+    isOverGroupTitle(group, canvasx, canvasy) {
+        return canvasx >= group.pos[0] && canvasx <= group.pos[0] + group.size[0]
+            && canvasy >= group.pos[1] && canvasy < group.pos[1] + Math.min(this.getGroupTitleHeight(group), group.size[1]);
+    }
+
+    /**
+     * Whether a press on a group (not its toggle or resize corner) moves it. The title band always
+     * does (Ctrl there moves the group alone); the body does with Alt, or always when
+     * LiteGraph.Group.BodyDrag is "move" (legacy). Otherwise a body drag pans the view.
+     */
+    groupPressMoves(group, e, onTitle = this.isOverGroupTitle(group, e.canvasX, e.canvasY)) {
+        if (onTitle || e.altKey) return true;
+        return this._groupSetting("BodyDrag", "pan") === "move";
+    }
+
     /**
      * The header toggle of a group (right end of its title band), in graph space, or null when
-     * LiteGraph.Group.HeaderToggle is off.
+     * LiteGraph.Group.HeaderToggle is off or it would be too small to see. Node-pin sized
+     * (LGraphGroup.opts.toggle_size), at most toggle_max_px on screen, hidden below toggle_min_px.
      * @returns {number[]|null} [x, y, w, h]
      */
     getGroupToggleRect(group) {
-        if (!LiteGraph.settings?.get?.("LiteGraph.Group.HeaderToggle")) return null;
-        const title_height = (group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
-        const side = Math.max(10, title_height - 10);
-        if (group.size[0] < side * 3) return null;
-        return [group.pos[0] + group.size[0] - side - 5, group.pos[1] + (title_height - side) / 2, side, side];
+        if (!this._groupSetting("HeaderToggle", true)) return null;
+        const opts = LiteGraph.LGraphGroup?.opts ?? {};
+        const scale = this.ds?.scale || 1;
+        const px = Math.min((opts.toggle_size ?? 10) * scale, opts.toggle_max_px ?? 14);
+        if (px < (opts.toggle_min_px ?? 6)) return null;
+        const side = px / scale;
+        const pad = 6 / scale;
+        if (group.size[0] < side * 3 + pad * 2) return null;
+        const band = Math.min(this.getGroupTitleHeight(group), group.size[1]);
+        return [group.pos[0] + group.size[0] - side - pad, group.pos[1] + (band - side) / 2, side, side];
     }
 
     /** true when the group has nodes and all of them are muted (mode NEVER) */
@@ -6357,20 +6436,27 @@ export class LGraphCanvas {
         return mode;
     }
 
-    /** Draws a group's header toggle: filled while its nodes run, hollow when they are all muted. */
-    drawGroupToggle(group, ctx) {
-        const rect = this.getGroupToggleRect(group);
+    /**
+     * Draws a group's header toggle like a node pin: a dot while its nodes run, a ring when they are
+     * all muted.
+     */
+    drawGroupToggle(group, ctx, rect = this.getGroupToggleRect(group)) {
         if (!rect) return;
         const muted = (group._nodes ?? []).length > 0 && group._nodes.every((node) => node.mode === LiteGraph.NEVER);
-        const [x, y, w, h] = rect;
+        const [x, y, w] = rect;
+        const color = LiteGraph.NODE_DEFAULT_BOXCOLOR || "#666";
         ctx.save();
         ctx.globalAlpha = this.editor_alpha;
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = "rgba(255,255,255,0.7)";
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
         ctx.beginPath();
-        ctx.arc(x + w / 2, y + h / 2, w / 2 - 1, 0, Math.PI * 2);
-        if (muted) ctx.stroke(); else ctx.fill();
+        ctx.arc(x + w / 2, y + w / 2, w / 2, 0, Math.PI * 2);
+        if (muted) {
+            ctx.lineWidth = 1.5 / this.ds.scale;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
         ctx.restore();
     }
 

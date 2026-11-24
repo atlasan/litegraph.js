@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-24 | [Group UX](2026-11-24-groups-ux.md): group body drag pans (title bar or Alt moves, `LiteGraph.Group.BodyDrag`), title size by zoom (`LiteGraph.Group.TitleScale`, 12–48 px), header toggle capped and clear of the title, space panning fixed (the space key threw in the keybinding lookup) and moved onto the gesture path (N-4); branch `LG/dev_HMD_groups` | final |
 | 2026-11-24 | [Human feedback usability first pass](2026-11-24-hmd-usability-first-pass.md): starter pack/section inventories, six explained examples, boolean/auto-watch improvements and glyph slots; full gate and browser acceptance | final |
 | 2026-11-23 | [HMD-06 starter workflow clarification](2026-11-23-hmd06-starter-workflow-clarification.md): auto workflow generator as an existing editor/runner feature; whole-section/pack coverage, organization and metadata suggestions, expanding packs | final; ideas only |
 | 2026-11-23 | [Human feedback usability intake](2026-11-23-human-feedback-usability-intake.md): seven idea sketches for examples, common base nodes, adaptive watches, slot icons and an editor-based workflow builder; branch `LG/dev_hmd_examples_nodes_icons` | final; ideas only |

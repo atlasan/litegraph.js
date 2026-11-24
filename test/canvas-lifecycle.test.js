@@ -127,5 +127,7 @@ test('a wrapped group title stays inside the group (4 px on each side) and clear
     const [, text, x, , maxWidth] = wrap.mock.calls[0];
     const toggle = canvas.getGroupToggleRect(group); // the header toggle keeps its own corner free
     expect(toggle).not.toBeNull();
-    expect([text, x, maxWidth]).toEqual([group.title, 14, 192 - toggle[2] - 5]);
+    expect([text, x]).toEqual([group.title, 14]);
+    expect(maxWidth).toBeGreaterThan(0);
+    expect(x + maxWidth).toBeLessThan(toggle[0]); // ends left of the toggle, inside the group
 });
