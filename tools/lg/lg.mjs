@@ -25,6 +25,7 @@ Commands:
   open <app>           open an app in the browser, starting its server if needed
   logs <app>           last lines of a server's log
   info                 versions, runtimes, ports, URLs, state folder
+  ci [args]            local CI: runs, reports, the GitHub switch (tools/ci/ci.mjs; lg ci help)
   help, version
 
 Apps: editor, runner (servers); tester, docs (pages of the editor server)
@@ -288,6 +289,8 @@ async function menu(ctx) {
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
+  // the local CI has its own commands and options (tools/ci/ci.mjs)
+  if (argv[0] === 'ci') return (await import('../ci/ci.mjs')).main(argv.slice(1), env);
   let parsed;
   try { parsed = parseArgs(argv); }
   catch (error) {

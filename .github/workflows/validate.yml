@@ -1,0 +1,28 @@
+# GitHub CI, kept but OFF by default (roadmap D10). The local CI is the proof:
+#   npm run ci:local            (tools/ci/ci.mjs; reports in .lg/ci/runs/)
+# The job runs only when the repository variable LG_GITHUB_CI is "on". Unset, every run is
+# skipped: no runner minutes, the check shows as skipped. Only the repository owner switches it:
+#   npm run ci:github -- status | on | off      (gh variable set/delete LG_GITHUB_CI)
+# Keep the steps in sync with the "core" steps of tools/ci/ci.mjs.
+name: Validate library and tools
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  validate:
+    if: vars.LG_GITHUB_CI == 'on'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      # the committed build/ and build_node/ must match the sources (npm run build, then commit)
+      - run: git diff --exit-code --stat -- build build_node
