@@ -4,6 +4,21 @@ The editor's **Demo** menu lists examples by category. Choose one to load it and
 
 Use `npm run editor` and open `/editor/editor_build.html` for the extensions and key bindings. **Step** runs one graph cycle; **Play** runs continuously. Network and audio examples have external prerequisites; an organized inventory of arbitrary nodes is not necessarily a runnable graph.
 
+## Basics and flow categories
+
+Every listed example states its execution model (`config.execution`) and carries a note, a group whose title says what it shows and what to click. Under **Basics**: Widgets to Watch, Button counter and watch, Sequence and branch, FOR loop, WHILE loop, Strings, Objects and JSON. Each flow category has a small example:
+
+| Category | Example | Model | What to try |
+|---|---|---|---|
+| Event scripting | Timer, random and branch; Event chain reads fresh values | `ancestors` | Play; click the button |
+| Dataflow | Numbers and math | `ancestors` | Play, then drag the numbers |
+| Realtime | Realtime wave | `ancestors` | Play; Step for one frame |
+| Stepped | Stepped accumulate | `strict` | Step: each step adds once |
+| Reactive | Reactive form | `event` | Change the combo or the toggle, no Play |
+| Mixed | What is LiteGraph; Node execution modes | `ancestors` | One box per node mode |
+
+In the editor an event output links to one input (`allow_multi_output_for_events` is off in `js/defaults.js`); the examples fan events out with a Sequence.
+
 ## Essentials lessons
 
 | Lesson | What to try | Expected result |
@@ -28,7 +43,7 @@ The source graphs are in `apps/editor/examples/essentials/`. Their manifest entr
 | Audio, MIDI, graphics, network | Existing category examples | Broader per-pack examples with explicit environment prerequisites |
 | Current and expanding node packs | Starter workflow tool enumerates the live registry | Curated connected examples and updates to edited generated graphs |
 
-The integration suite loads every visible example and checks execution declarations. Runnable examples step under `ancestors` and compare link-value snapshots; network/audio examples load and check without contacting services. `npm run test:integration` runs these checks. The six essentials also have focused interaction checks in Jest and browser acceptance recorded under `agents/executions/`.
+The integration suite loads every visible example and checks execution declarations. Each example must state its model with the model's node modes applied, check clean under it, have no node smaller than `computeSize()` and a note; runnable examples step, get every Button pressed once, and compare link-value snapshots; network, audio and MIDI examples load and check without contacting services. `npm run test:integration` runs these checks. The six essentials also have focused interaction checks in Jest and browser acceptance recorded under `agents/executions/`.
 
 ## Generate a starter from a section or pack
 
