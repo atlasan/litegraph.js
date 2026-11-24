@@ -306,6 +306,7 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 | FLW-25 | Node pin as mode and state indicator, with a quick menu (mode, bypass, mute, rename, run, info) | P10 P9 | ext | S | ref | promoted | Plan 2026-11-23 node pin track C; ComfyUI bypass and mute |
 | FLW-26 | Graph status chip: the execution model and run state on the canvas, click to switch | P10 P9 | ext | S | — | promoted | Plan 2026-11-23 node pin track C; FLW-08 profiles could show here |
 | FLW-27 | Native BYPASS mode (pass-through), as ComfyUI's mode 4 | P1 P10 | core | S | ref | promoted | Decision 0004 |
+| FLW-28 | Guided example workflows: one example guide per editor feature, extension and node pack, opened from the feature (menu, panel, pack info) and walking the user through it step by step (dynamic: highlight, wait for the action, go on) | P9 P10 | app | M | — | seed | User request 2026-11-23 (examples audit); FLW-22; HMD-02 and HMD-06 (explained examples, workflow generator); pack `templates[]`; copypaste and autoconnect are feature examples today |
 
 ## Repository tooling (`DEV`)
 

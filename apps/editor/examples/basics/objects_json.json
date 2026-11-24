@@ -1,0 +1,573 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 182,
+ "last_node_id": 11,
+ "last_link_id": 13,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/button",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Parse",
+   "properties": {
+    "text": "Parse",
+    "font_size": 22,
+    "message": ""
+   }
+  },
+  {
+   "id": 2,
+   "type": "basic/string",
+   "pos": [
+    40,
+    280
+   ],
+   "size": [
+    300,
+    32
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "string",
+     "type": "string",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "title": "JSON text",
+   "properties": {
+    "value": "{\"name\": \"Ada\", \"year\": 1843, \"langs\": [\"math\", \"notes\"]}"
+   }
+  },
+  {
+   "id": 3,
+   "type": "basic/jsonparse",
+   "pos": [
+    380,
+    190
+   ],
+   "size": [
+    146,
+    82
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "parse",
+     "type": -1,
+     "link": 1
+    },
+    {
+     "name": "json",
+     "type": "string",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "done",
+     "type": -1,
+     "links": [
+      3
+     ]
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": [
+      4,
+      5,
+      6
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 4,
+   "type": "events/sequence",
+   "pos": [
+    600,
+    150
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {
+    "horizontal": true,
+    "render_box": false
+   },
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": -1,
+     "link": 3,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      8
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      9
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      10
+     ],
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 5,
+   "type": "objects/get_property",
+   "pos": [
+    600,
+    330
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "obj",
+     "type": "object",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "property",
+     "type": 0,
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "value": "name"
+   }
+  },
+  {
+   "id": 6,
+   "type": "objects/object_keys",
+   "pos": [
+    600,
+    450
+   ],
+   "size": [
+    140,
+    30
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "obj",
+     "type": "object",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "keys",
+     "type": "array",
+     "links": [
+      12
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 7,
+   "type": "objects/set_property",
+   "pos": [
+    600,
+    540
+   ],
+   "size": [
+    146,
+    82
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "obj",
+     "type": "object",
+     "link": 6
+    },
+    {
+     "name": "value",
+     "type": "",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "obj",
+     "type": "object",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "property": "year"
+   }
+  },
+  {
+   "id": 8,
+   "type": "basic/const",
+   "pos": [
+    380,
+    570
+   ],
+   "size": [
+    180,
+    32
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "title": "New year",
+   "properties": {
+    "value": 1842,
+    "precision": 12,
+    "step": 1,
+    "min": 0,
+    "max": 9007199254740991
+   }
+  },
+  {
+   "id": 9,
+   "type": "basic/watch",
+   "pos": [
+    860,
+    190
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 11,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 8,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "name",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 10,
+   "type": "basic/watch",
+   "pos": [
+    860,
+    320
+   ],
+   "size": [
+    220,
+    110
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 12,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 9,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "keys",
+   "properties": {
+    "display": "tree",
+    "clip_area": true
+   }
+  },
+  {
+   "id": 11,
+   "type": "basic/watch",
+   "pos": [
+    860,
+    480
+   ],
+   "size": [
+    220,
+    140
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 13,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 10,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "object with new year",
+   "properties": {
+    "display": "tree",
+    "clip_area": true
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   -1
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "string"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   -1
+  ],
+  [
+   4,
+   3,
+   1,
+   5,
+   0,
+   "object"
+  ],
+  [
+   5,
+   3,
+   1,
+   6,
+   0,
+   "object"
+  ],
+  [
+   6,
+   3,
+   1,
+   7,
+   0,
+   "object"
+  ],
+  [
+   7,
+   8,
+   0,
+   7,
+   1,
+   "number"
+  ],
+  [
+   8,
+   4,
+   0,
+   9,
+   1,
+   -1
+  ],
+  [
+   9,
+   4,
+   1,
+   10,
+   1,
+   -1
+  ],
+  [
+   10,
+   4,
+   2,
+   11,
+   1,
+   -1
+  ],
+  [
+   11,
+   5,
+   0,
+   9,
+   0,
+   0
+  ],
+  [
+   12,
+   6,
+   0,
+   10,
+   0,
+   "array"
+  ],
+  [
+   13,
+   7,
+   0,
+   11,
+   0,
+   "object"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Objects and JSON. Click Parse: JSON Parse reads the text into an object and fires \"done\", which updates the Watches. \"Object property\" reads one key, \"Object keys\" lists them, and \"Set property\" returns a copy with a new value. Edit the JSON or the key and click Parse again.",
+   "bounding": [
+    40,
+    20,
+    740,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 11,
+  "lastLinkId": 13,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

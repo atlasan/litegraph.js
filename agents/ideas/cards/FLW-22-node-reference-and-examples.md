@@ -65,3 +65,4 @@ A 50-line script that prints `listNodeDefinitions()` grouped by pack as Markdown
 
 - 2026-11-22: created. The user chose to do the reference and the examples before new engine features.
 - 2026-11-22: promoted with the [flows reference and examples plan](../../plans/2026-11-22-flows-reference-examples.md). Decisions: `docs/nodes/` is generated locally and not committed (decision postponed); the examples come from the app manifest and the packs' `templates[]`.
+- 2026-11-23: examples polished before 0.18.0-dev.2 ([audit](../../audits/2026-11-23-editor-examples.md), [record](../../executions/2026-11-23-editor-examples.md)): explicit models, fitted nodes, notes; a Basics category and one example per flow category; the test checks the model, the modes, the sizes, a note, and presses every Button. Per-feature and per-pack guides became FLW-28.
