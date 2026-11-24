@@ -63,7 +63,7 @@ Local-CI: pass 1a2b3c4 node22.23.4 jest 1016/1016 int 151/151 fresh ok
 
 ### The GitHub workflow switch
 
-`.github/workflows/validate.yml` runs its job only when the repository variable `LG_GITHUB_CI` is `on`. Unset (the default), pushes and pull requests show the check as skipped and use no runner minutes. `workflow_dispatch` allows a manual run from the Actions tab, gated the same way.
+`.github/workflows/validate.yml` runs its job only when the repository variable `LG_GITHUB_CI` is `on`. Unset (the default), pushes and pull requests show the check as skipped and use no runner minutes. A manual run (`workflow_dispatch`: the Actions tab's "Run workflow", or `gh workflow run validate.yml`) always runs, whatever the switch.
 
 ```sh
 npm run ci:github -- status    # gh variable list

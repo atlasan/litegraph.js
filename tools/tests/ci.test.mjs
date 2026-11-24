@@ -135,7 +135,7 @@ test('gh command builders and quoting', () => {
 
 test('the workflow is kept and gated off by the LG_GITHUB_CI variable', () => {
   const workflow = fs.readFileSync(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /^\s+if: vars\.LG_GITHUB_CI == 'on'$/m);
+  assert.match(workflow, /^\s+if: vars\.LG_GITHUB_CI == 'on' \|\| github\.event_name == 'workflow_dispatch'$/m);
   assert.match(workflow, /workflow_dispatch:/);
   for (const step of ['npm ci --ignore-scripts', 'npm run check', 'git diff --exit-code --stat -- build build_node']) assert.ok(workflow.includes(`run: ${step}`), step);
 });

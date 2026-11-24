@@ -1,7 +1,8 @@
 # GitHub CI, kept but OFF by default (roadmap D10). The local CI is the proof:
 #   npm run ci:local            (tools/ci/ci.mjs; reports in .lg/ci/runs/)
-# The job runs only when the repository variable LG_GITHUB_CI is "on". Unset, every run is
-# skipped: no runner minutes, the check shows as skipped. Only the repository owner switches it:
+# Push and pull_request runs happen only when the repository variable LG_GITHUB_CI is "on".
+# Unset, they are skipped: no runner minutes, the check shows as skipped. A manual run
+# (Actions tab, "Run workflow", or gh workflow run validate.yml) always runs. Only the repository owner switches it:
 #   npm run ci:github -- status | on | off      (gh variable set/delete LG_GITHUB_CI)
 # Keep the steps in sync with the "core" steps of tools/ci/ci.mjs.
 name: Validate library and tools
@@ -11,7 +12,7 @@ on:
   workflow_dispatch:
 jobs:
   validate:
-    if: vars.LG_GITHUB_CI == 'on'
+    if: vars.LG_GITHUB_CI == 'on' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
