@@ -155,7 +155,7 @@ From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 
 ## Pre-releases
 
 - **0.18.0-dev.1** ([plan](2026-11-20-pre-release-0.18.0-dev.1.md), [record](../executions/2026-11-22-pre-release-0.18.0-dev.1.md)): Waves 4 and 5, D7 and the loose ends were done and the version was bumped on `LG/release_0.18.0-dev.1`. It was **never pushed or tagged**, and is **superseded** by 0.18.0-dev.2.
-- **0.18.0-dev.2** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)): everything on `LG/dev` (Waves 0–7, the flows and panels tracks), from the [state audit](../audits/2026-11-23-state-audit.md). Records hygiene, three pre-release fixes (D-1 to D-3), version and release checks on `LG/dev_release_0.18.0-dev.2`. **Done** and merged into `LG/dev` ([record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)). Push, the PR to `master` and the tag `v0.18.0-dev.2` are each approved separately.
+- **0.18.0-dev.2** ([plan](2026-11-23-pre-release-0.18.0-dev.2.md)): everything on `LG/dev` (Waves 0–7, the flows and panels tracks; since 2026-11-24 also the editor examples, launcher, node pin and modes, and group UX tracks, folded into its `CHANGES.md` section), from the [state audit](../audits/2026-11-23-state-audit.md). Records hygiene, three pre-release fixes (D-1 to D-3), version and release checks on `LG/dev_release_0.18.0-dev.2`. **Done** and merged into `LG/dev` ([record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)). Push, the PR to `master` and the tag `v0.18.0-dev.2` are each approved separately.
 
 ## Wave 6: events and execution models (done)
 

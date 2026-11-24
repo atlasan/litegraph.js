@@ -1,17 +1,29 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
-# Unreleased
+# 0.18.0-dev.2 (2026-11-23): dev pre-release
 
-Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-node-pin-modes-exec-slots.md`.
+This is a pre-release for testers, to be tagged `v0.18.0-dev.2`; nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track, the panels track, the editor examples, the launcher, the node pin and mode numbering 2, and the group UX (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.
 
-**Upgrade note: mode numbering 2.** `LiteGraph.BYPASS` is now 4, as in ComfyUI, and `LiteGraph.ON_REQUEST` moved from 4 to 5 ([decision 0004](agents/memories/decisions/0004-mode-4-bypass.md)).
-- **Code** that uses the constants keeps working; code that writes the number 4 for ON_REQUEST must use `LiteGraph.ON_REQUEST`.
-- **Saved documents** carry `litegraph_modes: 2`, and older ones are renumbered on load:
-  - a document with `litegraph_version` (saved since 2026-11-18) has its 4 turned into 5;
-  - a document without it is read as ComfyUI does, with 4 meaning BYPASS.
-- **Files from builds older than 2026-11-18:** set `LiteGraph.Compat.UnmarkedMode4` to `"on_request"`, or rewrite them with `node tools/migrate-modes.mjs --unmarked=on_request file.json`.
-- **Older builds** do not know mode 5.
+**Upgrade notes:**
+- **Mode numbering 2:** `LiteGraph.BYPASS` is now 4, as in ComfyUI, and `LiteGraph.ON_REQUEST` moved from 4 to 5 ([decision 0004](agents/memories/decisions/0004-mode-4-bypass.md)).
+  - **Code** that uses the constants keeps working; code that writes the number 4 for ON_REQUEST must use `LiteGraph.ON_REQUEST`.
+  - **Saved documents** carry `litegraph_modes: 2`, and older ones are renumbered on load:
+    - a document with `litegraph_version` (saved since 2026-11-18) has its 4 turned into 5;
+    - a document without it is read as ComfyUI does, with 4 meaning BYPASS.
+  - **Files from builds older than 2026-11-18:** set `LiteGraph.Compat.UnmarkedMode4` to `"on_request"`, or rewrite them with `node tools/migrate-modes.mjs --unmarked=on_request file.json`.
+  - **Older builds** do not know mode 5.
+- **Execution model:** new graphs (`new LGraph()` and new editor documents) run under the `ancestors` execution model: an action reaches a node with an `onExecute` at once, and ON_REQUEST inputs are pulled before it. Opt out with `LiteGraph.default_execution_model = "legacy";`. Documents saved without `config.execution` load as `legacy`, and projects that assign a legacy flag get `legacy` automatically.
+- **Deprecated legacy flags:** `use_deferred_actions`, `refreshAncestorsOnActions`, `refreshAncestorsOnTriggers`, `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction` and `preventAncestorRecalculation` still work for `legacy` documents and log once when assigned. Removal no earlier than 0.20.
+- **Hook errors:** a throwing hook handler no longer stops the chain. The other handlers and the default `onX` run, then the first error is rethrown to the caller (Wave 7).
+- **`onShowNodePanel` returning `false`** no longer suppresses the built-in node panel; return a truthy value (such as `true`) to replace it.
+- **New APIs:** `LiteGraph.events` and the listener options (`onHook`, `once`, `signal`, `"*"`, `priority`, `ctx.listen`); execution models (`graph.setExecutionModel`, `LiteGraph.registerExecutionModel`) and node execution declarations; value types (`LiteGraph.valueTypes`, `registerValueType`) and the panels (`registerPanelEditor`, `registerPanelSection`, `PanelBuilder`).
+- **Optional dependencies:** the package has no required dependencies. Network and system integrations are optional, and a missing one is reported with its install command.
+- **From 0.18.0-dev.1** (below): subgraphs are saved as definitions (`LiteGraph.subgraph_format = "inline"` for older builds); full bundles no longer turn on `allow_scripts`, debug logging or the editor UX flags; exports list each bundle by path; apps live in `apps/`; some node types were renamed, with automatic replacements on load.
+
+# 0.18.0-dev.2: launcher, node pin and modes, groups, essentials
+
+Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-node-pin-modes-exec-slots.md`. Records: `agents/executions/2026-11-24-groups-ux.md`.
 
 ## Added
 
@@ -20,7 +32,6 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
 * **Automatic Watch display:** opt-in `auto` on canonical `basic/watch`, with declared/observed type feedback and bounded, cycle-aware object previews that do not invoke getters. Existing displays/defaults remain available.
 * **Glyph slot labels:** optional `label_icon` and `label_mode`, node and canvas defaults, shared drawing/measurement text, original name/type in socket menus. SVG asset management is deferred.
 * **Everyday values:** boolean search aliases, usage, explicit true/false slot feedback and saved-property/widget agreement; linked `basic/const` widgets use the link while preserving their local fallback.
-
 * **Launcher:** `lg.sh` and `lg.bat` run `tools/lg/lg.mjs` on Bun when it is installed, else on Node.js (`LG_RUNTIME` picks one). Commands `start`, `stop`, `restart`, `status`, `open <editor|tester|runner|docs>`, `logs`, `info`, and a coloured menu without arguments. Servers run in the background with a pid record and a log in the git-ignored `.lg/`; ports from `LG_EDITOR_PORT` / `LG_RUNNER_PORT` or `.lg/config.json`. See `docs/getting-started.md#the-launcher`.
 * **npm scripts:** `lg`, `editor:bun`, `graphrunner:bun`.
 * **Bypass mode** (`LiteGraph.BYPASS`, 4): the node's code does not run.
@@ -71,19 +82,6 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
 * **Space-bar panning works again.** The key binding lookup threw on the space key (`KeybindingRegistry.fromEvent` gave `" "`, which `normalize` refused), so the canvas never saw it. Space plus a press now pans as a pointer gesture, over nodes and groups too; space plus a move pans as before, and losing focus ends it (state audit N-4).
 * **The node menu no longer throws** when exec slots are on and a `getMenuOptions` hook returns its own short list (it set `options[1].disabled`).
 * **Node types declared `runtime = "node"` (or `executionEnvironment = "node"`) also run on Bun**, which implements the Node.js APIs they use; before, they were disabled with "cannot run in bun". A `"bun"` declaration still means Bun only. `LGraphNode.runtimeMatches(declared, runtime)` holds the rule.
-
-# 0.18.0-dev.2 (2026-11-23): dev pre-release
-
-This is a pre-release for testers, to be tagged `v0.18.0-dev.2`; nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track and the panels track (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.
-
-**Upgrade notes:**
-- **Execution model:** new graphs (`new LGraph()` and new editor documents) run under the `ancestors` execution model: an action reaches a node with an `onExecute` at once, and ON_REQUEST inputs are pulled before it. Opt out with `LiteGraph.default_execution_model = "legacy";`. Documents saved without `config.execution` load as `legacy`, and projects that assign a legacy flag get `legacy` automatically.
-- **Deprecated legacy flags:** `use_deferred_actions`, `refreshAncestorsOnActions`, `refreshAncestorsOnTriggers`, `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction` and `preventAncestorRecalculation` still work for `legacy` documents and log once when assigned. Removal no earlier than 0.20.
-- **Hook errors:** a throwing hook handler no longer stops the chain. The other handlers and the default `onX` run, then the first error is rethrown to the caller (Wave 7).
-- **`onShowNodePanel` returning `false`** no longer suppresses the built-in node panel; return a truthy value (such as `true`) to replace it.
-- **New APIs:** `LiteGraph.events` and the listener options (`onHook`, `once`, `signal`, `"*"`, `priority`, `ctx.listen`); execution models (`graph.setExecutionModel`, `LiteGraph.registerExecutionModel`) and node execution declarations; value types (`LiteGraph.valueTypes`, `registerValueType`) and the panels (`registerPanelEditor`, `registerPanelSection`, `PanelBuilder`).
-- **Optional dependencies:** the package has no required dependencies. Network and system integrations are optional, and a missing one is reported with its install command.
-- **From 0.18.0-dev.1** (below): subgraphs are saved as definitions (`LiteGraph.subgraph_format = "inline"` for older builds); full bundles no longer turn on `allow_scripts`, debug logging or the editor UX flags; exports list each bundle by path; apps live in `apps/`; some node types were renamed, with automatic replacements on load.
 
 # 0.18.0-dev.2: editor examples
 
