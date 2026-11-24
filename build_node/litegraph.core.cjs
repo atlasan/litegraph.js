@@ -8860,6 +8860,11 @@ class LGraph {
                     mode
                 }
                 of changes) node.mode = mode;
+            // a changed node inside a subgraph instance edits that instance: its definition is
+            // synced from it when the document is saved (registerSubgraphDefinitions)
+            for (const inner of new Set(changes.map(({
+                    node
+                }) => node.graph).filter((g) => g && g !== root))) inner.revision++;
             root.onGraphChanged({
                 action: "executionModelModes"
             });
@@ -16285,7 +16290,9 @@ class LGraphCanvas {
             ctx.font = font_size + "px " + this.options.groups_title_font;
             ctx.textAlign = this.options.groups_title_alignment;
             if (this.options.groups_title_wrap) {
-                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, size[0], font_size);
+                // wrap inside the group: 4 px in from each side, and clear of the header toggle
+                const toggle = this.getGroupToggleRect(group);
+                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, size[0] - 8 - (toggle ? toggle[2] + 5 : 0), font_size);
             } else {
                 ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
             }

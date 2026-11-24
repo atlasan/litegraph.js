@@ -8860,6 +8860,11 @@ class LGraph {
                     mode
                 }
                 of changes) node.mode = mode;
+            // a changed node inside a subgraph instance edits that instance: its definition is
+            // synced from it when the document is saved (registerSubgraphDefinitions)
+            for (const inner of new Set(changes.map(({
+                    node
+                }) => node.graph).filter((g) => g && g !== root))) inner.revision++;
             root.onGraphChanged({
                 action: "executionModelModes"
             });
@@ -16285,7 +16290,9 @@ class LGraphCanvas {
             ctx.font = font_size + "px " + this.options.groups_title_font;
             ctx.textAlign = this.options.groups_title_alignment;
             if (this.options.groups_title_wrap) {
-                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, size[0], font_size);
+                // wrap inside the group: 4 px in from each side, and clear of the header toggle
+                const toggle = this.getGroupToggleRect(group);
+                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, size[0] - 8 - (toggle ? toggle[2] + 5 : 0), font_size);
             } else {
                 ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
             }
@@ -33341,16 +33348,20 @@ class JSONParse {
     }
 
     parse() {
-        if (!this._str) return;
-
+        // read the text now: the action can come before this node ever executed (graph stopped)
+        const str = this.getInputData(1) ?? this._str;
+        if (str == null || str === "") return;
         try {
-            this._str = this.getInputData(1);
-            this._obj = JSON.parse(this._str);
+            this._str = str;
+            this._obj = JSON.parse(str);
             this.boxcolor = "#AEA";
-            this.triggerSlot(0);
         } catch (err) {
             this.boxcolor = "red";
+            return;
         }
+        // the object output is set before "done" fires, so the nodes it triggers read the new object
+        this.setOutputData(1, this._obj);
+        this.triggerSlot(0);
     }
 
     onExecute() {
@@ -35335,6 +35346,7 @@ class WidgetToggle {
 
     onAction(_action) {
         this.properties.value = !this.properties.value;
+        this.setOutputData(0, this.properties.value); // fresh before the event: the "event" model does not refresh
         this.trigger("e", this.properties.value);
     }
 
@@ -35355,6 +35367,7 @@ class WidgetToggle {
         ) {
             this.properties.value = !this.properties.value;
             this.graph._version++;
+            this.setOutputData(0, this.properties.value);
             this.trigger("e", this.properties.value);
             return true;
         }
@@ -35406,16 +35419,21 @@ class WidgetNumber {
         ctx.textAlign = "center";
         ctx.font = (h * 0.7).toFixed(1) + "px Arial";
         ctx.fillStyle = "#EEE";
-        ctx.fillText(this.properties.value.toFixed(this._precision), x, h * 0.75);
+        ctx.fillText(Number(this.properties.value).toFixed(WidgetNumber.precisionOf(this.properties.step)), x, h * 0.75);
     }
 
     onExecute() {
         this.setOutputData(0, this.properties.value);
     }
 
+    /** the decimals shown for a step (0.1 -> 1, 0.25 -> 2, 1 -> 0) */
+    static precisionOf(step) {
+        var t = (step + "").split(".");
+        return t.length > 1 ? Math.min(t[1].length, 10) : 0;
+    }
+
     onPropertyChanged(_name, _value) {
-        var t = (this.properties.step + "").split(".");
-        this._precision = t.length > 1 ? t[1].length : 0;
+        this._precision = WidgetNumber.precisionOf(this.properties.step);
     }
 
     onMouseDown(e, pos) {
@@ -35431,7 +35449,6 @@ class WidgetNumber {
     }
 
     onDblClick(e, pos, canvas) {
-        console.warn("onDblClick", ...arguments);
         // NO, this is for title, etc.: canvas.doShowNodeInfoEditor(this, this.getPropertyInfo("value"), e);
         // NO, this is to open the whole parameter list: doShowMenuNodeProperties
         canvas.showEditPropertyValue(this, "value", {
@@ -35524,6 +35541,7 @@ class WidgetCombo {
             this.properties.value,
             function(v) {
                 that.properties.value = v;
+                that.setOutputData(0, v); // fresh before "change": the "event" model does not refresh
                 that.triggerSlot(1, v);
             }, {
                 property: "value",
@@ -35786,6 +35804,10 @@ class WidgetHSlider {
     }
 
     onExecute() {
+        if (this.value == -1) {
+            // not drawn yet (a stopped canvas, a hidden tab, a headless run): start from the property
+            this.value = (this.properties.value - this.properties.min) / (this.properties.max - this.properties.min);
+        }
         this.properties.value =
             this.properties.min +
             (this.properties.max - this.properties.min) * this.value;
