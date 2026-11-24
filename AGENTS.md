@@ -23,6 +23,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
   - Waves (`LG/wave<N>_<topic>`) are milestones with a build and verification pass.
   - `master` changes only through reviewed PRs.
 - **Gate:** run `npm run check` before every commit that touches code. It runs lint, all 12 builds, strict type consumers, Jest, the node:test integration tests and the package check.
+- **CI is local only:** there is no GitHub CI. Don't add `.github/workflows`, don't wait on or poll GitHub checks, and don't turn on the app's PR Auto-fix. Before a merge into `LG/dev` or a PR to `master`, run `npm run check:all` (`check` plus `check:fresh`); releases also run the clean-clone checks of the release plan. Record the results in the execution record or the PR body.
 - **Generated output:** `build/` and `build_node/` are committed. Regenerate them with `npm run build` and commit them separately (`build: regenerate distributions ...`) after the `fix:` / `feat:` / `docs:` commit.
 - **New `src/` modules:**
   - Add them to the file lists in `build.py`, in dependency order.

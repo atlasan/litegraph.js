@@ -24,6 +24,7 @@
         "check:build": "node tools/check-build.mjs",
         "check": "npm run lint -- --quiet && npm run build && npm run check:types && npm test -- --runInBand && npm run test:integration && npm run check:build",
         "check:types": "node tools/check-types.mjs",
+        "check:all": "npm run check && npm run check:fresh",
         "check:fresh": "npm run build && git diff --exit-code --stat -- build build_node"
     },
     "repository": {
