@@ -23,7 +23,7 @@ export function exampleGroups(manifest, templates = [], { base = "examples/", in
         items.get(category).push(item);
     };
     for (const ex of manifest?.examples ?? []) {
-        add(ex.category, { id: ex.id, title: ex.title, description: ex.description ?? "", url: base + ex.file, data: null, pack: null });
+        add(ex.category, { id: ex.id, title: ex.title, description: ex.description ?? "", url: base + ex.file, data: null, pack: null, ...(ex.guide ? { guide: ex.guide } : {}) });
     }
     for (const t of templates) {
         add(t.category, { id: `${t.pack}:${t.id}`, title: t.title, description: t.description ?? "", url: t.url, data: t.data, pack: t.pack });
@@ -45,10 +45,35 @@ export function fillDemoSelect(select, groups) {
             option.textContent = item.pack ? `${item.title} (${item.pack})` : item.title;
             if (item.description) option.title = item.description;
             option.dataset.example = item.id;
+            option.exampleInfo = item;
             if (item.url) option.dataset.url = item.url;
             else option.exampleData = item.data;
             optgroup.appendChild(option);
         }
         select.appendChild(optgroup);
     }
+}
+
+/** Explain an example using text-only DOM, including steps, expected results and relevant settings. */
+export function renderExampleHelp(container, item) {
+    container.replaceChildren();
+    container.hidden = !item;
+    if (!item) return;
+    const doc = container.ownerDocument;
+    const el = (tag, text, parent = container) => {
+        const node = doc.createElement(tag);
+        node.textContent = text;
+        parent.appendChild(node);
+        return node;
+    };
+    el("summary", item.title);
+    el("p", item.description || "Explore the nodes in this example.");
+    const guide = item.guide;
+    if (!guide) return;
+    if (guide.steps?.length) {
+        const list = el("ol", "");
+        for (const step of guide.steps) el("li", step, list);
+    }
+    if (guide.expected) el("p", "Expected: " + guide.expected);
+    if (guide.settings?.length) el("p", "Try: " + guide.settings.join(" · "));
 }

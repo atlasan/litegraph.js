@@ -1,0 +1,146 @@
+{
+  "id": "3a58e66b-121f-4c2a-a5b4-eb086547214d",
+  "revision": 7,
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "basic/const",
+      "pos": [
+        90,
+        130
+      ],
+      "size": [
+        180,
+        32
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 5,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "value",
+          "type": "number",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "value": -3,
+        "precision": 12,
+        "step": 1,
+        "min": 0,
+        "max": 9007199254740991
+      }
+    },
+    {
+      "id": 2,
+      "type": "math/abs",
+      "pos": [
+        380,
+        130
+      ],
+      "size": [
+        80,
+        30
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "in",
+          "type": "number",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "type": "number",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": 3,
+      "type": "basic/watch",
+      "pos": [
+        650,
+        130
+      ],
+      "size": [
+        280,
+        120
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": 0,
+          "link": 2,
+          "label": "value"
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "display": "auto"
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "number"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "number"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Bypass: pass a value through",
+      "bounding": [
+        55,
+        31,
+        911,
+        254
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    }
+  ],
+  "config": {
+    "align_to_grid": true,
+    "links_ontop": false,
+    "execution": "ancestors"
+  },
+  "extra": {},
+  "version": 0.4,
+  "litegraph_version": "0.18.0-dev.2",
+  "litegraph_modes": 2,
+  "state": {
+    "lastNodeId": 3,
+    "lastLinkId": 2,
+    "lastGroupId": 1,
+    "lastRerouteId": 0
+  }
+}

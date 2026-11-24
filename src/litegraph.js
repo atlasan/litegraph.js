@@ -451,6 +451,15 @@ export class LiteGraphClass {
         }
     }
 
+    /** Display-only slot label. String icons are glyphs/emoji, not URLs or HTML. */
+    getSlotLabel(node, slot, canvasMode = "icon+text") {
+        const label = String(slot.label ?? slot.name ?? "");
+        const icon = typeof slot.label_icon === "string" ? slot.label_icon : "";
+        const mode = slot.label_mode ?? node.properties?.slot_label_mode ?? canvasMode;
+        if (!icon || mode === "text") return label;
+        return mode === "icon" ? icon : icon + (label ? " " + label : "");
+    }
+
     /**
      * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
      * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`

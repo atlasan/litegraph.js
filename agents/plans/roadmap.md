@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-23 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
+> **Updated** 2026-11-24 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
 
 This is the single place for the current status of planned work.
 
@@ -260,6 +260,10 @@ Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-
 - **Editor:** both are on.
 
 **D, debugger (deferred):** a research record and the FLW-16 card.
+
+## Human feedback usability track
+
+**Done** ([plan](2026-11-23-hmd-usability-first-pass.md), [execution](../executions/2026-11-24-hmd-usability-first-pass.md)), authorized 2026-11-23 and verified 2026-11-24. Feedback intake on `LG/dev_hmd_examples_nodes_icons`, then implementation on `LG/dev_hmd_usability`, merged into `LG/dev`: pack/section starter workflows in the existing editor, six explained examples, boolean and bounded auto-watch improvements, optional glyph/emoji slot labels. SVG asset management, schema validation, automatic wiring and generated-workflow reconciliation stay deferred. This is a named track, not a wave.
 
 ## Deferred (each needs its own proposal)
 

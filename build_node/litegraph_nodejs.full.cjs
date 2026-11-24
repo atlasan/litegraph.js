@@ -977,6 +977,15 @@ class LiteGraphClass {
         }
     }
 
+    /** Display-only slot label. String icons are glyphs/emoji, not URLs or HTML. */
+    getSlotLabel(node, slot, canvasMode = "icon+text") {
+        const label = String(slot.label ?? slot.name ?? "");
+        const icon = typeof slot.label_icon === "string" ? slot.label_icon : "";
+        const mode = slot.label_mode ?? node.properties?.slot_label_mode ?? canvasMode;
+        if (!icon || mode === "text") return label;
+        return mode === "icon" ? icon : icon + (label ? " " + label : "");
+    }
+
     /**
      * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
      * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`
@@ -14516,7 +14525,7 @@ class LGraphCanvas {
 
                     // render name (a widget input is labelled by its widget)
                     if (render_text && !is_widget_input && !is_exec) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.UP) {
@@ -14622,7 +14631,7 @@ class LGraphCanvas {
 
                     // render output name
                     if (render_text && !is_exec) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.DOWN) {
@@ -15776,6 +15785,8 @@ class LGraphCanvas {
         const settings = LiteGraph.settings;
         return !settings?.has?.("LiteGraph.Canvas.ExecutionOverlays") || settings.get("LiteGraph.Canvas.ExecutionOverlays") !== false;
     }
+
+    slot_label_mode = "icon+text";
 
     /** The icon of a node: `node.icon`, else the definition's `icon` (a short text glyph or an image). */
     getNodeIcon(node) {
@@ -19841,6 +19852,17 @@ class LGraphCanvas {
                 }
             }
             var slotOb = slot.input || slot.output;
+            if (slotOb.label_icon) {
+                const escape = (value) => String(value).replace(/[&<>]/g, (char) => ({
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;"
+                })[char]);
+                menu_info.unshift({
+                    content: `${escape(slotOb.name)} · ${escape(slotOb.type || "*")}`,
+                    disabled: true
+                }, null);
+            }
             options.title = slotOb.type || "*";
             if (slotOb.type == LiteGraph.ACTION) {
                 options.title = "Action";
@@ -20104,6 +20126,15 @@ class LGraphCanvas {
             default: 8,
             always: true,
             tooltip: "Radius of the rounded corners of nodes and groups."
+        },
+        slot_label_mode: {
+            category: "Nodes",
+            label: "Slot labels",
+            type: "enum",
+            values: ["text", "icon+text", "icon"],
+            default: "icon+text",
+            always: true,
+            tooltip: "Show optional slot glyphs with the label or alone. Right-click the socket for its original name and type."
         },
         links_render_mode: {
             category: "Links",
@@ -22431,7 +22462,7 @@ class LGraphNode {
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
                 if (!this._takesSlotRow(true, input)) return maxWidth; // labelled by its widget, or a placed exec slot
-                const text = input.label || input.name || "";
+                const text = LiteGraph.getSlotLabel(this, input, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -22439,7 +22470,7 @@ class LGraphNode {
         if (this.outputs) {
             output_width = this.outputs.reduce((maxWidth, output) => {
                 if (!this._takesSlotRow(false, output)) return maxWidth; // a placed exec slot has no label
-                const text = output.label || output.name || "";
+                const text = LiteGraph.getSlotLabel(this, output, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -32960,6 +32991,102 @@ class NodePalette {
             }));
     }
 
+    /** Preview a section/pack inventory without constructing or executing any nodes. */
+    starterPreview({
+        pack,
+        category
+    } = {}) {
+        return this.host.listNodeDefinitions({
+                category
+            }).filter((def) => !pack || def.pack?.id === pack)
+            .sort((a, b) => a.category.localeCompare(b.category) || a.type.localeCompare(b.type))
+            .map((def) => {
+                const sensitive = def.capabilities.filter((cap) => !["browser", "node"].includes(cap));
+                const reason = def.hidden || def.deprecated ? "Hidden or deprecated type" :
+                    ["graph/input", "graph/output"].includes(def.type) ? "Subgraph interface type" :
+                    !this.host.isNodeTypeSupported(def.type) ? "Unavailable in this host" :
+                    sensitive.length ? `Requires individual setup: ${sensitive.join(", ")}` : "";
+                return {
+                    type: def.type,
+                    title: def.title,
+                    category: def.category,
+                    pack: def.pack?.id ?? "",
+                    description: def.description,
+                    suggestedDescription: def.description ? "" : `Explore ${def.title} (${def.type}).`,
+                    usage: def.usage,
+                    reason
+                };
+            });
+    }
+
+    /** Append an organized, disconnected inventory in one undo step. Never starts the graph. */
+    insertStarter(canvas, options = {}) {
+        const graph = canvas?.graph;
+        if (!graph || canvas.read_only) throw new Error("An editable graph is required");
+        if (graph.status === this.host.LGraph.STATUS_RUNNING) throw new Error("Stop the graph before adding a starter workflow");
+        const entries = this.starterPreview(options);
+        const nodes = [],
+            skipped = entries.filter((entry) => entry.reason).map((entry) => ({
+                type: entry.type,
+                reason: entry.reason
+            }));
+        // Append below all existing content, preserving manual layouts and annotations.
+        let y = Math.max(80, ...graph._nodes.map((node) => node.pos[1] + node.size[1] + 120),
+            ...graph._groups.map((group) => group.pos[1] + group.size[1] + 120));
+        graph.transact("starterWorkflow", () => {
+            for (const category of new Set(entries.map((entry) => entry.category))) {
+                const section = [];
+                let x = 80,
+                    rowHeight = 0;
+                for (const entry of entries.filter((item) => item.category === category && !item.reason)) {
+                    let node;
+                    try {
+                        node = this.host.createNode(entry.type);
+                    } catch (error) {
+                        skipped.push({
+                            type: entry.type,
+                            reason: String(error?.message ?? error)
+                        });
+                        continue;
+                    }
+                    if (!node) {
+                        skipped.push({
+                            type: entry.type,
+                            reason: "Constructor failed"
+                        });
+                        continue;
+                    }
+                    node.pos = [x, y];
+                    graph.add(node);
+                    nodes.push(node);
+                    section.push(node);
+                    rowHeight = Math.max(rowHeight, node.size[1] + 70);
+                    x += Math.max(220, node.size[0] + 50);
+                    if (section.length % 3 === 0) {
+                        x = 80;
+                        y += rowHeight;
+                        rowHeight = 0;
+                    }
+                }
+                if (section.length) {
+                    const group = new this.host.LGraphGroup(category || "Nodes");
+                    group.resizeTo(section, 30);
+                    graph.add(group);
+                    y = Math.max(...section.map((node) => node.pos[1] + node.size[1])) + 140;
+                }
+            }
+        }, {
+            rollback: true
+        });
+        canvas.selectNodes?.(nodes);
+        canvas.setDirty?.(true, true);
+        return {
+            nodes,
+            skipped,
+            entries
+        };
+    }
+
     /** @returns {string[]} favourite node types */
     favorites() {
         return this._list("LiteGraph.Palette.Favorites");
@@ -33136,7 +33263,7 @@ class ConstantNumber {
     }
 
     onExecute() {
-        this.setOutputData(0, parseFloat(this.properties["value"]));
+        this.setOutputData(0, parseFloat(this.isWidgetLinked(this.widget) ? this.getWidgetValue("value") : this.properties["value"]));
     }
 
     getTitle() {
@@ -33152,7 +33279,7 @@ class ConstantNumber {
 
     onDrawBackground() {
         // show the current value
-        this.outputs[0].label = LiteGraph.formatNumber(this.properties["value"], 3);
+        this.outputs[0].label = LiteGraph.formatNumber(this.isWidgetLinked(this.widget) ? this.getWidgetValue("value") : this.properties["value"], 3);
     }
 }
 LiteGraph.registerNodeType("basic/const", ConstantNumber);
@@ -33160,19 +33287,34 @@ LiteGraph.registerNodeType("basic/const", ConstantNumber);
 class ConstantBoolean {
 
     static title = "Const Boolean";
-    static desc = "Constant boolean";
+    static desc = "A true/false value. Edit the toggle or send an action to its optional toggle input.";
+    static usage = "Change value in the widget or properties. Add the optional toggle action input to invert it on each action; the bool output remains a boolean value.";
+    static search_aliases = ["toggle", "bool", "true", "false"];
+    static icon = "◉";
 
     constructor() {
         this.addOutput("bool", "boolean");
         this.addProperty("value", true);
-        this.widget = this.addWidget("toggle", "value", true, "value");
+        this.widget = this.addWidget("toggle", "value", true, "value", {
+            on: "true",
+            off: "false"
+        });
         this.serialize_widgets = true;
         this.widgets_up = true;
-        this.size = [140, 30];
+        this.size = [160, 30];
     }
 
     onExecute() {
         this.setOutputData(0, this.properties["value"]);
+    }
+
+    onConfigure() {
+        // The saved property is authoritative when legacy widget values disagree.
+        this.widget.value = this.properties.value;
+    }
+
+    onDrawBackground() {
+        this.outputs[0].label = this.properties.value ? "true" : "false";
     }
 
     onGetInputs() {
@@ -33786,6 +33928,44 @@ class Watch {
 
     /** displays by name: {setup?(node), execute?(node), draw?(node, ctx, ...), mouseDown?(node, e, pos), menu?(node, canvas)} */
     static displays = {
+        auto: {
+            setup(node) {
+                if (node.inputs[0]) node.inputs[0].label = "value";
+                // Give the new display room once; incoming data never changes the size.
+                node.size[0] = Math.max(node.size[0], 240);
+                node.size[1] = Math.max(node.size[1], 130);
+            },
+            execute(node) {
+                node.value = node.getInputData(0);
+                const link = node.graph?.links[node.inputs[0]?.link];
+                const declared = link?.type || "*";
+                const observed = node.value === null ? "null" : Array.isArray(node.value) ? "array" : typeof node.value;
+                const expected = String(declared).toLowerCase().split(",");
+                const known = ["number", "string", "boolean", "object", "array", "null", "undefined"];
+                const mismatch = expected.every((type) => known.includes(type)) && !expected.includes(observed);
+                const missing = node.inputs[0]?.link == null;
+                node.auto_status = missing ? "No input connected" : `${declared} → ${observed}${mismatch ? " · type mismatch" : ""}`;
+                node.auto_preview = missing ? "Connect a value to inspect it." : Watch.preview(node.value);
+            },
+            draw(node, ctx) {
+                if (node.flags?.collapsed) return;
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, 0, node.size[0], node.size[1]);
+                ctx.clip();
+                ctx.font = "12px monospace";
+                ctx.textAlign = "left";
+                ctx.fillStyle = "#aabace";
+                ctx.fillText(node.auto_status ?? "Run the graph to inspect a value", 8, 40);
+                ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
+                const text = node.auto_preview ?? "";
+                // Wrap only the bounded preview; node size is a user choice, never data-driven.
+                const columns = Math.max(8, Math.floor((node.size[0] - 16) / 7.3));
+                const lines = text.match(new RegExp(`.{1,${columns}}`, "g")) ?? [];
+                for (let i = 0; i < Math.min(lines.length, 8); i++) ctx.fillText(lines[i], 8, 60 + i * 16);
+                ctx.restore();
+            },
+        },
         value: {
             draw(node) {
                 node.inputs[0].label = Watch.toString(node.value);
@@ -33830,7 +34010,7 @@ class Watch {
             label: ""
         });
         this.addProperty("display", "value", "enum", {
-            values: ["value", "text", "tree"]
+            values: ["value", "auto", "text", "tree"]
         });
         this.value = null;
     }
@@ -33881,6 +34061,37 @@ class Watch {
             return this.inputs[0].label;
         }
         return this.title;
+    }
+
+    /** Bounded inspection of own data properties; getters and custom toString are never invoked. */
+    static preview(value) {
+        const seen = new WeakSet();
+        let budget = 32;
+        const visit = (item, depth) => {
+            if (--budget < 0) return "…";
+            if (item === null) return "null";
+            if (typeof item === "string") return JSON.stringify(item.slice(0, 100)) + (item.length > 100 ? "…" : "");
+            if (typeof item !== "object") return typeof item === "function" ? "[Function]" : String(item);
+            if (seen.has(item)) return "[Circular]";
+            if (depth >= 3) return "[…]";
+            seen.add(item);
+            try {
+                const array = Array.isArray(item);
+                const keys = Object.keys(item);
+                const parts = keys.slice(0, 8).map((key) => {
+                    const desc = Object.getOwnPropertyDescriptor(item, key);
+                    const text = desc && "value" in desc ? visit(desc.value, depth + 1) : "[Accessor]";
+                    return array ? text : `${key.slice(0, 40)}: ${text}`;
+                });
+                if (keys.length > 8) parts.push(`… +${keys.length - 8}`);
+                return (array ? "[" : "{") + parts.join(", ") + (array ? "]" : "}");
+            } catch {
+                return "[Uninspectable]";
+            } finally {
+                seen.delete(item);
+            }
+        };
+        return visit(value, 0).slice(0, 600);
     }
 
     static toString(o) {
@@ -62098,6 +62309,7 @@ class Editor {
 
         // node palette (setting LiteGraph.Editor.Palette remembers whether it is open)
         if (!options.skip_palette) this.setupPalette();
+        this.addToolsButton("starter_button", "Starter workflow", "imgs/icon-gear.png", () => this.showStarterGenerator(), ".tools-left");
 
         // modified marker and draft autosave (settings LiteGraph.Editor.Autosave / AutosaveDelay)
         this.setupModifiedMarker();
@@ -62133,6 +62345,121 @@ class Editor {
         }
         LiteGraph.settings?.set("LiteGraph.Editor.Palette", !!this.palette_panel);
         return !!this.palette_panel;
+    }
+
+    /** The existing editor's section/pack starter generator; previews use registry metadata only. */
+    showStarterGenerator() {
+        this.starter_panel?.remove();
+        const panel = this.starter_panel = document.createElement("section");
+        panel.className = "lg-starter-panel";
+        panel.setAttribute("aria-label", "Starter workflow generator");
+        const el = (tag, text, parent = panel) => {
+            const item = document.createElement(tag);
+            if (text) item.textContent = text;
+            parent.appendChild(item);
+            return item;
+        };
+        const heading = el("div", "");
+        el("h2", "Starter workflow", heading);
+        const close = el("button", "Close", heading);
+        close.onclick = () => {
+            panel.remove();
+            this.starter_panel = null;
+        };
+        el("p", "Explore a whole section or pack. Add an organized inventory of nodes to your graph, then build examples from it.");
+        const packLabel = el("label", "Node pack ");
+        const pack = el("select", "", packLabel);
+        pack.setAttribute("aria-label", "Node pack");
+        const categoryLabel = el("label", "Section ");
+        const category = el("select", "", categoryLabel);
+        category.setAttribute("aria-label", "Section");
+        const option = (select, value, text) => {
+            const opt = el("option", text, select);
+            opt.value = value;
+        };
+        const scope = () => ({
+            pack: pack.value || undefined,
+            category: category.value || undefined
+        });
+        const status = el("p", "");
+        status.setAttribute("role", "status");
+        const list = el("div", "");
+        list.className = "lg-starter-list";
+        const actions = el("div", "");
+        const insert = el("button", "Add nodes to workflow", actions);
+        const refresh = el("button", "Refresh packs", actions);
+        const download = el("button", "Export metadata", actions);
+        el("p", "Nodes are grouped by section and added below existing content. Connections are left for you to build. Stop playback before adding nodes. Types needing devices, DOM, network or other setup are listed as skipped.");
+        let entries = [];
+        const render = () => {
+            entries = LiteGraph.palette.starterPreview(scope());
+            const skipped = entries.filter((entry) => entry.reason).length;
+            status.textContent = `${entries.length - skipped} available · ${skipped} skipped · ${entries.length} types in scope`;
+            insert.disabled = !entries.some((entry) => !entry.reason) || this.graphcanvas.read_only;
+            list.replaceChildren();
+            for (const entry of entries) {
+                const row = el("article", "", list);
+                el("strong", entry.title, row);
+                el("small", entry.type + (entry.reason ? ` — Skipped: ${entry.reason}` : ""), row);
+                el("p", entry.description || `Suggested description: ${entry.suggestedDescription}`, row);
+                if (entry.usage) el("small", entry.usage, row);
+            }
+        };
+        const reload = () => {
+            const previousPack = pack.value,
+                previousCategory = category.value;
+            pack.replaceChildren();
+            category.replaceChildren();
+            option(pack, "", "All packs");
+            option(category, "", "All sections");
+            const defs = LiteGraph.listNodeDefinitions();
+            for (const id of [...new Set(defs.map((def) => def.pack?.id).filter(Boolean))].sort()) {
+                option(pack, id, LiteGraph.packs.get(id)?.title ?? id);
+            }
+            for (const name of [...new Set(defs.map((def) => def.category).filter(Boolean))].sort()) option(category, name, name);
+            if ([...pack.options].some((opt) => opt.value === previousPack)) pack.value = previousPack;
+            if ([...category.options].some((opt) => opt.value === previousCategory)) category.value = previousCategory;
+            render();
+        };
+        pack.onchange = category.onchange = render;
+        refresh.onclick = reload;
+        insert.onclick = () => {
+            try {
+                const result = LiteGraph.palette.insertStarter(this.graphcanvas, scope());
+                status.textContent = `Added ${result.nodes.length} nodes. ${result.skipped.length} skipped.`;
+                if (result.skipped.length) status.textContent += " " + result.skipped.map((item) => `${item.type}: ${item.reason}`).join("; ");
+            } catch (error) {
+                status.textContent = error.message;
+            }
+        };
+        download.onclick = () => {
+            const metadata = {
+                format: "litegraph-starter-metadata",
+                version: 1,
+                scope: scope(),
+                entries
+            };
+            const url = URL.createObjectURL(new Blob([JSON.stringify(metadata, null, 2)], {
+                type: "application/json"
+            }));
+            const link = el("a", "");
+            link.href = url;
+            link.download = "starter-metadata.json";
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+        panel.addEventListener("keydown", (event) => {
+            event.stopPropagation();
+            if (event.key === "Escape") {
+                close.click();
+                this.root?.querySelector("#starter_button")?.focus();
+            }
+        });
+        this.content.appendChild(panel);
+        reload();
+        pack.focus();
+        return panel;
     }
 
     /** Shows "• modified" in the header and prefixes the page title while the document is modified. */

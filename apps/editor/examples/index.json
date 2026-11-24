@@ -892,6 +892,183 @@
       ],
       "packs": [],
       "level": "advanced"
+    },
+    {
+      "id": "essentials-boolean-toggle",
+      "file": "essentials/boolean-toggle.json",
+      "title": "Boolean: value and toggle action",
+      "description": "A boolean stays a value; a button action inverts it.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "boolean-toggle"
+      ],
+      "packs": [
+        "basic",
+        "interface"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step to see the initial true value.",
+          "Change the boolean widget, or click the Toggle button.",
+          "Open node details to inspect the saved value."
+        ],
+        "expected": "The Watch value changes between true and false. Each button action inverts the stored boolean.",
+        "settings": [
+          "Const Boolean → value",
+          "Optional input: toggle"
+        ]
+      }
+    },
+    {
+      "id": "essentials-structured-watch",
+      "file": "essentials/structured-watch.json",
+      "title": "Watch: structured values",
+      "description": "Inspect an object using a bounded automatic preview.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "structured-watch"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step.",
+          "Edit the JSON text on Const Data.",
+          "Switch Watch display between auto, value and tree to compare."
+        ],
+        "expected": "Auto reports object → object and shows keys, values and the array without changing the input data.",
+        "settings": [
+          "Watch → display: auto",
+          "Watch → display: tree requires the watch pack"
+        ]
+      }
+    },
+    {
+      "id": "essentials-text-watch",
+      "file": "essentials/text-watch.json",
+      "title": "Watch: multiline text",
+      "description": "Use a readable text display for strings with line breaks.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "text-watch"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step.",
+          "Edit the string value, retaining or adding line breaks.",
+          "Change Watch font size in node details."
+        ],
+        "expected": "Watch displays three lines of text; font settings affect its presentation.",
+        "settings": [
+          "Watch → display: text",
+          "Watch → font_size",
+          "Watch → clip"
+        ]
+      }
+    },
+    {
+      "id": "essentials-widget-input",
+      "file": "essentials/widget-input.json",
+      "title": "Widget input: linked value",
+      "description": "A number link supplies a widget row while preserving its local fallback.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "widget-input"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step: the linked number reads 7.",
+          "Try the linked widget; it is disabled while connected.",
+          "Disconnect its input and Step: the local value 2 is used."
+        ],
+        "expected": "Watch reads 7 while connected, then 2 after disconnection. Linking does not overwrite the saved local value.",
+        "settings": [
+          "Number → value widget input",
+          "Disconnect Links on the input socket"
+        ]
+      }
+    },
+    {
+      "id": "essentials-bypass",
+      "file": "essentials/bypass.json",
+      "title": "Bypass: pass a value through",
+      "description": "Compare a calculation with its bypassed version.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "bypass"
+      ],
+      "packs": [
+        "basic",
+        "math"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step.",
+          "The ABS node starts in BYPASS mode.",
+          "Change its mode to Always in the node menu and Step again."
+        ],
+        "expected": "Watch reads -3 in BYPASS, then 3 when ABS executes normally.",
+        "settings": [
+          "ABS → Mode: Bypass or Always",
+          "Ctrl+B toggles bypass in the built editor"
+        ]
+      }
+    },
+    {
+      "id": "essentials-slot-icons",
+      "file": "essentials/slot-icons.json",
+      "title": "Slot icons: readable and compact",
+      "description": "Optional glyph labels decorate slots without renaming them.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "slot-icons"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Compare the icon+text and icon-only labels on the two Watch inputs.",
+          "Right-click the compact socket to see its original name and type.",
+          "Open Options → Canvas → Nodes → Slot labels to try a canvas default; explicit slot overrides win."
+        ],
+        "expected": "The slots keep their original names and number types after saving and reloading. Watch reads 42.",
+        "settings": [
+          "Canvas → Slot labels",
+          "Slot label_mode overrides the node and canvas"
+        ]
+      }
     }
   ]
 }

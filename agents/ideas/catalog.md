@@ -306,7 +306,7 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 | FLW-25 | Node pin as mode and state indicator, with a quick menu (mode, bypass, mute, rename, run, info) | P10 P9 | ext | S | ref | promoted | Plan 2026-11-23 node pin track C; ComfyUI bypass and mute |
 | FLW-26 | Graph status chip: the execution model and run state on the canvas, click to switch | P10 P9 | ext | S | — | promoted | Plan 2026-11-23 node pin track C; FLW-08 profiles could show here |
 | FLW-27 | Native BYPASS mode (pass-through), as ComfyUI's mode 4 | P1 P10 | core | S | ref | promoted | Decision 0004 |
-| FLW-28 | Guided example workflows: one example guide per editor feature, extension and node pack, opened from the feature (menu, panel, pack info) and walking the user through it step by step (dynamic: highlight, wait for the action, go on) | P9 P10 | app | M | — | seed | User request 2026-11-23 (examples audit); FLW-22; pack `templates[]`; copypaste and autoconnect are feature examples today |
+| FLW-28 | Guided example workflows: one example guide per editor feature, extension and node pack, opened from the feature (menu, panel, pack info) and walking the user through it step by step (dynamic: highlight, wait for the action, go on) | P9 P10 | app | M | — | seed | User request 2026-11-23 (examples audit); FLW-22; HMD-02 and HMD-06 (explained examples, workflow generator); pack `templates[]`; copypaste and autoconnect are feature examples today |
 
 ## Repository tooling (`DEV`)
 
@@ -351,3 +351,17 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | GRP-06 | Better drag and resize: handles on every edge and corner, snapping, fit to nodes, locked groups | P10 | core | M | ref | seed |
 | GRP-07 | Reroute audit: ComfyUI 0.4 and 1.0 round trips, legacy `Reroute` nodes, reroutes in subgraphs, tests | P10 | core | S | adapt | seed |
 | GRP-08 | Group actions: collapse, select contents, convert to subgraph, align contents | P10 | ext | M | ref | seed |
+
+## Human feedback: examples, nodes and authoring (`HMD`)
+
+[landscape/human-feedback-usability.md](landscape/human-feedback-usability.md). Direct human feedback of 2026-11-23; sketches for consideration, not accepted work.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| HMD-01 | Broader example coverage across features, settings, common nodes, packs and execution models ([card](cards/HMD-01-example-coverage.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-02 | Examples that explain features, settings and nodes through concise interactive presentation ([card](cards/HMD-02-explained-examples.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-03 | Everyday base-node upgrade, starting with boolean/toggle usability and consistent defaults ([card](cards/HMD-03-everyday-base-nodes.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | node | M | — | promoted |
+| HMD-04 | Adaptive watch displays for simple and structured values, type awareness and explicit validation ([card](cards/HMD-04-adaptive-watch.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P6 P9 P10 | node | L | — | promoted |
+| HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
+| HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | L | — | promoted |
+| HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
