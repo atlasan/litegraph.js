@@ -1,10 +1,13 @@
 import { LiteGraph } from "./litegraph.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { installHooks } from "./callbackhandler.js";
 
 export class LGraphGroup {
 
     static opts = {
-        inclusion_distance: 36 // distance to border to consider included inside the group 
+        inclusion_distance: 36, // distance to border to consider included inside the group
+        toggle_size: 10, // header toggle size in graph units (as the node pin)
+        toggle_max_px: 14, // largest on-screen header toggle
+        toggle_min_px: 6, // smaller on screen than this, the toggle is hidden
     }
 
     /**
@@ -21,24 +24,6 @@ export class LGraphGroup {
         this._nodes = [];
         this._groups = [];
         this.graph = null;
-        this.callbackhandler_setup();
-    }
-
-    callbackhandler_setup(){
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -175,13 +160,22 @@ export class LGraphGroup {
 
     /**
      * Sets the execution mode of every node inside the group (LiteGraph.ALWAYS, NEVER, ...).
-     * @returns {Array<object>} the nodes changed
+     * Nodes whose type declares the mode invalid keep theirs: they are listed in `changed.skipped`.
+     * @returns {Array<object>} the nodes changed, with `skipped` (the nodes that refused the mode)
      */
     setNodesMode(mode) {
-        if (!this.graph) return [];
+        const changed = [];
+        // the nodes that refused the mode (not enumerable: the result stays a plain list)
+        Object.defineProperty(changed, "skipped", { value: [], enumerable: false });
+        if (!this.graph) return changed;
         this.recomputeInsideNodes();
-        const changed = this._nodes.filter((node) => node.mode !== mode);
-        for (const node of changed) node.changeMode ? node.changeMode(mode) : (node.mode = mode);
+        for (const node of this._nodes.filter((n) => n.mode !== mode)) {
+            const ok = node.changeMode ? node.changeMode(mode) !== false : ((node.mode = mode), true);
+            (ok ? changed : changed.skipped).push(node);
+        }
+        if (changed.skipped.length) {
+            LiteGraph.log_warn("lgraphgroup", "setNodesMode", `${changed.skipped.length} node(s) kept their mode: ${changed.skipped.map((n) => n.mode_refusal ?? n.type).join("; ")}`);
+        }
         return changed;
     }
 
@@ -233,3 +227,6 @@ export class LGraphGroup {
     isPointInside = LiteGraph.LGraphNode.prototype.isPointInside;
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphGroup);

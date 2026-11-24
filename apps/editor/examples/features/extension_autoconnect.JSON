@@ -1,0 +1,1889 @@
+{
+ "id": "bcfd9aad-00fd-476b-8bab-0ea5659cf6c8",
+ "revision": 1,
+ "last_node_id": 14,
+ "last_link_id": 81,
+ "nodes": [
+  {
+   "id": 2,
+   "type": "features/many_slots",
+   "pos": [
+    866,
+    167
+   ],
+   "size": [
+    157,
+    330
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": 7
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": 2
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": 12
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": 4
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": 3
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": 6
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": 9
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": 10
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": 5
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": 15
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": 8
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": 16
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": 13
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": 11
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": 17
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": null
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 1,
+   "type": "features/many_slots",
+   "pos": [
+    660,
+    170
+   ],
+   "size": [
+    157,
+    330
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": null
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": [
+      3
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": [
+      6
+     ]
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": [
+      7
+     ]
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": [
+      8
+     ]
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": [
+      9
+     ]
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": [
+      10
+     ]
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": [
+      11
+     ]
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": [
+      12
+     ]
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": [
+      13
+     ]
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": [
+      14
+     ]
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": [
+      15
+     ]
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": [
+      16
+     ]
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": [
+      17
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 3,
+   "type": "features/many_slots",
+   "pos": [
+    60,
+    150
+   ],
+   "size": [
+    157,
+    330
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": null
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": null
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 4,
+   "type": "features/many_slots",
+   "pos": [
+    360,
+    150
+   ],
+   "size": [
+    157,
+    330
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": null
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": null
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 11,
+   "type": "features/many_halfB_slots",
+   "pos": [
+    659,
+    884
+   ],
+   "size": [
+    183,
+    170
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": [
+      74
+     ]
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": [
+      75
+     ]
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": [
+      76
+     ]
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": [
+      77
+     ]
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": [
+      78
+     ]
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": [
+      79
+     ]
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": [
+      80
+     ]
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": [
+      81
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 8,
+   "type": "features/many_slots",
+   "pos": [
+    939,
+    644
+   ],
+   "size": [
+    157,
+    330
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": 71
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": 66
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": 76
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": 68
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": 67
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": 70
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": 73
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": 74
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": 69
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": 79
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": 72
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": 80
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": 77
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": 75
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": 81
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": 78
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": null
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 10,
+   "type": "features/many_halfA_slots",
+   "pos": [
+    660,
+    650
+   ],
+   "size": [
+    183,
+    170
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": null
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": [
+      66
+     ]
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": [
+      67
+     ]
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": [
+      68
+     ]
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": [
+      69
+     ]
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": [
+      70
+     ]
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": [
+      71
+     ]
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": [
+      72
+     ]
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": [
+      73
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 13,
+   "type": "features/many_halfB_slots",
+   "pos": [
+    68,
+    877
+   ],
+   "size": [
+    183,
+    170
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": []
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": []
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": []
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": []
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": []
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": []
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": []
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": []
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 14,
+   "type": "features/many_slots",
+   "pos": [
+    340,
+    640
+   ],
+   "size": [
+    157,
+    330
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": null
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "link": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "link": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "link": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "link": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "link": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": null
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": null
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "links": null
+    },
+    {
+     "name": "mat4",
+     "type": "mat4",
+     "links": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "image",
+     "type": "image",
+     "links": null
+    },
+    {
+     "name": "table",
+     "type": "table",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "audio",
+     "links": null
+    },
+    {
+     "name": "geometry",
+     "type": "geometry",
+     "links": null
+    },
+    {
+     "name": "quat",
+     "type": "quat",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 12,
+   "type": "features/many_halfA_slots",
+   "pos": [
+    70,
+    660
+   ],
+   "size": [
+    183,
+    170
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "link": null
+    },
+    {
+     "name": "array",
+     "type": "array",
+     "link": null
+    },
+    {
+     "name": "boolean",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "link": null
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "link": null
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "link": null
+    },
+    {
+     "name": "vec3",
+     "type": "vec3",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "array",
+     "type": "array",
+     "links": []
+    },
+    {
+     "name": "object",
+     "type": "object",
+     "links": []
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "links": []
+    },
+    {
+     "name": "vec4",
+     "type": "vec4",
+     "links": []
+    },
+    {
+     "name": "string",
+     "type": "string",
+     "links": []
+    },
+    {
+     "name": "_event_",
+     "type": "_event_",
+     "links": []
+    },
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "links": []
+    },
+    {
+     "name": "vec2",
+     "type": "vec2",
+     "links": []
+    }
+   ],
+   "properties": {}
+  }
+ ],
+ "links": [
+  [
+   2,
+   1,
+   0,
+   2,
+   1,
+   "array"
+  ],
+  [
+   3,
+   1,
+   1,
+   2,
+   4,
+   "object"
+  ],
+  [
+   4,
+   1,
+   2,
+   2,
+   3,
+   "number"
+  ],
+  [
+   5,
+   1,
+   3,
+   2,
+   8,
+   "vec4"
+  ],
+  [
+   6,
+   1,
+   4,
+   2,
+   5,
+   "string"
+  ],
+  [
+   7,
+   1,
+   5,
+   2,
+   0,
+   "_event_"
+  ],
+  [
+   8,
+   1,
+   6,
+   2,
+   10,
+   "canvas"
+  ],
+  [
+   9,
+   1,
+   7,
+   2,
+   6,
+   "vec2"
+  ],
+  [
+   10,
+   1,
+   8,
+   2,
+   7,
+   "vec3"
+  ],
+  [
+   11,
+   1,
+   9,
+   2,
+   13,
+   "mat4"
+  ],
+  [
+   12,
+   1,
+   10,
+   2,
+   2,
+   "boolean"
+  ],
+  [
+   13,
+   1,
+   11,
+   2,
+   12,
+   "image"
+  ],
+  [
+   14,
+   1,
+   12,
+   2,
+   15,
+   "table"
+  ],
+  [
+   15,
+   1,
+   13,
+   2,
+   9,
+   "audio"
+  ],
+  [
+   16,
+   1,
+   14,
+   2,
+   11,
+   "geometry"
+  ],
+  [
+   17,
+   1,
+   15,
+   2,
+   14,
+   "quat"
+  ],
+  [
+   66,
+   10,
+   0,
+   8,
+   1,
+   "array"
+  ],
+  [
+   67,
+   10,
+   1,
+   8,
+   4,
+   "object"
+  ],
+  [
+   68,
+   10,
+   2,
+   8,
+   3,
+   "number"
+  ],
+  [
+   69,
+   10,
+   3,
+   8,
+   8,
+   "vec4"
+  ],
+  [
+   70,
+   10,
+   4,
+   8,
+   5,
+   "string"
+  ],
+  [
+   71,
+   10,
+   5,
+   8,
+   0,
+   "_event_"
+  ],
+  [
+   72,
+   10,
+   6,
+   8,
+   10,
+   "canvas"
+  ],
+  [
+   73,
+   10,
+   7,
+   8,
+   6,
+   "vec2"
+  ],
+  [
+   74,
+   11,
+   0,
+   8,
+   7,
+   "vec3"
+  ],
+  [
+   75,
+   11,
+   1,
+   8,
+   13,
+   "mat4"
+  ],
+  [
+   76,
+   11,
+   2,
+   8,
+   2,
+   "boolean"
+  ],
+  [
+   77,
+   11,
+   3,
+   8,
+   12,
+   "image"
+  ],
+  [
+   78,
+   11,
+   4,
+   8,
+   15,
+   "table"
+  ],
+  [
+   79,
+   11,
+   5,
+   8,
+   9,
+   "audio"
+  ],
+  [
+   80,
+   11,
+   6,
+   8,
+   11,
+   "geometry"
+  ],
+  [
+   81,
+   11,
+   7,
+   8,
+   14,
+   "quat"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Select a source node, press 'a', click on the destination node",
+   "bounding": [
+    43,
+    52,
+    484,
+    439
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 2,
+   "title": "Result",
+   "bounding": [
+    641,
+    66,
+    392,
+    444
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 3,
+   "title": "Result",
+   "bounding": [
+    644,
+    563,
+    462,
+    502
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 4,
+   "title": "Select many nodes, press 'a', click on target node",
+   "bounding": [
+    53,
+    542,
+    454,
+    516
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 5,
+   "title": "Autoconnect extension (on in editor_build.html): it links matching slots for you. Follow the two captions on the left; the groups on the right show the result.",
+   "bounding": [
+    43,
+    -58,
+    700,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 14,
+  "lastLinkId": 81,
+  "lastGroupId": 5,
+  "lastRerouteId": 0
+ }
+}

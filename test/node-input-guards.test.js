@@ -20,7 +20,7 @@ beforeAll(async () => {
     await LiteGraph.LibraryManager.ready;
     // math3d registers its nodes only when gl-matrix is present, as in the editor.
     // The UMD build attaches vec3/quat/... to `this`; bind it to this test realm's global.
-    new Function(fs.readFileSync(new URL('../editor/js/libs/gl-matrix-min.js', import.meta.url), 'utf8')).call(globalThis);
+    new Function(fs.readFileSync(new URL('../vendor/gl-matrix-min.js', import.meta.url), 'utf8')).call(globalThis);
     await import('../src/nodes/math3d.js');
 });
 beforeEach(() => {

@@ -61,3 +61,18 @@ test('definition filters: deprecated hidden by default, settings toggle them, cu
     expect(search('concat')).toEqual(['qs/text/concat']);
     expect(LiteGraph.nodeSearch.listFilters().map((f) => f.id)).toEqual(expect.arrayContaining(['core.deprecated', 'core.experimental']));
 });
+
+test('o: and i: match a type without a def that was never created (state audit D-8)', () => {
+    class Plain { constructor() { this.addInput('x', 'vec9'); this.addOutput('y', 'quaternion9'); } }
+    LiteGraph.registerNodeType('qs/plain_probe', Plain); // no def slots; outputs are not in the registry
+    expect(search('o:quaternion9')).toEqual(['qs/plain_probe']);
+    expect(search('i:vec9')).toEqual(['qs/plain_probe']);
+    expect(search('o:vec9')).toEqual([]);
+});
+
+test('a type whose constructor throws is left out of slot filters, not the search', () => {
+    class Broken { constructor() { throw new Error('needs a host'); } }
+    LiteGraph.registerNodeType('qs/broken_probe', Broken);
+    expect(search('o:quaternion9')).toEqual(['qs/plain_probe']);
+    expect(search('broken')).toEqual(['qs/broken_probe']);
+});

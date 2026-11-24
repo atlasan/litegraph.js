@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/logic" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/logic", version: LiteGraph.VERSION, title: "Logic", description: "Boolean logic, branching (IF, selector, sequence) and loops (FOR, WHILE).", builtin: true });
+
 class Selector {
 
     static title = "Selector";
@@ -209,6 +213,11 @@ class logicBranch {
 
     static title = "Branch";
     static desc = "Branch execution on condition";
+    // a trigger node; in ALWAYS mode it branches only when the condition changes (B14)
+    static def = {
+        execution: { modes: [LiteGraph.ON_TRIGGER, LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER] },
+        usage: "Send an event to onTrigger; true or false fires depending on condition.",
+    };
 
     constructor() {
         this.properties = {};
@@ -221,8 +230,13 @@ class logicBranch {
 
     onExecute(_param, _options) {
         var conditition = this.getInputData(1);
+        // run by the step loop (ALWAYS mode, not triggered): only a changed condition branches (B14)
+        const stepped = this.mode === LiteGraph.ALWAYS && (!_options?.action_call || String(_options.action_call).startsWith(`${this.id}_exec_`));
+        if (stepped) {
+            if (conditition === this._last_condition) return;
+            this._last_condition = conditition;
+        }
         if (conditition) {
-            console.debug(this,conditition);
             this.triggerSlot(0, _param, null, _options);
         } else {
             this.triggerSlot(1, _param, null, _options);
@@ -231,6 +245,17 @@ class logicBranch {
 }
 LiteGraph.registerNodeType("logic/IF", logicBranch);
 
+
+/** loops deliver their body now in every model (emit: "immediate"), and "break" reaches them during the loop */
+const LOOP_EXECUTION = Object.freeze({
+    emit: "immediate", loop: true, immediate_inputs: ["break"], default_mode: LiteGraph.ON_EVENT,
+    modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.NEVER],
+});
+/** fires a loop's "completed" output (nodes saved before Wave 6 do not have it) */
+function loopCompleted(node, param) {
+    const slot = node.findOutputSlot("completed");
+    if (slot >= 0) node.triggerSlot(slot, param);
+}
 
 class logicFor {
     constructor() {
@@ -242,28 +267,30 @@ class logicFor {
         // this.addInput("reset", LiteGraph.ACTION);
         this.addOutput("do", LiteGraph.EVENT);
         this.addOutput("index", "number");
+        this.addOutput("completed", LiteGraph.EVENT);
         this.started = false;
         this.stopped = false;
     }
 
     static title = "FOR";
     static desc = "Cycle FOR";
+    static def = {
+        execution: LOOP_EXECUTION,
+        usage: "Send an event to do; the do output fires nElements times with index counting from start, then completed fires. Nodes pulled from index see each value.",
+    };
 
     onExecute(param) {
         if (!this.started) return;
-        var iI = this.getInputData(0);
-        var num = this.getInputData(1);
+        var iI = this.getInputData(0) ?? 0;
+        var num = this.getInputData(1) ?? 0;
         for (var k=iI;k<iI+num;k++) {
-            console.debug?.("for cycle "+k);
             this.setOutputData(1, k);
             this.triggerSlot(0, param);
-            if (this.stopped) {
-                console.debug?.("for cycle stopped on index "+k);
-                break;
-            }
+            if (this.stopped) break;
         }
         this.started = false;
         this.stopped = true;
+        loopCompleted(this, param);
     }
 
     onAction(action) {
@@ -296,33 +323,35 @@ class logicForEach {
         this.addOutput("do", LiteGraph.EVENT);
         this.addOutput("index", "number");
         this.addOutput("element", 0);
+        this.addOutput("completed", LiteGraph.EVENT);
         this.started = false;
         this.stopped = false;
     }
 
     static title = "ForEach";
     static desc = "Cycle for each element in array";
+    static def = {
+        execution: LOOP_EXECUTION,
+        usage: "Connect an array and send an event to do; the do output fires once per element with index and element set, then completed fires.",
+    };
 
     onExecute(param) {
         if (!this.started) return;
         var ar = this.getInputData(0);
-        var num = this.getInputData(1);
         if(ar === null || !ar || typeof(ar.forEach)!="function"){
             return;
         }
-        // for (var k=iI;k<iI+num;k++) {
-        ar.forEach((el,k)=>{
-            console.debug?.("for cycle "+k);
+        // a plain loop, so that break stops it (B5); slot 1 is the "do" action, not data
+        const elements = Array.from(ar);
+        for (let k = 0; k < elements.length; k++) {
             this.setOutputData(1, k);
-            this.setOutputData(2, el);
+            this.setOutputData(2, elements[k]);
             this.triggerSlot(0, param);
-            if (this.stopped) {
-                console.debug?.("foreach cycle stopped on index "+k);
-                return;
-            }
-        })
+            if (this.stopped) break;
+        }
         this.started = false;
         this.stopped = true;
+        loopCompleted(this, param);
     }
 
     onAction(action) {
@@ -355,6 +384,7 @@ class logicWhile {
         this.addInput("break", LiteGraph.ACTION);
         this.addOutput("do", LiteGraph.EVENT);
         this.addOutput("index", "number");
+        this.addOutput("completed", LiteGraph.EVENT);
         this.started = false;
         this.stopped = false;
         this.k = 0;
@@ -364,6 +394,11 @@ class logicWhile {
 
     static title = "WHILE";
     static desc = "Cycle WHILE";
+    // re-evaluating the condition re-runs its nodes in the frame, which the "strict" model refuses
+    static def = {
+        execution: { ...LOOP_EXECUTION, models: { strict: false } },
+        usage: "Send an event to do; the do output fires while condition is true (at most cycleLimit times), then completed fires. Not valid under the strict model.",
+    };
 
     onExecute() {
         this.setOutputData(1, this.k);
@@ -385,24 +420,31 @@ class logicWhile {
                 this.k = 0;
                 var cycleLimit = this.properties.cycleLimit || 999;
                 while (this.cond && this.k<cycleLimit) {
-                    console.debug?.("while cycle "+this.k);
                     this.setOutputData(1, this.k);
                     this.triggerSlot(0, param);
                     // done
-                    if (this.stopped) {
-                        console.debug?.("while cycle stopped on index "+this.k);
-                        break;
-                    }
+                    if (this.stopped) break;
                     this.k++;
-                    this.cond = this.getInputData(1,true,true); // CHECK THIS : USING FORCE ANCESTOR REFRESH ( ?!? getInputData refresh_tree )
+                    // a pull: the condition's ON_REQUEST ancestors run again when the body changed their inputs
+                    this.cond = this.getInputData(1,true,true);
+                }
+                if (this.cond && !this.stopped && this.k >= cycleLimit) {
+                    // stopped by the limit, not by the condition: say so, and what lifts it
+                    LiteGraph.ExecutionEngine?.drop(this, "max-passes", { setting: "properties.cycleLimit", message: `WHILE ${this.id}: stopped after ${cycleLimit} iterations with the condition still true; raise properties.cycleLimit to allow more` });
                 }
                 this.k = 0;
                 this.setOutputData(1, this.k);
                 this.cond = this.getInputData(1);
                 this.started = false;
                 this.stopped = true;
+                loopCompleted(this, param);
                 break;
         }
     }
 }
 LiteGraph.registerNodeType("logic/CycleWHILE", logicWhile);
+
+// execution needs (Wave 6): pure nodes run on request in the ancestors model
+LiteGraph.declareNodeExecution(["logic/selector", "logic/AND", "logic/OR", "logic/NOT", "logic/CompareBool", "logic/sequence"], { pure: true });
+
+LiteGraph.packs.close("litegraph/logic");

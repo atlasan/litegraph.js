@@ -6,6 +6,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
 
 | Need | Go to |
 |---|---|
+| Start: install, entries, first graph, apps | [docs/getting-started.md](docs/getting-started.md), [docs/architecture.md](docs/architecture.md) |
 | Use the library: guide, callbacks, generated API | [docs/](docs/guide.md) |
 | Setup, validation gate, package contracts | [docs/development.md](docs/development.md) |
 | The agent workspace: memories, plans, executions, audits, ideas | [agents/](agents/README.md) |
@@ -17,9 +18,16 @@ Short operational notes for contributors and coding agents. Keep this file refer
 ## Workflow
 
 - **Branches:**
-  - `LG/dev` is the progressive integration branch; cut `LG/wave<N>_<topic>` branches from it and merge them back.
+  - `LG/dev` is the progressive integration branch.
+  - Parallel work runs on temporary `LG/dev_<topic>` branches cut from it and merged back; it gets a named track on the roadmap, not a wave number.
+  - Waves (`LG/wave<N>_<topic>`) are milestones with a build and verification pass.
   - `master` changes only through reviewed PRs.
 - **Gate:** run `npm run check` before every commit that touches code. It runs lint, all 12 builds, strict type consumers, Jest, the node:test integration tests and the package check.
+- **CI is local:** GitHub CI is kept but switched off ([development](docs/development.md#local-ci), roadmap D10).
+  - Before a merge into `LG/dev` or a PR to `master`, commit, then run `npm run ci:local -- <ref>` (a clean clone of the commit; several refs run in parallel). Releases add `--full` (audit, packed install, ComfyUI probes, Bun).
+  - Proof: put the run's one-line summary (`Local-CI: pass <sha> ...`, in `.lg/ci/runs/<run>/summary.txt`) in the execution record or the merge commit, and `report.md` in the PR body. `--note` adds it as a local git note.
+  - Posting a report (`--post`), pushing notes, and the GitHub switch (`npm run ci:github -- on|off`, a repository setting) are the user's: ask first, and never switch GitHub CI on yourself.
+  - Don't add other workflows, don't wait on or poll GitHub checks, and don't turn on the app's PR Auto-fix.
 - **Generated output:** `build/` and `build_node/` are committed. Regenerate them with `npm run build` and commit them separately (`build: regenerate distributions ...`) after the `fix:` / `feat:` / `docs:` commit.
 - **New `src/` modules:**
   - Add them to the file lists in `build.py`, in dependency order.
@@ -53,12 +61,12 @@ The full conventions are in [agents/README.md](agents/README.md).
   - The ComfyUI frontend (GPL-3.0, with ambiguous `src/lib/litegraph` changes after the merge) is a design reference only.
   - Check the license of every plugin before reusing anything; see the license tables in the ecosystem study.
 - **Dependencies:** pick versions that are at least two weeks old, and read the changelog before upgrading.
-- **Runner security:** `headless/graphrunner` executes pushed graphs. Keep the Origin/Host checks, the recursive node-type denylist (`nodePolicy.js`) and the script lockdown (`LiteGraph.allow_scripts` is off unless `RUNNER_ALLOW_SYS=1`).
-- **Mode 4:** mode 4 means ON_REQUEST here and BYPASS in ComfyUI. `comfy_interop.js` maps them explicitly; never reuse 4 for bypass.
+- **Runner security:** `apps/runner` executes pushed graphs. Keep the Origin/Host checks, the recursive node-type denylist (`nodePolicy.js`) and the script lockdown (`LiteGraph.allow_scripts` is off unless `RUNNER_ALLOW_SYS=1`).
+- **Modes 4 and 5:** mode 4 is BYPASS (as in ComfyUI) and 5 is ON_REQUEST since mode numbering 2 ([decision 0004](agents/memories/decisions/0004-mode-4-bypass.md)). Use the constants, never the numbers. Documents from before are renumbered on load by `LGraph.migrateModes`; `tools/migrate-modes.mjs` rewrites files.
 
 ## Gotchas
 
-- `editor/index.html` loads `src/` modules **without** the extensions. Use `editor/editor_build.html` to exercise the extensions, commands and key bindings in a browser (`npm run editor`, port 8000).
+- `apps/editor/index.html` loads `src/` modules **without** the extensions. Use `apps/editor/editor_build.html` (served at `/editor/...`) to exercise the extensions, commands and key bindings in a browser (`npm run editor`, port 8000).
 - **Undo history:** the first saved change on a fresh graph becomes the first history entry; there is no empty baseline. Tests that check "one undo step" need an earlier change first.
 - **Edit paths:** use `graph.transact(label, fn)` for anything a user should undo in one step. `beforeChange`/`afterChange` are hooks only; the pointer paths call them asymmetrically.
 - **`LGraphCanvas.active_canvas`** is set by pointer down and by keydown. Prefer `this` (the canvas instance) in new code.

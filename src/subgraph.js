@@ -2,10 +2,36 @@ import { LiteGraph } from "./litegraph.js";
 import { CallbackHandler } from "./callbackhandler.js";
 import { LGraphNode } from "./lgraphnode.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
+import { Reroute } from "./reroute.js";
+import { ExecutionEngine } from "./execution.js";
 
 /**
  * extracted from base nodes
  */
+
+/**
+ * Appends reroutes at `points` (origin → target order) to a link of `graph`, after the reroutes
+ * it already has, without a history entry. Returns the last reroute's id (or the link's previous
+ * parentId when there are no points).
+ */
+function subgraphAppendReroutes(graph, link, points, offset = [0, 0]) {
+    let parentId = link?.parentId;
+    for (const point of points) {
+        const reroute = new Reroute(++graph.state.lastRerouteId, [Math.round(point[0] + offset[0]), Math.round(point[1] + offset[1])], parentId);
+        graph.reroutes.set(reroute.id, reroute);
+        parentId = reroute.id;
+    }
+    if (link && parentId !== undefined) link.parentId = parentId;
+    return parentId;
+}
+
+/** removes reroutes that no link uses any more (from a list of candidates) */
+function subgraphDropUnusedReroutes(graph, ids) {
+    if (!ids.size) return;
+    const used = graph.getRerouteLinkIds();
+    const floating = graph._floatingRerouteSlots?.(used) ?? new Map();
+    for (const id of ids) if (!used.has(id) && !floating.has(id)) graph.reroutes.delete(id);
+}
 
 // Subgraph: a node that contains a graph
 export class Subgraph {
@@ -86,7 +112,27 @@ export class Subgraph {
 
     onAction(action, param, options) {
         LiteGraph.log_debug("subgraph","onAction",...arguments);
-        this.subgraph.onAction(action, param, options);
+        const rules = ExecutionEngine.rulesFor(this.graph);
+        if (rules.legacy) {
+            this.subgraph.onAction(action, param, options);
+            return;
+        }
+        // crossing into the inner graph: bounded by subgraph_max_depth, with fresh interface data
+        const depth = ExecutionEngine._boundaryDepth ?? 0;
+        const limit = LiteGraph.subgraph_max_depth ?? 32;
+        if (depth >= limit) {
+            ExecutionEngine.drop(this, "max-depth", { setting: "LiteGraph.subgraph_max_depth", message: `${this.type} ${this.id}: events nested through more than ${limit} subgraph boundaries (LiteGraph.subgraph_max_depth)` });
+            return;
+        }
+        ExecutionEngine._boundaryDepth = depth + 1;
+        try {
+            ExecutionEngine.enterBoundary(this);
+            this.subgraph.onAction(action, param, options);
+            // a subgraph node that does not step this frame still delivers its inner queued actions (B6)
+            if (rules.delivery === "deferred" && this.mode !== LiteGraph.ALWAYS) ExecutionEngine.flushInner(this, this.subgraph);
+        } finally {
+            ExecutionEngine._boundaryDepth = depth;
+        }
     }
 
     onExecute() {
@@ -927,15 +973,26 @@ export class Subgraph {
                 const key = `${link.origin_id}:${link.origin_slot}`;
                 const target = graph.getNodeById(link.target_id);
                 const entry = incoming.get(key) ?? { origin: link.origin_id, slot: link.origin_slot, type: linkType(link), name: target?.inputs?.[link.target_slot]?.name || "in", targets: [] };
-                entry.targets.push({ node: link.target_id, slot: link.target_slot });
+                entry.targets.push({ node: link.target_id, slot: link.target_slot, link: link.id });
                 incoming.set(key, entry);
             } else if (fromIn && !toIn) {
                 const key = `${link.origin_id}:${link.origin_slot}`;
                 const origin = graph.getNodeById(link.origin_id);
                 const entry = outgoing.get(key) ?? { origin: link.origin_id, slot: link.origin_slot, type: linkType(link), name: origin?.outputs?.[link.origin_slot]?.name || "out", targets: [] };
-                entry.targets.push({ node: link.target_id, slot: link.target_slot });
+                entry.targets.push({ node: link.target_id, slot: link.target_slot, link: link.id });
                 outgoing.set(key, entry);
             }
+        }
+
+        // reroute chains of the links that cross or stay inside the selection (origin → target),
+        // captured before the links go: a chain point inside the selection's box moves into the subgraph
+        const chainOf = new Map();
+        const touched = new Set();
+        for (const link of links) {
+            if (link.parentId === undefined || !(inSet.has(link.origin_id) || inSet.has(link.target_id))) continue;
+            const chain = graph.getRerouteChain(link);
+            chainOf.set(link.id, chain.map((reroute) => ({ id: reroute.id, pos: [reroute.pos[0], reroute.pos[1]] })));
+            chain.forEach((reroute) => touched.add(reroute.id));
         }
 
         // 2. copies of the nodes, without their links (ids are kept: the inner graph is empty)
@@ -959,8 +1016,12 @@ export class Subgraph {
         for (const node of selected) graph.remove(node);
         this.pos = [bounds[0], bounds[1]];
         for (const copy of copies.values()) inner.add(copy);
+        const box = [bounds[0] - 20, bounds[1] - LiteGraph.NODE_TITLE_HEIGHT - 20, bounds[2] + 20, bounds[3] + 20];
+        const insideBox = (point) => point.pos[0] >= box[0] && point.pos[0] <= box[2] && point.pos[1] >= box[1] && point.pos[1] <= box[3];
         for (const link of internal) {
-            copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+            const created = copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+            const chain = chainOf.get(link.id);
+            if (created && chain?.length) subgraphAppendReroutes(inner, created, chain.map((point) => point.pos));
         }
 
         // 4. graph inputs and outputs, then the outside wiring
@@ -979,10 +1040,23 @@ export class Subgraph {
             io.setProperty("type", entry.type);
             const name = unique(entry.name, inputNames);
             io.setProperty("name", name);
-            for (const target of entry.targets) io.connect(0, copies.get(target.node), target.slot);
+            // each crossing link: the part of its chain inside the box goes inside, the rest stays out
+            let outerPart = null;
+            for (const target of entry.targets) {
+                const created = io.connect(0, copies.get(target.node), target.slot);
+                const chain = chainOf.get(target.link) ?? [];
+                const split = chain.findIndex(insideBox);
+                const inside = split === -1 ? [] : chain.slice(split);
+                outerPart ??= split === -1 ? chain : chain.slice(0, split);
+                if (created && inside.length) subgraphAppendReroutes(inner, created, inside.map((point) => point.pos));
+            }
             const source = graph.getNodeById(entry.origin);
             const slot = this.findInputSlot(name);
-            if (source && slot !== -1) source.connect(entry.slot, this, slot);
+            if (source && slot !== -1) {
+                const outer = source.connect(entry.slot, this, slot);
+                // the outside part keeps its reroutes (and their parents up to the source)
+                if (outer && outerPart?.length && graph.reroutes.has(outerPart[outerPart.length - 1].id)) outer.parentId = outerPart[outerPart.length - 1].id;
+            }
         }
         row = 0;
         for (const entry of outgoing.values()) {
@@ -992,13 +1066,31 @@ export class Subgraph {
             io.setProperty("type", entry.type);
             const name = unique(entry.name, outputNames);
             io.setProperty("name", name);
-            copies.get(entry.origin).connect(entry.slot, io, 0);
+            const innerLink = copies.get(entry.origin).connect(entry.slot, io, 0);
             const slot = this.findOutputSlot(name);
+            let innerDone = false;
             for (const target of entry.targets) {
+                const chain = chainOf.get(target.link) ?? [];
+                // the leading points inside the box go inside (once: they are the origin's side), the rest stays out
+                let split = 0;
+                while (split < chain.length && insideBox(chain[split])) split++;
+                if (!innerDone && innerLink && split) {
+                    subgraphAppendReroutes(inner, innerLink, chain.slice(0, split).map((point) => point.pos));
+                    innerDone = true;
+                }
                 const node = graph.getNodeById(target.node);
-                if (node && slot !== -1) this.connect(slot, node, target.slot);
+                if (!node || slot === -1) continue;
+                const outer = this.connect(slot, node, target.slot);
+                const outside = chain.slice(split);
+                if (outer && outside.length && graph.reroutes.has(outside[outside.length - 1].id)) {
+                    const first = graph.reroutes.get(outside[0].id);
+                    if (first) delete first.parentId; // it now starts at the subgraph node
+                    outer.parentId = outside[outside.length - 1].id;
+                }
             }
         }
+        // reroutes that moved inside (or were only on removed links) leave the parent graph
+        subgraphDropUnusedReroutes(graph, touched);
         this.setSize(this.computeSize());
         return this;
     }
@@ -1021,12 +1113,12 @@ export class Subgraph {
         const outerSource = new Map(); // input name -> {node, slot}
         this.inputs?.forEach((input) => {
             const link = input.link != null ? graph.links[input.link] : null;
-            if (link) outerSource.set(input.name, { node: graph.getNodeById(link.origin_id), slot: link.origin_slot });
+            if (link) outerSource.set(input.name, { node: graph.getNodeById(link.origin_id), slot: link.origin_slot, parentId: link.parentId });
         });
         const outerTargets = new Map(); // output name -> [{node, slot}]
         this.outputs?.forEach((output) => {
             outerTargets.set(output.name, (output.links ?? []).map((id) => graph.links[id]).filter(Boolean)
-                .map((link) => ({ node: graph.getNodeById(link.target_id), slot: link.target_slot })));
+                .map((link) => ({ node: graph.getNodeById(link.target_id), slot: link.target_slot, chain: graph.getRerouteChain(link).map((reroute) => reroute.id) })));
         });
 
         // copies in the parent graph, laid out where the subgraph node was
@@ -1045,7 +1137,10 @@ export class Subgraph {
             copies.set(node.id, copy);
         }
 
-        // what to connect, resolved through the graph inputs and outputs
+        // what to connect, resolved through the graph inputs and outputs; each pair carries its
+        // reroutes: the outside chain to the subgraph input, the inner chain, the outside chain from the output
+        const offset = [this.pos[0] - minX, this.pos[1] - minY];
+        const innerPoints = (link) => inner.getRerouteChain(link).map((reroute) => reroute.pos);
         const plan = [];
         const sourceOf = (link) => {
             const origin = inner.getNodeById(link.origin_id);
@@ -1056,18 +1151,37 @@ export class Subgraph {
             const target = inner.getNodeById(link.target_id);
             const source = sourceOf(link);
             if (!source?.node) continue;
+            const route = { before: source.parentId, points: innerPoints(link), innerLink: link.id };
             if (isOutput(target)) {
                 for (const outer of outerTargets.get(target.properties.name) ?? []) {
-                    if (outer.node) plan.push([source, outer]);
+                    if (outer.node) plan.push([source, outer, { ...route, after: outer.chain }]);
                 }
             } else if (copies.has(link.target_id)) {
-                plan.push([source, { node: copies.get(link.target_id), slot: link.target_slot }]);
+                plan.push([source, { node: copies.get(link.target_id), slot: link.target_slot }, route]);
             }
         }
 
         graph.remove(this);
         for (const copy of copies.values()) graph.add(copy);
-        for (const [source, target] of plan) source.node.connect(source.slot, target.node, target.slot);
+        const innerEnds = new Map(); // inner link id -> last reroute id created for it (shared by its outputs)
+        for (const [source, target, route] of plan) {
+            const created = source.node.connect(source.slot, target.node, target.slot);
+            if (!created) continue;
+            // the outside chain before the subgraph input (kept objects)
+            if (route.before !== undefined && graph.reroutes.has(route.before)) created.parentId = route.before;
+            // the inner chain, created once per inner link
+            if (route.points.length) {
+                if (innerEnds.has(route.innerLink)) created.parentId = innerEnds.get(route.innerLink);
+                else innerEnds.set(route.innerLink, subgraphAppendReroutes(graph, created, route.points, offset));
+            }
+            // the outside chain after the subgraph output (kept objects), attached after the inner one
+            const after = (route.after ?? []).filter((id) => graph.reroutes.has(id));
+            if (after.length) {
+                const first = graph.reroutes.get(after[0]);
+                if (created.parentId === undefined) delete first.parentId; else first.parentId = created.parentId;
+                created.parentId = after[after.length - 1];
+            }
+        }
         return [...copies.values()];
     }
 
@@ -1149,26 +1263,47 @@ export class GraphInput {
         }
         this.properties.type = type;
 
-        // update widget
-        if (type == "number") {
-            this.value_widget.type = "number";
-            this.value_widget.value = Number(); // 0
-        } else if (type == "boolean") {
-            this.value_widget.type = "toggle";
-            this.value_widget.value = this.value_widget.value&&(this.value_widget.value+"").toLocaleLowerCase()!=="false"&&this.value_widget.value!==""?true:false; // "true"
-        } else if (type == "string") {
-            this.value_widget.type = "text";
-            this.value_widget.value = this.value_widget.value+""; // ""
-        } else {
-            this.value_widget.type = null;
-            // this.value_widget.value = null;
-        }
+        // update widget: the value widget becomes the widget of the input's value type (any registered
+        // type: number, int, boolean, string, color, vec3, ...); its value is kept, converted to the type
+        this.setValueWidgetType(type);
         this.properties.value = this.value_widget.value;
 
         // update graph
         if (this.graph && this.name_in_graph) {
             this.graph.changeInputType(this.name_in_graph, type);
         }
+    }
+
+    /**
+     * Replaces the value widget by the widget of a value type (LiteGraph.valueTypes), keeping the
+     * value when the type can convert it, else the type's default. Unknown types keep the widget
+     * with a null type, as before.
+     */
+    setValueWidgetType(type) {
+        const old = this.value_widget;
+        const types = LiteGraph.valueTypes;
+        const resolved = type !== LiteGraph.EVENT && types?.has(type) ? types.resolveWidgetClass(String(type), LiteGraph.widget_types ?? {}) : null;
+        if (!resolved) {
+            old.type = null;
+            return old;
+        }
+        const options = { ...resolved.options };
+        let value = old.value;
+        try {
+            value = types.coerce(type, value, options);
+            if (types.validate(type, value, options)) value = types.defaultValue(type, options);
+        } catch {
+            value = types.defaultValue(type, options);
+        }
+        if (old.constructor === resolved.cls && old.type === String(type).toLowerCase()) {
+            old.value = value;
+            return old;
+        }
+        const widget = new resolved.cls({ type: String(type).toLowerCase(), name: old.name, value, callback: old.callback, options });
+        const index = this.widgets.indexOf(old);
+        if (index >= 0) this.widgets[index] = widget;
+        this.value_widget = widget;
+        return widget;
     }
 
     // this is executed AFTER the property has changed
@@ -1437,6 +1572,11 @@ export class NodeFunction extends Subgraph {
 
     static title = "Function";
     static desc = "Calls a subgraph definition";
+    // runs only on call: ON_EVENT for new nodes outside legacy (Wave 6)
+    static def = {
+        execution: { default_mode: 1 }, // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
+        usage: "Pick a subgraph definition; each event on call pushes the inputs, runs the inner graph once and fires done with the outputs set.",
+    };
 
     constructor() {
         super();
@@ -1550,13 +1690,11 @@ export class NodeFunction extends Subgraph {
     onAction(action, param, options) {
         if (action === "call") return this.call(param, options);
         this._migrate();
+        if (!ExecutionEngine.rulesFor(this.graph).legacy) ExecutionEngine.enterBoundary(this);
         this.subgraph.onAction(action, param, options); // an interface event input
-        // the inner graph only steps on call: deliver the event chain now (deferred actions)
-        for (let pass = 0; pass < 64; pass++) {
-            const waiting = this.subgraph._nodes.filter((node) => node._waiting_actions?.length);
-            if (!waiting.length) break;
-            for (const node of waiting) node.executePendingActions();
-        }
+        // the inner graph only steps on call: deliver the event chain now (deferred actions), up to
+        // LiteGraph.Execution.MaxEventPasses passes (64); reaching the cap is reported
+        ExecutionEngine.flushInner(this, this.subgraph);
     }
 
     onExecute() {

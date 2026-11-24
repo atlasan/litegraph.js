@@ -10,6 +10,7 @@
  *     setup(ctx) {
  *         ctx.on("onNodeTypeRegistered", (info, type) => ...);           // LiteGraph-level hook
  *         ctx.onCanvas((canvas, c) => c.on("onKeyDown", (info, e) => ...)); // every canvas, now and later
+ *         ctx.listen(LiteGraph, "node-type-registered", (event) => ...);     // hooks or typed events, by name
  *         return () => { ... };                                            // optional extra cleanup
  *     },
  * });
@@ -111,6 +112,13 @@ export class ExtensionRegistry {
             },
             /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
             on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Side panel sections and editors (LiteGraph.registerPanelSection / registerPanelEditor), removed on dispose. */
+            panels: {
+                registerSection: (section) => track(host.registerPanelSection(section)),
+                registerEditor: (name, editor) => track(host.registerPanelEditor(name, editor)),
+            },
+            /** Value types (LiteGraph.registerValueType), removed on dispose. */
+            valueTypes: { register: (name, definition, options) => track(host.registerValueType(name, definition, options)) },
             /** Adds context-menu items ("canvas" or "node"; see MenuRegistry). */
             menus: { register: (location, provider) => track(host.menus.register(location, provider)) },
             /** Typed event listener (graph.events / canvas.events), removed on dispose. */
@@ -121,6 +129,13 @@ export class ExtensionRegistry {
             },
             /** Hook on any object with a CallbackHandler (graph, node, canvas). */
             onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
+            /**
+             * One way to listen to both kinds, removed on dispose: hook names (`onX`, `on_x`,
+             * `getXMenuOptions`) register a hook handler, other names ("node-added", "*") a typed listener.
+             */
+            listen: (target, name, fn, opts) => /^(on|get)[A-Z_]/.test(name)
+                ? hookOn(target, name, fn, opts)
+                : ctx.onEvent(target, name, fn, opts),
             /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
             onCanvas: (fn) => {
                 const apply = (canvas) => {

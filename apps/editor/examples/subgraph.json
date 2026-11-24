@@ -1,0 +1,510 @@
+{
+ "id": "68c302ed-c225-44d4-97c7-522fb5986e4f",
+ "revision": 2,
+ "last_node_id": 6,
+ "last_link_id": 5,
+ "nodes": [
+  {
+   "id": 3,
+   "type": "basic/time",
+   "pos": [
+    312,
+    145
+   ],
+   "size": [
+    140,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "in ms",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "in sec",
+     "type": "number",
+     "links": [
+      1
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 4,
+   "type": "basic/watch",
+   "pos": [
+    864,
+    156
+   ],
+   "size": [
+    140,
+    30
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 2,
+     "label": "null"
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 6,
+   "type": "events/counter",
+   "pos": [
+    864,
+    229
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 4
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 2,
+   "type": "c8d2495b-d856-4b1e-8f90-72631242dc9a",
+   "pos": [
+    573,
+    168
+   ],
+   "size": [
+    206,
+    90
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "enabled",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "foo",
+     "type": "",
+     "link": 1
+    },
+    {
+     "name": "EV",
+     "type": -1,
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "faa",
+     "type": 0,
+     "links": [
+      2
+     ]
+    },
+    {
+     "name": "EV",
+     "type": -1,
+     "links": [
+      4
+     ]
+    }
+   ],
+   "properties": {
+    "enabled": true,
+    "subgraph_id": "c8d2495b-d856-4b1e-8f90-72631242dc9a"
+   }
+  },
+  {
+   "id": 5,
+   "type": "events/timer",
+   "pos": [
+    311,
+    240
+   ],
+   "size": [
+    140,
+    30
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "on_tick",
+     "type": -1,
+     "links": [
+      3
+     ]
+    }
+   ],
+   "properties": {
+    "interval": 2000,
+    "event": "tick"
+   },
+   "boxcolor": "#222"
+  }
+ ],
+ "links": [
+  [
+   1,
+   3,
+   1,
+   2,
+   1,
+   0
+  ],
+  [
+   2,
+   2,
+   0,
+   4,
+   0,
+   0
+  ],
+  [
+   3,
+   5,
+   0,
+   2,
+   2,
+   -1
+  ],
+  [
+   4,
+   2,
+   1,
+   6,
+   0,
+   -1
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "A subgraph node holds a whole graph; its inputs and outputs are the inner graph's input and output nodes. Time (in seconds) passes through it to the Watch, and the Timer's event passes through it to the Counter. Press Play; double-click the subgraph node to open it.",
+   "bounding": [
+    311,
+    5,
+    720,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 6,
+  "lastLinkId": 5,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ },
+ "definitions": {
+  "subgraphs": [
+   {
+    "id": "c8d2495b-d856-4b1e-8f90-72631242dc9a",
+    "revision": 1,
+    "groups": [],
+    "config": {},
+    "extra": {
+     "litegraph": {
+      "io": {
+       "06d98538-36c6-4dc3-94f1-31de9b7721ff": {
+        "pos": [
+         440,
+         149
+        ],
+        "size": [
+         180,
+         80
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "foo",
+         "type": "",
+         "value": 0,
+         "slot_id": "06d98538-36c6-4dc3-94f1-31de9b7721ff"
+        }
+       },
+       "a28ca440-5db2-4b31-bc84-448410c0da6d": {
+        "pos": [
+         460,
+         282
+        ],
+        "size": [
+         180,
+         80
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "EV",
+         "type": -1,
+         "value": 0,
+         "slot_id": "a28ca440-5db2-4b31-bc84-448410c0da6d"
+        }
+       },
+       "c411bd87-5339-41db-bc8f-e95b284e47a5": {
+        "pos": [
+         1119,
+         139
+        ],
+        "size": [
+         180,
+         60
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "faa",
+         "type": 0,
+         "slot_id": "c411bd87-5339-41db-bc8f-e95b284e47a5"
+        }
+       },
+       "449ab0e2-00bc-4680-8d57-407fa088d42c": {
+        "pos": [
+         1054,
+         293
+        ],
+        "size": [
+         180,
+         60
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "EV",
+         "type": -1,
+         "slot_id": "449ab0e2-00bc-4680-8d57-407fa088d42c"
+        }
+       }
+      }
+     }
+    },
+    "version": 1,
+    "litegraph_modes": 2,
+    "state": {
+     "lastNodeId": 7,
+     "lastLinkId": 6,
+     "lastGroupId": 0,
+     "lastRerouteId": 0
+    },
+    "name": "Subgraph",
+    "inputNode": {
+     "id": -10,
+     "bounding": [
+      440,
+      149,
+      200,
+      213
+     ]
+    },
+    "outputNode": {
+     "id": -20,
+     "bounding": [
+      1054,
+      139,
+      245,
+      214
+     ]
+    },
+    "inputs": [
+     {
+      "id": "06d98538-36c6-4dc3-94f1-31de9b7721ff",
+      "name": "foo",
+      "type": "*",
+      "linkIds": [
+       1
+      ]
+     },
+     {
+      "id": "a28ca440-5db2-4b31-bc84-448410c0da6d",
+      "name": "EV",
+      "type": "event",
+      "litegraph_type": -1,
+      "linkIds": [
+       4
+      ]
+     }
+    ],
+    "outputs": [
+     {
+      "id": "c411bd87-5339-41db-bc8f-e95b284e47a5",
+      "name": "faa",
+      "type": "*",
+      "linkIds": [
+       2
+      ]
+     },
+     {
+      "id": "449ab0e2-00bc-4680-8d57-407fa088d42c",
+      "name": "EV",
+      "type": "event",
+      "litegraph_type": -1,
+      "linkIds": [
+       5
+      ]
+     }
+    ],
+    "widgets": [],
+    "nodes": [
+     {
+      "id": 4,
+      "type": "math/floor",
+      "pos": [
+       872,
+       194
+      ],
+      "size": [
+       112,
+       30
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 5,
+      "inputs": [
+       {
+        "name": "in",
+        "type": "number",
+        "link": 1
+       }
+      ],
+      "outputs": [
+       {
+        "name": "out",
+        "type": "number",
+        "links": [
+         2
+        ]
+       }
+      ],
+      "properties": {}
+     },
+     {
+      "id": 7,
+      "type": "events/delay",
+      "pos": [
+       742,
+       300
+      ],
+      "size": [
+       140,
+       30
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+       {
+        "name": "event",
+        "type": -1,
+        "link": 4
+       }
+      ],
+      "outputs": [
+       {
+        "name": "on_time",
+        "type": -1,
+        "links": [
+         5
+        ]
+       }
+      ],
+      "properties": {
+       "time_in_ms": 1000
+      }
+     }
+    ],
+    "links": [
+     {
+      "id": 1,
+      "origin_id": -10,
+      "origin_slot": 0,
+      "target_id": 4,
+      "target_slot": 0,
+      "type": "number"
+     },
+     {
+      "id": 2,
+      "origin_id": 4,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 0,
+      "type": 0
+     },
+     {
+      "id": 4,
+      "origin_id": -10,
+      "origin_slot": 1,
+      "target_id": 7,
+      "target_slot": 0,
+      "type": -1
+     },
+     {
+      "id": 5,
+      "origin_id": 7,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 1,
+      "type": -1
+     }
+    ]
+   }
+  ]
+ }
+}

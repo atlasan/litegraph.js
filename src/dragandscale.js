@@ -40,9 +40,21 @@ export class DragAndScale {
      * @param {HTMLElement} element - The HTML element to bind the events to.
      */
     bindEvents(element) {
+        this.unbindEvents();
         this.last_mouse = new Float32Array(2);
-        element.addEventListener("pointerdown", this.onMouseDown);
-        element.addEventListener("wheel", this.onWheel);
+        this._events = new AbortController();
+        element.addEventListener("pointerdown", this.onMouseDown, { signal: this._events.signal });
+        element.addEventListener("wheel", this.onWheel, { signal: this._events.signal });
+    }
+
+    /**
+     * Removes the listeners bindEvents added. LGraphCanvas never binds them: its pointer input
+     * (pan as a CanvasPointer gesture, wheel zoom) goes through the canvas.
+     */
+    unbindEvents() {
+        this._events?.abort();
+        this._events = null;
+        this.abortController?.abort();
     }
 
     onMouseDown = (event) => {

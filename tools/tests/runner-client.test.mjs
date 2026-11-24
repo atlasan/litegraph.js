@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WebSocketClient } from '../../headless/graphrunner/public/connection.js';
+import { WebSocketClient } from '../../apps/runner/public/connection.js';
 
 class Socket {
   static instances = [];

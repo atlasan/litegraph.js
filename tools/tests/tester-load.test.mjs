@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TestFramework } from '../../editor_tester/js/test-framework.js';
-import { TestCaseGenerator } from '../../editor_tester/js/test-generator.js';
-import { TestRunner } from '../../editor_tester/js/test-runner.js';
-import { pause } from '../../editor_tester/js/test-control.js';
+import { TestFramework } from '../../apps/tester/js/test-framework.js';
+import { TestCaseGenerator } from '../../apps/tester/js/test-generator.js';
+import { TestRunner } from '../../apps/tester/js/test-runner.js';
+import { pause } from '../../apps/tester/js/test-control.js';
 
 const definition = extra => ({ id:'load', nodeType:'basic/const', expectedInputs:[], expectedOutputs:[], timeout:200, ...extra });
 const config = { execution: { timeout:200, maxConcurrent:1, retryCount:2, retryDelay:0 } };
 
 test('runner wires configured timeouts, memory tracking, and benchmark sample counts', async () => {
-    const { default: testConfig } = await import('../../editor_tester/js/test-config.js');
+    const { default: testConfig } = await import('../../apps/tester/js/test-config.js');
     const previous = testConfig.config;
     const runner = new TestRunner({ getNodeInfo: () => ({}) });
     try {

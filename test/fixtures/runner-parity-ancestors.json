@@ -1,0 +1,613 @@
+{
+ "id": "396a81ad-25d7-410b-a315-0a733a947920",
+ "revision": 25,
+ "last_node_id": 11,
+ "last_link_id": 14,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "events/timer",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    116.98600006103516,
+    30
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "on_tick",
+     "type": -1,
+     "links": [
+      1
+     ]
+    }
+   ],
+   "title": "start",
+   "properties": {
+    "interval": 50,
+    "event": "tick"
+   }
+  },
+  {
+   "id": 2,
+   "type": "events/once",
+   "pos": [
+    180,
+    180
+   ],
+   "size": [
+    140,
+    82
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "in",
+     "type": -1,
+     "link": 1
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": -1,
+     "links": [
+      4,
+      8
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 3,
+   "type": "basic/const",
+   "pos": [
+    360,
+    360
+   ],
+   "size": [
+    180,
+    32
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "properties": {
+    "value": 0,
+    "precision": 12,
+    "step": 1,
+    "min": 0,
+    "max": 9007199254740991
+   }
+  },
+  {
+   "id": 4,
+   "type": "basic/const",
+   "pos": [
+    540,
+    540
+   ],
+   "size": [
+    180,
+    32
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [
+      3,
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "value": 3,
+    "precision": 12,
+    "step": 1,
+    "min": 0,
+    "max": 9007199254740991
+   }
+  },
+  {
+   "id": 5,
+   "type": "logic/CycleFOR",
+   "pos": [
+    720,
+    120
+   ],
+   "size": [
+    156.5959930419922,
+    90
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "start",
+     "type": "number",
+     "link": 2
+    },
+    {
+     "name": "nElements",
+     "type": "number",
+     "link": 3
+    },
+    {
+     "name": "do",
+     "type": -1,
+     "link": 4
+    },
+    {
+     "name": "break",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "do",
+     "type": -1,
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "index",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "completed",
+     "type": -1,
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 6,
+   "type": "events/counter",
+   "pos": [
+    900,
+    300
+   ],
+   "size": [
+    140,
+    102
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 5
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "title": "FOR body count",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 7,
+   "type": "basic/data_store",
+   "pos": [
+    1080,
+    480
+   ],
+   "size": [
+    140,
+    82
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "data",
+     "type": 0,
+     "link": 6
+    },
+    {
+     "name": "assign",
+     "type": -1,
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "data",
+     "type": 0,
+     "links": null
+    }
+   ],
+   "title": "FOR result",
+   "properties": {
+    "data": null,
+    "serialize": true
+   }
+  },
+  {
+   "id": 8,
+   "type": "logic/CycleWHILE",
+   "pos": [
+    1260,
+    60
+   ],
+   "size": [
+    156.5959930419922,
+    102
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "do",
+     "type": -1,
+     "link": 8
+    },
+    {
+     "name": "condition",
+     "type": "boolean",
+     "link": 12
+    },
+    {
+     "name": "break",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "do",
+     "type": -1,
+     "links": [
+      9
+     ]
+    },
+    {
+     "name": "index",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "completed",
+     "type": -1,
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "cycleLimit": 999,
+    "checkOnStart": true
+   }
+  },
+  {
+   "id": 9,
+   "type": "events/counter",
+   "pos": [
+    1440,
+    240
+   ],
+   "size": [
+    140,
+    102
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 9
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": [
+      10,
+      14
+     ]
+    }
+   ],
+   "title": "WHILE body count",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 10,
+   "type": "math/condition",
+   "pos": [
+    1620,
+    420
+   ],
+   "size": [
+    140,
+    82
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 10
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 11
+    }
+   ],
+   "outputs": [
+    {
+     "name": "true",
+     "type": "boolean",
+     "links": [
+      12
+     ]
+    },
+    {
+     "name": "false",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "count < 3",
+   "properties": {
+    "A": 0,
+    "B": 3,
+    "OP": "<"
+   }
+  },
+  {
+   "id": 11,
+   "type": "basic/data_store",
+   "pos": [
+    1800,
+    0
+   ],
+   "size": [
+    140,
+    82
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "data",
+     "type": 0,
+     "link": 14
+    },
+    {
+     "name": "assign",
+     "type": -1,
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "data",
+     "type": 0,
+     "links": null
+    }
+   ],
+   "title": "WHILE result",
+   "properties": {
+    "data": null,
+    "serialize": true
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   -1
+  ],
+  [
+   2,
+   3,
+   0,
+   5,
+   0,
+   "number"
+  ],
+  [
+   3,
+   4,
+   0,
+   5,
+   1,
+   "number"
+  ],
+  [
+   4,
+   2,
+   0,
+   5,
+   2,
+   -1
+  ],
+  [
+   5,
+   5,
+   0,
+   6,
+   0,
+   -1
+  ],
+  [
+   6,
+   6,
+   1,
+   7,
+   0,
+   "number"
+  ],
+  [
+   7,
+   5,
+   2,
+   7,
+   1,
+   -1
+  ],
+  [
+   8,
+   2,
+   0,
+   8,
+   0,
+   -1
+  ],
+  [
+   9,
+   8,
+   0,
+   9,
+   0,
+   -1
+  ],
+  [
+   10,
+   9,
+   1,
+   10,
+   0,
+   "number"
+  ],
+  [
+   11,
+   4,
+   0,
+   10,
+   1,
+   "number"
+  ],
+  [
+   12,
+   10,
+   0,
+   8,
+   1,
+   "boolean"
+  ],
+  [
+   13,
+   8,
+   2,
+   11,
+   1,
+   -1
+  ],
+  [
+   14,
+   9,
+   1,
+   11,
+   0,
+   "number"
+  ]
+ ],
+ "groups": [],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.1",
+ "state": {
+  "lastNodeId": 11,
+  "lastLinkId": 14,
+  "lastGroupId": 0,
+  "lastRerouteId": 0
+ },
+ "litegraph_modes": 2
+}

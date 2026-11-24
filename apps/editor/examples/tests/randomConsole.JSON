@@ -1,0 +1,490 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 20,
+ "last_node_id": 9,
+ "last_link_id": 10,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "events/timer",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    139,
+    30
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "on_tick",
+     "type": -1,
+     "links": [
+      1
+     ]
+    }
+   ],
+   "properties": {
+    "interval": 1000,
+    "event": "tick"
+   }
+  },
+  {
+   "id": 2,
+   "type": "math/rand",
+   "pos": [
+    40,
+    270
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [
+      2,
+      7,
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1
+   }
+  },
+  {
+   "id": 3,
+   "type": "widget/number",
+   "pos": [
+    40,
+    360
+   ],
+   "size": [
+    109,
+    60
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "Threshold",
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.7,
+    "step": 0.1
+   }
+  },
+  {
+   "id": 4,
+   "type": "math/compare",
+   "pos": [
+    240,
+    300
+   ],
+   "size": [
+    158,
+    70
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 2
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A==B",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "A!=B",
+     "type": "boolean",
+     "links": null
+    },
+    {
+     "name": "A>B",
+     "type": "boolean",
+     "links": [
+      4
+     ]
+    }
+   ],
+   "title": "Rand > Threshold",
+   "properties": {
+    "A": 0,
+    "B": 0
+   }
+  },
+  {
+   "id": 5,
+   "type": "logic/IF",
+   "pos": [
+    440,
+    170
+   ],
+   "size": [
+    133,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 1
+    },
+    {
+     "name": "condition",
+     "type": "boolean",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "true",
+     "type": -1,
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "false",
+     "type": -1,
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 6,
+   "type": "events/sequence",
+   "pos": [
+    620,
+    170
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {
+    "horizontal": true,
+    "render_box": false
+   },
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": -1,
+     "link": 5,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      6
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      8
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      10
+     ],
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 7,
+   "type": "basic/console",
+   "pos": [
+    820,
+    150
+   ],
+   "size": [
+    98,
+    50
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "log",
+     "type": -1,
+     "link": 6
+    },
+    {
+     "name": "msg",
+     "type": 0,
+     "link": 7
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "msg": ""
+   }
+  },
+  {
+   "id": 8,
+   "type": "basic/watch",
+   "pos": [
+    820,
+    260
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 9,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 8,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "Last hit",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 9,
+   "type": "events/counter",
+   "pos": [
+    820,
+    360
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 10
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "Hits",
+   "properties": {
+    "doCountExecution": false
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   5,
+   0,
+   -1
+  ],
+  [
+   2,
+   2,
+   0,
+   4,
+   0,
+   "number"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   1,
+   "number"
+  ],
+  [
+   4,
+   4,
+   2,
+   5,
+   1,
+   "boolean"
+  ],
+  [
+   5,
+   5,
+   0,
+   6,
+   0,
+   -1
+  ],
+  [
+   6,
+   6,
+   0,
+   7,
+   0,
+   -1
+  ],
+  [
+   7,
+   2,
+   0,
+   7,
+   1,
+   "number"
+  ],
+  [
+   8,
+   6,
+   1,
+   8,
+   1,
+   -1
+  ],
+  [
+   9,
+   2,
+   0,
+   8,
+   0,
+   "number"
+  ],
+  [
+   10,
+   6,
+   2,
+   9,
+   0,
+   -1
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Every second the Timer asks the Branch: is Rand above the threshold? On true, a Sequence logs the value to the browser console, shows it in the Watch and counts the hit. Watch and Console get the same number the comparison used: under \"ancestors\" Rand runs once per tick. Press Play.",
+   "bounding": [
+    40,
+    20,
+    720,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 9,
+  "lastLinkId": 10,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

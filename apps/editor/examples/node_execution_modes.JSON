@@ -1,0 +1,738 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 257,
+ "last_node_id": 14,
+ "last_link_id": 8,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "events/counter",
+   "pos": [
+    60,
+    260
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "Always",
+   "properties": {
+    "doCountExecution": true
+   }
+  },
+  {
+   "id": 2,
+   "type": "widget/button",
+   "pos": [
+    420,
+    270
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Send",
+   "properties": {
+    "text": "inc",
+    "font_size": 20,
+    "message": ""
+   }
+  },
+  {
+   "id": 3,
+   "type": "events/counter",
+   "pos": [
+    560,
+    260
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 1
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "On event",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 4,
+   "type": "widget/button",
+   "pos": [
+    790,
+    270
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      2
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Trigger",
+   "properties": {
+    "text": "run",
+    "font_size": 20,
+    "message": ""
+   }
+  },
+  {
+   "id": 5,
+   "type": "events/counter",
+   "pos": [
+    930,
+    260
+   ],
+   "size": [
+    147,
+    122
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 2,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "On trigger",
+   "properties": {
+    "doCountExecution": true
+   }
+  },
+  {
+   "id": 6,
+   "type": "events/counter",
+   "pos": [
+    60,
+    550
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "On request",
+   "properties": {
+    "doCountExecution": true
+   }
+  },
+  {
+   "id": 7,
+   "type": "widget/button",
+   "pos": [
+    60,
+    700
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Read",
+   "properties": {
+    "text": "read",
+    "font_size": 20,
+    "message": ""
+   }
+  },
+  {
+   "id": 8,
+   "type": "basic/watch",
+   "pos": [
+    230,
+    590
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 3,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 4,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "Its count",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 9,
+   "type": "widget/button",
+   "pos": [
+    420,
+    560
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Send",
+   "properties": {
+    "text": "inc",
+    "font_size": 20,
+    "message": ""
+   }
+  },
+  {
+   "id": 10,
+   "type": "events/counter",
+   "pos": [
+    560,
+    550
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 5
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "Never",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 11,
+   "type": "widget/number",
+   "pos": [
+    790,
+    550
+   ],
+   "size": [
+    80,
+    60
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "title": "A",
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 5,
+    "step": 1
+   }
+  },
+  {
+   "id": 12,
+   "type": "widget/number",
+   "pos": [
+    790,
+    640
+   ],
+   "size": [
+    80,
+    60
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "title": "B",
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 10,
+    "step": 1
+   }
+  },
+  {
+   "id": 13,
+   "type": "math/operation",
+   "pos": [
+    910,
+    570
+   ],
+   "size": [
+    81,
+    50
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 4,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number,array,object",
+     "link": 6
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "A": 5,
+    "B": 10,
+    "OP": "+"
+   }
+  },
+  {
+   "id": 14,
+   "type": "basic/watch",
+   "pos": [
+    910,
+    680
+   ],
+   "size": [
+    149,
+    30
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 8,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "A + B, bypassed",
+   "properties": {
+    "display": "value"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   3,
+   0,
+   -1
+  ],
+  [
+   2,
+   4,
+   0,
+   5,
+   3,
+   -1
+  ],
+  [
+   3,
+   6,
+   1,
+   8,
+   0,
+   "number"
+  ],
+  [
+   4,
+   7,
+   0,
+   8,
+   1,
+   -1
+  ],
+  [
+   5,
+   9,
+   0,
+   10,
+   0,
+   -1
+  ],
+  [
+   6,
+   11,
+   0,
+   13,
+   0,
+   "number,array,object"
+  ],
+  [
+   7,
+   12,
+   0,
+   13,
+   1,
+   "number"
+  ],
+  [
+   8,
+   13,
+   0,
+   14,
+   0,
+   "number"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Node modes say when a node runs; each box shows one mode with a Counter that counts its own executions (\"Count Exec.\"). The document runs under the \"ancestors\" execution model (the chip at the top left), the default for new documents: an action runs its target at once and first pulls the ON_REQUEST nodes it reads. Documents saved before 0.18 load as \"legacy\", where the same modes behave as in older LiteGraph; there, mode 4 is now BYPASS and 5 ON_REQUEST (older files are renumbered on load). Change a mode from the node menu or the node panel.",
+   "bounding": [
+    40,
+    20,
+    1000,
+    92
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  },
+  {
+   "id": 2,
+   "title": "ALWAYS: runs once per frame while the graph plays. Press Play: the count keeps rising.",
+   "bounding": [
+    40,
+    180,
+    340,
+    196
+   ],
+   "color": "#8A8",
+   "font_size": 15
+  },
+  {
+   "id": 3,
+   "title": "ON_EVENT: runs only when an action reaches it. Each click adds one, with or without Play.",
+   "bounding": [
+    410,
+    180,
+    340,
+    196
+   ],
+   "color": "#A88",
+   "font_size": 15
+  },
+  {
+   "id": 4,
+   "title": "ON_TRIGGER: runs once each time its onTrigger input fires; Play does not run it.",
+   "bounding": [
+    780,
+    180,
+    340,
+    216
+   ],
+   "color": "#88A",
+   "font_size": 15
+  },
+  {
+   "id": 5,
+   "title": "ON_REQUEST: runs only when a node needs its data. Each click on read makes the Watch pull it once.",
+   "bounding": [
+    40,
+    455,
+    340,
+    309
+   ],
+   "color": "#AA8",
+   "font_size": 15
+  },
+  {
+   "id": 6,
+   "title": "NEVER (muted): does not run; its events are dropped, so the count stays 0.",
+   "bounding": [
+    410,
+    470,
+    340,
+    196
+   ],
+   "color": "#666",
+   "font_size": 15
+  },
+  {
+   "id": 7,
+   "title": "BYPASS: the node is a wire; its first input passes through. Press Play: the Watch shows 5, not 15.",
+   "bounding": [
+    780,
+    455,
+    340,
+    269
+   ],
+   "color": "#8AA",
+   "font_size": 15
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 14,
+  "lastLinkId": 8,
+  "lastGroupId": 7,
+  "lastRerouteId": 0
+ }
+}

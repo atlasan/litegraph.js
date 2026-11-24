@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: valuetypes.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: valuetypes.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { evaluateMathExpression } from "./widgets.js";
+
+/**
+ * Value types: one place that says how a value of a given type is edited, on the canvas and in
+ * panels ("widget for type").
+ *
+ *   LiteGraph.registerValueType("percent", {
+ *       base: "number", aliases: ["PERCENT"], label: "Percentage",
+ *       description: "A number from 0 to 100.", examples: ["50", "12.5"],
+ *       widget: "slider", editor: "slider", options: { min: 0, max: 100, step: 1, unit: "%" },
+ *   });
+ *
+ * Fields of a definition (all optional):
+ * - `base`: a type whose fields are inherited (options are merged, the base's first)
+ * - `aliases`: other names (names and aliases are matched without regard to case)
+ * - `label`, `description`, `examples`: shown by the panels as the row's help
+ * - `widget`: canvas widget type (`LiteGraph.widget_types`); `editor`: panel editor (`LiteGraph.panel_editors`)
+ * - `options`: default widget and editor options (a property's own info wins over them)
+ * - `default`: value, or a function returning one
+ * - `coerce(value, options)`: normalizes a typed or picked value
+ * - `validate(value, options)`: null, or a message saying why the value is refused
+ * - `format(value, options)`: text shown for the value
+ * - `parse(text, options)`: value from typed text
+ *
+ * Resolution order of the consumers: a registered editor or widget type with the asked name wins,
+ * then the value type's `editor` / `widget`. See the panels and widgets plan
+ * (agents/plans/2026-11-22-panels-options-node-details.md).
+ */
+export class ValueTypeRegistry {
+
+    constructor() {
+        /** @type {Map&lt;string, object>} lower-case name -> definition as registered */
+        this._defs = new Map();
+        /** @type {Map&lt;string, string>} lower-case alias -> lower-case name */
+        this._aliases = new Map();
+        /** @type {Map&lt;string, object>} resolved definitions (cleared on every change) */
+        this._resolved = new Map();
+        for (const [name, def] of Object.entries(ValueTypeRegistry.builtins())) this.register(name, def);
+    }
+
+    /**
+     * Registers a value type.
+     * @param {string} name
+     * @param {object} def
+     * @param {{replace?: boolean}} [options] - replace: allow replacing a registered type (built-ins included)
+     * @returns {() => void} disposer; it restores the replaced definition, if any
+     */
+    register(name, def = {}, { replace = false } = {}) {
+        if (typeof name !== "string" || !name) throw new TypeError("value type name must be a non-empty string");
+        if (!def || typeof def !== "object") throw new TypeError(`value type ${name}: definition must be an object`);
+        const key = name.toLowerCase();
+        const previous = this._defs.get(key);
+        if (previous &amp;&amp; !replace) throw new Error(`value type ${name} is already registered (pass {replace: true} to replace it)`);
+        const entry = { ...def, name: previous?.name ?? name, aliases: [...(def.aliases ?? [])] };
+        if (previous) this._unlinkAliases(previous);
+        this._defs.set(key, entry);
+        for (const alias of entry.aliases) {
+            const aliasKey = String(alias).toLowerCase();
+            if (!this._defs.has(aliasKey)) this._aliases.set(aliasKey, key);
+        }
+        this._resolved.clear();
+        return () => {
+            if (this._defs.get(key) !== entry) return;
+            this._unlinkAliases(entry);
+            if (previous) {
+                this._defs.set(key, previous);
+                for (const alias of previous.aliases) this._aliases.set(String(alias).toLowerCase(), key);
+            } else {
+                this._defs.delete(key);
+            }
+            this._resolved.clear();
+        };
+    }
+
+    _unlinkAliases(entry) {
+        const key = entry.name.toLowerCase();
+        for (const alias of entry.aliases) {
+            const aliasKey = String(alias).toLowerCase();
+            if (this._aliases.get(aliasKey) === key) this._aliases.delete(aliasKey);
+        }
+    }
+
+    /** @returns {string|null} the registered (lower-case) key of a name or alias */
+    _key(name) {
+        if (name == null) return null;
+        const key = String(name).toLowerCase();
+        if (this._defs.has(key)) return key;
+        return this._aliases.get(key) ?? null;
+    }
+
+    /** true when a name or alias is registered */
+    has(name) {
+        return this._key(name) !== null;
+    }
+
+    /**
+     * The resolved definition: the base chain merged (the type's own fields win, options merged).
+     * @param {string} name - name or alias
+     * @returns {object|null}
+     */
+    get(name) {
+        const key = this._key(name);
+        if (!key) return null;
+        if (this._resolved.has(key)) return this._resolved.get(key);
+        const chain = [];
+        const seen = new Set();
+        for (let at = key; at &amp;&amp; !seen.has(at); at = this._key(this._defs.get(at)?.base)) {
+            seen.add(at);
+            chain.unshift(this._defs.get(at));
+        }
+        const resolved = {};
+        for (const def of chain) {
+            const { options, ...rest } = def;
+            Object.assign(resolved, rest);
+            resolved.options = { ...(resolved.options ?? {}), ...(options ?? {}) };
+        }
+        resolved.name = this._defs.get(key).name;
+        resolved.aliases = [...this._defs.get(key).aliases];
+        resolved.bases = chain.slice(0, -1).map((def) => def.name).reverse();
+        Object.freeze(resolved.options);
+        Object.freeze(resolved);
+        this._resolved.set(key, resolved);
+        return resolved;
+    }
+
+    /** @returns {object[]} the resolved definitions, in registration order */
+    list() {
+        return [...this._defs.keys()].map((key) => this.get(key));
+    }
+
+    /** The default value of a type (null when unknown). */
+    defaultValue(name, options) {
+        const def = this.get(name);
+        if (!def) return null;
+        return typeof def.default === "function" ? def.default(options ?? def.options) : structuredCloneValue(def.default);
+    }
+
+    /** Normalizes a value through the type's coerce (unchanged for unknown types). */
+    coerce(name, value, options) {
+        const def = this.get(name);
+        if (!def?.coerce) return value;
+        return def.coerce(value, { ...def.options, ...(options ?? {}) });
+    }
+
+    /** @returns {string|null} why the value is refused, or null */
+    validate(name, value, options) {
+        const def = this.get(name);
+        if (!def?.validate) return null;
+        return def.validate(value, { ...def.options, ...(options ?? {}) }) ?? null;
+    }
+
+    /** Text for a value (String(value) or JSON for unknown types). */
+    format(name, value, options) {
+        const def = this.get(name);
+        if (def?.format) return def.format(value, { ...def.options, ...(options ?? {}) });
+        return ValueTypeRegistry.formatAny(value);
+    }
+
+    /** Value from typed text (the text itself for unknown types). */
+    parse(name, text, options) {
+        const def = this.get(name);
+        if (def?.parse) return def.parse(text, { ...def.options, ...(options ?? {}) });
+        return text;
+    }
+
+    /**
+     * The panel editor for a property: candidates are info.editor, info.widget, info.type, then the
+     * JS type of the value. A candidate naming a registered editor is used as is; otherwise its value
+     * type's editor. Options: the value type's, then the info's own.
+     * @param {object} [info] - property info (getPropertyInfo), setting definition or widget options
+     * @param {*} [value]
+     * @param {Record&lt;string, object>} [editors] - registered editors
+     * @returns {{editor: string, type: string|null, options: object, valueType: object|null}}
+     */
+    resolveEditor(info, value, editors = {}) {
+        info = info ?? {};
+        const candidates = [info.editor, info.widget, info.type, info.valueType, jsTypeOf(value)].filter((c) => typeof c === "string" &amp;&amp; c);
+        for (const candidate of candidates) {
+            const valueType = this.get(candidate);
+            if (editors[candidate] || editors[candidate.toLowerCase()]) {
+                const editor = editors[candidate] ? candidate : candidate.toLowerCase();
+                return { editor, type: valueType?.name ?? candidate, valueType, options: { ...(valueType?.options ?? {}), ...stripMeta(info) } };
+            }
+            if (valueType?.editor &amp;&amp; editors[valueType.editor]) {
+                return { editor: valueType.editor, type: valueType.name, valueType, options: { ...valueType.options, ...stripMeta(info) } };
+            }
+        }
+        const valueType = this.get(info.type) ?? null;
+        return { editor: "readonly", type: valueType?.name ?? info.type ?? info.widget ?? info.editor ?? jsTypeOf(value), valueType, options: { ...(valueType?.options ?? {}), ...stripMeta(info) } };
+    }
+
+    /**
+     * The canvas widget class for a type: a registered widget type wins, then the value type's widget.
+     * @param {string} type
+     * @param {Record&lt;string, Function>} widgetTypes - LiteGraph.widget_types
+     * @returns {{cls: Function, options: object, valueType: object|null}|null}
+     */
+    resolveWidgetClass(type, widgetTypes = {}) {
+        if (typeof type !== "string" || !type) return null;
+        const own = widgetTypes[type] ?? widgetTypes[type.toLowerCase()];
+        const valueType = this.get(type);
+        if (own) return { cls: own, options: {}, valueType };
+        const cls = valueType?.widget ? widgetTypes[valueType.widget] : null;
+        return cls ? { cls, options: { ...valueType.options }, valueType } : null;
+    }
+
+    /** Text for any value: numbers trimmed, objects as JSON. */
+    static formatAny(value) {
+        if (value === undefined) return "";
+        if (value === null) return "null";
+        if (typeof value === "number") return String(parseFloat(value.toFixed(5)));
+        if (typeof value === "object") {
+            try { return JSON.stringify(value); } catch { return String(value); }
+        }
+        return String(value);
+    }
+
+    /** Clamps to options.min / options.max. */
+    static clampNumber(value, options = {}) {
+        if (options.min != null &amp;&amp; value &lt; options.min) value = options.min;
+        if (options.max != null &amp;&amp; value > options.max) value = options.max;
+        return value;
+    }
+
+    /** The built-in value types (see the table in the panels and widgets plan). */
+    static builtins() {
+        const toNumber = (value, options) => {
+            if (typeof value === "string") {
+                const computed = evaluateMathExpression(value);
+                value = Number.isFinite(computed) ? computed : Number(value);
+            } else if (typeof value === "boolean") {
+                value = value ? 1 : 0;
+            } else {
+                value = Number(value);
+            }
+            if (!Number.isFinite(value)) return value;
+            if (options.round) value = Math.round(value / options.round) * options.round;
+            return ValueTypeRegistry.clampNumber(value, options);
+        };
+        const numberValidate = (value) => (typeof value === "number" &amp;&amp; Number.isFinite(value) ? null : "Not a number");
+        const formatNumber = (value, options) => {
+            if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
+            const precision = options.precision ?? 3;
+            const text = String(parseFloat(value.toFixed(precision)));
+            return options.unit ? `${text} ${options.unit}` : text;
+        };
+        const parseJSON = (text) => {
+            if (typeof text !== "string") return text;
+            return JSON.parse(text);
+        };
+        const vector = (size) => ({
+            label: `Vector ${size}`,
+            description: `${size} numbers. Type them separated by commas or spaces.`,
+            examples: [Array.from({ length: size }, (_, i) => i).join(", ")],
+            widget: "vector",
+            editor: "vector",
+            aliases: [`VEC${size}`, `vector${size}`],
+            options: { size, precision: 3 },
+            default: () => new Array(size).fill(0),
+            coerce: (value, options) => {
+                let list = value;
+                if (typeof list === "string") list = list.split(/[\s,;]+/).filter(Boolean);
+                if (list &amp;&amp; typeof list === "object" &amp;&amp; !Array.isArray(list) &amp;&amp; typeof list.length === "number") list = Array.from(list);
+                if (!Array.isArray(list)) list = [list];
+                const out = [];
+                for (let i = 0; i &lt; options.size; ++i) {
+                    const n = toNumber(list[i] ?? 0, options);
+                    out.push(Number.isFinite(n) ? n : 0);
+                }
+                return out;
+            },
+            validate: (value, options) => (Array.isArray(value) &amp;&amp; value.length === options.size &amp;&amp; value.every((n) => typeof n === "number" &amp;&amp; Number.isFinite(n)) ? null : `Needs ${options.size} numbers`),
+            format: (value, options) => (Array.isArray(value) ? value.map((n) => formatNumber(n, { precision: options.precision })).join(", ") : String(value)),
+            parse: (text, options) => vector(options.size).coerce(text, options),
+        });
+        return {
+            boolean: {
+                label: "On / off",
+                aliases: ["bool", "toggle", "BOOLEAN", "checkbox"],
+                widget: "toggle",
+                editor: "boolean",
+                default: false,
+                coerce: (value) => (typeof value === "string" ? !["", "false", "0", "off", "no"].includes(value.trim().toLowerCase()) : !!value),
+                format: (value, options) => (value ? options.on ?? "on" : options.off ?? "off"),
+                parse: (text) => !["", "false", "0", "off", "no"].includes(String(text).trim().toLowerCase()),
+            },
+            number: {
+                label: "Number",
+                description: "A number. Arithmetic is allowed when typing (2*8+1, pi/2).",
+                examples: ["1.5", "2*8+1"],
+                aliases: ["float", "double", "FLOAT", "real"],
+                widget: "number",
+                editor: "number",
+                options: { precision: 3 },
+                default: 0,
+                coerce: toNumber,
+                validate: numberValidate,
+                format: formatNumber,
+                parse: (text, options) => toNumber(text, options),
+            },
+            int: {
+                base: "number",
+                label: "Whole number",
+                description: "A whole number. Typed values are rounded.",
+                examples: ["3", "-10"],
+                aliases: ["integer", "INT"],
+                options: { step: 1, precision: 0, round: 1 },
+            },
+            slider: {
+                base: "number",
+                label: "Number in a range",
+                widget: "slider",
+                editor: "slider",
+                options: { min: 0, max: 1 },
+            },
+            string: {
+                label: "Text",
+                aliases: ["str", "STRING"],
+                widget: "text",
+                editor: "string",
+                default: "",
+                coerce: (value) => (value == null ? "" : typeof value === "object" ? ValueTypeRegistry.formatAny(value) : String(value)),
+                format: (value) => (value == null ? "" : String(value)),
+                parse: (text) => String(text),
+            },
+            text: {
+                base: "string",
+                label: "Multi-line text",
+                aliases: ["multiline", "textarea"],
+                editor: "text",
+                options: { multiline: true },
+            },
+            enum: {
+                label: "Choice",
+                description: "One of a list of values.",
+                aliases: ["combo", "COMBO", "select", "choice"],
+                widget: "combo",
+                editor: "combo",
+                default: null,
+                validate: (value, options) => {
+                    const values = typeof options.values === "function" ? null : options.values;
+                    if (!values) return null;
+                    const allowed = Array.isArray(values) ? values : Object.values(values);
+                    return allowed.some((v) => v == value) || (!Array.isArray(values) &amp;&amp; Object.hasOwn(values, value)) ? null : "Not one of the choices";
+                },
+            },
+            color: {
+                label: "Colour",
+                description: "A CSS colour: #rrggbb, #rrggbbaa, rgb(...) or a name.",
+                examples: ["#ff8800", "#33669980", "rebeccapurple"],
+                aliases: ["colour", "COLOR"],
+                widget: "color",
+                editor: "color",
+                default: "#ffffff",
+                coerce: (value) => {
+                    if (value == null) return "";
+                    if (Array.isArray(value)) {
+                        // [r, g, b(, a)] in 0..1, as some nodes store it
+                        const hex = (n) => Math.round(Math.max(0, Math.min(1, Number(n) || 0)) * 255).toString(16).padStart(2, "0");
+                        return "#" + value.slice(0, 4).map(hex).join("");
+                    }
+                    const text = String(value).trim();
+                    const short = /^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(text);
+                    if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toLowerCase();
+                    if (/^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(text)) return (text.startsWith("#") ? text : "#" + text).toLowerCase();
+                    return text;
+                },
+                validate: (value) => (typeof value === "string" ? null : "Not a colour"),
+            },
+            vec2: vector(2),
+            vec3: vector(3),
+            vec4: vector(4),
+            array: {
+                label: "List",
+                description: "A JSON list.",
+                examples: ["[1, 2, 3]", "[\"a\", \"b\"]"],
+                aliases: ["list"],
+                widget: "text",
+                editor: "json",
+                default: () => [],
+                coerce: (value) => (typeof value === "string" ? parseJSON(value) : value),
+                validate: (value) => (Array.isArray(value) ? null : "Needs a JSON list"),
+                format: (value) => ValueTypeRegistry.formatAny(value),
+                parse: parseJSON,
+            },
+            object: {
+                label: "Object",
+                description: "A JSON value.",
+                examples: ["{\"key\": 1}"],
+                aliases: ["dict", "json", "map"],
+                widget: "text",
+                editor: "json",
+                default: () => ({}),
+                coerce: (value) => (typeof value === "string" ? parseJSON(value) : value),
+                format: (value) => ValueTypeRegistry.formatAny(value),
+                parse: parseJSON,
+            },
+            code: {
+                base: "string",
+                label: "Code",
+                description: "Source code. Ctrl+Enter assigns it.",
+                widget: "text",
+                editor: "code",
+                options: { multiline: true },
+            },
+            resource: {
+                base: "string",
+                label: "File or URL",
+                description: "A path or URL. A host can add a picker with options.pick.",
+                aliases: ["file", "url", "texture", "image", "asset"],
+                editor: "resource",
+                options: { placeholder: "path or URL" },
+            },
+            event: {
+                label: "Event",
+                aliases: ["action", "-1"],
+                editor: "readonly",
+                default: null,
+            },
+        };
+    }
+}
+
+/** The JS type name of a value, as the panels use it to pick an editor. */
+function jsTypeOf(value) {
+    if (value === undefined || value === null) return null;
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+}
+
+/** Info fields that are about the property, not editor options. */
+function stripMeta(info) {
+    const { editor, widget, type, valueType, name, ...rest } = info ?? {}; // eslint-disable-line no-unused-vars
+    return rest;
+}
+
+/** A copy of plain defaults (arrays and objects are not shared between widgets). */
+function structuredCloneValue(value) {
+    if (value === null || typeof value !== "object") return value;
+    try { return structuredClone(value); } catch { return value; }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

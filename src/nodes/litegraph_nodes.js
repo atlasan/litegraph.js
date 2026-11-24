@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/meta" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/meta", version: LiteGraph.VERSION, title: "LiteGraph", description: "Nodes that expose LiteGraph itself to a graph: the library object and the current graph.", builtin: true });
+
 //LiteGraph library related nodes
 
 // --------------------------
@@ -83,3 +87,5 @@ class LGGraph{
     }
 }
 LiteGraph.registerNodeType("litegraph/graph", LGGraph);
+
+LiteGraph.packs.close("litegraph/meta");

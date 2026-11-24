@@ -1,0 +1,1576 @@
+{
+ "id": "d1477661-7880-4552-a94f-307a7630f61d",
+ "revision": 2,
+ "last_node_id": 10,
+ "last_link_id": 28,
+ "nodes": [
+  {
+   "id": 9,
+   "type": "widget/number",
+   "pos": [
+    603,
+    516
+   ],
+   "size": [
+    96,
+    31
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      23
+     ]
+    }
+   ],
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 0,
+    "step": 1
+   }
+  },
+  {
+   "id": 8,
+   "type": "math/compare",
+   "pos": [
+    720,
+    500
+   ],
+   "size": [
+    171,
+    70
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 22
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 23
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 25,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A>B",
+     "type": "boolean",
+     "links": [
+      24
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": null,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "title": "A>B",
+   "properties": {
+    "A": 0,
+    "B": null
+   }
+  },
+  {
+   "id": 5,
+   "type": "events/counter",
+   "pos": [
+    880,
+    220
+   ],
+   "size": [
+    174.59400000000005,
+    122
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 4
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": 21
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": [
+      22,
+      27
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [
+      25
+     ],
+     "removable": true,
+     "nameLocked": true,
+     "slot_index": 2
+    }
+   ],
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 4,
+   "type": "basic/watch",
+   "pos": [
+    1070,
+    520
+   ],
+   "size": [
+    171,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 27,
+     "label": "0.000",
+     "slot_index": 0
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 12,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [],
+     "removable": true,
+     "nameLocked": true,
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 3,
+   "type": "widget/number",
+   "pos": [
+    460,
+    320
+   ],
+   "size": [
+    96,
+    31
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 26,
+    "step": 1
+   }
+  },
+  {
+   "id": 10,
+   "type": "basic/watch",
+   "pos": [
+    890,
+    130
+   ],
+   "size": [
+    86,
+    31
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 28,
+     "label": "null",
+     "slot_index": 0
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 1,
+   "type": "60ae1d96-d7f5-4795-8e21-43f0b73bb447",
+   "pos": [
+    590,
+    220
+   ],
+   "size": [
+    206,
+    110
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "event",
+     "type": -1,
+     "link": 6,
+     "label": "another"
+    },
+    {
+     "name": "number",
+     "type": "number",
+     "link": 8
+    },
+    {
+     "name": "retrofeed",
+     "type": "boolean",
+     "link": 24
+    }
+   ],
+   "outputs": [
+    {
+     "name": "DONE",
+     "type": -1,
+     "links": [
+      4
+     ],
+     "slot_index": 0,
+     "label": "someout"
+    },
+    {
+     "name": "mod_value",
+     "type": "number",
+     "links": [
+      28
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "TIMED",
+     "type": -1,
+     "links": [
+      21
+     ],
+     "slot_index": 2
+    }
+   ],
+   "title": "FUNC1",
+   "properties": {
+    "enabled": true,
+    "subgraph_id": "60ae1d96-d7f5-4795-8e21-43f0b73bb447"
+   }
+  },
+  {
+   "id": 2,
+   "type": "widget/button",
+   "pos": [
+    460,
+    220
+   ],
+   "size": [
+    87,
+    50
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null,
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "text": "DO",
+    "font_size": 30,
+    "message": ""
+   }
+  }
+ ],
+ "links": [
+  [
+   4,
+   1,
+   0,
+   5,
+   0,
+   -1
+  ],
+  [
+   6,
+   2,
+   0,
+   1,
+   0,
+   -1
+  ],
+  [
+   8,
+   3,
+   0,
+   1,
+   1,
+   "number"
+  ],
+  [
+   12,
+   5,
+   0,
+   4,
+   1,
+   -1
+  ],
+  [
+   21,
+   1,
+   2,
+   5,
+   1,
+   -1
+  ],
+  [
+   22,
+   5,
+   1,
+   8,
+   0,
+   "number"
+  ],
+  [
+   23,
+   9,
+   0,
+   8,
+   1,
+   "number"
+  ],
+  [
+   24,
+   8,
+   0,
+   1,
+   2,
+   "boolean"
+  ],
+  [
+   25,
+   5,
+   2,
+   8,
+   2,
+   -1
+  ],
+  [
+   27,
+   5,
+   1,
+   4,
+   0,
+   "number"
+  ],
+  [
+   28,
+   1,
+   1,
+   10,
+   0,
+   "number"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Events across subgraph boundaries: DO sends an event into FUNC1, which forwards it (and its data) to the nodes outside; the Watches and the Counter show what came out. Click DO, change the Numbers, click again.",
+   "bounding": [
+    460,
+    -10,
+    720,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 10,
+  "lastLinkId": 28,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ },
+ "definitions": {
+  "subgraphs": [
+   {
+    "id": "60ae1d96-d7f5-4795-8e21-43f0b73bb447",
+    "revision": 1,
+    "groups": [],
+    "config": {
+     "align_to_grid": true,
+     "links_ontop": false
+    },
+    "extra": {
+     "litegraph": {
+      "io": {
+       "c6627c4b-9661-489f-93ae-f5830d943f85": {
+        "pos": [
+         160,
+         240
+        ],
+        "size": [
+         146,
+         80
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "event",
+         "type": -1,
+         "value": 0,
+         "slot_id": "c6627c4b-9661-489f-93ae-f5830d943f85"
+        }
+       },
+       "520a361b-a8c8-4d43-8f20-59d6a0d4a32f": {
+        "pos": [
+         165.33433532714844,
+         370.443359375
+        ],
+        "size": [
+         146,
+         86
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "number",
+         "type": "number",
+         "value": 0,
+         "slot_id": "520a361b-a8c8-4d43-8f20-59d6a0d4a32f"
+        }
+       },
+       "34739ea4-20b3-4d75-ad1b-14fa4aad0cee": {
+        "pos": [
+         170,
+         550
+        ],
+        "size": [
+         146,
+         86
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "retrofeed",
+         "type": "boolean",
+         "value": false,
+         "slot_id": "34739ea4-20b3-4d75-ad1b-14fa4aad0cee"
+        }
+       },
+       "8c4b6a55-34cb-4168-8e52-99c35b2c3094": {
+        "pos": [
+         950,
+         130
+        ],
+        "size": [
+         146,
+         62
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "DONE",
+         "type": -1,
+         "slot_id": "8c4b6a55-34cb-4168-8e52-99c35b2c3094"
+        }
+       },
+       "ecc8ddd2-4761-4889-821a-bd2bda0041e2": {
+        "pos": [
+         950,
+         250
+        ],
+        "size": [
+         146,
+         56
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "mod_value",
+         "type": "number",
+         "slot_id": "ecc8ddd2-4761-4889-821a-bd2bda0041e2"
+        }
+       },
+       "8104975d-f383-4dd8-981d-f4e5aa708570": {
+        "pos": [
+         1000,
+         430
+        ],
+        "size": [
+         146,
+         62
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "TIMED",
+         "type": -1,
+         "slot_id": "8104975d-f383-4dd8-981d-f4e5aa708570"
+        }
+       }
+      }
+     }
+    },
+    "version": 1,
+    "litegraph_modes": 2,
+    "state": {
+     "lastNodeId": 22,
+     "lastLinkId": 25,
+     "lastGroupId": 0,
+     "lastRerouteId": 0
+    },
+    "name": "FUNC1",
+    "inputNode": {
+     "id": -10,
+     "bounding": [
+      160,
+      240,
+      156,
+      396
+     ]
+    },
+    "outputNode": {
+     "id": -20,
+     "bounding": [
+      950,
+      130,
+      196,
+      362
+     ]
+    },
+    "inputs": [
+     {
+      "id": "c6627c4b-9661-489f-93ae-f5830d943f85",
+      "name": "event",
+      "type": "event",
+      "litegraph_type": -1,
+      "linkIds": [
+       14
+      ]
+     },
+     {
+      "id": "520a361b-a8c8-4d43-8f20-59d6a0d4a32f",
+      "name": "number",
+      "type": "number",
+      "linkIds": [
+       16,
+       19,
+       23
+      ]
+     },
+     {
+      "id": "34739ea4-20b3-4d75-ad1b-14fa4aad0cee",
+      "name": "retrofeed",
+      "type": "boolean",
+      "linkIds": [
+       22,
+       24
+      ]
+     }
+    ],
+    "outputs": [
+     {
+      "id": "8c4b6a55-34cb-4168-8e52-99c35b2c3094",
+      "name": "DONE",
+      "type": "event",
+      "litegraph_type": -1,
+      "linkIds": [
+       5
+      ]
+     },
+     {
+      "id": "ecc8ddd2-4761-4889-821a-bd2bda0041e2",
+      "name": "mod_value",
+      "type": "number",
+      "linkIds": [
+       20
+      ]
+     },
+     {
+      "id": "8104975d-f383-4dd8-981d-f4e5aa708570",
+      "name": "TIMED",
+      "type": "event",
+      "litegraph_type": -1,
+      "linkIds": [
+       21
+      ]
+     }
+    ],
+    "widgets": [],
+    "nodes": [
+     {
+      "id": 6,
+      "type": "widget/number",
+      "pos": [
+       473,
+       703
+      ],
+      "size": [
+       89,
+       31
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+       {
+        "name": "",
+        "type": "number",
+        "links": [
+         2
+        ]
+       }
+      ],
+      "properties": {
+       "min": -1000,
+       "max": 1000,
+       "value": 2,
+       "step": 1
+      }
+     },
+     {
+      "id": 16,
+      "type": "math/operation",
+      "pos": [
+       722.4823608398438,
+       774.1525268554688
+      ],
+      "size": [
+       100,
+       60
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 5,
+      "inputs": [
+       {
+        "name": "A",
+        "type": "number,array,object",
+        "link": 15
+       },
+       {
+        "name": "B",
+        "type": "number",
+        "link": 16
+       }
+      ],
+      "outputs": [
+       {
+        "name": "=",
+        "type": "number",
+        "links": [],
+        "slot_index": 0
+       }
+      ],
+      "title": "A+B",
+      "properties": {
+       "A": 406,
+       "B": 26,
+       "OP": "+"
+      }
+     },
+     {
+      "id": 7,
+      "type": "events/counter",
+      "pos": [
+       460,
+       130
+      ],
+      "size": [
+       157.83432006835938,
+       102
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+       {
+        "name": "inc",
+        "type": -1,
+        "link": 14,
+        "slot_index": 0
+       },
+       {
+        "name": "dec",
+        "type": -1,
+        "link": null
+       },
+       {
+        "name": "reset",
+        "type": -1,
+        "link": 25
+       }
+      ],
+      "outputs": [
+       {
+        "name": "change",
+        "type": -1,
+        "links": [
+         5
+        ],
+        "slot_index": 0
+       },
+       {
+        "name": "num",
+        "type": "number",
+        "links": [
+         8,
+         18
+        ],
+        "slot_index": 1
+       }
+      ],
+      "properties": {
+       "doCountExecution": false
+      }
+     },
+     {
+      "id": 5,
+      "type": "math/operation",
+      "pos": [
+       590,
+       680
+      ],
+      "size": [
+       84.9596897877069,
+       50
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 5,
+      "inputs": [
+       {
+        "name": "A",
+        "type": "number,array,object",
+        "link": 8
+       },
+       {
+        "name": "B",
+        "type": "number",
+        "link": 2,
+        "slot_index": 1
+       }
+      ],
+      "outputs": [
+       {
+        "name": "=",
+        "type": "number",
+        "links": [
+         15
+        ],
+        "slot_index": 0
+       }
+      ],
+      "title": "A*B",
+      "properties": {
+       "A": 203,
+       "B": 2,
+       "OP": "*"
+      }
+     },
+     {
+      "id": 21,
+      "type": "basic/watch",
+      "pos": [
+       363,
+       335
+      ],
+      "size": [
+       92,
+       31
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+       {
+        "name": "value",
+        "type": 0,
+        "link": 23,
+        "label": "26.000"
+       }
+      ],
+      "outputs": [],
+      "properties": {
+       "display": "value"
+      }
+     },
+     {
+      "id": 22,
+      "type": "basic/watch",
+      "pos": [
+       348,
+       492
+      ],
+      "size": [
+       86,
+       31
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+       {
+        "name": "value",
+        "type": 0,
+        "link": 24,
+        "label": "false"
+       }
+      ],
+      "outputs": [],
+      "properties": {
+       "display": "value"
+      }
+     },
+     {
+      "id": 18,
+      "type": "da8c6d1c-17d6-4f38-8f5e-d5158943fafa",
+      "pos": [
+       680,
+       330
+      ],
+      "size": [
+       206,
+       110
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+       {
+        "name": "num",
+        "type": "number",
+        "link": 18
+       },
+       {
+        "name": "second",
+        "type": "number",
+        "link": 19
+       },
+       {
+        "name": "retrofeed",
+        "type": "boolean",
+        "link": 22
+       }
+      ],
+      "outputs": [
+       {
+        "name": "out",
+        "type": "number",
+        "links": [
+         20
+        ],
+        "slot_index": 0
+       },
+       {
+        "name": "TIM",
+        "type": -1,
+        "links": [
+         21
+        ],
+        "slot_index": 1
+       }
+      ],
+      "title": "INNER FUNC",
+      "properties": {
+       "enabled": true,
+       "subgraph_id": "da8c6d1c-17d6-4f38-8f5e-d5158943fafa"
+      }
+     },
+     {
+      "id": 8,
+      "type": "widget/button",
+      "pos": [
+       130,
+       -40
+      ],
+      "size": [
+       416,
+       50
+      ],
+      "flags": {
+       "collapsed": false
+      },
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+       {
+        "name": "",
+        "type": -1,
+        "links": [
+         25
+        ],
+        "slot_index": 0
+       },
+       {
+        "name": "",
+        "type": "boolean",
+        "links": null
+       }
+      ],
+      "title": "Button with a longer name, when get's longer will make it fail",
+      "properties": {
+       "text": "DO",
+       "font_size": 30,
+       "message": ""
+      }
+     }
+    ],
+    "links": [
+     {
+      "id": 2,
+      "origin_id": 6,
+      "origin_slot": 0,
+      "target_id": 5,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 5,
+      "origin_id": 7,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 0,
+      "type": -1
+     },
+     {
+      "id": 8,
+      "origin_id": 7,
+      "origin_slot": 1,
+      "target_id": 5,
+      "target_slot": 0,
+      "type": "number,array,object"
+     },
+     {
+      "id": 14,
+      "origin_id": -10,
+      "origin_slot": 0,
+      "target_id": 7,
+      "target_slot": 0,
+      "type": -1
+     },
+     {
+      "id": 15,
+      "origin_id": 5,
+      "origin_slot": 0,
+      "target_id": 16,
+      "target_slot": 0,
+      "type": "number,array,object"
+     },
+     {
+      "id": 16,
+      "origin_id": -10,
+      "origin_slot": 1,
+      "target_id": 16,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 18,
+      "origin_id": 7,
+      "origin_slot": 1,
+      "target_id": 18,
+      "target_slot": 0,
+      "type": "number"
+     },
+     {
+      "id": 19,
+      "origin_id": -10,
+      "origin_slot": 1,
+      "target_id": 18,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 20,
+      "origin_id": 18,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 21,
+      "origin_id": 18,
+      "origin_slot": 1,
+      "target_id": -20,
+      "target_slot": 2,
+      "type": -1
+     },
+     {
+      "id": 22,
+      "origin_id": -10,
+      "origin_slot": 2,
+      "target_id": 18,
+      "target_slot": 2,
+      "type": "boolean"
+     },
+     {
+      "id": 23,
+      "origin_id": -10,
+      "origin_slot": 1,
+      "target_id": 21,
+      "target_slot": 0,
+      "type": "number"
+     },
+     {
+      "id": 24,
+      "origin_id": -10,
+      "origin_slot": 2,
+      "target_id": 22,
+      "target_slot": 0,
+      "type": "boolean"
+     },
+     {
+      "id": 25,
+      "origin_id": 8,
+      "origin_slot": 0,
+      "target_id": 7,
+      "target_slot": 2,
+      "type": -1
+     }
+    ]
+   },
+   {
+    "id": "da8c6d1c-17d6-4f38-8f5e-d5158943fafa",
+    "revision": 1,
+    "groups": [],
+    "config": {
+     "align_to_grid": true,
+     "links_ontop": false
+    },
+    "extra": {
+     "litegraph": {
+      "io": {
+       "6322276f-24f0-4646-9287-e334eebfb9ea": {
+        "pos": [
+         391,
+         146
+        ],
+        "size": [
+         146,
+         86
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "num",
+         "type": "number",
+         "value": 0,
+         "slot_id": "6322276f-24f0-4646-9287-e334eebfb9ea"
+        }
+       },
+       "1e0cc0cb-a75d-4793-8209-f35c484261fb": {
+        "pos": [
+         610,
+         370
+        ],
+        "size": [
+         146,
+         86
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "second",
+         "type": "number",
+         "value": 0,
+         "slot_id": "1e0cc0cb-a75d-4793-8209-f35c484261fb"
+        }
+       },
+       "9152c162-1bee-45d0-a68c-0d6a86cd48dc": {
+        "pos": [
+         390,
+         480
+        ],
+        "size": [
+         146,
+         86
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "retrofeed",
+         "type": "boolean",
+         "value": false,
+         "slot_id": "9152c162-1bee-45d0-a68c-0d6a86cd48dc"
+        }
+       },
+       "629e0be1-68aa-4a2c-8faa-4b5d84235599": {
+        "pos": [
+         1040,
+         250
+        ],
+        "size": [
+         146,
+         62
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "out",
+         "type": "number",
+         "slot_id": "629e0be1-68aa-4a2c-8faa-4b5d84235599"
+        }
+       },
+       "96c502ec-f73f-48e9-9e44-31d6655711dc": {
+        "pos": [
+         1290,
+         510
+        ],
+        "size": [
+         146,
+         62
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "TIM",
+         "type": -1,
+         "slot_id": "96c502ec-f73f-48e9-9e44-31d6655711dc"
+        }
+       }
+      }
+     }
+    },
+    "version": 1,
+    "litegraph_modes": 2,
+    "state": {
+     "lastNodeId": 12,
+     "lastLinkId": 10,
+     "lastGroupId": 0,
+     "lastRerouteId": 0
+    },
+    "name": "INNER FUNC",
+    "inputNode": {
+     "id": -10,
+     "bounding": [
+      390,
+      146,
+      366,
+      420
+     ]
+    },
+    "outputNode": {
+     "id": -20,
+     "bounding": [
+      1040,
+      250,
+      396,
+      322
+     ]
+    },
+    "inputs": [
+     {
+      "id": "6322276f-24f0-4646-9287-e334eebfb9ea",
+      "name": "num",
+      "type": "number",
+      "linkIds": [
+       2
+      ]
+     },
+     {
+      "id": "1e0cc0cb-a75d-4793-8209-f35c484261fb",
+      "name": "second",
+      "type": "number",
+      "linkIds": [
+       4
+      ]
+     },
+     {
+      "id": "9152c162-1bee-45d0-a68c-0d6a86cd48dc",
+      "name": "retrofeed",
+      "type": "boolean",
+      "linkIds": [
+       9
+      ]
+     }
+    ],
+    "outputs": [
+     {
+      "id": "629e0be1-68aa-4a2c-8faa-4b5d84235599",
+      "name": "out",
+      "type": "number",
+      "linkIds": [
+       6
+      ]
+     },
+     {
+      "id": "96c502ec-f73f-48e9-9e44-31d6655711dc",
+      "name": "TIM",
+      "type": "event",
+      "litegraph_type": -1,
+      "linkIds": [
+       10
+      ]
+     }
+    ],
+    "widgets": [],
+    "nodes": [
+     {
+      "id": 1,
+      "type": "math/operation",
+      "pos": [
+       630,
+       180
+      ],
+      "size": [
+       100,
+       60
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 5,
+      "inputs": [
+       {
+        "name": "A",
+        "type": "number,array,object",
+        "link": 2
+       },
+       {
+        "name": "B",
+        "type": "number",
+        "link": 5,
+        "slot_index": 1
+       }
+      ],
+      "outputs": [
+       {
+        "name": "=",
+        "type": "number",
+        "links": [
+         3
+        ],
+        "slot_index": 0
+       }
+      ],
+      "title": "A*B",
+      "properties": {
+       "A": 203,
+       "B": 2,
+       "OP": "*"
+      }
+     },
+     {
+      "id": 6,
+      "type": "widget/number",
+      "pos": [
+       430,
+       290
+      ],
+      "size": [
+       89,
+       31
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+       {
+        "name": "",
+        "type": "number",
+        "links": [
+         5
+        ]
+       }
+      ],
+      "properties": {
+       "min": -1000,
+       "max": 1000,
+       "value": 2,
+       "step": 1
+      }
+     },
+     {
+      "id": 5,
+      "type": "math/operation",
+      "pos": [
+       842,
+       246
+      ],
+      "size": [
+       100,
+       60
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 5,
+      "inputs": [
+       {
+        "name": "A",
+        "type": "number,array,object",
+        "link": 3
+       },
+       {
+        "name": "B",
+        "type": "number",
+        "link": 4
+       }
+      ],
+      "outputs": [
+       {
+        "name": "=",
+        "type": "number",
+        "links": [
+         6
+        ],
+        "slot_index": 0
+       }
+      ],
+      "title": "A+B",
+      "properties": {
+       "A": 406,
+       "B": 26,
+       "OP": "+"
+      }
+     },
+     {
+      "id": 9,
+      "type": "events/timer",
+      "pos": [
+       740,
+       540
+      ],
+      "size": [
+       133,
+       31
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+       {
+        "name": "on_tick",
+        "type": -1,
+        "links": [
+         8
+        ],
+        "slot_index": 0
+       }
+      ],
+      "properties": {
+       "interval": 1000,
+       "event": "tick"
+      },
+      "boxcolor": "#222"
+     },
+     {
+      "id": 10,
+      "type": "logic/IF",
+      "pos": [
+       1050,
+       380
+      ],
+      "size": [
+       139,
+       50
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 3,
+      "inputs": [
+       {
+        "name": "onTrigger",
+        "type": -1,
+        "link": 8
+       },
+       {
+        "name": "condition",
+        "type": "boolean",
+        "link": 9
+       }
+      ],
+      "outputs": [
+       {
+        "name": "true",
+        "type": -1,
+        "links": [
+         10
+        ],
+        "slot_index": 0
+       },
+       {
+        "name": "false",
+        "type": -1,
+        "links": null
+       }
+      ],
+      "properties": {}
+     }
+    ],
+    "links": [
+     {
+      "id": 2,
+      "origin_id": -10,
+      "origin_slot": 0,
+      "target_id": 1,
+      "target_slot": 0,
+      "type": "number,array,object"
+     },
+     {
+      "id": 3,
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 5,
+      "target_slot": 0,
+      "type": "number,array,object"
+     },
+     {
+      "id": 4,
+      "origin_id": -10,
+      "origin_slot": 1,
+      "target_id": 5,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 5,
+      "origin_id": 6,
+      "origin_slot": 0,
+      "target_id": 1,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 6,
+      "origin_id": 5,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 0,
+      "type": "number"
+     },
+     {
+      "id": 8,
+      "origin_id": 9,
+      "origin_slot": 0,
+      "target_id": 10,
+      "target_slot": 0,
+      "type": -1
+     },
+     {
+      "id": 9,
+      "origin_id": -10,
+      "origin_slot": 2,
+      "target_id": 10,
+      "target_slot": 1,
+      "type": "boolean"
+     },
+     {
+      "id": 10,
+      "origin_id": 10,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 1,
+      "type": -1
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -1,7 +1,11 @@
 import { LiteGraph } from "../litegraph.js";
-import { GL } from "../../editor/js/libs/litegl.js";
-import { gl } from "../../editor/js/code.js";
+import { GL } from "../../vendor/litegl.js";
+// `gl` is the global WebGL context that litegl's GL.create sets (the bundles use it the same way)
 import { LGraphTexture } from "./gltextures.js";
+
+// built-in pack: node types registered below belong to "litegraph/glshaders" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/glshaders", version: LiteGraph.VERSION, title: "WebGL shaders", description: "Shader graph: nodes that generate GLSL code for a texture shader (constants, inputs, math, texture sampling, output).", builtin: true });
 
 var SHADERNODES_COLOR = "#345";
 
@@ -915,6 +919,7 @@ registerShaderNode("texture/sampler2D", LGraphShaderSampler2D);
 
 
 class LGraphShaderConstant {
+    static desc = "A shader constant of a chosen GLSL type.";
     constructor() {
         this.addOutput("", "float");
 
@@ -1100,6 +1105,7 @@ registerShaderNode("const/const", LGraphShaderConstant);
 
 
 class LGraphShaderVec2 {
+    static desc = "Builds or splits a vec2 in the shader graph.";
     constructor() {
         this.addInput("xy", "vec2");
         this.addInput("x", "float");
@@ -1160,6 +1166,7 @@ registerShaderNode("const/vec2", LGraphShaderVec2);
 
 
 class LGraphShaderVec3 {
+    static desc = "Builds or splits a vec3 in the shader graph.";
     constructor() {
         this.addInput("xyz", "vec3");
         this.addInput("x", "float");
@@ -1235,6 +1242,7 @@ registerShaderNode("const/vec3", LGraphShaderVec3);
 
 
 class LGraphShaderVec4 {
+    static desc = "Builds or splits a vec4 in the shader graph.";
     constructor() {
         this.addInput("xyzw", "vec4");
         this.addInput("xyz", "vec3");
@@ -1373,6 +1381,7 @@ registerShaderNode( "output/discard", LGraphShaderDiscard );
 
 
 class LGraphShaderOperation {
+    static desc = "An arithmetic operation between two values in the shader graph.";
     constructor() {
         this.addInput("A", LGShaders.ALL_TYPES);
         this.addInput("B", LGShaders.ALL_TYPES);
@@ -1460,6 +1469,7 @@ registerShaderNode("math/operation", LGraphShaderOperation);
 
 
 class LGraphShaderFunc {
+    static desc = "Applies a GLSL function (floor, sin, abs, ...) in the shader graph.";
     constructor() {
         this.addInput("A", LGShaders.ALL_TYPES);
         this.addInput("B", LGShaders.ALL_TYPES);
@@ -1582,6 +1592,7 @@ registerShaderNode("math/func", LGraphShaderFunc);
 
 
 class LGraphShaderSnippet {
+    static desc = "Runs a short GLSL expression on inputs A and B and writes C.";
     constructor() {
         this.addInput("A", LGShaders.ALL_TYPES);
         this.addInput("B", LGShaders.ALL_TYPES);
@@ -1679,6 +1690,7 @@ registerShaderNode("utils/snippet", LGraphShaderSnippet);
 
 
 class LGraphShaderRand {
+    static desc = "A random float per fragment in the shader graph.";
     constructor() {
         this.addOutput("out", "float");
     }
@@ -1708,6 +1720,7 @@ registerShaderNode("input/rand", LGraphShaderRand);
 // noise
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 class LGraphShaderNoise {
+    static desc = "Value or simplex noise of a coordinate in the shader graph.";
     constructor() {
         this.addInput("out", LGShaders.ALL_TYPES);
         this.addInput("scale", "float");
@@ -1916,6 +1929,7 @@ registerShaderNode("math/noise", LGraphShaderNoise);
 
 
 class LGraphShaderTime {
+    static desc = "The shader's time uniform, in seconds.";
     constructor() {
         this.addOutput("out", "float");
     }
@@ -1943,6 +1957,7 @@ registerShaderNode("input/time", LGraphShaderTime);
 
 
 class LGraphShaderDither {
+    static desc = "Ordered dithering of a value in the shader graph.";
     constructor() {
         this.addInput("in", "T");
         this.addOutput("out", "float");
@@ -2004,6 +2019,7 @@ registerShaderNode("math/dither", LGraphShaderDither);
 
 
 class LGraphShaderRemap {
+    static desc = "Remaps a value from one range to another in the shader graph.";
     constructor() {
         this.addInput("", LGShaders.ALL_TYPES);
         this.addOutput("", "");
@@ -2097,3 +2113,5 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities(["shader::", "texture/"], ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/glshaders");

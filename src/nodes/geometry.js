@@ -1,7 +1,11 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/geometry" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/geometry", version: LiteGraph.VERSION, title: "Geometry", description: "WebGL geometry: points, primitives, polygons, extrusion, transforms and rendering of meshes.", builtin: true });
+
 // @BUG: Gotta finish cleaning the file up so this doesn't cause the whole thing to crash
-// import { GL } from "../../editor/js/libs/litegl.js";
+// import { GL } from "../../vendor/litegl.js";
 
 // Same math as litegl's GL.polarToCartesian, so points3D works without litegl.
 function polarToCartesian(out, azimuth, inclination, radius) {
@@ -497,6 +501,7 @@ LiteGraph.registerNodeType("geometry/points3D", LGraphPoints3D);
 
 
 class LGraphPointsToInstances {
+    static desc = "Turns the vertices of a geometry into an array of instance matrices.";
     constructor() {
         this.addInput("points", "geometry");
         this.addOutput("instances", "[mat4]");
@@ -634,6 +639,7 @@ LiteGraph.registerNodeType("geometry/points_to_instances", LGraphPointsToInstanc
 
 
 class LGraphGeometryTransform {
+    static desc = "Transforms a geometry, or an array of instance matrices, by a 4×4 matrix.";
     constructor() {
         this.addInput("in", "geometry,[mat4]");
         this.addInput("mat4", "mat4");
@@ -762,6 +768,7 @@ LiteGraph.registerNodeType("geometry/transform", LGraphGeometryTransform);
 
 
 class LGraphGeometryPolygon {
+    static desc = "Builds a regular polygon geometry from a number of sides and a radius.";
     constructor() {
         this.addInput("sides", "number");
         this.addInput("radius", "number");
@@ -826,6 +833,7 @@ LiteGraph.registerNodeType("geometry/polygon", LGraphGeometryPolygon);
 
 
 class LGraphGeometryExtrude {
+    static desc = "Extrudes a 2D shape geometry along an offset, with optional top and bottom caps.";
     constructor() {
         this.addInput("", "geometry");
         this.addOutput("", "geometry");
@@ -1961,3 +1969,5 @@ globalThis.addEventListener?.("litegl:ready", registerWebGLGeometryNodes, { once
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("geometry/", ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/geometry");

@@ -11,8 +11,8 @@ const read = (path) => fs.readFileSync(new URL(path, root), 'utf8');
 
 // litegl expects a browser page with gl-matrix already loaded.
 globalThis.window ??= globalThis;
-new Function(read('editor/js/libs/gl-matrix-min.js')).call(globalThis);
-const { GL, Shader } = await import('../../editor/js/libs/litegl.js');
+new Function(read('vendor/gl-matrix-min.js')).call(globalThis);
+const { GL, Shader } = await import('../../vendor/litegl.js');
 
 // Minimal WebGL context: enough for a Shader to compile, link and introspect.
 function fakeContext() {
@@ -75,11 +75,11 @@ test('litegl and the WebGL node files only use declared names', () => {
     const { analyze } = require('eslint-scope');
     const browser = ['window', 'document', 'location', 'Image', 'XMLHttpRequest', 'WebGLRenderbuffer'];
     const glMatrix = ['glMatrix', 'vec2', 'vec3', 'vec4', 'mat3', 'mat4', 'quat'];
-    const litegl = read('editor/js/libs/litegl.js');
+    const litegl = read('vendor/litegl.js');
     // what litegl itself publishes with `global.X = ...`
     const published = [...litegl.matchAll(/global\.(\w+)\s*=/g)].map((m) => m[1]);
     const allowed = {
-        'editor/js/libs/litegl.js': [...browser, ...glMatrix, ...published, 'WBin'],
+        'vendor/litegl.js': [...browser, ...glMatrix, ...published, 'WBin'],
         // LS is litescene, checked through window.LS; enableWebGLCanvas through typeof
         'src/nodes/gltextures.js': [...browser, ...glMatrix, 'LS', 'enableWebGLCanvas'],
         'src/nodes/glfx.js': ['LS'],

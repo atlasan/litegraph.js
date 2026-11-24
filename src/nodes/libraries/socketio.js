@@ -1,3 +1,7 @@
+// built-in pack: node types registered below belong to "litegraph/socketio" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/socketio", version: LiteGraph.VERSION, title: "Socket.IO", description: "Socket.IO client for the browser and Node.js.", builtin: true });
+
 // src/nodes/libraries/socket.io.js
 
 // -- client&server libraries --
@@ -162,7 +166,7 @@ class LGSocketIO {
             });
 
         }catch(e){
-            console?.warn("network/SocketIO", "error", e);
+            console?.warn("network/socketio", "error", e);
             this.boxcolor = "#F00";
         }
     }
@@ -183,7 +187,10 @@ class LGSocketIO {
     }
 }
 
-LiteGraph.registerNodeType("network/SocketIO", LGSocketIO);
+LiteGraph.registerNodeType("network/socketio", LGSocketIO);
+LiteGraph.registerNodeReplacement({ old_type: "network/SocketIO", new_type: "network/socketio", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("network/", ["network"]);
+
+LiteGraph.packs.close("litegraph/socketio");

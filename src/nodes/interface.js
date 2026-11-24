@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/interface" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/interface", version: LiteGraph.VERSION, title: "Interface widgets", description: "Widgets drawn inside the node: buttons, toggles, sliders, knobs, combos, text and progress displays.", builtin: true });
+
 class WidgetButton {
 
     static title = "Button";
@@ -57,7 +61,6 @@ class WidgetButton {
     }
 
     onMouseDown(e, local_pos) {
-        console.warn("DBG","WidgetButton","onMouseDown",this);
         if (
             local_pos[0] > 1 &&
             local_pos[1] > 1 &&
@@ -134,6 +137,7 @@ class WidgetToggle {
 
     onAction(_action) {
         this.properties.value = !this.properties.value;
+        this.setOutputData(0, this.properties.value); // fresh before the event: the "event" model does not refresh
         this.trigger("e", this.properties.value);
     }
 
@@ -154,6 +158,7 @@ class WidgetToggle {
         ) {
             this.properties.value = !this.properties.value;
             this.graph._version++;
+            this.setOutputData(0, this.properties.value);
             this.trigger("e", this.properties.value);
             return true;
         }
@@ -200,16 +205,21 @@ class WidgetNumber {
         ctx.textAlign = "center";
         ctx.font = (h * 0.7).toFixed(1) + "px Arial";
         ctx.fillStyle = "#EEE";
-        ctx.fillText(this.properties.value.toFixed(this._precision), x, h * 0.75);
+        ctx.fillText(Number(this.properties.value).toFixed(WidgetNumber.precisionOf(this.properties.step)), x, h * 0.75);
     }
 
     onExecute() {
         this.setOutputData(0, this.properties.value);
     }
 
+    /** the decimals shown for a step (0.1 -> 1, 0.25 -> 2, 1 -> 0) */
+    static precisionOf(step) {
+        var t = (step + "").split(".");
+        return t.length > 1 ? Math.min(t[1].length, 10) : 0;
+    }
+
     onPropertyChanged(_name, _value) {
-        var t = (this.properties.step + "").split(".");
-        this._precision = t.length > 1 ? t[1].length : 0;
+        this._precision = WidgetNumber.precisionOf(this.properties.step);
     }
 
     onMouseDown(e, pos) {
@@ -225,7 +235,6 @@ class WidgetNumber {
     }
 
     onDblClick(e, pos, canvas){ 
-        console.warn("onDblClick", ...arguments);
         // NO, this is for title, etc.: canvas.doShowNodeInfoEditor(this, this.getPropertyInfo("value"), e);
         // NO, this is to open the whole parameter list: doShowMenuNodeProperties
         canvas.showEditPropertyValue(this, "value", { event: e/* position: pos */ });
@@ -313,6 +322,7 @@ class WidgetCombo {
             this.properties.value,
             function (v) {
                 that.properties.value = v;
+                that.setOutputData(0, v); // fresh before "change": the "event" model does not refresh
                 that.triggerSlot(1, v);
             },
             { property: "value", values: this._values },
@@ -494,6 +504,7 @@ LiteGraph.registerNodeType("widget/knob", WidgetKnob);
 
 // Show value inside the debug console
 class WidgetSliderGUI {
+    static desc = "A slider drawn across the whole node; outputs its value.";
 
     static title = "Inner Slider";
 
@@ -566,6 +577,10 @@ class WidgetHSlider {
     }
 
     onExecute() {
+        if (this.value == -1) {
+            // not drawn yet (a stopped canvas, a hidden tab, a headless run): start from the property
+            this.value = (this.properties.value - this.properties.min) / (this.properties.max - this.properties.min);
+        }
         this.properties.value =
             this.properties.min +
             (this.properties.max - this.properties.min) * this.value;
@@ -823,3 +838,9 @@ class WidgetPanel {
     widgets = [{ name: "update", text: "Update", type: "button" }];
 }
 LiteGraph.registerNodeType("widget/panel", WidgetPanel);
+
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// every widget/* node (its value comes from the UI). widget/progress, widget/text and widget/panel only display.
+
+LiteGraph.packs.close("litegraph/interface");

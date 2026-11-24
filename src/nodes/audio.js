@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/audio" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/audio", version: LiteGraph.VERSION, title: "Audio", description: "Web Audio: sources, oscillators, filters, gain, delay, reverb, analysers and the destination, wired as an audio graph.", builtin: true });
+
 class LGAudio {
 
     static audios_connected = {};
@@ -156,7 +160,7 @@ class LGAudio {
 
         // only process the outputs events
         if (connection != LiteGraph.OUTPUT) {
-            console.warn("LGAudio","onConnectionsChange","skip cheking INPUT");
+            console.debug("LGAudio","onConnectionsChange","skip checking INPUT"); // inputs are handled by the output side
             return;
         }
 
@@ -1524,3 +1528,10 @@ LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("audio/", ["browser", "audio"]);
+
+// declaration pass (flows track): the envelope follows the audio clock every step
+LiteGraph.declareNodeExecution(["audio/adsr"], { ticks: true });
+// Volatile (FLW-02), ALWAYS: audio/analyser. The other audio nodes are wired as a Web Audio graph in
+// onConnectionsChange and run outside the engine (audit finding 9); they declare nothing yet.
+
+LiteGraph.packs.close("litegraph/audio");

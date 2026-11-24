@@ -20,7 +20,7 @@ fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'invalid.json'), '{}');
 fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'file-node.json'), JSON.stringify({ ...workflow, nodes: [{ id: 1, type: 'sys/fileRead', properties: { filePath: '' } }] }));
 fs.writeFileSync(path.join(temp, 'outside.json'), JSON.stringify(workflow));
 fs.symlinkSync(path.join(temp, 'outside.json'), path.join(process.env.WORKFLOWS_DIR, 'escape.json'));
-const manager = await import('../../headless/graphrunner/server/graphManager.js');
+const manager = await import('../../apps/runner/server/graphManager.js');
 const logger = { error() {}, info() {}, warn() {} };
 
 test('worker lifecycle, execution updates, validation, and unload', async () => {
@@ -74,6 +74,8 @@ test('a workflow with subgraph definitions opens, runs and syncs back in the def
       { id: 7, origin_id: 3, origin_slot: 0, target_id: -20, target_slot: 0, type: 'number' }],
   }] } };
   fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'definitions.json'), JSON.stringify(doc));
+  const states = [];
+  manager.setExecutionStateCallback((graphId, message) => states.push({ graphId, message }));
   try {
     const opened = await manager.openGraph('definitions.json', logger);
     assert.equal(opened.status, 'stopped', opened.error);
@@ -85,7 +87,36 @@ test('a workflow with subgraph definitions opens, runs and syncs back in the def
     assert.equal(synced.nodes.find((n) => n.id === 2).subgraph, undefined);
     assert.deepEqual(synced.definitions.subgraphs.map((d) => d.id), [id]);
     assert.equal(synced.definitions.subgraphs[0].nodes[0].properties.OP, '*');
-  } finally { await manager.unloadAllGraphs(logger); }
+    // execution state (protocol v1): a reset at start, then one "done" per node, by path (inside the subgraph: "2:3")
+    const messages = states.filter((s) => s.graphId === 'definitions.json').map((s) => s.message);
+    assert.deepEqual(messages[0] && { v: messages[0].v, kind: messages[0].kind, path: messages[0].path }, { v: 1, kind: 'reset', path: null });
+    const done = messages.filter((m) => m.kind === 'status' && m.status === 'done').map((m) => m.path);
+    assert.ok(done.includes('2:3'), `inner node reported by path: ${JSON.stringify(done)}`);
+    assert.equal(done.filter((p) => p === '2:3').length, 1, 'one message per change, not per step');
+  } finally { manager.setExecutionStateCallback(null); await manager.unloadAllGraphs(logger); }
+});
+
+test('runner parity (Wave 6): ancestors and legacy workflows give the in-process results and stream statuses', { timeout: 10000 }, async () => {
+  const fixtures = new URL('../../test/fixtures/', import.meta.url);
+  const expected = JSON.parse(fs.readFileSync(new URL('runner-parity.expected.json', fixtures), 'utf8'));
+  const states = [];
+  manager.setExecutionStateCallback((graphId, message) => states.push({ graphId, message }));
+  try {
+    for (const name of ['runner-parity-ancestors.json', 'runner-parity-legacy.json']) {
+      fs.copyFileSync(new URL(name, fixtures), path.join(process.env.WORKFLOWS_DIR, name));
+      const opened = await manager.openGraph(name, logger);
+      assert.equal(opened.status, 'stopped', opened.error);
+      assert.equal((await manager.controlGraph(name, 'start', logger)).status, 'running');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const synced = (await manager.requestSync(name, logger)).serializedGraph;
+      const data = (title) => synced.nodes.find((n) => n.title === title).properties.data;
+      assert.deepEqual({ model: synced.config.execution ?? 'legacy', 'FOR result': data('FOR result'), 'WHILE result': data('WHILE result') }, expected[name], name);
+      await manager.unloadGraph(name, logger);
+    }
+    // nodes run by actions report running -> done (once per change), by path
+    const counter = (name) => states.filter((s) => s.graphId === name && s.message.path === '6').map((s) => s.message.status);
+    assert.deepEqual(counter('runner-parity-ancestors.json'), ['running', 'done']);
+  } finally { manager.setExecutionStateCallback(null); await manager.unloadAllGraphs(logger); }
 });
 
 test('worker stop/update acknowledgments wait for bound ports to be released', { timeout: 10000 }, async () => {
@@ -157,7 +188,7 @@ test('unexpected worker exit rejects an outstanding command and permits reopenin
 });
 
 test('HTTP and WebSocket protocol on an ephemeral port', async () => {
-  const { createRunnerServer } = await import('../../headless/graphrunner/server/index.js');
+  const { createRunnerServer } = await import('../../apps/runner/server/index.js');
   const runner = createRunnerServer();
   runner.server.listen(0, '127.0.0.1');
   await once(runner.server, 'listening');

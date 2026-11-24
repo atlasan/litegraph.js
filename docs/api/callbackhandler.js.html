@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: callbackhandler.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: callbackhandler.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { LiteGraph } from "./litegraph.js";
+import { ListenerList } from "./eventtarget.js";
+
+/**
+ * Prioritised, vetoable hooks around the classic `onX` callbacks.
+ *
+ * Assigning `node.onExecute = fn` (or a prototype method) keeps working: it is the *default*
+ * callback of the chain. Registered handlers run by priority (highest first); the default runs
+ * after those with priority >= 0 and before the negative ones.
+ *
+ *   const off = node.onHook("onExecute", (info, param) => ({ return_value: 42, result_priority: 1 }), { priority: 1 });
+ *   off(); // or node.unregisterCallbackHandler("onExecute", id) with the id registerCallbackHandler returns
+ *
+ * A handler result may be a plain value or `{return_value, result_priority, prevent_default, stop_replication}`.
+ * Hooks are synchronous (a Promise result is not awaited). A handler that throws does not stop
+ * the others: the chain completes and the first error is then rethrown to the caller.
+ * Listener storage, ordering and copy-on-write come from ListenerList (shared with typed events).
+ */
+export class CallbackHandler {
+
+    debug = false;
+
+    constructor(ref) {
+        /** @type {Record&lt;string, ListenerList>} per hook name: `{handlers, last_id}` */
+        this.callbacks_handlers = {};
+        this.ob_ref = ref;
+    }
+
+    /**
+     * Subscribes a handler to a hook.
+     * @param {string} name hook name, e.g. "onExecute"
+     * @param {Function} callback called as `callback.call(owner, info, ...args)`
+     * @param {object} [opts]
+     * @param {number} [opts.priority=0] higher runs first; the default callback runs between >= 0 and &lt; 0
+     * @param {boolean} [opts.is_default=false] skipped when another handler prevents the default
+     * @param {boolean} [opts.call_once=false] unregister after the first call (alias: `once`)
+     * @param {AbortSignal} [opts.signal] unregister on abort
+     * @returns {number|false} the handler id for this name, false for an invalid callback
+     */
+    registerCallbackHandler(name, callback, opts) {
+        if (typeof callback !== "function") {
+            LiteGraph?.log_warn?.("registerCallbackHandler", "invalid callback for", name);
+            return false;
+        }
+        const data = { priority: 0, is_default: false, call_once: false, ...(opts &amp;&amp; typeof opts === "object" ? opts : {}) };
+        if (data.once) data.call_once = true;
+        let list = this.callbacks_handlers[name];
+        // code that replaced an entry with a plain {last_id, handlers} object keeps working
+        if (!(list instanceof ListenerList)) list = this.callbacks_handlers[name] = Object.assign(new ListenerList(), list);
+        return list.add(callback, data);
+    }
+
+    /** Registers a handler and returns its disposer. */
+    onHook(name, callback, opts) {
+        const id = this.registerCallbackHandler(name, callback, opts);
+        if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
+        return () => this.unregisterCallbackHandler(name, id);
+    }
+
+    /** @returns {boolean} true if the handler was registered */
+    unregisterCallbackHandler(name, h_id) {
+        return this.callbacks_handlers[name]?.remove(h_id) ?? false;
+    }
+
+    /** true when a handler is registered for name */
+    hasCallbackHandlers(name) {
+        return !!this.callbacks_handlers[name]?.size;
+    }
+
+    /**
+     * Runs the handlers registered for name and the default callback.
+     * @param {string} name
+     * @param {{def_cb?: Function|false, on_result?: (result: any) => void}} [opts] def_cb is the classic `onX`
+     * @param {...any} args passed after `info` to handlers, and alone to the default callback
+     * @returns {any} null when nothing returned a value; otherwise the winning plain value or result object
+     */
+    processCallbackHandlers(name, opts, ...args) {
+        return CallbackHandler.run(this.ob_ref, this, name, opts, args);
+    }
+
+    /**
+     * The chain behind processCallbackHandlers (also used directly by hook hosts, see installHooks).
+     * With no registered handler it only calls the default callback. A dispatch tap, when set,
+     * receives each dispatch with its duration (see ListenerList.tap).
+     */
+    static run(owner, handler, name, opts, args, untapped) {
+        if (ListenerList.tap !== null &amp;&amp; !untapped &amp;&amp; !ListenerList.tapping) {
+            const tap = ListenerList.tap, start = ListenerList.now();
+            let error = null;
+            try {
+                return CallbackHandler.run(owner, handler, name, opts, args, true);
+            } catch (thrown) {
+                error = thrown;
+                throw thrown;
+            } finally {
+                ListenerList.report(tap, owner, name, "hook", start, error);
+            }
+        }
+        const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
+        const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
+        if (!handlers?.length) {
+            if (!def_cb) return null;
+            const ret = def_cb.apply(owner, args);
+            opts.on_result?.(ret);
+            return ret ?? null;
+        }
+
+        const results = [];
+        let value = null;
+        let valuePriority = 0;
+        let prevented = false;
+        let stopped = false;
+        let defaultDone = false;
+        let failure = null;
+
+        // a result replaces the kept one when its result_priority (plain values: 0) is not lower
+        const call = (fn, info) => {
+            let ret;
+            try {
+                ret = info ? fn.call(owner, info, ...args) : fn.apply(owner, args);
+            } catch (error) {
+                if (failure) LiteGraph?.log_error?.("hook", name, "handler failed", error);
+                else failure = { error };
+                return;
+            }
+            results.push(ret);
+            opts?.on_result?.(ret);
+            if (ret !== null &amp;&amp; typeof ret === "object") {
+                if (ret.prevent_default) prevented = true;
+                const priority = typeof ret.result_priority === "number" &amp;&amp; !isNaN(ret.result_priority) ? ret.result_priority : 0;
+                if (value === null || priority >= valuePriority) {
+                    value = ret;
+                    valuePriority = priority;
+                }
+                if (ret.stop_replication) stopped = true;
+            } else if (ret !== null &amp;&amp; ret !== undefined &amp;&amp; (value === null || valuePriority &lt;= 0)) {
+                value = ret;
+                valuePriority = 0;
+            }
+        };
+        const runDefault = () => {
+            defaultDone = true;
+            if (def_cb &amp;&amp; !prevented) call(def_cb, null);
+        };
+
+        for (const entry of handlers) {
+            if (prevented &amp;&amp; entry.data.is_default) continue;
+            if (entry.priority &lt; 0 &amp;&amp; !defaultDone) {
+                runDefault();
+                if (stopped) break;
+            }
+            // unregistered before the call; skipped when a re-entrant dispatch already ran it
+            if (entry.data.call_once &amp;&amp; !handler.unregisterCallbackHandler(name, entry.id)) continue;
+            call(entry.callback, { name, id: entry.id, current_return_value: value, data: entry.data, results_chain: results });
+            if (stopped) break;
+        }
+        // stop_replication stops everything after it, the default callback included
+        if (!defaultDone &amp;&amp; !stopped) runDefault();
+
+        if (failure) throw failure.error;
+        return value;
+    }
+
+    /**
+     * Fires a point that has both faces, in the one documented order: the hook chain (handlers by
+     * priority, the legacy `owner[name]` as default) and then the typed event. With `veto`, a hook
+     * result equal to it (plain or as `{return_value}`) skips the event.
+     * @param {object} owner the hook host
+     * @param {string} name the hook name; its default callback is `owner[name]`
+     * @param {any[]} args the hook arguments
+     * @param {{_emit?: Function}|null|undefined} emitter where the event goes: LiteGraph, a graph or a canvas
+     * @param {string} type the event type
+     * @param {object|(() => object|null)} detail the payload; a function is called after the hook, and null skips the event
+     * @param {{veto?: any, emit?: object}} [options] `emit` is passed on to `_emit` (`recorded`, `cancelable`)
+     * @returns {any} the hook result, as processCallbackHandlers returns it
+     */
+    static fireHookThenEvent(owner, name, args, emitter, type, detail, options) {
+        const result = owner.processCallbackHandlers(name, { def_cb: owner[name] }, ...args);
+        if (!emitter?._emit || (options &amp;&amp; "veto" in options &amp;&amp; CallbackHandler.is(result, options.veto))) return result;
+        const payload = typeof detail === "function" ? detail() : detail;
+        if (payload) emitter._emit(type, payload, options?.emit);
+        return result;
+    }
+
+    /** The value a hook settled on: `return_value` of an object result, otherwise the result itself. */
+    static valueOf(result) {
+        return result !== null &amp;&amp; typeof result === "object" ? result.return_value : result;
+    }
+
+    /** true when the result is `value`, plain or as `{return_value: value}` (e.g. a `false` veto). */
+    static is(result, value) {
+        return result === value || (result !== null &amp;&amp; typeof result === "object" &amp;&amp; result.return_value === value);
+    }
+
+    /**
+     * The menu and slot-list hooks' rule: the `return_value` of an object result when it is an
+     * object (null included), with `arrays` also an array-like result itself; otherwise `fallback`.
+     * @param {any} result a hook result
+     * @param {any} [fallback] returned when the result holds no object
+     * @param {boolean} [arrays=false] accept a plain array result (onGetInputs, onGetOutputs, node getExtraMenuOptions)
+     */
+    static objectOf(result, fallback = undefined, arrays = false) {
+        if (result === null || typeof result !== "object") return fallback;
+        if (typeof result.return_value === "object") return result.return_value;
+        return arrays &amp;&amp; result.length !== undefined ? result : fallback;
+    }
+
+    /** The pointer hooks' "handled": `true`, or an object result with a truthy `return_value`. */
+    static handled(result) {
+        return result === true || (result !== null &amp;&amp; typeof result === "object" &amp;&amp; !!result.return_value);
+    }
+}
+
+/**
+ * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
+ * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
+ * The CallbackHandler is created when first needed: reading `cb_handler` or registering a handler.
+ * Dispatching while there is none only calls `onX`.
+ * @param {Function} Class
+ */
+export function installHooks(Class) {
+    const proto = Class.prototype;
+    Object.defineProperty(proto, "cb_handler", {
+        configurable: true,
+        /** this object's CallbackHandler (created on first read; assignable, as before) */
+        get() { return (this._cb_handler ||= new CallbackHandler(this)); },
+        set(handler) { this._cb_handler = handler; },
+    });
+    const methods = {
+        /** @returns {CallbackHandler} this object's handler registry (created once) */
+        callbackhandler_setup() {
+            return this.cb_handler;
+        },
+        registerCallbackHandler(name, callback, opts) {
+            return this.cb_handler.registerCallbackHandler(name, callback, opts);
+        },
+        unregisterCallbackHandler(name, h_id) {
+            return this._cb_handler ? this._cb_handler.unregisterCallbackHandler(name, h_id) : false;
+        },
+        processCallbackHandlers(name, opts, ...args) {
+            const handler = this._cb_handler;
+            // an overridden processCallbackHandlers on the handler (e.g. a tracing wrapper) still runs
+            if (handler &amp;&amp; handler.processCallbackHandlers !== CallbackHandler.prototype.processCallbackHandlers) {
+                return handler.processCallbackHandlers(name, opts, ...args);
+            }
+            return CallbackHandler.run(handler ? handler.ob_ref : this, handler, name, opts, args);
+        },
+        hasCallbackHandlers(name) {
+            return !!this._cb_handler?.hasCallbackHandlers(name);
+        },
+        /**
+         * Registers a hook handler and returns its disposer.
+         * @returns {() => boolean} unregisters the handler
+         */
+        onHook(name, callback, opts) {
+            return this.cb_handler.onHook(name, callback, opts);
+        },
+    };
+    for (const [key, value] of Object.entries(methods)) {
+        Object.defineProperty(proto, key, { value, writable: true, configurable: true });
+    }
+    return Class;
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isAllowedHost, isAllowedUpgrade, upgradeRefusal } from '../../headless/graphrunner/server/security.js';
-import { assertAllowedGraph, DEFAULT_DENIED_TYPES, DENIED_FAMILIES, deniedTypes, scriptsAllowed, graphPolicyNotes, describePolicy } from '../../headless/graphrunner/nodePolicy.js';
+import { isAllowedHost, isAllowedUpgrade, upgradeRefusal } from '../../apps/runner/server/security.js';
+import { assertAllowedGraph, DEFAULT_DENIED_TYPES, DENIED_FAMILIES, deniedTypes, scriptsAllowed, graphPolicyNotes, describePolicy } from '../../apps/runner/nodePolicy.js';
 
 const env = { HOST: '127.0.0.1' };
 
@@ -40,18 +40,37 @@ test('runner node policy refuses dangerous types at any subgraph depth', () => {
   assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'sys/log' }]), known, { env: { RUNNER_DENY_TYPES: 'sys/' } }), /not allowed/);
   // default-denied types can be allowed one by one or by prefix
   const reader = graph([{ id: 1, type: 'sys/fileRead' }]);
-  const servers = graph([{ id: 1, type: 'nodejs/network/OSC_server' }, { id: 2, type: 'server/network/websocketserver' }]);
+  const servers = graph([{ id: 1, type: 'network/server/osc' }, { id: 2, type: 'network/server/websocket' }]);
   assert.throws(() => assertAllowedGraph(reader, known, { env: {} }), /not allowed in the runner: sys\/fileRead/);
   assert.throws(() => assertAllowedGraph(servers, known, { env: {} }), /not allowed/);
   assert.doesNotThrow(() => assertAllowedGraph(reader, known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead' } }));
-  assert.throws(() => assertAllowedGraph(servers, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/' } }), /server\/network\/websocketserver/);
-  assert.doesNotThrow(() => assertAllowedGraph(servers, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/, server/network/websocketserver' } }));
+  assert.throws(() => assertAllowedGraph(servers, known, { env: { RUNNER_ALLOW_TYPES: 'network/server/osc' } }), /network\/server\/websocket/);
+  assert.doesNotThrow(() => assertAllowedGraph(servers, known, { env: { RUNNER_ALLOW_TYPES: 'network/server/osc, network/server/websocket' } }));
+  // names from before the catalog cleanup (Wave 4e): workflows load as the new type, which is checked; old setting entries still allow
+  const oldNames = graph([{ id: 1, type: 'nodejs/network/OSC_server' }, { id: 2, type: 'server/network/websocketserver' }]);
+  assert.throws(() => assertAllowedGraph(oldNames, known, { env: {} }), /network\/server\/osc \(node 1\); network\/server\/websocket \(node 2\)/);
+  assert.doesNotThrow(() => assertAllowedGraph(oldNames, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/OSC_server, server/network/websocketserver' } }));
+  // an old prefix keeps its old meaning: nodejs/network/ never covered the WebSocket server
+  const pair = graph([{ id: 1, type: 'network/server/osc' }, { id: 2, type: 'network/server/websocket' }]);
+  assert.throws(() => assertAllowedGraph(pair, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/' } }), /network\/server\/websocket/);
+  assert.doesNotThrow(() => assertAllowedGraph(graph([{ id: 1, type: 'network/server/osc' }]), known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/' } }));
+  assert.doesNotThrow(() => assertAllowedGraph(pair, known, { env: { RUNNER_ALLOW_TYPES: 'nodejs/network/, server/network/' } }));
+  assert.throws(() => assertAllowedGraph(oldNames, known, { env: { RUNNER_ALLOW_TYPES: 'network/server/', RUNNER_DENY_TYPES: 'server/network/websocketserver' } }), /refused by RUNNER_DENY_TYPES/);
   assert.throws(() => assertAllowedGraph(reader, known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead', RUNNER_DENY_TYPES: 'sys/' } }), /not allowed/, 'deny wins over allow');
   assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'sys/runCommand' }]), known, { env: { RUNNER_ALLOW_TYPES: 'sys/fileRead' } }), /not allowed/, 'allow is per type');
   assert.doesNotThrow(() => assertAllowedGraph(nested, known, { env: { RUNNER_ALLOW_SYS: '1' } }));
   assert.equal(scriptsAllowed({}), false, 'script nodes are off by default');
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SYS: '1' }), true);
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SCRIPTS: '1' }), true, 'scripts alone');
+});
+
+test('runner node policy checks the type an automatic replacement loads as', () => {
+  const graph = (nodes) => ({ nodes, links: [] });
+  const known = (type) => !type.startsWith('old/');
+  const replacedType = (type) => ({ 'old/log': 'sys/log', 'old/run': 'sys/runCommand' })[type] ?? null;
+  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'old/log' }]), known, { env: {} }), /Unknown node type: old\/log/, 'no mapping: unknown');
+  assert.doesNotThrow(() => assertAllowedGraph(graph([{ id: 1, type: 'old/log' }]), known, { env: {}, replacedType }));
+  assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'old/run' }]), known, { env: {}, replacedType }), /not allowed in the runner: sys\/runCommand/, 'a renamed type cannot load a denied one');
 });
 
 test('runner node policy checks every subgraph definition, used or not', () => {
@@ -78,8 +97,8 @@ test('every refusal names the setting that allows it', () => {
   const graph = (nodes) => ({ nodes, links: [] });
   // all refused types are listed at once, with a ready-to-use RUNNER_ALLOW_TYPES value
   assert.throws(
-    () => assertAllowedGraph(graph([{ id: 1, type: 'sys/fileRead' }, { id: 2, type: 'nodejs/network/UDP_server' }, { id: 3, type: 'sys/fileRead' }]), known, { env: {} }),
-    /sys\/fileRead \(node 1, 3\); nodejs\/network\/UDP_server \(node 2\)\. to enable, start the runner with RUNNER_ALLOW_TYPES=sys\/fileRead,nodejs\/network\/UDP_server, or whole families with RUNNER_ALLOW_TYPES=@host-read,@servers \(or RUNNER_ALLOW_SYS=1/,
+    () => assertAllowedGraph(graph([{ id: 1, type: 'sys/fileRead' }, { id: 2, type: 'network/server/udp' }, { id: 3, type: 'sys/fileRead' }]), known, { env: {} }),
+    /sys\/fileRead \(node 1, 3\); network\/server\/udp \(node 2\)\. to enable, start the runner with RUNNER_ALLOW_TYPES=sys\/fileRead,network\/server\/udp, or whole families with RUNNER_ALLOW_TYPES=@host-read,@servers \(or RUNNER_ALLOW_SYS=1/,
   );
   assert.throws(() => assertAllowedGraph(graph([{ id: 1, type: 'basic/const' }]), known, { env: { RUNNER_DENY_TYPES: 'basic/' } }), /basic\/const is refused by RUNNER_DENY_TYPES/);
 

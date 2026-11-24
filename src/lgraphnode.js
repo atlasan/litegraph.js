@@ -1,7 +1,8 @@
 // src/lgraphnode.js
 
 import { LiteGraph } from "./litegraph.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
+import { ExecutionEngine } from "./execution.js";
 import { getRuntime, isBrowser, isNode } from "./global.js";
 
 /*
@@ -75,7 +76,6 @@ export class LGraphNode {
         return LGraphNode._default_sizes.has(this.size);
     }
 
-    cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
 
@@ -112,16 +112,23 @@ export class LGraphNode {
             LGraphNode._default_sizes.add(this.size);
         }
         this.size_basic ??= this.size;
-        this.callbackhandler_setup();
+    }
+
+    /**
+     * Whether a declared runtime ("node", "browser", "bun", "all", ...) matches the current one.
+     * Bun implements the Node.js APIs, so a "node" declaration also runs on Bun; "bun" means Bun only.
+     */
+    static runtimeMatches(declared, runtime = getRuntime()) {
+        return !declared || ["all", "both", "any", "*", runtime].includes(declared) ||
+            (declared === "node" && runtime === "bun");
     }
 
     validateExecutionEnvironment() {
-        return !this.executionEnvironment ||
-            ["all", "both", "any", "*", getRuntime()].includes(this.executionEnvironment);
+        return LGraphNode.runtimeMatches(this.executionEnvironment);
     }
 
     validateRuntime() {
-        return !this.runtime || ["all", "both", "any", "*", getRuntime()].includes(this.runtime);
+        return LGraphNode.runtimeMatches(this.runtime);
     }
 
     /** Initialize exactly once; basic nodes are ready synchronously, dependencies asynchronously. */
@@ -179,23 +186,6 @@ export class LGraphNode {
 
     loadRequiredLibraries() {
         return this.loadLibraries(this.requiredLibraries || []);
-    }
-
-    callbackhandler_setup() {
-        if (!this.cb_handler) this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        if(!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -391,7 +381,7 @@ export class LGraphNode {
                     o[key] = LiteGraph.cloneObject(placeholderSource[key]);
                 }
             }
-            if (o.title === undefined) delete o.title;
+            if (o.title === undefined || (!("title" in placeholderSource) && o.title === placeholderSource.type)) delete o.title;
             for (const key of ["inputs", "outputs", "properties"]) {
                 const v = o[key];
                 const empty = Array.isArray(v) ? !v.length : (v && typeof v === "object" && !Object.keys(v).length);
@@ -474,6 +464,27 @@ export class LGraphNode {
     }
 
     /**
+     * Reports this node's progress (execution-state protocol): drawn as a bar on the node and
+     * sent to listeners of the root graph's `execution-state` event (the runner forwards them).
+     * @param {number} value
+     * @param {number} [max=1]
+     * @param {string} [message]
+     */
+    reportProgress(value, max = 1, message) {
+        return this.graph?.reportExecutionState(this, "progress", { value, max, message }) ?? null;
+    }
+
+    /**
+     * Sets this node's execution status: "queued", "running", "done", "error" or "skipped"
+     * (null clears it). Long-running nodes use it to show work in progress.
+     */
+    setExecutionStatus(status, message) {
+        if (!this.graph) return null;
+        if (status === null || status === undefined) return this.graph.reportExecutionState(this, "reset");
+        return this.graph.reportExecutionState(this, status === "error" ? "error" : "status", { status, message });
+    }
+
+    /**
      * sets the value of a property
      * @method setProperty
      * @param {String} name
@@ -490,17 +501,13 @@ export class LGraphNode {
         const prevValue = this.properties[name];
         this.properties[name] = value;
 
-        // Call onPropertyChanged and revert the change if needed
-        let r = this.processCallbackHandlers("onPropertyChanged",{
-            def_cb: this.onPropertyChanged
-        }, name, value, prevValue);
-        if(r===false || (r!==null && (typeof(r)=="object" && r.return_value===false))){
+        // onPropertyChanged returning false vetoes: the value is reverted and no event fires
+        const r = CallbackHandler.fireHookThenEvent(this, "onPropertyChanged", [name, value, prevValue], this.graph, "node-property-changed",
+            () => this.properties[name] !== prevValue ? { node: this, name, value: this.properties[name], previous: prevValue } : null,
+            { veto: false });
+        if(CallbackHandler.is(r, false)){
             this.properties[name] = prevValue;
             LiteGraph.log_debug("lgraphnode","setProperty","prevent property set by cbHandler",name,value,prevValue,r);
-        }
-
-        if (this.properties[name] !== prevValue) {
-            this.graph?._emit?.("node-property-changed", { node: this, name, value: this.properties[name], previous: prevValue });
         }
 
         // Update the widget value associated with the property name
@@ -549,6 +556,8 @@ export class LGraphNode {
                 link.data = data;
             }
         });
+        // a new data version on the links: the ancestors model re-runs pure consumers only on newer data
+        ExecutionEngine.stamp(this.outputs[slot].links, this.graph);
     }
 
     /**
@@ -631,10 +640,16 @@ export class LGraphNode {
             return link.data;
         }
 
-        // TODO Consider moving this out of here and use a single ancestorsCalculation (for each event?)
-        // CHECK THIS : used in logic/while , is ATM necessary? does this solve reading self value while executing loops ?
+        const rules = ExecutionEngine.rulesFor(this.graph);
+        if (!rules.legacy) {
+            // a forced pull runs the origin once per frame or call (or again on newer input data); under
+            // the ancestors model only ON_REQUEST origins: ALWAYS nodes give this frame's value
+            // a node that ticks (Timer, Delay) is never re-run by a pull
+            if (node.mode === LiteGraph.ON_REQUEST || node.mode === LiteGraph.BYPASS || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
+            return link.data;
+        }
+
         if (refresh_tree) {
-            LiteGraph.log_warn("CHECK THIS", "lgraphnode", "getInputData","Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             LiteGraph.log_debug("lgraphnode", "getInputData","Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             let uIdRand = this.id+"_getInputData_forced_"+LiteGraph.uuidv4();
             let optsAncestors = {action: uIdRand, options: {action_call: uIdRand}};
@@ -881,22 +896,111 @@ export class LGraphNode {
             .filter((target_node) => target_node);
     }
 
+    /**
+     * Adds the built-in exec input `onTrigger` (an event there executes the node) unless it exists.
+     * It is appended, so the indices of the other slots never change.
+     * @returns {number} its index
+     */
     addOnTriggerInput() {
         var trigS = this.findInputSlot("onTrigger");
         if (trigS == -1) { // !trigS ||
-            this.addInput("onTrigger", LiteGraph.EVENT, {removable: true, nameLocked: true});
+            this.addInput("onTrigger", LiteGraph.EVENT, {removable: true, nameLocked: true, exec: "trigger"});
             return this.findInputSlot("onTrigger");
         }
         return trigS;
     }
 
+    /**
+     * Adds the built-in exec output `onExecuted` (fired after the node executed or ran an action)
+     * unless it exists. It is appended, so the indices of the other slots never change.
+     * @returns {number} its index
+     */
     addOnExecutedOutput() {
         var trigS = this.findOutputSlot("onExecuted");
         if (trigS == -1) { // !trigS ||
-            this.addOutput("onExecuted", LiteGraph.ACTION, {removable: true, nameLocked: true});
+            this.addOutput("onExecuted", LiteGraph.ACTION, {removable: true, nameLocked: true, exec: "executed"});
             return this.findOutputSlot("onExecuted");
         }
         return trigS;
+    }
+
+    /**
+     * The kind of a built-in exec slot: "trigger" for `onTrigger`, "executed" for `onExecuted`, else
+     * null. Slots made by addOnTriggerInput / addOnExecutedOutput carry `slot.exec`; slots saved before
+     * the marker are recognised by name, event type and the helpers' flags (`nameLocked`, `removable`),
+     * so an `onTrigger` input a node type declares itself (e.g. logic/IF) is not one.
+     * @param {object} slot
+     * @returns {"trigger"|"executed"|null}
+     */
+    static isExecSlot(slot) {
+        if (!slot) return null;
+        if (slot.exec === "trigger" || slot.exec === "executed") return slot.exec;
+        if ((slot.type !== LiteGraph.EVENT && slot.type !== LiteGraph.ACTION) || !slot.nameLocked || !slot.removable) return null;
+        return slot.name === "onTrigger" ? "trigger" : slot.name === "onExecuted" ? "executed" : null;
+    }
+
+    /** the exec-slot layout this node uses (LiteGraph.resolveExecSlotLayout), or null for slot rows */
+    getExecSlotLayout() {
+        return LiteGraph.resolveExecSlotLayout(this.exec_slot_layout ?? this.constructor.exec_slot_layout ?? LiteGraph.execSlotLayoutName());
+    }
+
+    /**
+     * The placement of an exec slot under the node's layout: `{x, y, dx, dy, dir}`, or null when the
+     * slot is not an exec slot of that side or the layout keeps it in the slot rows.
+     */
+    getExecSlotPlacement(is_input, slot) {
+        const kind = LGraphNode.isExecSlot(slot);
+        if (!kind || (kind === "trigger") !== !!is_input) return null;
+        const layout = this.getExecSlotLayout();
+        return (this.horizontal ? layout?.vertical : layout?.normal)?.[kind] ?? null;
+    }
+
+    /**
+     * Where an exec slot sits, relative to the node (title above y = 0), or null when it is in the
+     * slot rows. x anchors: left, center, right, pin (the title box); y anchors: top (of the title),
+     * title (its middle), body (the line between title and body), middle, bottom. `dx` / `dy` are
+     * canvas units, or "N%" of the width / body height.
+     * @param {boolean} is_input
+     * @param {number} slot_number
+     * @param {number[]} [out]
+     * @returns {number[]|null}
+     */
+    getExecSlotPos(is_input, slot_number, out = [0, 0]) {
+        const place = this.getExecSlotPlacement(is_input, (is_input ? this.inputs : this.outputs)?.[slot_number]);
+        if (!place) return null;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        const [w, h] = this.size;
+        const anchorsX = { left: 0, center: w * 0.5, right: w, pin: title * 0.5 };
+        const anchorsY = { top: -title, title: -title * 0.5, body: 0, middle: h * 0.5, bottom: h };
+        const offset = (value, size) => (typeof value === "string" && value.trim().endsWith("%") ? (parseFloat(value) / 100) * size : Number(value) || 0);
+        out[0] = (typeof place.x === "number" ? place.x : anchorsX[place.x] ?? 0) + offset(place.dx, w);
+        out[1] = (typeof place.y === "number" ? place.y : anchorsY[place.y] ?? 0) + offset(place.dy, h);
+        return out;
+    }
+
+    /** the direction links leave or enter a slot: an exec layout's `dir`, the slot's own `dir`, or the default */
+    getSlotDir(is_input, slot_number) {
+        const slot = (is_input ? this.inputs : this.outputs)?.[slot_number];
+        const dir = this.getExecSlotPlacement(is_input, slot)?.dir ?? slot?.dir;
+        if (dir) return dir;
+        if (this.horizontal) return is_input ? LiteGraph.UP : LiteGraph.DOWN;
+        return is_input ? LiteGraph.LEFT : LiteGraph.RIGHT;
+    }
+
+    /** true when an exec slot of this node is placed by its exec-slot layout (not in the rows) */
+    _hasPlacedExecSlot() {
+        for (const slot of this.inputs ?? []) if ((slot?.exec || slot?.name === "onTrigger") && this.getExecSlotPlacement(true, slot)) return true;
+        for (const slot of this.outputs ?? []) if ((slot?.exec || slot?.name === "onExecuted") && this.getExecSlotPlacement(false, slot)) return true;
+        return false;
+    }
+
+    /**
+     * true when a slot takes a row (or a column on a vertical node): not a placed exec slot and, unless
+     * `widgetInputs` is true, not a widget input (those sit on their widget's row)
+     */
+    _takesSlotRow(is_input, slot, widgetInputs = false) {
+        if (is_input && !widgetInputs && LGraphNode.isWidgetInputSlot(slot)) return false;
+        return !LGraphNode.isExecSlot(slot) || !this.getExecSlotPlacement(is_input, slot);
     }
 
     onAfterExecuteNode(param, options) {
@@ -921,6 +1025,13 @@ export class LGraphNode {
     }
 
     changeMode(modeTo) {
+        // a declared type refuses modes it cannot run in (LiteGraph.Execution.AllowAnyMode lifts this)
+        if (this.type && !ExecutionEngine.isModeValid(this, modeTo)) {
+            this.mode_refusal = ExecutionEngine.modeRefusal(this, modeTo);
+            LiteGraph.log_warn("lgraphnode", "changeMode", this.mode_refusal);
+            return false;
+        }
+        this.mode_refusal = null;
         switch(modeTo) {
 
             case LiteGraph.ON_TRIGGER:
@@ -936,6 +1047,8 @@ export class LGraphNode {
             case LiteGraph.ALWAYS:
                 break;
             case LiteGraph.ON_REQUEST:
+                break;
+            case LiteGraph.BYPASS:
                 break;
 
             default:
@@ -959,6 +1072,7 @@ export class LGraphNode {
             const action = this._waiting_actions.shift();
             this.actionDo(...action);
         }
+        if (!this._waiting_actions?.length) this._stopped_queue_reported = false;
     }
 
     /**
@@ -968,26 +1082,42 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
-        if (graph.nodes_executing[this.id]) return;
-        if (LiteGraph.ensureNodeSingleExecution && this.exec_version != null && this.exec_version >= graph.iteration) return;
-        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        const rules = ExecutionEngine.rulesFor(graph);
+        if (!rules.legacy) {
+            if (!ExecutionEngine.enter(this, "execute", options, rules)) return;
+        } else {
+            if (graph.nodes_executing[this.id]) { ExecutionEngine.drop(this, "reentry", { message: `${this.type} ${this.id}: executed again while it was executing` }); return; }
+            if (LiteGraph.ensureNodeSingleExecution && this.exec_version != null && this.exec_version >= graph.iteration) return;
+            if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        }
 
         const previousExecution = this.exec_version;
         const previousAction = graph.nodes_executedAction[this.id];
         graph.nodes_executedAction[this.id] = options.action_call;
         graph.nodes_executing[this.id] = true;
+        ExecutionEngine._depth++;
+        // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
+        const reportRun = graph._step_node !== this && this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onExecute", { def_cb: this.onExecute }, param, options);
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) ExecutionEngine.passThrough(this); // a wire: data only, its own code does not run
+            else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onExecute", { def_cb: this.onExecute }, param, options);
+            }
+            if (!rules.legacy) ExecutionEngine.remember(this);
             this.exec_version = graph.iteration;
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            if (LiteGraph.properties_allow_output_binding && !bypassed) this.doUpdateBindedOutputProperties();
             this.execute_triggered = 2;
-            this.processCallbackHandlers("onAfterExecuteNode", { def_cb: this.onAfterExecuteNode }, param, options);
+            if (!bypassed) this.processCallbackHandlers("onAfterExecuteNode", { def_cb: this.onAfterExecuteNode }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             this.exec_version = previousExecution;
             graph.nodes_executedAction[this.id] = previousAction;
@@ -999,8 +1129,49 @@ export class LGraphNode {
         } finally {
             // A callback may remove this node or clear its graph.
             graph.nodes_executing[this.id] = false;
+            ExecutionEngine._depth--;
         }
     }
+    /**
+     * Runs an event entry point (an action, a trigger or an execution started outside a step).
+     * An error that leaves the outermost entry is reported on the root graph as `node-error`, with
+     * an `error` execution state on the failing node, the same way `runStep` reports it (B9); it is
+     * then rethrown to the caller, as before.
+     */
+    _dispatchEvent(run) {
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
+        const outerCall = ExecutionEngine._call;
+        if (!outerCall) ExecutionEngine._call = `call_${++ExecutionEngine._callCount}`;
+        try {
+            return run();
+        } catch (error) {
+            if (error && typeof error === "object" && !error.node) {
+                try { error.node = this; } catch { /* a frozen error keeps its fields */ }
+            }
+            const root = this.graph?.rootGraph ?? this.graph;
+            try { root?._reportNodeError(error); } catch (reportError) { LiteGraph.log_error("lgraphnode", "event error report failed", reportError); }
+            // legacy rethrows always (as before); the other models follow LiteGraph.throw_errors
+            if (!root || ExecutionEngine.rulesFor(root).legacy || LiteGraph.throw_errors) throw error;
+            LiteGraph.log_warn("lgraphnode", "Error in an event chain", error);
+            return undefined;
+        } finally {
+            LiteGraph._dispatch_depth--;
+            ExecutionEngine._call = outerCall;
+        }
+    }
+
+    /** reports "running" for a run outside the node's own step turn, unless it already reported done */
+    _reportRunStart() {
+        const status = this.execution_state?.status;
+        if (status === "done" || status === "running" || !this.graph) return false;
+        this.graph.reportExecutionState(this, "status", { status: "running" });
+        return true;
+    }
+
+    _reportRunDone() {
+        if (this.graph && this.execution_state?.status === "running") this.graph.reportExecutionState(this, "status", { status: "done" });
+    }
+
     /**
      * retrocompatibility :: old doExecute
      * @method doExecute
@@ -1019,28 +1190,54 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
+            // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
+            return this._dispatchEvent(() => {
+                if (this.mode !== LiteGraph.NEVER && ExecutionEngine.rulesFor(this.graph).refresh === "ancestors") ExecutionEngine.pull(this);
+                return this.actionDo(action, param, options, action_slot);
+            });
+        }
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
-        if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
-        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        const rules = ExecutionEngine.rulesFor(graph);
+        if (!rules.legacy) {
+            if (!ExecutionEngine.enter(this, "action", options, rules)) return;
+        } else {
+            if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
+            if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        }
         const previousCall = graph.nodes_executedAction[this.id];
         graph.nodes_executedAction[this.id] = options.action_call;
         const previousAction = graph.nodes_actioning[this.id];
         graph.nodes_actioning[this.id] = options.action_call;
+        ExecutionEngine._depth++;
+        const reportRun = this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onAction", { def_cb: this.onAction }, action, param, options, action_slot);
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) {
+                // a wire: data passes through and the event goes on to the event outputs
+                ExecutionEngine.passThrough(this, { events: true, param, options });
+            } else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onAction", { def_cb: this.onAction }, action, param, options, action_slot);
+                if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            }
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
             this.action_triggered = 2;
-            this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
+            if (!bypassed) this.processCallbackHandlers("onAfterActionedNode", { def_cb: this.onAfterActionedNode }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
+            if (error && typeof error === "object" && !error.node) {
+                try { error.node = this; } catch { /* a frozen error keeps its fields */ }
+            }
             throw error;
         } finally {
             graph.nodes_actioning[this.id] = previousAction || false;
+            ExecutionEngine._depth--;
         }
     }
 
@@ -1085,6 +1282,7 @@ export class LGraphNode {
         if (!this.outputs) {
             return;
         }
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));
         var output = null;
         if(slot === null) {
             LiteGraph.log_error("lgraphnode", "triggerSlot","wrong slot",slot);
@@ -1112,9 +1310,13 @@ export class LGraphNode {
             return;
         }
 
+        const rules = this.graph ? ExecutionEngine.rulesFor(this.graph) : ExecutionEngine.LEGACY;
+        if (!rules.legacy) return ExecutionEngine.triggerSlot(this, slot, param, link_id, options, rules);
+
         // check for ancestors calls
         if (this.graph && this.graph.ancestorsCall) {
             LiteGraph.log_debug("ancestors call, prevent triggering slot "+slot+" on "+this.id+":"+this.order);
+            ExecutionEngine.drop(this, "refreshing", { message: `${this.type} ${this.id}: an event fired while ancestors were refreshed is dropped` });
             return;
         }
 
@@ -1142,9 +1344,13 @@ export class LGraphNode {
                 LiteGraph.log_warn("lgraphNODE", "triggerSlot", "link has not node", link_info, output, slot, param);
                 continue;
             }
-            if (node.mode === LiteGraph.NEVER) continue;
+            if (node.mode === LiteGraph.NEVER) { ExecutionEngine.drop(node, "mode", { message: `${node.type} ${node.id}: the node is NEVER; the event is not delivered` }); continue; }
             var target_slot = node.inputs[link_info.target_slot];
-            if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
+            if (node.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now
+                if (!options.action_call) options.action_call = `${this.id}_act_${LiteGraph.uuidv4()}`;
+                node.actionDo(target_slot?.name, param, options, link_info.target_slot);
+            } else if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
                 // generate unique trigger ID if not present
                 if (!options.action_call)
                     options.action_call = `${this.id}_trigg_${LiteGraph.uuidv4()}`; // TODO replace here and there fakeunique ID with real unique
@@ -1170,6 +1376,10 @@ export class LGraphNode {
                 if(LiteGraph.use_deferred_actions && node.onExecute) {
                     node._waiting_actions ??= [];
                     node._waiting_actions.push([target_connection.name, param, { ...options }, link_info.target_slot]);
+                    if (node.graph.status !== node.graph.constructor.STATUS_RUNNING && !node._stopped_queue_reported) {
+                        node._stopped_queue_reported = true;
+                        ExecutionEngine.drop(node, "stopped-queue", { message: `${node.type} ${node.id}: an action waits in the queue until the graph runs (graph.stop({dropQueued: true}) clears it)` });
+                    }
                     LiteGraph.log_verbose("lgraphnode", "triggerSlot","push to deferred", target_connection.name, param, options, link_info.target_slot);//+this.id+":"+this.order+" :: "+target_connection.name);
                 } else {
                     // trigger now the action
@@ -1181,6 +1391,7 @@ export class LGraphNode {
                 // TODO CHECK
                 // LiteGraph.log_verbose("lgraphnode", "triggerSlot","not executing node, what to do with this Node Mode on slot triggered?", node.mode, this);
                 LiteGraph.log_debug("lgraphnode", "triggerSlot", "onAction not implemented on node for triggeringSlot", target_slot, node.title, "arguments", slot, param, link_id, options);
+                ExecutionEngine.drop(node, "no-handler", { message: `${node.type} ${node.id}: input "${target_slot?.name}" receives an event but the node has no onAction` });
             }
         }
     }
@@ -1546,15 +1757,16 @@ export class LGraphNode {
 
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
-                if (LGraphNode.isWidgetInputSlot(input)) return maxWidth; // label shown by the widget
-                const text = input.label || input.name || "";
+                if (!this._takesSlotRow(true, input)) return maxWidth; // labelled by its widget, or a placed exec slot
+                const text = LiteGraph.getSlotLabel(this, input, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
         }
         if (this.outputs) {
             output_width = this.outputs.reduce((maxWidth, output) => {
-                const text = output.label || output.name || "";
+                if (!this._takesSlotRow(false, output)) return maxWidth; // a placed exec slot has no label
+                const text = LiteGraph.getSlotLabel(this, output, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -1614,9 +1826,9 @@ export class LGraphNode {
     getSlotsHeight(){
         // minimum height calculated by slots or 1
         const rowHeight = Math.max(
-            // widget inputs sit on their widget rows, not in the slot rows
-            this.inputs ? this.inputs.filter((input) => !LGraphNode.isWidgetInputSlot(input)).length : 1,
-            this.outputs ? this.outputs.length : 1,
+            // widget inputs sit on their widget rows and placed exec slots on the edges, not in the slot rows
+            this.inputs ? this.inputs.filter((input) => this._takesSlotRow(true, input)).length : 1,
+            this.outputs ? this.outputs.filter((output) => this._takesSlotRow(false, output)).length : 1,
             1,
         ) * LiteGraph.NODE_SLOT_HEIGHT + 10;
         // add margin (should this be always?)
@@ -1736,9 +1948,15 @@ export class LGraphNode {
             callback: callback,
             options: options || {},
         };
-        // an instance of the registered widget class (src/widgets.js), or a plain object for unknown types
-        const WidgetClass = LiteGraph.widget_types?.[fields.type];
-        var w = WidgetClass ? new WidgetClass(fields) : fields;
+        // an instance of the registered widget class (src/widgets.js); a type that is not a widget type
+        // resolves through value types ("int" -> number widget with step 1, "color", "vec3", ...) and
+        // keeps its own name; anything else stays a plain object (legacy w.draw / w.mouse)
+        const resolved = LiteGraph.valueTypes
+            ? LiteGraph.valueTypes.resolveWidgetClass(fields.type, LiteGraph.widget_types ?? {})
+            : (LiteGraph.widget_types?.[fields.type] ? { cls: LiteGraph.widget_types[fields.type], options: {} } : null);
+        if (resolved && Object.keys(resolved.options).length) fields.options = { ...resolved.options, ...fields.options };
+        if (resolved?.valueType && fields.value === undefined) fields.value = LiteGraph.valueTypes.defaultValue(fields.type, fields.options);
+        var w = resolved ? new resolved.cls(fields) : fields;
 
         if (w.options.y !== undefined) {
             w.y = w.options.y;
@@ -1926,6 +2144,9 @@ export class LGraphNode {
      * @return {boolean}
      */
     isPointInside(x, y, margin = 0, skip_title) {
+        // exec slots placed on the edges stick out: half a slot around the node belongs to it
+        // (groups borrow this method, so the helper may be missing)
+        if (this._hasPlacedExecSlot?.()) margin += LiteGraph.NODE_SLOT_HEIGHT * 0.5;
         var margin_top = this.graph && this.graph.isLive() ? 0 : LiteGraph.NODE_TITLE_HEIGHT;
         if (skip_title) {
             margin_top = 0;
@@ -2049,7 +2270,8 @@ export class LGraphNode {
      * Get a slot from his index or name
      * @param {boolean} is_input use look for input / output 
      * @param {number|string} slot_index_or_name 
-     * @returns 
+     * @param {boolean} [returnObj=false] return the slot object instead of its index
+     * @returns {number|Object} the slot index (or the slot with returnObj); -1 when not found
      */
     getSlot(is_input, slot_index_or_name, returnObj = false){
         if(!is_input || is_input===LiteGraph.OUTPUT){
@@ -2312,7 +2534,7 @@ export class LGraphNode {
         }
 
         if (opts.createEventInCase && source_slotType === LiteGraph.EVENT) {
-            if (LiteGraph.do_add_triggers_slots) {
+            if (ExecutionEngine.execSlotsFor(this.graph)) {
                 source_slot = source_node.addOnExecutedOutput();
                 return source_node.connect(source_slot, this, slot);
             }
@@ -2386,12 +2608,13 @@ export class LGraphNode {
 
         if (target_slot === LiteGraph.EVENT) {
 
-            if (LiteGraph.do_add_triggers_slots) {
-                // search for first slot with event? :: NO this is done outside
-                // LiteGraph.log?.("Connect: Creating triggerEvent");
-                // force mode
-                target_node.changeMode(LiteGraph.ON_TRIGGER);
-                target_slot = target_node.findInputSlot("onTrigger");
+            if (ExecutionEngine.execSlotsFor(this.graph)) {
+                // ON_TRIGGER adds both exec slots; a type that refuses the mode keeps its mode and still
+                // gets onTrigger (an event on an input named onTrigger executes the node in any mode)
+                if (!target_node.changeMode(LiteGraph.ON_TRIGGER)) {
+                    LiteGraph.log_info("lgraphnode", "connect", "onTrigger added without changing the mode", target_node.mode_refusal);
+                }
+                target_slot = target_node.addOnTriggerInput();
                 LiteGraph.log_debug("lgraphnode","connect", "Created onTrigger slot",target_slot);
             }else{
                 return null; // -- break --
@@ -2434,7 +2657,7 @@ export class LGraphNode {
         r = target_node.processCallbackHandlers("onBeforeConnectInput",{
             def_cb: target_node.onBeforeConnectInput
         }, target_slot);
-        var redirect = r!==null && typeof(r)=="object" ? r.return_value : r;
+        var redirect = CallbackHandler.valueOf(r);
         if (redirect === false) {
             LiteGraph.log_debug("lgraphnode","connect", "Node onBeforeConnectInput refused the connection",target_slot);
             return null;
@@ -2453,7 +2676,7 @@ export class LGraphNode {
         r = this.processCallbackHandlers("onConnectOutput",{
             def_cb: this.onConnectOutput
         }, slot, input.type, input, target_node, target_slot);
-        if(r!==null && (r===false || (typeof(r)=="object" && r.return_value===false))){
+        if(CallbackHandler.is(r, false)){
             LiteGraph.log_debug("lgraphnode","connect", "Node onConnectOutput stopping connection",r.return_value);
             return null;
         }
@@ -2473,7 +2696,7 @@ export class LGraphNode {
         r = target_node.processCallbackHandlers("onConnectInput",{
             def_cb: target_node.onConnectInput
         }, target_slot, output.type, output, this, slot);
-        if(r!==null && (r===false || (typeof(r)=="object" && r.return_value===false))){
+        if(CallbackHandler.is(r, false)){
             LiteGraph.log_debug("lgraphnode","connect", "targetNode onConnectInput stopping connection",r.return_value);
             return null;
         }
@@ -2552,11 +2775,12 @@ export class LGraphNode {
 
         }
 
+        this.graph._markChange?.("link");
         this.graph.onGraphChanged({action: "connect"});
         this.setDirtyCanvas(false, true);
         this.graph.afterChange();
         this.graph.connectionChange(this, link_info);
-        this.graph._emit?.("link-connected", { link: link_info, origin: this, originSlot: slot, target: target_node, targetSlot: target_slot });
+        this.graph._emit?.("link-connected", { link: link_info, origin: this, originSlot: slot, target: target_node, targetSlot: target_slot }, { recorded: true });
 
         return link_info;
     }
@@ -2622,8 +2846,10 @@ export class LGraphNode {
         const errors = [];
         const notify = (fn) => { try { fn(); } catch (error) { errors.push(error); } };
         for (const { link, origin, target, output, input } of notifications) {
-            notify(() => graph.onGraphChanged({ action, doSave: opts.doProcessChange ?? true }));
-            notify(() => graph._emit?.("link-removed", { link, origin: origin ?? null, target: target ?? null }));
+            const recorded = opts.doProcessChange ?? true;
+            if (recorded) graph._markChange?.("link");
+            notify(() => graph.onGraphChanged({ action, doSave: recorded }));
+            notify(() => graph._emit?.("link-removed", { link, origin: origin ?? null, target: target ?? null }, { recorded }));
             if (target) notify(() => target.processCallbackHandlers("onConnectionsChange", {
                 def_cb: target.onConnectionsChange,
             }, LiteGraph.INPUT, link.target_slot, false, link, input));
@@ -2690,6 +2916,13 @@ export class LGraphNode {
             return out;
         }
 
+        // an exec slot placed by the exec-slot layout (LiteGraph.Node.ExecSlotLayout)
+        if (num_slots > slot_number && this.getExecSlotPos(is_input, slot_number, out)) {
+            out[0] += this.pos[0];
+            out[1] += this.pos[1];
+            return out;
+        }
+
         // hard-coded pos
         if (
             is_input &&
@@ -2709,10 +2942,26 @@ export class LGraphNode {
             return out;
         }
 
+        // slots before this one that take a row (placed exec slots and widget inputs do not)
+        const list = is_input ? this.inputs : this.outputs;
+        let row = 0;
+        let rows = 0;
+        for (let i = 0; i < num_slots; i++) {
+            // a vertical node spreads widget inputs with the others, as before
+            if (!this._takesSlotRow(is_input, list[i], !!this.horizontal)) continue;
+            if (i < slot_number) row++;
+            rows++;
+        }
+
         // horizontal distributed slots
         if (this.horizontal) {
+            // an exec slot placed in the pin column keeps that column: the others share the rest
+            const reserved = rows < num_slots && list.some((slot) => {
+                const x = this.getExecSlotPlacement(is_input, slot)?.x;
+                return x === "pin" || x === "left";
+            }) ? LiteGraph.NODE_TITLE_HEIGHT : 0;
             out[0] =
-                this.pos[0] + (slot_number + 0.5) * (this.size[0] / num_slots);
+                this.pos[0] + reserved + (row + 0.5) * ((this.size[0] - reserved) / Math.max(rows, 1));
             if (is_input) {
                 out[1] = this.pos[1] - LiteGraph.NODE_TITLE_HEIGHT;
             } else {
@@ -2733,18 +2982,13 @@ export class LGraphNode {
                     return out;
                 }
             }
-            // rows count only ordinary inputs
-            let row = 0;
-            for (let i = 0; i < slot_number; i++) {
-                if (!LGraphNode.isWidgetInputSlot(this.inputs[i])) row++;
-            }
             out[1] = this.pos[1] + (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + (this.constructor.slot_start_y || 0);
             return out;
         }
         out[0] = this.pos[0] + this.size[0] + 1 - offset;
         out[1] =
             this.pos[1] +
-            (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
+            (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
             (this.constructor.slot_start_y || 0);
         return out;
     }
@@ -2933,7 +3177,7 @@ export class LGraphNode {
 
         var optsAncestors = {
             modesSkip: [LiteGraph.NEVER, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER],
-            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST],
+            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST, LiteGraph.BYPASS],
             typesSkip: [LiteGraph.ACTION],
             typesOnly: [],
         };
@@ -3267,3 +3511,6 @@ export class LGraphNode {
         };
     }
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphNode);

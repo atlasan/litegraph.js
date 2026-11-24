@@ -1,5 +1,5 @@
 /**
- * Typed events for graphs and canvases, alongside CallbackHandler hooks.
+ * The listener core shared by typed events (LGraphEventTarget) and hooks (CallbackHandler).
  *
  *   const off = graph.events.on("node-added", (event) => console.log(event.detail.node));
  *   off(); // unsubscribe
@@ -8,6 +8,78 @@
  * A throwing listener is logged and does not stop the others (safe in headless runners).
  * Design after Comfy-Org/litegraph.js CustomEventTarget (MIT); runtime-independent implementation.
  */
+
+/**
+ * An ordered list of listeners: highest `priority` first, then registration order.
+ * Copy-on-write: every change replaces `handlers`, so a dispatch in progress keeps iterating the
+ * list it started with (a listener added meanwhile runs from the next dispatch).
+ * Entries are `{id, priority, callback, data}`; `data` holds the options given at registration.
+ */
+export class ListenerList {
+    /**
+     * The process-wide dispatch tap (set with `LiteGraph.setDispatchTap`): called after every hook
+     * dispatch and every typed event dispatch with `{owner, name, phase, ms, error}`. While none is
+     * set (the default), a dispatch pays one null check.
+     * @type {((record: {owner: object, name: string, phase: "hook"|"event", ms: number, error: unknown}) => void)|null}
+     */
+    static tap = null;
+    /** true while the tap runs: its own dispatches are not reported */
+    static tapping = false;
+    static now = typeof performance === "object" && typeof performance?.now === "function" ? () => performance.now() : () => Date.now();
+
+    /** Reports one dispatch to the tap. A failing tap is logged and never reaches the dispatcher. */
+    static report(tap, owner, name, phase, start, error) {
+        ListenerList.tapping = true;
+        try {
+            tap({ owner, name, phase, ms: ListenerList.now() - start, error: error ?? null });
+        } catch (tapError) {
+            console.error?.("[LG] dispatch tap failed", tapError);
+        } finally {
+            ListenerList.tapping = false;
+        }
+    }
+
+    /** @type {{id: number, priority: number, callback: Function, data: object}[]} never mutated */
+    handlers = [];
+    last_id = 0;
+
+    /**
+     * @param {Function} callback
+     * @param {{priority?: number, signal?: AbortSignal}} [data] - kept on the entry
+     * @returns {number} the entry id
+     */
+    add(callback, data = {}) {
+        const entry = { id: this.last_id++, priority: Number(data.priority) || 0, callback, data };
+        const signal = data.signal;
+        if (signal?.aborted) return entry.id;
+        if (signal?.addEventListener) {
+            const onAbort = () => this.remove(entry.id);
+            signal.addEventListener("abort", onAbort, { once: true });
+            // detached on removal, so a long-lived signal does not keep removed listeners alive
+            entry.detach = () => signal.removeEventListener?.("abort", onAbort);
+        }
+        this.handlers = [...this.handlers, entry].sort((a, b) => b.priority - a.priority);
+        return entry.id;
+    }
+
+    /** @returns {boolean} true if the entry was there */
+    remove(id) {
+        const entry = this.handlers.find((item) => item.id === id);
+        if (!entry) return false;
+        this.handlers = this.handlers.filter((item) => item !== entry);
+        entry.detach?.();
+        return true;
+    }
+
+    find(callback) {
+        return this.handlers.find((entry) => entry.callback === callback);
+    }
+
+    get size() {
+        return this.handlers.length;
+    }
+}
+
 export class LGraphEvent {
     constructor(type, detail, target, cancelable = false) {
         this.type = type;
@@ -30,25 +102,24 @@ export class LGraphEventTarget {
     constructor(owner, onError) {
         this.owner = owner;
         this.onError = onError;
+        /** @type {Map<string, ListenerList>} */
         this._listeners = new Map();
     }
 
     /**
-     * Subscribes to an event type.
+     * Subscribes to an event type; `"*"` receives every event of this target (after its own listeners).
      * @param {string} type
      * @param {(event: LGraphEvent) => void} listener
-     * @param {{once?: boolean, signal?: AbortSignal}} [options]
+     * @param {{once?: boolean, signal?: AbortSignal, priority?: number}} [options]
      * @returns {() => void} unsubscribe
      */
     on(type, listener, options = {}) {
         if (typeof listener !== "function") throw new TypeError("listener must be a function");
         if (options.signal?.aborted) return () => {};
-        if (!this._listeners.has(type)) this._listeners.set(type, []);
-        const entry = { listener, once: !!options.once };
-        this._listeners.get(type).push(entry);
-        const off = () => this._remove(type, entry);
-        options.signal?.addEventListener?.("abort", off, { once: true });
-        return off;
+        let list = this._listeners.get(type);
+        if (!list) this._listeners.set(type, list = new ListenerList());
+        const id = list.add(listener, { ...options });
+        return () => { list.remove(id); };
     }
 
     /** subscribes for a single event */
@@ -58,38 +129,46 @@ export class LGraphEventTarget {
 
     /** removes a listener added with on() */
     off(type, listener) {
-        const entry = this._listeners.get(type)?.find((item) => item.listener === listener);
-        if (entry) this._remove(type, entry);
+        const list = this._listeners.get(type);
+        const entry = list?.find(listener);
+        if (entry) list.remove(entry.id);
     }
 
-    /** true when anything listens to type */
+    /** true when anything listens to type (a "*" listener counts) */
     has(type) {
-        return !!this._listeners.get(type)?.length;
+        return !!(this._listeners.get(type)?.size || this._listeners.get("*")?.size);
     }
 
     /**
-     * Dispatches an event to the current listeners (in subscription order).
+     * Dispatches an event to the current listeners (by priority, then subscription order),
+     * then to the "*" listeners.
      * @returns {LGraphEvent} check defaultPrevented for cancelable events
      */
     dispatch(type, detail, options = {}) {
         const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
-        const entries = this._listeners.get(type);
-        if (!entries?.length) return event;
-        for (const entry of entries.slice()) {
-            if (entry.once) this._remove(type, entry);
-            try {
-                entry.listener.call(this.owner, event);
-            } catch (error) {
-                if (this.onError) this.onError(error, event);
-                else console.error?.("[LG] event listener failed", type, error);
-            }
-        }
+        const tap = ListenerList.tap;
+        const start = tap !== null && !ListenerList.tapping ? ListenerList.now() : -1;
+        const error = this._deliver(this._listeners.get(type), event);
+        const wildcardError = type !== "*" ? this._deliver(this._listeners.get("*"), event) : undefined;
+        if (start >= 0) ListenerList.report(tap, this.owner, type, "event", start, error ?? wildcardError);
         return event;
     }
 
-    _remove(type, entry) {
-        const entries = this._listeners.get(type);
-        const index = entries?.indexOf(entry) ?? -1;
-        if (index !== -1) entries.splice(index, 1);
+    /** @returns {unknown} the first listener error (each one is reported through onError) */
+    _deliver(list, event) {
+        if (!list?.size) return undefined;
+        let first;
+        for (const entry of list.handlers) {
+            // a re-entrant dispatch may already have delivered (and removed) a once listener
+            if (entry.data.once && !list.remove(entry.id)) continue;
+            try {
+                entry.callback.call(this.owner, event);
+            } catch (error) {
+                first ??= error;
+                if (this.onError) this.onError(error, event);
+                else console.error?.("[LG] event listener failed", event.type, error);
+            }
+        }
+        return first;
     }
 }

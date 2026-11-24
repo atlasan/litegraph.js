@@ -50,9 +50,10 @@ for arg in sys.argv:
 
 lib_js_files = [
     "./src/global.js",
-    "./src/litegraph.js",
-    "./src/callbackhandler.js",
     "./src/eventtarget.js",
+    "./src/callbackhandler.js",
+    "./src/litegraph.js",
+    "./src/execution.js",
     "./src/commands.js",
     "./src/keybindings.js",
     "./src/settings.js",
@@ -73,7 +74,15 @@ lib_js_files = [
     "./src/subgraph.js",
     "./src/librarymanager.js",
     "./src/widgets.js",
+    "./src/valuetypes.js",
+    "./src/panels.js",
     "./src/nodesearch.js",
+    "./src/packs.js",
+    "./src/executionstate.js",
+    "./src/linkrender.js",
+    "./src/minimap.js",
+    "./src/layout.js",
+    "./src/palette.js",
     "./src/init_litegraph.js",
 ]
 
@@ -123,12 +132,15 @@ lib_editor_files = [
 ]
 
 lib_extensions_files = [
-    "./editor/js/defaults_debug.js",
     "./src/extensions/autoconnect.js",
     "./src/extensions/keyboard_helper.js",
     "./src/extensions/renamer.js",
     "./src/extensions/quick_connect.js",
     "./src/extensions/subgraph_tools.js",
+    "./src/extensions/node_packs.js",
+    "./src/extensions/view_tools.js",
+    "./src/extensions/node_pin.js",
+    "./src/extensions/graph_status.js",
     "./src/extensions/comfy_interop.js",
 ]
 

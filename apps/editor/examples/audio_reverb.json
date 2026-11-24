@@ -1,0 +1,322 @@
+{
+ "id": "27a5e769-1e23-4dc2-849d-347c319c9af3",
+ "revision": 1,
+ "last_node_id": 8,
+ "last_link_id": 9,
+ "nodes": [
+  {
+   "id": 4,
+   "type": "widget/knob",
+   "pos": [
+    408,
+    59
+   ],
+   "size": [
+    86,
+    100
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      4
+     ]
+    }
+   ],
+   "title": "Main",
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.21000000000000002,
+    "color": "#7AF",
+    "precision": 2,
+    "wcolor": "#7AF",
+    "size": 50
+   },
+   "boxcolor": "rgba(128,128,128,1.0)"
+  },
+  {
+   "id": 5,
+   "type": "widget/knob",
+   "pos": [
+    398,
+    350
+   ],
+   "size": [
+    86,
+    100
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "title": "Reverb",
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.4099999999999999,
+    "color": "#7AF",
+    "precision": 2,
+    "wcolor": "#7AF",
+    "size": 50
+   },
+   "boxcolor": "rgba(128,128,128,1.0)"
+  },
+  {
+   "id": 7,
+   "type": "audio/convolver",
+   "pos": [
+    421,
+    253
+   ],
+   "size": [
+    140,
+    31
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "in",
+     "type": "audio",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": "audio",
+     "links": [
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "impulse_src": "demodata/impulse.wav",
+    "normalize": true
+   }
+  },
+  {
+   "id": 1,
+   "type": "audio/mixer",
+   "pos": [
+    655,
+    183
+   ],
+   "size": [
+    145,
+    94
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "in1",
+     "type": "audio",
+     "link": 0
+    },
+    {
+     "name": "in1 gain",
+     "type": "number",
+     "link": 4
+    },
+    {
+     "name": "in2",
+     "type": "audio",
+     "link": 8
+    },
+    {
+     "name": "in2 gain",
+     "type": "number",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": "audio",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "properties": {
+    "gain1": 0.5,
+    "gain2": 0.8
+   }
+  },
+  {
+   "id": 3,
+   "type": "audio/destination",
+   "pos": [
+    911,
+    180
+   ],
+   "size": [
+    141,
+    34
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "in",
+     "type": "audio",
+     "link": 3
+    }
+   ],
+   "outputs": [],
+   "properties": {}
+  },
+  {
+   "id": 0,
+   "type": "audio/source",
+   "pos": [
+    195,
+    187
+   ],
+   "size": [
+    143,
+    30
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "gain",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": "audio",
+     "links": [
+      0,
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "src": "demodata/audio.wav",
+    "gain": 0.5,
+    "loop": true,
+    "autoplay": true,
+    "playbackRate": 1
+   },
+   "boxcolor": "#666"
+  }
+ ],
+ "links": [
+  [
+   0,
+   0,
+   0,
+   1,
+   0,
+   null
+  ],
+  [
+   1,
+   0,
+   0,
+   2,
+   0,
+   null
+  ],
+  [
+   3,
+   1,
+   0,
+   3,
+   0,
+   null
+  ],
+  [
+   4,
+   4,
+   0,
+   1,
+   1,
+   null
+  ],
+  [
+   5,
+   5,
+   0,
+   1,
+   3,
+   null
+  ],
+  [
+   6,
+   6,
+   0,
+   2,
+   1,
+   null
+  ],
+  [
+   7,
+   0,
+   0,
+   7,
+   0,
+   null
+  ],
+  [
+   8,
+   7,
+   0,
+   1,
+   2,
+   null
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Audio reverb: the source goes to the mixer dry and through a convolver (reverb). The knobs set the two gains. Press Play to start.",
+   "bounding": [
+    195,
+    -81,
+    640,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 8,
+  "lastLinkId": 9,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

@@ -45,6 +45,486 @@ function getRuntime() {
 }
 
 /**
+ * The listener core shared by typed events (LGraphEventTarget) and hooks (CallbackHandler).
+ *
+ *   const off = graph.events.on("node-added", (event) => console.log(event.detail.node));
+ *   off(); // unsubscribe
+ *
+ * Listeners receive {type, detail, target, cancelable, defaultPrevented, preventDefault()}.
+ * A throwing listener is logged and does not stop the others (safe in headless runners).
+ * Design after Comfy-Org/litegraph.js CustomEventTarget (MIT); runtime-independent implementation.
+ */
+
+/**
+ * An ordered list of listeners: highest `priority` first, then registration order.
+ * Copy-on-write: every change replaces `handlers`, so a dispatch in progress keeps iterating the
+ * list it started with (a listener added meanwhile runs from the next dispatch).
+ * Entries are `{id, priority, callback, data}`; `data` holds the options given at registration.
+ */
+class ListenerList {
+    /**
+     * The process-wide dispatch tap (set with `LiteGraph.setDispatchTap`): called after every hook
+     * dispatch and every typed event dispatch with `{owner, name, phase, ms, error}`. While none is
+     * set (the default), a dispatch pays one null check.
+     * @type {((record: {owner: object, name: string, phase: "hook"|"event", ms: number, error: unknown}) => void)|null}
+     */
+    static tap = null;
+    /** true while the tap runs: its own dispatches are not reported */
+    static tapping = false;
+    static now = typeof performance === "object" && typeof performance?.now === "function" ? () => performance.now() : () => Date.now();
+
+    /** Reports one dispatch to the tap. A failing tap is logged and never reaches the dispatcher. */
+    static report(tap, owner, name, phase, start, error) {
+        ListenerList.tapping = true;
+        try {
+            tap({
+                owner,
+                name,
+                phase,
+                ms: ListenerList.now() - start,
+                error: error ?? null
+            });
+        } catch (tapError) {
+            console.error?.("[LG] dispatch tap failed", tapError);
+        } finally {
+            ListenerList.tapping = false;
+        }
+    }
+
+    /** @type {{id: number, priority: number, callback: Function, data: object}[]} never mutated */
+    handlers = [];
+    last_id = 0;
+
+    /**
+     * @param {Function} callback
+     * @param {{priority?: number, signal?: AbortSignal}} [data] - kept on the entry
+     * @returns {number} the entry id
+     */
+    add(callback, data = {}) {
+        const entry = {
+            id: this.last_id++,
+            priority: Number(data.priority) || 0,
+            callback,
+            data
+        };
+        const signal = data.signal;
+        if (signal?.aborted) return entry.id;
+        if (signal?.addEventListener) {
+            const onAbort = () => this.remove(entry.id);
+            signal.addEventListener("abort", onAbort, {
+                once: true
+            });
+            // detached on removal, so a long-lived signal does not keep removed listeners alive
+            entry.detach = () => signal.removeEventListener?.("abort", onAbort);
+        }
+        this.handlers = [...this.handlers, entry].sort((a, b) => b.priority - a.priority);
+        return entry.id;
+    }
+
+    /** @returns {boolean} true if the entry was there */
+    remove(id) {
+        const entry = this.handlers.find((item) => item.id === id);
+        if (!entry) return false;
+        this.handlers = this.handlers.filter((item) => item !== entry);
+        entry.detach?.();
+        return true;
+    }
+
+    find(callback) {
+        return this.handlers.find((entry) => entry.callback === callback);
+    }
+
+    get size() {
+        return this.handlers.length;
+    }
+}
+
+class LGraphEvent {
+    constructor(type, detail, target, cancelable = false) {
+        this.type = type;
+        this.detail = detail;
+        this.target = target;
+        this.cancelable = cancelable;
+        this.defaultPrevented = false;
+    }
+
+    preventDefault() {
+        if (this.cancelable) this.defaultPrevented = true;
+    }
+}
+
+class LGraphEventTarget {
+    /**
+     * @param {object} [owner] - reported as event.target
+     * @param {(error: unknown, event: LGraphEvent) => void} [onError] - listener error reporter
+     */
+    constructor(owner, onError) {
+        this.owner = owner;
+        this.onError = onError;
+        /** @type {Map<string, ListenerList>} */
+        this._listeners = new Map();
+    }
+
+    /**
+     * Subscribes to an event type; `"*"` receives every event of this target (after its own listeners).
+     * @param {string} type
+     * @param {(event: LGraphEvent) => void} listener
+     * @param {{once?: boolean, signal?: AbortSignal, priority?: number}} [options]
+     * @returns {() => void} unsubscribe
+     */
+    on(type, listener, options = {}) {
+        if (typeof listener !== "function") throw new TypeError("listener must be a function");
+        if (options.signal?.aborted) return () => {};
+        let list = this._listeners.get(type);
+        if (!list) this._listeners.set(type, list = new ListenerList());
+        const id = list.add(listener, {
+            ...options
+        });
+        return () => {
+            list.remove(id);
+        };
+    }
+
+    /** subscribes for a single event */
+    once(type, listener, options = {}) {
+        return this.on(type, listener, {
+            ...options,
+            once: true
+        });
+    }
+
+    /** removes a listener added with on() */
+    off(type, listener) {
+        const list = this._listeners.get(type);
+        const entry = list?.find(listener);
+        if (entry) list.remove(entry.id);
+    }
+
+    /** true when anything listens to type (a "*" listener counts) */
+    has(type) {
+        return !!(this._listeners.get(type)?.size || this._listeners.get("*")?.size);
+    }
+
+    /**
+     * Dispatches an event to the current listeners (by priority, then subscription order),
+     * then to the "*" listeners.
+     * @returns {LGraphEvent} check defaultPrevented for cancelable events
+     */
+    dispatch(type, detail, options = {}) {
+        const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
+        const tap = ListenerList.tap;
+        const start = tap !== null && !ListenerList.tapping ? ListenerList.now() : -1;
+        const error = this._deliver(this._listeners.get(type), event);
+        const wildcardError = type !== "*" ? this._deliver(this._listeners.get("*"), event) : undefined;
+        if (start >= 0) ListenerList.report(tap, this.owner, type, "event", start, error ?? wildcardError);
+        return event;
+    }
+
+    /** @returns {unknown} the first listener error (each one is reported through onError) */
+    _deliver(list, event) {
+        if (!list?.size) return undefined;
+        let first;
+        for (const entry of list.handlers) {
+            // a re-entrant dispatch may already have delivered (and removed) a once listener
+            if (entry.data.once && !list.remove(entry.id)) continue;
+            try {
+                entry.callback.call(this.owner, event);
+            } catch (error) {
+                first ??= error;
+                if (this.onError) this.onError(error, event);
+                else console.error?.("[LG] event listener failed", event.type, error);
+            }
+        }
+        return first;
+    }
+}
+
+/**
+ * Prioritised, vetoable hooks around the classic `onX` callbacks.
+ *
+ * Assigning `node.onExecute = fn` (or a prototype method) keeps working: it is the *default*
+ * callback of the chain. Registered handlers run by priority (highest first); the default runs
+ * after those with priority >= 0 and before the negative ones.
+ *
+ *   const off = node.onHook("onExecute", (info, param) => ({ return_value: 42, result_priority: 1 }), { priority: 1 });
+ *   off(); // or node.unregisterCallbackHandler("onExecute", id) with the id registerCallbackHandler returns
+ *
+ * A handler result may be a plain value or `{return_value, result_priority, prevent_default, stop_replication}`.
+ * Hooks are synchronous (a Promise result is not awaited). A handler that throws does not stop
+ * the others: the chain completes and the first error is then rethrown to the caller.
+ * Listener storage, ordering and copy-on-write come from ListenerList (shared with typed events).
+ */
+class CallbackHandler {
+
+    debug = false;
+
+    constructor(ref) {
+        /** @type {Record<string, ListenerList>} per hook name: `{handlers, last_id}` */
+        this.callbacks_handlers = {};
+        this.ob_ref = ref;
+    }
+
+    /**
+     * Subscribes a handler to a hook.
+     * @param {string} name hook name, e.g. "onExecute"
+     * @param {Function} callback called as `callback.call(owner, info, ...args)`
+     * @param {object} [opts]
+     * @param {number} [opts.priority=0] higher runs first; the default callback runs between >= 0 and < 0
+     * @param {boolean} [opts.is_default=false] skipped when another handler prevents the default
+     * @param {boolean} [opts.call_once=false] unregister after the first call (alias: `once`)
+     * @param {AbortSignal} [opts.signal] unregister on abort
+     * @returns {number|false} the handler id for this name, false for an invalid callback
+     */
+    registerCallbackHandler(name, callback, opts) {
+        if (typeof callback !== "function") {
+            LiteGraph?.log_warn?.("registerCallbackHandler", "invalid callback for", name);
+            return false;
+        }
+        const data = {
+            priority: 0,
+            is_default: false,
+            call_once: false,
+            ...(opts && typeof opts === "object" ? opts : {})
+        };
+        if (data.once) data.call_once = true;
+        let list = this.callbacks_handlers[name];
+        // code that replaced an entry with a plain {last_id, handlers} object keeps working
+        if (!(list instanceof ListenerList)) list = this.callbacks_handlers[name] = Object.assign(new ListenerList(), list);
+        return list.add(callback, data);
+    }
+
+    /** Registers a handler and returns its disposer. */
+    onHook(name, callback, opts) {
+        const id = this.registerCallbackHandler(name, callback, opts);
+        if (id === false) throw new TypeError(`hook ${name}: callback must be a function`);
+        return () => this.unregisterCallbackHandler(name, id);
+    }
+
+    /** @returns {boolean} true if the handler was registered */
+    unregisterCallbackHandler(name, h_id) {
+        return this.callbacks_handlers[name]?.remove(h_id) ?? false;
+    }
+
+    /** true when a handler is registered for name */
+    hasCallbackHandlers(name) {
+        return !!this.callbacks_handlers[name]?.size;
+    }
+
+    /**
+     * Runs the handlers registered for name and the default callback.
+     * @param {string} name
+     * @param {{def_cb?: Function|false, on_result?: (result: any) => void}} [opts] def_cb is the classic `onX`
+     * @param {...any} args passed after `info` to handlers, and alone to the default callback
+     * @returns {any} null when nothing returned a value; otherwise the winning plain value or result object
+     */
+    processCallbackHandlers(name, opts, ...args) {
+        return CallbackHandler.run(this.ob_ref, this, name, opts, args);
+    }
+
+    /**
+     * The chain behind processCallbackHandlers (also used directly by hook hosts, see installHooks).
+     * With no registered handler it only calls the default callback. A dispatch tap, when set,
+     * receives each dispatch with its duration (see ListenerList.tap).
+     */
+    static run(owner, handler, name, opts, args, untapped) {
+        if (ListenerList.tap !== null && !untapped && !ListenerList.tapping) {
+            const tap = ListenerList.tap,
+                start = ListenerList.now();
+            let error = null;
+            try {
+                return CallbackHandler.run(owner, handler, name, opts, args, true);
+            } catch (thrown) {
+                error = thrown;
+                throw thrown;
+            } finally {
+                ListenerList.report(tap, owner, name, "hook", start, error);
+            }
+        }
+        const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
+        const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
+        if (!handlers?.length) {
+            if (!def_cb) return null;
+            const ret = def_cb.apply(owner, args);
+            opts.on_result?.(ret);
+            return ret ?? null;
+        }
+
+        const results = [];
+        let value = null;
+        let valuePriority = 0;
+        let prevented = false;
+        let stopped = false;
+        let defaultDone = false;
+        let failure = null;
+
+        // a result replaces the kept one when its result_priority (plain values: 0) is not lower
+        const call = (fn, info) => {
+            let ret;
+            try {
+                ret = info ? fn.call(owner, info, ...args) : fn.apply(owner, args);
+            } catch (error) {
+                if (failure) LiteGraph?.log_error?.("hook", name, "handler failed", error);
+                else failure = {
+                    error
+                };
+                return;
+            }
+            results.push(ret);
+            opts?.on_result?.(ret);
+            if (ret !== null && typeof ret === "object") {
+                if (ret.prevent_default) prevented = true;
+                const priority = typeof ret.result_priority === "number" && !isNaN(ret.result_priority) ? ret.result_priority : 0;
+                if (value === null || priority >= valuePriority) {
+                    value = ret;
+                    valuePriority = priority;
+                }
+                if (ret.stop_replication) stopped = true;
+            } else if (ret !== null && ret !== undefined && (value === null || valuePriority <= 0)) {
+                value = ret;
+                valuePriority = 0;
+            }
+        };
+        const runDefault = () => {
+            defaultDone = true;
+            if (def_cb && !prevented) call(def_cb, null);
+        };
+
+        for (const entry of handlers) {
+            if (prevented && entry.data.is_default) continue;
+            if (entry.priority < 0 && !defaultDone) {
+                runDefault();
+                if (stopped) break;
+            }
+            // unregistered before the call; skipped when a re-entrant dispatch already ran it
+            if (entry.data.call_once && !handler.unregisterCallbackHandler(name, entry.id)) continue;
+            call(entry.callback, {
+                name,
+                id: entry.id,
+                current_return_value: value,
+                data: entry.data,
+                results_chain: results
+            });
+            if (stopped) break;
+        }
+        // stop_replication stops everything after it, the default callback included
+        if (!defaultDone && !stopped) runDefault();
+
+        if (failure) throw failure.error;
+        return value;
+    }
+
+    /**
+     * Fires a point that has both faces, in the one documented order: the hook chain (handlers by
+     * priority, the legacy `owner[name]` as default) and then the typed event. With `veto`, a hook
+     * result equal to it (plain or as `{return_value}`) skips the event.
+     * @param {object} owner the hook host
+     * @param {string} name the hook name; its default callback is `owner[name]`
+     * @param {any[]} args the hook arguments
+     * @param {{_emit?: Function}|null|undefined} emitter where the event goes: LiteGraph, a graph or a canvas
+     * @param {string} type the event type
+     * @param {object|(() => object|null)} detail the payload; a function is called after the hook, and null skips the event
+     * @param {{veto?: any, emit?: object}} [options] `emit` is passed on to `_emit` (`recorded`, `cancelable`)
+     * @returns {any} the hook result, as processCallbackHandlers returns it
+     */
+    static fireHookThenEvent(owner, name, args, emitter, type, detail, options) {
+        const result = owner.processCallbackHandlers(name, {
+            def_cb: owner[name]
+        }, ...args);
+        if (!emitter?._emit || (options && "veto" in options && CallbackHandler.is(result, options.veto))) return result;
+        const payload = typeof detail === "function" ? detail() : detail;
+        if (payload) emitter._emit(type, payload, options?.emit);
+        return result;
+    }
+
+    /** The value a hook settled on: `return_value` of an object result, otherwise the result itself. */
+    static valueOf(result) {
+        return result !== null && typeof result === "object" ? result.return_value : result;
+    }
+
+    /** true when the result is `value`, plain or as `{return_value: value}` (e.g. a `false` veto). */
+    static is(result, value) {
+        return result === value || (result !== null && typeof result === "object" && result.return_value === value);
+    }
+
+    /**
+     * The menu and slot-list hooks' rule: the `return_value` of an object result when it is an
+     * object (null included), with `arrays` also an array-like result itself; otherwise `fallback`.
+     * @param {any} result a hook result
+     * @param {any} [fallback] returned when the result holds no object
+     * @param {boolean} [arrays=false] accept a plain array result (onGetInputs, onGetOutputs, node getExtraMenuOptions)
+     */
+    static objectOf(result, fallback = undefined, arrays = false) {
+        if (result === null || typeof result !== "object") return fallback;
+        if (typeof result.return_value === "object") return result.return_value;
+        return arrays && result.length !== undefined ? result : fallback;
+    }
+
+    /** The pointer hooks' "handled": `true`, or an object result with a truthy `return_value`. */
+    static handled(result) {
+        return result === true || (result !== null && typeof result === "object" && !!result.return_value);
+    }
+}
+
+/**
+ * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
+ * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
+ * The CallbackHandler is created when first needed: reading `cb_handler` or registering a handler.
+ * Dispatching while there is none only calls `onX`.
+ * @param {Function} Class
+ */
+function installHooks(Class) {
+    const proto = Class.prototype;
+    Object.defineProperty(proto, "cb_handler", {
+        configurable: true,
+        /** this object's CallbackHandler (created on first read; assignable, as before) */
+        get() {
+            return (this._cb_handler ||= new CallbackHandler(this));
+        },
+        set(handler) {
+            this._cb_handler = handler;
+        },
+    });
+    const methods = {
+        /** @returns {CallbackHandler} this object's handler registry (created once) */
+        callbackhandler_setup() {
+            return this.cb_handler;
+        },
+        registerCallbackHandler(name, callback, opts) {
+            return this.cb_handler.registerCallbackHandler(name, callback, opts);
+        },
+        unregisterCallbackHandler(name, h_id) {
+            return this._cb_handler ? this._cb_handler.unregisterCallbackHandler(name, h_id) : false;
+        },
+        processCallbackHandlers(name, opts, ...args) {
+            const handler = this._cb_handler;
+            // an overridden processCallbackHandlers on the handler (e.g. a tracing wrapper) still runs
+            if (handler && handler.processCallbackHandlers !== CallbackHandler.prototype.processCallbackHandlers) {
+                return handler.processCallbackHandlers(name, opts, ...args);
+            }
+            return CallbackHandler.run(handler ? handler.ob_ref : this, handler, name, opts, args);
+        },
+        hasCallbackHandlers(name) {
+            return !!this._cb_handler?.hasCallbackHandlers(name);
+        },
+        /**
+         * Registers a hook handler and returns its disposer.
+         * @returns {() => boolean} unregisters the handler
+         */
+        onHook(name, callback, opts) {
+            return this.cb_handler.onHook(name, callback, opts);
+        },
+    };
+    for (const [key, value] of Object.entries(methods)) {
+        Object.defineProperty(proto, key, {
+            value,
+            writable: true,
+            configurable: true
+        });
+    }
+    return Class;
+}
+
+/**
  * @class LiteGraph
  *
  * @NOTE:
@@ -94,7 +574,7 @@ function createNodeBadgeRegistry() {
 
 class LiteGraphClass {
 
-    VERSION = "0.10.10";
+    VERSION = "0.18.0-dev.2";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
     /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
@@ -168,13 +648,16 @@ class LiteGraphClass {
     EVENT = -1; // for outputs
     ACTION = -1; // for inputs
 
-    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "On Request"]; // helper
-    NODE_MODES_COLORS = ["#666", "#422", "#333", "#224", "#626"]; // use with node_box_coloured_by_mode
+    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "Bypass", "On Request"]; // names by mode number
+    NODE_MODES_COLORS = ["#666", "#422", "#333", "#224", "#535", "#626"]; // use with node_box_coloured_by_mode
     ALWAYS = 0;
     ON_EVENT = 1;
     NEVER = 2;
     ON_TRIGGER = 3;
-    ON_REQUEST = 4; // used from event-based nodes, where ancestors are recursively executed on needed
+    BYPASS = 4; // passes inputs to outputs of a matching type and forwards events; 4 as in ComfyUI
+    ON_REQUEST = 5; // runs only when a consumer needs its data (pull); was 4 before mode numbering 2
+    /** the mode numbering this runtime writes as `litegraph_modes` (2: BYPASS = 4, ON_REQUEST = 5) */
+    MODES_VERSION = 2;
 
     UP = 1;
     DOWN = 2;
@@ -193,6 +676,7 @@ class LiteGraphClass {
     AUTOHIDE_TITLE = 3;
     VERTICAL_LAYOUT = "vertical"; // arrange nodes vertically
 
+    showCanvasOptions = false; // the canvas menu offers "Options": graph info (execution model) and canvas switches
     // canvas flags the graph Options panel offers as on/off switches
     availableCanvasOptions = [
         "allow_addOutSlot_onExecuted", "free_resize", "highquality_render", "use_gradients",
@@ -210,7 +694,12 @@ class LiteGraphClass {
     catch_exceptions = true;
     throw_errors = true;
     allow_scripts = false; // nodes should be check this value before executing unsafe code :: does not prevent anything in the main library, implement in nodes :: if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits
-    use_deferred_actions = true; // executes actions during the graph execution flow
+    // use_deferred_actions and the other legacy execution flags are accessors (LEGACY_EXECUTION_FLAGS below)
+    _legacy_flag_values = Object.fromEntries(Object.entries(LEGACY_EXECUTION_FLAGS).map(([name, flag]) => [name, flag.value]));
+    _legacy_flags_assigned = new Set(); // flags a project assigned: the default execution model resolves to "legacy"
+    _default_execution_model = "ancestors";
+    _default_execution_model_set = false;
+    _dispatch_depth = 0; // runtime: nesting of runStep and event entry points (node-error reporting)
     registered_node_types = {}; // nodetypes by string
     node_types_by_file_extension = {}; // used for dropping files in the canvas
     Nodes = {}; // node types by classname
@@ -256,7 +745,24 @@ class LiteGraphClass {
     alt_drag_do_clone_nodes = false; // [true!] very handy, ALT click to clone and drag the new node
     alt_shift_drag_connect_clone_with_input = true; // [true!] very handy, when cloning, keep input connections with SHIFT
 
-    do_add_triggers_slots = false; // [true!] will create and connect event slots when using action/events connections, !WILL CHANGE node mode when using onTrigger (enable mode colors), onExecuted does not need this
+    /**
+     * Create the exec slots (`onTrigger`, `onExecuted`) when an event link is dropped on a node, and
+     * switch the target to ON_TRIGGER. Unassigned (the default), the setting LiteGraph.Node.ExecSlots
+     * and the document's execution model decide (ExecutionEngine.execSlotsFor: on under `ancestors`);
+     * an assigned value wins over the model.
+     */
+    get do_add_triggers_slots() {
+        return this._do_add_triggers_slots ?? false;
+    }
+    set do_add_triggers_slots(value) {
+        this._do_add_triggers_slots = value === undefined ? undefined : !!value;
+    }
+
+    /**
+     * The exec-slot layout for every node, a name (LiteGraph.execSlotLayouts) or a spec; when null
+     * (the default) the setting LiteGraph.Node.ExecSlotLayout decides ("rows" unless changed).
+     */
+    exec_slot_layout = null;
 
     allow_multi_output_for_events = true; // [false!] being events, it is strongly reccomended to use them sequentially, one by one
 
@@ -277,10 +783,6 @@ class LiteGraphClass {
     actionHistory_enabled = false; // cntrlZ, cntrlY
     actionHistoryMaxSave = 300;
 
-    /* EXECUTING ACTIONS AFTER UPDATING VALUES - ANCESTORS */
-    refreshAncestorsOnTriggers = false; // [true!]
-    refreshAncestorsOnActions = false; // [true!]
-    ensureUniqueExecutionAndActionCall = false; // [true!] the new tecnique.. let's make it working best of
 
     // if true, all newly created nodes/links will use string UUIDs for their id fields instead of integers.
     // use this if you must have node IDs that are unique across all graphs and subgraphs.
@@ -296,11 +798,7 @@ class LiteGraphClass {
     canRemoveSlots = false; // use removable = true in specific slot
     canRenameSlots = false; // use nameLocked = false in specific slot
 
-    ensureNodeSingleExecution = false; // OLD this will prevent nodes to be executed more than once for step (comparing graph.iteration)
-    ensureNodeSingleAction = false; // OLD this will prevent nodes to be executed more than once for action call!
-    preventAncestorRecalculation = false; // OLD(?) when calculating the ancestors, set a flag to prevent recalculate the subtree
 
-    allowMultiOutputForEvents = false; // being events, it is strongly reccomended to use them sequentually, one by one
 
     reprocess_slot_while_node_configure = false; // reprocess inputs and output node slots comparing by name, will fix index changes, works on dynamics
 
@@ -312,7 +810,6 @@ class LiteGraphClass {
 
     log_methods = ['error', 'warn', 'info', 'log', 'debug'];
 
-    cb_handler = false;
     debug = true; // enable/disable logging :: in this.debug_level is stored the actual numeric value
     debug_level = 2; // set via this.logging_set_level
 
@@ -342,53 +839,87 @@ class LiteGraphClass {
             return new ContextMenu(...arguments);
         };
         this.CallbackHandler = CallbackHandler;
+        this.ExecutionState = ExecutionState;
+        this.ExecutionEngine = ExecutionEngine;
         this.LibraryManager ??= new LibraryManager();
 
         this.setupPlatform();
+        this.registerBuiltinLibraries();
 
         // base inclusion
         this.includeBasicNodes();
     }
 
+    /** Optional libraries the core uses on demand (loaded only when needed). */
+    registerBuiltinLibraries() {
+        const manager = this.LibraryManager;
+        if (!manager || manager.libraries_known?.dagre) return;
+        manager.registerLibrary({
+            key: "dagre",
+            version: "3.1.3",
+            globalObject: "dagre",
+            description: "Graph layout for the \"dagre\" auto-layout engine (graph.autoLayout)",
+            optional: true,
+            browser: {
+                remote: ["https://cdn.jsdelivr.net/npm/@dagrejs/dagre@3.1.3/dist/dagre.min.js"]
+            },
+            server: {
+                npm: ["@dagrejs/dagre"]
+            },
+        });
+    }
+
     includeBasicNodes() {
-        this.registerNodeType("graph/subgraph", Subgraph);
-        this.registerNodeType("graph/input", GraphInput);
-        this.registerNodeType("graph/output", GraphOutput);
-        this.registerNodeType("graph/function", NodeFunction);
+        this.packs.open({
+            id: "litegraph/core",
+            version: this.VERSION,
+            title: "Subgraphs",
+            description: "Subgraphs and functions: the subgraph node, its graph inputs and outputs, and the function node that runs an inner graph per call.",
+            builtin: true
+        });
+        try {
+            this.registerNodeType("graph/subgraph", Subgraph);
+            this.registerNodeType("graph/input", GraphInput);
+            this.registerNodeType("graph/output", GraphOutput);
+            this.registerNodeType("graph/function", NodeFunction);
+        } finally {
+            this.packs.close("litegraph/core");
+        }
     }
 
-    callbackhandler_setup() {
-        if (this.cb_handler) return;
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        this.registerCallbackHandler = function() {
-            return this.cb_handler.registerCallbackHandler(...arguments);
-        };
-        this.unregisterCallbackHandler = function() {
-            return this.cb_handler.unregisterCallbackHandler(...arguments);
-        };
-        this.processCallbackHandlers = function() {
-            return this.cb_handler.processCallbackHandlers(...arguments);
-        };
+    /**
+     * Typed library events: node-type-registered, node-type-replaced, node-type-unregistered,
+     * graph-created, canvas-created ("*" receives all). See LGraphEventTarget.
+     */
+    get events() {
+        return this._events ??= new LGraphEventTarget(this, (error, event) =>
+            this.log_error("litegraph", "event listener failed", event.type, error));
     }
 
-    registerCallbackHandler() {
-        this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
+    /**
+     * Sets the process-wide dispatch tap, for tracing and profiling (e.g. a per-node execution
+     * trace: phase "hook", name "onExecute", owner the node). `fn({owner, name, phase, ms, error})`
+     * runs after every hook dispatch (phase "hook", error: what the chain threw) and every typed
+     * event dispatch (phase "event", error: the first listener error). Dispatches made inside the
+     * tap are not reported, and a throwing tap is only logged. null removes it.
+     * @param {Function|null} fn
+     * @returns {Function|null} the previous tap
+     */
+    setDispatchTap(fn) {
+        const previous = ListenerList.tap;
+        ListenerList.tap = typeof fn === "function" ? fn : null;
+        return previous;
     }
-    unregisterCallbackHandler() {
-        this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
+
+    /** dispatch only when someone listens (no allocation otherwise) */
+    _emit(type, detail) {
+        return this._events?.has(type) ? this._events.dispatch(type, detail) : null;
     }
 
     /**
      * Builds the metadata of a node type without creating a node.
      * Sources, in order: an optional `static def = {...}` on the class, then the classic static
-     * fields (`title`, `desc`/`description`, `search_aliases`, `capabilities`, `deprecated`,
+     * fields (`title`, `desc`/`description`, `usage`, `search_aliases`, `capabilities`, `deprecated`,
      * `experimental`, `skip_list`), then capability rules from {@link declareCapabilities}.
      * `def.inputs` / `def.outputs` describe the slots when the class declares them (otherwise null:
      * slots are only known after construction).
@@ -410,6 +941,8 @@ class LiteGraphClass {
             type,
             title: own.display_name ?? own.title ?? base_class.title ?? type,
             description: own.description ?? base_class.desc ?? base_class.description ?? "",
+            // how to use the node: a short how-to for the node reference (docs/nodes) and tooltips
+            usage: own.usage ?? base_class.usage ?? "",
             category: own.category ?? base_class.category ?? "",
             search_aliases: Object.freeze([...list(own.search_aliases), ...list(base_class.search_aliases)]),
             capabilities: Object.freeze([...capabilities]),
@@ -417,14 +950,180 @@ class LiteGraphClass {
             experimental: !!(own.experimental ?? base_class.experimental),
             hidden: !!(own.hidden ?? base_class.skip_list),
             source: own.source ?? base_class.source ?? null,
+            icon: own.icon ?? base_class.icon ?? null,
+            pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
+            // execution needs (Wave 6): models, modes, emit, ticks, pure (see ExecutionEngine.normalizeDeclaration)
+            execution: ExecutionEngine.normalizeDeclaration(own.execution ?? base_class.execution),
         });
+    }
+
+    /**
+     * Declares the execution needs of registered node types without editing their classes
+     * (`static def.execution` is the in-class form). Recomputes their definitions.
+     * @param {string|string[]} types
+     * @param {object} execution - {models, modes, default_mode, emit, ticks, pure, loop, immediate_inputs}
+     */
+    declareNodeExecution(types, execution) {
+        for (const type of Array.isArray(types) ? types : [types]) {
+            const base_class = this.registered_node_types[type];
+            if (!base_class) continue;
+            base_class.execution = {
+                ...(base_class.execution ?? {}),
+                ...execution
+            };
+            this.refreshNodeDefinition(type);
+        }
+    }
+
+    /** Display-only slot label. String icons are glyphs/emoji, not URLs or HTML. */
+    getSlotLabel(node, slot, canvasMode = "icon+text") {
+        const label = String(slot.label ?? slot.name ?? "");
+        const icon = typeof slot.label_icon === "string" ? slot.label_icon : "";
+        const mode = slot.label_mode ?? node.properties?.slot_label_mode ?? canvasMode;
+        if (!icon || mode === "text") return label;
+        return mode === "icon" ? icon : icon + (label ? " " + label : "");
+    }
+
+    /**
+     * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
+     * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`
+     * (null: classic), spec `{shape: "circle"|"square"|"diamond"|"triangle", fill, stroke, lineWidth,
+     * alpha, size, glow: {color, radius, alpha}, mark: "slash"|"bar"|"dot", markColor, redraw}`.
+     */
+    nodePinStyles = new Map();
+
+    /** @returns {() => void} disposer */
+    registerNodePinStyle(name, style) {
+        if (typeof name !== "string" || !name || name === "classic") throw new TypeError("node pin style: a name other than \"classic\" is required");
+        if (typeof style !== "function") throw new TypeError(`node pin style ${name}: a function is required`);
+        const previous = this.nodePinStyles.get(name);
+        this.nodePinStyles.set(name, style);
+        return () => {
+            if (this.nodePinStyles.get(name) !== style) return;
+            if (previous) this.nodePinStyles.set(name, previous);
+            else this.nodePinStyles.delete(name);
+        };
+    }
+
+    /**
+     * Named exec-slot layouts. A layout places the built-in `onTrigger` and `onExecuted` slots
+     * (LGraphNode.getExecSlotPos) instead of putting them in the slot rows:
+     * `{normal: {trigger, executed}, vertical: {trigger, executed}}`, each `{x, y, dx, dy, dir}`
+     * (vertical: nodes with `horizontal` slots, on top and bottom). "rows" is the classic look.
+     */
+    execSlotLayouts = new Map([
+        ["edges", Object.freeze({
+            // on the line between title and body, at both ends; arrows point the way the flow goes
+            normal: {
+                trigger: {
+                    x: "left",
+                    y: "body",
+                    dir: 3 /* LEFT */
+                },
+                executed: {
+                    x: "right",
+                    y: "body",
+                    dir: 4 /* RIGHT */
+                }
+            },
+            // above the pin, and at the bottom at the same offset
+            vertical: {
+                trigger: {
+                    x: "pin",
+                    y: "top",
+                    dir: 1 /* UP */
+                },
+                executed: {
+                    x: "pin",
+                    y: "bottom",
+                    dir: 2 /* DOWN */
+                }
+            },
+        })],
+    ]);
+
+    /**
+     * Registers a named exec-slot layout (see execSlotLayouts), for the setting LiteGraph.Node.ExecSlotLayout,
+     * `LiteGraph.exec_slot_layout`, `node.exec_slot_layout` or a node class's static `exec_slot_layout`.
+     * @returns {() => void} disposer
+     */
+    registerExecSlotLayout(name, spec) {
+        if (typeof name !== "string" || !name || name === "rows") throw new TypeError("exec slot layout: a name other than \"rows\" is required");
+        if (!spec || typeof spec !== "object") throw new TypeError(`exec slot layout ${name}: a spec object is required`);
+        const previous = this.execSlotLayouts.get(name);
+        this.execSlotLayouts.set(name, spec);
+        return () => {
+            if (this.execSlotLayouts.get(name) !== spec) return;
+            if (previous) this.execSlotLayouts.set(name, previous);
+            else this.execSlotLayouts.delete(name);
+        };
+    }
+
+    /** @returns {object|null} the layout spec for a name or spec; null for "rows", null or unknown names */
+    resolveExecSlotLayout(nameOrSpec) {
+        if (!nameOrSpec || nameOrSpec === "rows") return null;
+        if (typeof nameOrSpec === "object") return nameOrSpec;
+        return this.execSlotLayouts.get(nameOrSpec) ?? null;
+    }
+
+    /** the layout every node uses unless it has its own: `exec_slot_layout`, else the setting */
+    execSlotLayoutName() {
+        if (this.exec_slot_layout) return this.exec_slot_layout;
+        try {
+            return this.settings?.get("LiteGraph.Node.ExecSlotLayout") ?? "rows";
+        } catch {
+            return "rows";
+        }
+    }
+
+    /** @returns {number[]} the modes a node may use under its graph's execution model */
+    getValidNodeModes(node) {
+        return ExecutionEngine.validModes(node, ExecutionEngine.modelNameFor(node?.graph));
     }
 
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
     getNodeDefinition(type) {
         return this.node_definitions[type] ?? null;
+    }
+
+    /** Recomputes the stored metadata of a registered type (after its pack or capabilities changed). */
+    refreshNodeDefinition(type) {
+        const base_class = this.registered_node_types[type];
+        if (base_class) this.node_definitions[type] = this.describeNodeType(type, base_class);
+    }
+
+    /**
+     * Registers how to replace a node type by another, as data (see PackRegistry.registerReplacement).
+     * @returns {() => void} disposer
+     */
+    registerNodeReplacement(mapping) {
+        this.setupPlatform();
+        return this.packs.registerReplacement(mapping);
+    }
+
+    /**
+     * Registers a named execution model (Wave 6): a set of rules a document can choose in its
+     * `config.execution` (see ExecutionEngine.registerModel).
+     */
+    registerExecutionModel(name, rules) {
+        return ExecutionEngine.registerModel(name, rules);
+    }
+
+    /** @returns {object|null} the rules of an execution model ("legacy" included) */
+    getExecutionModel(name) {
+        return ExecutionEngine.getModel(name);
+    }
+
+    /** @returns {object[]} every execution model, "legacy" first */
+    listExecutionModels() {
+        return ExecutionEngine.listModels();
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a node type */
+    getNodeReplacement(type) {
+        return this.packs?.getReplacement(type) ?? null;
     }
 
     /**
@@ -551,6 +1250,70 @@ class LiteGraphClass {
     }
 
     /**
+     * Registers a value type: how values of that type are edited on the canvas (widget) and in
+     * panels (editor), with default options, coercion, validation and help (see ValueTypeRegistry).
+     * @param {string} name
+     * @param {object} def
+     * @param {{replace?: boolean}} [options] - replace: allow replacing a registered type
+     * @returns {() => void} disposer (restores a replaced definition)
+     */
+    registerValueType(name, def, options) {
+        this.setupPlatform();
+        return this.valueTypes.register(name, def, options);
+    }
+
+    /** @returns {object|null} the resolved value type for a name or alias */
+    getValueType(name) {
+        this.setupPlatform();
+        return this.valueTypes.get(name);
+    }
+
+    /**
+     * Registers (or replaces) a panel editor: how a value is edited in side panels.
+     * `editor.create(ctx)` returns `{element, set(value), focus?(), destroy?()}`; ctx has
+     * {doc, name, value, options, info, type, readonly, row, label, panel, target, commit(v), preview(v)}.
+     * Value types name their editor (`editor`), and property info can name one (`editor` / `widget`).
+     * @param {string} name
+     * @param {{create: Function}} editor
+     * @returns {() => void} disposer (restores the previous editor)
+     */
+    registerPanelEditor(name, editor) {
+        this.setupPlatform();
+        if (typeof name !== "string" || !name) throw new TypeError("panel editor name must be a non-empty string");
+        if (!editor || typeof editor.create !== "function") throw new TypeError(`panel editor ${name}: needs create(ctx)`);
+        const previous = this.panel_editors[name];
+        this.panel_editors[name] = editor;
+        return () => {
+            if (this.panel_editors[name] !== editor) return;
+            if (previous) this.panel_editors[name] = previous;
+            else delete this.panel_editors[name];
+        };
+    }
+
+    /**
+     * Adds a section to a side panel: `panel` "node" (node details) or "options" (graph options;
+     * `tab` "graph", "canvas", "settings" (default) or a new tab id with `tabTitle`).
+     * `render(section, ctx)` fills it: ctx = {panel, section, node?, graph, canvas, tab?}; use
+     * ctx.panel.addRow / addWidget / addNote, which add to this section.
+     * @param {{id: string, panel: "node"|"options", title?: string, tab?: string, tabTitle?: string,
+     *   order?: number, collapsed?: boolean, when?: Function, render: Function}} def
+     * @returns {() => void} disposer
+     */
+    registerPanelSection(def) {
+        this.setupPlatform();
+        if (!def || typeof def.id !== "string" || !def.id) throw new TypeError("panel section id must be a non-empty string");
+        if (def.panel !== "node" && def.panel !== "options") throw new TypeError(`panel section ${def.id}: panel must be "node" or "options"`);
+        if (typeof def.render !== "function") throw new TypeError(`panel section ${def.id}: needs render(section, ctx)`);
+        const entry = {
+            ...def
+        };
+        this.panel_sections.set(def.id, entry);
+        return () => {
+            if (this.panel_sections.get(def.id) === entry) this.panel_sections.delete(def.id);
+        };
+    }
+
+    /**
      * Registers (or replaces) the class implementing a canvas widget type.
      * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
      * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
@@ -601,6 +1364,59 @@ class LiteGraphClass {
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
         this.widget_types ??= defaultWidgetTypes();
+        this.valueTypes ??= new ValueTypeRegistry();
+        this.panel_editors ??= {
+            ...defaultPanelEditors(),
+            ...PanelBuilder.extraEditors()
+        };
+        this.panel_sections ??= new Map();
+        if (!this.settings.has("LiteGraph.Panel.Side")) {
+            // side panels (options, node details): where they dock, their width, remembered state
+            this.settings.define({
+                id: "LiteGraph.Panel.Side",
+                name: "Side panels dock on the",
+                type: "combo",
+                options: ["left", "right"],
+                default: "left",
+                tooltip: "Where the options and node panels open. The ⇆ button in a panel switches it."
+            });
+            this.settings.define({
+                id: "LiteGraph.Panel.Width",
+                name: "Side panel width (px)",
+                type: "number",
+                default: null,
+                hidden: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Panel.Collapsed",
+                type: "json",
+                name: "Collapsed panel sections",
+                default: () => ({}),
+                hidden: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Panel.FollowSelection",
+                name: "The node panel follows the selection",
+                default: false,
+                tooltip: "Selecting another node shows it in the open node panel. The ⌖ button in the panel toggles it."
+            });
+            this.settings.define({
+                id: "LiteGraph.Panel.PropertySort",
+                name: "Node panel property order",
+                type: "combo",
+                options: ["declared", "az", "modified"],
+                default: "declared",
+                tooltip: "declared: as the node type lists them; az: alphabetical; modified: changed values first."
+            });
+            this.settings.define({
+                id: "LiteGraph.Canvas.Defaults",
+                type: "json",
+                name: "Canvas option defaults",
+                default: () => ({}),
+                hidden: true,
+                tooltip: "Written by \"Save canvas as defaults\" in the options panel; applied to new canvases."
+            });
+        }
         if (!this.nodeSearch) {
             this.nodeSearch = new NodeSearch();
             // definition filters: deprecated nodes are hidden unless a setting shows them
@@ -648,12 +1464,115 @@ class LiteGraphClass {
             this.settings.define({
                 id: "LiteGraph.Group.HeaderToggle",
                 name: "Show the mute toggle in group headers",
-                default: true
+                default: true,
+                tooltip: "A dot at the right end of the title (a ring when the group's nodes are muted); a click mutes or unmutes them."
+            });
+            this.settings.define({
+                id: "LiteGraph.Group.BodyDrag",
+                name: "Dragging a group's empty body",
+                type: "combo",
+                options: ["pan", "move"],
+                default: "pan",
+                tooltip: "pan: moves the view; the title bar or Alt+drag moves the group. move: moves the group (legacy LiteGraph)."
+            });
+            this.settings.define({
+                id: "LiteGraph.Group.TitleScale",
+                name: "Keep group titles readable at every zoom",
+                default: true,
+                tooltip: "The title's on-screen size stays between the min and max px below. Off: the title scales with the canvas (legacy)."
+            });
+            this.settings.define({
+                id: "LiteGraph.Group.TitleMinPx",
+                name: "Smallest group title on screen (px)",
+                type: "number",
+                default: 12
+            });
+            this.settings.define({
+                id: "LiteGraph.Group.TitleMaxPx",
+                name: "Largest group title on screen (px)",
+                type: "number",
+                default: 48
             });
             this.settings.define({
                 id: "LiteGraph.Subgraph.PasteLinked",
                 name: "Pasted or duplicated subgraphs share their definition",
                 default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Execution.MaxEventDepth",
+                name: "Deepest nesting of actions and executions in one event chain",
+                default: 256
+            });
+            this.settings.define({
+                id: "LiteGraph.Execution.MaxEventPasses",
+                name: "Passes that deliver queued inner events at a subgraph or function boundary",
+                default: 64
+            });
+            this.settings.define({
+                id: "LiteGraph.Execution.AllowAnyMode",
+                name: "Allow node modes their type declares invalid",
+                default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.PinStyle",
+                name: "Node pin (title box) style",
+                type: "combo",
+                options: ["classic", "modes"],
+                default: "classic",
+                tooltip: "classic: as before. modes: shape and colour by node mode, with run state rings (needs the node_pin extension; otherwise classic)."
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.TitleQuickMenu",
+                name: "Right-click on a node title opens the pin quick menu",
+                default: false,
+                tooltip: "The pin (title box) always opens it when an extension contributes items; \"More…\" opens the full node menu."
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.ExecSlots",
+                name: "Create onTrigger / onExecuted slots when an event link is dropped on a node",
+                type: "combo",
+                options: ["auto", "on", "off"],
+                default: "auto",
+                tooltip: "auto: as the document's execution model says (on under ancestors), unless code assigned LiteGraph.do_add_triggers_slots."
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.ExecSlotLayout",
+                name: "Where the onTrigger / onExecuted slots sit",
+                type: "combo",
+                options: ["rows", "edges"],
+                default: "rows",
+                tooltip: "rows: in the slot rows, as before. edges: on the line between title and body, at both ends (vertical nodes: above the pin and at the bottom)."
+            });
+            this.settings.define({
+                id: "LiteGraph.Compat.UnmarkedMode4",
+                name: "Mode 4 in documents without a LiteGraph version means",
+                type: "combo",
+                options: ["bypass", "on_request"],
+                default: "bypass",
+                tooltip: "bypass: as in ComfyUI and current LiteGraph. on_request: for files saved by LiteGraph builds older than 2026-11-18, where mode 4 was On Request (tools/migrate-modes.mjs rewrites such files)."
+            });
+            this.settings.define({
+                id: "LiteGraph.Node.ExecutionBadge",
+                name: "Show execution problems (graph.checkExecution) as node badges",
+                default: false
+            });
+            // execution problems (graph.checkExecution), refreshed at most twice a second per document
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.ExecutionBadge")) return null;
+                const root = node.graph?.rootGraph;
+                if (!root?.checkExecution) return null;
+                const now = Date.now();
+                if (!root._execution_issues || now - (root._execution_issues_time ?? 0) > 500) {
+                    root.checkExecution();
+                    root._execution_issues_time = now;
+                }
+                const issue = root._execution_issues.get(node);
+                return issue ? {
+                    text: "⚠ exec",
+                    title: issue.message,
+                    fgColor: "#FED",
+                    bgColor: "rgba(150,80,20,0.85)"
+                } : null;
             });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
@@ -668,6 +1587,31 @@ class LiteGraphClass {
                     fgColor: "#FFE",
                     bgColor: "rgba(120,100,30,0.8)"
                 };
+                return null;
+            });
+            // library state: a node waiting for its libraries, or whose libraries failed to load
+            this.settings.define({
+                id: "LiteGraph.Node.LibraryBadge",
+                name: "Show library loading and error badges",
+                default: true
+            });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LibraryBadge")) return null;
+                if (!node.libraries?.length && !node.requiredLibraries?.length) return null;
+                if (node.initialization_state === "loading") return {
+                    text: "loading libraries",
+                    fgColor: "#DDE",
+                    bgColor: "rgba(40,60,110,0.85)"
+                };
+                if (node.initialization_state === "error" && !node.wrong_environment) {
+                    const message = node.initialization_error?.message ?? String(node.initialization_error ?? "");
+                    return {
+                        text: "library error",
+                        title: message,
+                        fgColor: "#FDD",
+                        bgColor: "rgba(140,40,40,0.85)"
+                    };
+                }
                 return null;
             });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? {
@@ -693,6 +1637,82 @@ class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        this.layout ??= new LayoutRegistry();
+        this.palette ??= new NodePalette(this);
+        if (!this.settings.has("LiteGraph.Palette.Favorites")) {
+            this.settings.define({
+                id: "LiteGraph.Palette.Favorites",
+                type: "json",
+                name: "Favourite node types (palette)",
+                default: () => []
+            });
+            this.settings.define({
+                id: "LiteGraph.Palette.Recent",
+                type: "json",
+                name: "Recently inserted node types (palette)",
+                default: () => []
+            });
+        }
+        if (!this.settings.has("LiteGraph.Layout.Engine")) {
+            this.settings.define({
+                id: "LiteGraph.Layout.Engine",
+                name: "Auto-layout engine (dagre, layered, or a registered one)",
+                default: "dagre"
+            });
+        }
+        this.linkRouters ??= new LinkRouterRegistry();
+        this.linkStyles ??= new LinkStyleRegistry();
+        this.RenderLink ??= RenderLink;
+        if (!this.settings.has("LiteGraph.Canvas.LinkStyles")) {
+            this.settings.define({
+                id: "LiteGraph.Canvas.LinkStyles",
+                type: "json",
+                name: "Active link styles, in order (spotlight, dim-by-type, hidden, labelled, or registered ones)",
+                default: () => []
+            });
+            this.settings.define({
+                id: "LiteGraph.Canvas.HiddenLinkTypes",
+                type: "json",
+                name: "Slot types whose links the \"hidden\" link style does not draw",
+                default: () => []
+            });
+            this.settings.define({
+                id: "LiteGraph.Canvas.Minimap",
+                name: "Show a minimap on canvases (Editor)",
+                default: false
+            });
+        }
+        if (!this.settings.has("LiteGraph.Canvas.ExecutionOverlays")) {
+            this.settings.define({
+                id: "LiteGraph.Canvas.ExecutionOverlays",
+                name: "Show node status, progress and errors on the canvas",
+                default: true
+            });
+        }
+        if (!this.packs) {
+            this.packs = new PackRegistry(this);
+            this.settings.define({
+                id: "LiteGraph.Packs.Stamp",
+                name: "Stamp the pack and its version on nodes of non-builtin packs",
+                default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Packs.AutoReplace",
+                name: "Apply automatic node replacements when loading",
+                default: true
+            });
+            this.settings.define({
+                id: "LiteGraph.Packs.AllowIncompatible",
+                name: "Register packs whose litegraph requirement does not match",
+                default: false
+            });
+            this.settings.define({
+                id: "LiteGraph.Packs.Disabled",
+                type: "json",
+                name: "Packs whose setup does not run",
+                default: () => []
+            });
+        }
     }
 
     // set logging debug_level
@@ -852,16 +1872,20 @@ class LiteGraphClass {
         if (classname) {
             this.Nodes[classname] = base_class;
         }
+        this.packs?._onTypeRegistered(type);
         this.node_definitions[type] = this.describeNodeType(type, base_class);
 
-        this.processCallbackHandlers("onNodeTypeRegistered", {
-            def_cb: this.onNodeTypeRegistered
-        }, type, base_class);
-
+        CallbackHandler.fireHookThenEvent(this, "onNodeTypeRegistered", [type, base_class], this, "node-type-registered", {
+            type,
+            ctor: base_class,
+            previous: prev ?? null
+        });
         if (prev) {
-            this.processCallbackHandlers("onNodeTypeReplaced", {
-                def_cb: this.onNodeTypeReplaced
-            }, type, base_class, prev);
+            CallbackHandler.fireHookThenEvent(this, "onNodeTypeReplaced", [type, base_class, prev], this, "node-type-replaced", {
+                type,
+                ctor: base_class,
+                previous: prev
+            });
         }
 
         // warnings
@@ -906,10 +1930,15 @@ class LiteGraphClass {
         }
         delete this.registered_node_types[base_class.type];
         delete this.node_definitions[base_class.type];
+        this.packs?._onTypeUnregistered(base_class.type);
         // Nodes is keyed by class name (base_class.constructor is always Function)
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
         }
+        this._emit("node-type-unregistered", {
+            type: base_class.type,
+            ctor: base_class
+        });
     }
 
     /**
@@ -1152,7 +2181,12 @@ class LiteGraphClass {
         node.size ??= node.computeSize();
         node.pos ??= LiteGraph.DEFAULT_POSITION.concat();
         node.mode ??= LiteGraph.ALWAYS;
+        // the constructor's mode: when still unchanged at graph.add, a declared type gets its model's default
+        node._constructed_mode = node.mode;
 
+        // provenance: nodes of non-builtin packs remember their pack (a loaded node keeps its stored stamp)
+        const stamp = this.packs?.stampFor(type);
+        if (stamp) Object.assign(node.properties, stamp);
 
         // extra options
         Object.assign(node, options);
@@ -1467,7 +2501,7 @@ class LiteGraphClass {
      * @param {*} y 
      * @param {*} maxWidth 
      * @param {*} lineHeight 
-     * @returns 
+     * @returns {Object} `{lines, height}`: the lines drawn and the total height (`max`: the width of the last wrapped line)
      */
     canvasFillTextMultiline(context, text, x, y, maxWidth, lineHeight) {
         var words = (text + "").trim().split(' ');
@@ -1724,6 +2758,9 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
         });
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LiteGraphClass);
+
 // if(typeof(root) == "undefined" || !root){
 //     var root = getGlobalObject();
 // }
@@ -1732,6 +2769,71 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
 // export var setGlobalVariable = setGlobalVariable;
 // export var getGlobalVariable = getGlobalVariable;
 
+
+/**
+ * The legacy execution flags (Wave 6). Each is an accessor: assigning one notes it, and the default
+ * execution model of new graphs then resolves to "legacy" (see LiteGraph.default_execution_model).
+ * Reading and writing keeps working; they are deprecated and removed no earlier than 0.20.
+ */
+const LEGACY_EXECUTION_FLAGS = Object.freeze({
+    use_deferred_actions: {
+        value: true,
+        replacement: 'the "step" execution model (graph.setExecutionModel("step"))'
+    },
+    refreshAncestorsOnTriggers: {
+        value: false,
+        replacement: 'the "ancestors" execution model'
+    },
+    refreshAncestorsOnActions: {
+        value: false,
+        replacement: 'the "ancestors" execution model'
+    },
+    ensureUniqueExecutionAndActionCall: {
+        value: false,
+        replacement: 'the "ancestors" execution model (memo per frame and call)'
+    },
+    ensureNodeSingleExecution: {
+        value: false,
+        replacement: 'the "strict" execution model'
+    },
+    ensureNodeSingleAction: {
+        value: false,
+        replacement: 'the "strict" execution model'
+    },
+    preventAncestorRecalculation: {
+        value: false,
+        replacement: 'the "ancestors" execution model (memo per frame and call)'
+    },
+});
+for (const name of Object.keys(LEGACY_EXECUTION_FLAGS)) {
+    Object.defineProperty(LiteGraphClass.prototype, name, {
+        configurable: true,
+        enumerable: true,
+        get() {
+            return this._legacy_flag_values[name];
+        },
+        set(value) {
+            this._legacy_flag_values[name] = value;
+            if (!this._legacy_flags_assigned.has(name)) {
+                this._legacy_flags_assigned.add(name);
+                // deprecated: said once per flag (removal no earlier than 0.20)
+                this.log_warn?.("deprecated", `LiteGraph.${name} is deprecated (removal no earlier than 0.20); use ${LEGACY_EXECUTION_FLAGS[name].replacement}. Assigning it makes new graphs run under the "legacy" execution model unless LiteGraph.default_execution_model is set.`);
+            }
+        },
+    });
+}
+Object.defineProperty(LiteGraphClass.prototype, "default_execution_model", {
+    configurable: true,
+    enumerable: true,
+    /** the model of new graphs ("ancestors"); "legacy" when a legacy flag was assigned and this was not */
+    get() {
+        return this._default_execution_model_set ? this._default_execution_model : ExecutionEngine.resolveDefaultModel();
+    },
+    set(value) {
+        this._default_execution_model = value;
+        this._default_execution_model_set = true;
+    },
+});
 
 if (!getGlobalVariable("LiteGraph")) {
     setGlobalVariable("LiteGraph", new LiteGraphClass());
@@ -1743,381 +2845,624 @@ if (!getGlobalVariable("LiteGraph")) {
     // LGInst.log_info("LiteGraph initialized",LGInst.getTime());
 }
 const LiteGraph = getGlobalVariable("LiteGraph");
+// the legacy flags (LEGACY_EXECUTION_FLAGS) are defined with their accessors in litegraph.js
+
 /**
- * WIP
- * intended to replace direct (single) assignment of callbacks [ event entrypoint ]
+ * Execution models and the execution engine (Wave 6, plan agents/plans/2026-11-22-events-execution.md).
+ *
+ * A model is a named set of rules, chosen per document in the root graph's `config.execution`:
+ * - `ancestors` (default for new graphs): events are delivered immediately; before an action, a
+ *   trigger or an ALWAYS node's turn in the step, the target's ON_REQUEST data ancestors are pulled,
+ *   each at most once per frame or call unless one of its inputs has newer data;
+ * - `step`: deferred delivery (today's core default);
+ * - `strict`: deferred delivery, each node executes at most once per frame;
+ * - `event`: immediate delivery, no refresh;
+ * - `legacy`: documents saved without the field; the process-wide flags decide, exactly as before.
+ *
+ * The core methods (`triggerSlot`, `actionDo`, `doExecute`, `getInputData(force)`, `runStep`,
+ * the subgraph boundaries) keep today's code for `legacy` and delegate to this engine otherwise.
  */
-class CallbackHandler {
 
-    debug = false;
+/** reasons carried by `event-dropped {node, path, reason, setting?}` */
+const EVENT_DROP_REASONS = Object.freeze([
+    "reentry", "refreshing", "no-handler", "mode", "stopped-queue", "max-passes", "max-depth", "cycle", "once-per-frame",
+]);
 
-    constructor(ref) {
-        this.callbacks_handlers = {};
-        this.ob_ref = ref;
-        if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("CallbackHandler Initialize callbacks", ref);
+const RULE_DEFAULTS = Object.freeze({
+    delivery: "deferred",
+    refresh: "none",
+    frame_pull: false,
+    once_per_frame: false,
+    default_mode: 0, // LiteGraph.ALWAYS
+    exec_slots: false, // create onTrigger / onExecuted when an event link is dropped on a node
+});
+
+class ExecutionEngine {
+    static models = new Map();
+    static LEGACY = Object.freeze({
+        name: "legacy",
+        legacy: true,
+        title: "Legacy (global flags)",
+        description: "Documents saved without a model: the global flags (use_deferred_actions, refreshAncestorsOn*, ...) decide, as before Wave 6."
+    });
+
+    /** a global data version, stamped on links by setOutputData */
+    static _version = 0;
+    /** the current external call (an event chain started outside a step) */
+    static _call = null;
+    static _callCount = 0;
+    /** nesting of actions and executions in non-legacy models (MaxEventDepth) */
+    static _depth = 0;
+    /** nesting of pulls (triggers fired while pulling are dropped as "refreshing") */
+    static _pulling = 0;
+
+    /**
+     * Registers an execution model.
+     * @param {string} name
+     * @param {{delivery?: "deferred"|"immediate", refresh?: "none"|"ancestors", frame_pull?: boolean, once_per_frame?: boolean, default_mode?: number, title?: string, description?: string}} rules
+     */
+    static registerModel(name, rules = {}) {
+        if (typeof name !== "string" || !name) throw new TypeError("execution model: a name is required");
+        if (name === "legacy") throw new Error("execution model: \"legacy\" is built in and cannot be replaced");
+        const model = Object.freeze({
+            ...RULE_DEFAULTS,
+            ...rules,
+            name,
+            legacy: false
+        });
+        if (!["deferred", "immediate"].includes(model.delivery)) throw new Error(`execution model ${name}: delivery must be "deferred" or "immediate"`);
+        if (!["none", "ancestors"].includes(model.refresh)) throw new Error(`execution model ${name}: refresh must be "none" or "ancestors"`);
+        this.models.set(name, model);
+        return model;
+    }
+
+    static getModel(name) {
+        if (name === "legacy") return this.LEGACY;
+        return this.models.get(name) ?? null;
+    }
+
+    static listModels() {
+        return ["legacy", ...this.models.keys()].map((name) => this.getModel(name));
+    }
+
+    /** The model a new graph gets: `LiteGraph.default_execution_model`, or `legacy` once a legacy flag was assigned. */
+    static resolveDefaultModel() {
+        const lg = LiteGraph;
+        if (lg._default_execution_model_set) return lg._default_execution_model;
+        if (lg._legacy_flags_assigned?.size) return "legacy";
+        return lg._default_execution_model ?? "ancestors";
+    }
+
+    /** the name of the model a graph runs under (resolved from its root) */
+    static modelNameFor(graph) {
+        const root = graph?.rootGraph ?? graph;
+        if (!root) return this.resolveDefaultModel();
+        const name = root.config?.execution;
+        if (typeof name === "string" && name) return this.getModel(name) ? name : "legacy";
+        if (root._execution_from_document) return "legacy";
+        return this.resolveDefaultModel();
+    }
+
+    /** the rules a graph runs under */
+    static rulesFor(graph) {
+        return this.getModel(this.modelNameFor(graph)) ?? this.LEGACY;
+    }
+
+    // ---- settings ------------------------------------------------------------------------------
+
+    static setting(id, fallback) {
+        try {
+            const value = LiteGraph.settings?.get(id);
+            return value === undefined ? fallback : value;
+        } catch {
+            return fallback;
+        }
     }
 
     /**
-     * subscribe callbacks for events
-     * @method registerCallbackHandler
-     * @param {string} name event name to register to
-     * @param {function} callback function to call when processing the event name
-     * @param {object} opts options for registerCallBackHandler
-     * @param {number} opts.priority default handler as 0, lesser value executes after, greater value will be execute before but their value eventually overridden in case if not stopping the chain
-     * @param {boolean} opts.is_default original library handlers would have true, while custom registered has choice to be eventually treathed as such
-     * @returns {number} the id of the handler for the specified name
+     * Whether dropping an event link on a node creates its exec slots (`onTrigger`, `onExecuted`):
+     * the setting LiteGraph.Node.ExecSlots when "on" or "off"; else an assigned
+     * `LiteGraph.do_add_triggers_slots`; else the model's `exec_slots` rule (on under `ancestors`).
      */
-    registerCallbackHandler = function(name, callback, opts) {
-        if (!opts || typeof(opts) !== "object") opts = {};
-        const def_opts = {
-            priority: 0,
-            is_default: false,
-            call_once: false
-        };
-        opts = Object.assign(def_opts, opts);
+    static execSlotsFor(graph) {
+        const setting = this.setting("LiteGraph.Node.ExecSlots", "auto");
+        if (setting === "on") return true;
+        if (setting === "off") return false;
+        if (LiteGraph._do_add_triggers_slots !== undefined) return LiteGraph._do_add_triggers_slots;
+        return !!this.rulesFor(graph).exec_slots;
+    }
 
-        if (typeof(callback) !== "function") {
-            if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_error("registerCallbackHandler", "Invalid callback");
-            return false;
-        }
+    static get maxEventDepth() {
+        return Number(this.setting("LiteGraph.Execution.MaxEventDepth", 256)) || 256;
+    }
+    static get maxEventPasses() {
+        return Number(this.setting("LiteGraph.Execution.MaxEventPasses", 64)) || 64;
+    }
 
-        if (typeof(this.callbacks_handlers[name]) === "undefined") {
-            this.callbacks_handlers[name] = {
-                last_id: 0,
-                handlers: []
-            };
-        }
-        const h_id = this.callbacks_handlers[name].last_id++;
+    // ---- reporting -------------------------------------------------------------------------------
 
-        if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("registerCallbackHandler", "new callback handler", name, h_id);
-
-        this.callbacks_handlers[name].handlers.push({
-            id: h_id,
-            priority: opts.priority,
-            callback: callback,
-            data: opts, // enqueue passed options, can store info in here
-        });
-
-        // sort descending
-        this.callbacks_handlers[name].handlers.sort((a, b) => b.priority - a.priority);
-
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("registerCallbackHandler","sorted",this.callbacks_handlers[name]);
-
-        return h_id; // return the cbhandle id
-    };
     /**
-     * 
-     * @param {string} name event name to unregister from
-     * @param {number} h_id the handler pointer, need to be saved when registering the callback
-     * @returns {boolean} true if found
+     * Reports a refused event or execution: `event-dropped {node, path, reason, setting?, message}` on
+     * the root graph (only when someone listens), plus one `log_warn` per node and reason.
      */
-    unregisterCallbackHandler(name, h_id) {
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("unregisterCallbackHandler","Checking in handlers",this.callbacks_handlers,name,h_id);
-        if (typeof(this.callbacks_handlers[name]) !== "undefined") {
-            const nHandlers = this.callbacks_handlers[name].handlers.length;
-            this.callbacks_handlers[name].handlers = this.callbacks_handlers[name].handlers.filter(function(obj) {
-                // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("unregisterCallbackHandler","Checking handle",obj.id,h_id);
-                if (obj.id === h_id) {
-                    LiteGraph.log_info("unregisterCallbackHandler", name, h_id);
-                }
-                return obj.id !== h_id;
-            });
-            if (this.callbacks_handlers[name].handlers.length < nHandlers) {
-                return true;
+    static drop(node, reason, extra = {}) {
+        const graph = node?.graph;
+        const root = graph?.rootGraph ?? graph;
+        const message = extra.message ?? `${node?.type ?? "node"} ${node?.id ?? ""}: event dropped (${reason})${extra.setting ? `; setting ${extra.setting}` : ""}`;
+        if (node && reason !== "mode") { // a muted (NEVER) target is intentional: event only, no warning
+            node._dropped_reported ??= new Set();
+            if (!node._dropped_reported.has(reason)) {
+                node._dropped_reported.add(reason);
+                LiteGraph.log_warn?.("execution", message);
             }
         }
-        LiteGraph.log_warn("unregisterCallbackHandler", "no handlers for", name, h_id);
+        if (root?._events?.has("event-dropped")) {
+            root._emit("event-dropped", {
+                node: node ?? null,
+                path: node?.getPath?.() ?? null,
+                reason,
+                ...extra,
+                message
+            });
+        }
         return false;
     }
 
-    /**
-     * Executes the callbacks and cache their result
-     * execution if from higher priority down
-     * handler data is passed as first argument, than all the additional pars passed to this
-     * @param {string} name the event name for which execute the callbacks registered to
-     * @param {object} opts specify the option here
-     * @param {object} opts.def_cb can specify a callback here to be treated as default callback, executed after the >= 0, eventually prevented
-     * @returns {null|boolean|object} get back default result, and along the chain
-     */
-    processCallbackHandlers(name, opts /*, .. arguments */ ) {
-        if (!opts || typeof(opts) !== "object") opts = {};
-        const def_opts = {
-            // WIP :: think try and implement options
-            // process: "all", return: "first_result", skip_null_return: true, append_last_return: false
-            // min_piority: false, max_priority: false
-            def_cb: false // the [default] callback : in LG this is the previous(current) function called when an event is executed, can be undefined or null
+    // ---- data versions and memo -----------------------------------------------------------------
+
+    /** stamps the links of an output with a new data version (called by setOutputData) */
+    static stamp(links, graph) {
+        if (!links?.length || !graph) return;
+        const version = ++this._version;
+        for (const id of links) {
+            const link = graph.links[id];
+            if (link) link._data_version = version;
+        }
+    }
+
+    /** the newest data version on a node's data inputs */
+    static inputStamp(node) {
+        let stamp = 0;
+        const graph = node.graph;
+        for (const input of node.inputs ?? []) {
+            if (input.link == null || input.type === LiteGraph.ACTION || input.type === LiteGraph.EVENT) continue;
+            const version = graph.links[input.link]?._data_version ?? 0;
+            if (version > stamp) stamp = version;
+        }
+        return stamp;
+    }
+
+    /** the frame and call a run belongs to */
+    static context(graph) {
+        return {
+            frame: graph?._stepping ? graph._frame : null,
+            call: this._call
         };
-        opts = Object.assign(def_opts, opts);
-        var cbHandle = this;
+    }
 
-        if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("**processCallbackHandlers**", ...arguments);
+    static isFresh(node, ctx = this.context(node.graph)) {
+        const memo = node._exec_memo;
+        if (!memo) return false;
+        const current = (ctx.frame != null && memo.frame === ctx.frame) || (ctx.call != null && memo.call === ctx.call);
+        return current && this.inputStamp(node) <= memo.stamp;
+    }
 
-        // ensure callback name is present on this
-        if (typeof(this.callbacks_handlers[name]) == "undefined") {
-            this.callbacks_handlers[name] = {
-                last_id: 0,
-                handlers: []
-            };
+    static remember(node, ctx = this.context(node.graph)) {
+        node._exec_memo = {
+            frame: ctx.frame,
+            call: ctx.call,
+            stamp: this.inputStamp(node)
+        };
+    }
+
+    // ---- pull ------------------------------------------------------------------------------------
+
+    /**
+     * The nodes a pull runs for a node's data inputs (direct origins): ON_REQUEST and BYPASS nodes,
+     * and an ALWAYS node that never ran yet (its first value, e.g. a constant before its first turn).
+     */
+    static requestOrigins(node) {
+        const graph = node.graph;
+        const origins = [];
+        for (const input of node.inputs ?? []) {
+            if (input.link == null || input.type === LiteGraph.ACTION || input.type === LiteGraph.EVENT) continue;
+            const link = graph.links[input.link];
+            const origin = link && graph.getNodeById(link.origin_id);
+            if (!origin || origins.includes(origin)) continue;
+            // not a ticking node, and not one with a connected event output: run in a pull, its events
+            // would be dropped as "refreshing" (audit finding 10); both give their value at their turn
+            const firstValue = origin.mode === LiteGraph.ALWAYS && !origin._exec_memo && origin.onExecute && !this.declarationOf(origin)?.ticks &&
+                !this.emitsEvents(origin);
+            // a bypassed node is a wire: pulling through it refreshes what it passes on
+            if (origin.mode === LiteGraph.ON_REQUEST || origin.mode === LiteGraph.BYPASS || firstValue) origins.push(origin);
         }
+        return origins;
+    }
 
-        var aArgs = ([].slice.call(arguments)).slice(2);
-        // if (typeof(this)=="object" && typeof(this.debug)!=="undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("Cleaned arguments (slice 2)",aArgs,"original",arguments);
+    /** true when a node has an event output with links (its events cannot fire inside a pull) */
+    static emitsEvents(node) {
+        return (node.outputs ?? []).some((o) => (o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION) && o.links?.length);
+    }
 
-        // previous implementation of converting arguments
-        // using shorter ([].slice.call(arguments)).slice(2)
-        // can clean when checked works fine
-        // function clean_args(args) {
-        //     let aRet = [];
-        //     for(let iA=2; iA<args.length; iA++) {
-        //         // if(typeof(args[iA])!=="undefined")
-        //         aRet.push(args[iA]);
-        //     }
-        //     return aRet;
-        // }
-        // var aArgs = clean_args(arguments);
+    /**
+     * Pulls the ON_REQUEST data ancestors of a node: each runs at most once per frame or call,
+     * unless one of its inputs has a newer data version. ALWAYS ancestors are never re-run.
+     */
+    static pull(node, visiting = new Set()) {
+        if (!node?.graph || !node.inputs) return;
+        for (const origin of this.requestOrigins(node)) this.ensureFresh(origin, visiting);
+    }
 
-        var stepRet = null; // temp step specific result 
-        var cbRet = null; // progressive final result
-        var aResChain = []; // progressive results chain
-        var oCbInfo = {}; // info passed to the callback
-        var cbResPriority = 0; // incremental result priority
-        var defCbChecked = false; // flag activated when executed the [default] callback
-        var preventDefCb = false; // if to prevent the [default] callback execution (set eventually by some callback result)
-        var breakCycle = false; // if to stop callback execution (set eventually by some callback result)
-
-        var executeDefaultCb = function() {
-            if (!preventDefCb && typeof(opts.def_cb) == "function") {
-                // execute default callback
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_verbose("Calling DEFAULT w Args", ...aArgs);
-                // stepRet = opts.def_cb(...aArgs); // OLD, not working because of bas THIS 
-                // call method on ref object (LiteGraph, LGraphNode, LGraphCanvas, ...) in othe method `this` will than correctly set
-                stepRet = opts.def_cb.call(cbHandle.ob_ref, ...aArgs); // could pass more data
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "default callback executed", stepRet);
-                checkStepRet();
-            } else {
-                if (typeof(opts.def_cb) == "function") {
-                    if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "preventing default passed", opts.def_cb);
-                } else {
-                    // not passed
-                }
-            }
-            defCbChecked = true;
+    /** runs an ON_REQUEST node if it is not fresh (its own ON_REQUEST inputs first) */
+    static ensureFresh(node, visiting = new Set()) {
+        if (visiting.has(node)) return this.drop(node, "cycle", {
+            message: `${node.type} ${node.id}: ON_REQUEST cycle while pulling data; the cycle is not re-run`
+        });
+        visiting.add(node);
+        try {
+            this.pull(node, visiting);
+        } finally {
+            visiting.delete(node);
         }
-        // results should be structured a object (to try to return a final value or change chain execution behavior)
-        /**
-         * @prop {*} return_value assign the return ( could be overriden )
-         * @prop {number} result_priority assign proper values to allow handlers with higher priority to have not their return_value overridden 
-         * @prop {boolean} prevent_default stop default execution ( force only when really needed )
-         * @prop {boolean} stop_replication stop the execution chain
-         */
-        var buildRetObj = function() {
-            // TODO: implement object return construction :: THAN replace all result checking in the libs to easier object ensured checks
+        const ctx = this.context(node.graph);
+        if (this.isFresh(node, ctx)) return;
+        this._pulling++;
+        try {
+            node.doExecute(undefined, {
+                action_call: ctx.call ?? `frame_${ctx.frame}`
+            });
+        } finally {
+            this._pulling--;
         }
-        /**
-         * called for each callback to push and merge results
-         * void
-         */
-        // a result replaces the current one only when its result_priority (default 0) is not lower
-        // than the priority of the result currently held
-        var acceptResult = function(value, priority) {
-            if (typeof(priority) !== "number" || isNaN(priority)) priority = 0;
-            if (cbRet === null || priority >= cbResPriority) {
-                cbRet = value;
-                cbResPriority = priority;
-            }
-        }
-        var checkStepRet = function() {
-            aResChain.push(stepRet); // cache result
-            opts.on_result?.(stepRet); // Observe each result, including overridden async cleanup hooks.
-            // check result for structured object
-            if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stepRet check", stepRet);
-            if (stepRet !== null && typeof(stepRet) == "object") {
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "result is object", stepRet);
-                if (typeof(stepRet.prevent_default) !== "undefined" && stepRet.prevent_default) {
-                    preventDefCb = true;
-                }
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "object result", stepRet, oCbInfo);
-                acceptResult(stepRet, stepRet.result_priority);
-                if (typeof(stepRet.stop_replication) !== "undefined" && stepRet.stop_replication) {
-                    if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "stop_replication", oCbInfo);
-                    breakCycle = true;
-                    return; // will break;
-                }
-            } else {
-                if (cbHandle.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "checkStepRet", "result NOT object", stepRet);
-                // ? save current result if not null or undefined (?)
-                if (stepRet !== null && stepRet !== undefined) {
-                    acceptResult(stepRet, 0); // plain values count as result_priority 0
-                }
-            }
-        }
-        for (let cbhX of this.callbacks_handlers[name].handlers) {
+        this.remember(node, ctx);
+    }
 
-            // eventually prevent cb marked as default
-            if (preventDefCb && cbhX.data.is_default) {
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers", "preventing default registered", cbhX);
+    // ---- delivery --------------------------------------------------------------------------------
+
+    /** sends an event from an output to its links (non-legacy models) */
+    static triggerSlot(node, slot, param, link_id, options, rules) {
+        const graph = node.graph;
+        const output = node.outputs[slot];
+        // a node that declares emit: "immediate" (loops, Sequence) delivers now, with a refresh, in every model
+        const emitNow = this.declarationOf(node)?.emit === "immediate";
+        if (this._pulling > 0) return this.drop(node, "refreshing", {
+            message: `${node.type} ${node.id}: an event fired while its data was pulled is dropped (event emitters cannot be ON_REQUEST)`
+        });
+        graph._last_trigger_time = LiteGraph.getTime();
+        for (const id of [...output.links]) {
+            if (link_id != null && link_id != id) continue;
+            const link = graph.links[id];
+            if (!link) continue;
+            link._last_time = LiteGraph.getTime();
+            const target = graph.getNodeById(link.target_id);
+            if (!target) continue;
+            if (target.mode === LiteGraph.NEVER) {
+                this.drop(target, "mode", {
+                    message: `${target.type} ${target.id}: the node is NEVER; the event is not delivered`
+                });
                 continue;
             }
-
-            // execute default if already processed the ones >= 0
-            if (cbhX.priority < 0 && !defCbChecked) {
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_verbose("processCallbackHandlers", "process default passed", "nextCb:", cbhX);
-                executeDefaultCb();
-                if (breakCycle) break;
-            }
-
-            if (cbhX.data.call_once) {
-                this.unregisterCallbackHandler(name, cbhX.id);
-                if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "unregistered call_once", cbhX.id);
-            }
-
-            oCbInfo = {
-                name: name // name of the handler
-                    ,
-                id: cbhX.id // id of the handler for the name
-                    ,
-                current_return_value: cbRet // current temporary value (if >= second call and previous return a value) 
-                    ,
-                data: cbhX.data // pass the priority and the additional data passed
-                    ,
-                results_chain: aResChain
-                // opts: def_opts
+            const input = target.inputs?.[link.target_slot];
+            const call = {
+                ...options
             };
-
-            // execute callback
-            // OLD, not working because of bas THIS : stepRet = cbhX.callback(oCbInfo,...aArgs);
-            // call method on ref object (LiteGraph, LGraphNode, LGraphCanvas, ...) in the method `this` will than correctly set
-            stepRet = cbhX.callback.call(this.ob_ref, oCbInfo, ...aArgs);
-
-            if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "callback executed", stepRet, oCbInfo);
-
-            // push result
-            checkStepRet();
-            if (typeof(this) == "object" && typeof(this.debug) !== "undefined" && this.debug && LiteGraph !== undefined) LiteGraph.log_debug("processCallbackHandlers", "result checked", "cbRet", cbRet, "aResChain", aResChain, "cbResPriority", cbResPriority, "defCbChecked", defCbChecked, "preventDefCb", preventDefCb, "breakCycle", breakCycle);
-            if (breakCycle) break;
-
-        } // end cycle
-
-        // run the default callback if no handler ran it yet, unless the chain was stopped
-        // (stop_replication stops everything after it, the default callback included)
-        if (!defCbChecked && !breakCycle) {
-            executeDefaultCb();
-        }
-
-        // if(cbRet===null){
-        //     // return default true if no callbacks specified a return value
-        //     // [ some original LG callback execution checks for boolean return ]
-        //     cbRet = true;
-        // }
-        return cbRet;
-
-        // could return obj instead and there check for values, etc ..
-        // TODO would be probably better to always return an object to than check for result and make easier code in implementation
-    }
-}
-/**
- * Typed events for graphs and canvases, alongside CallbackHandler hooks.
- *
- *   const off = graph.events.on("node-added", (event) => console.log(event.detail.node));
- *   off(); // unsubscribe
- *
- * Listeners receive {type, detail, target, cancelable, defaultPrevented, preventDefault()}.
- * A throwing listener is logged and does not stop the others (safe in headless runners).
- * Design after Comfy-Org/litegraph.js CustomEventTarget (MIT); runtime-independent implementation.
- */
-class LGraphEvent {
-    constructor(type, detail, target, cancelable = false) {
-        this.type = type;
-        this.detail = detail;
-        this.target = target;
-        this.cancelable = cancelable;
-        this.defaultPrevented = false;
-    }
-
-    preventDefault() {
-        if (this.cancelable) this.defaultPrevented = true;
-    }
-}
-
-class LGraphEventTarget {
-    /**
-     * @param {object} [owner] - reported as event.target
-     * @param {(error: unknown, event: LGraphEvent) => void} [onError] - listener error reporter
-     */
-    constructor(owner, onError) {
-        this.owner = owner;
-        this.onError = onError;
-        this._listeners = new Map();
-    }
-
-    /**
-     * Subscribes to an event type.
-     * @param {string} type
-     * @param {(event: LGraphEvent) => void} listener
-     * @param {{once?: boolean, signal?: AbortSignal}} [options]
-     * @returns {() => void} unsubscribe
-     */
-    on(type, listener, options = {}) {
-        if (typeof listener !== "function") throw new TypeError("listener must be a function");
-        if (options.signal?.aborted) return () => {};
-        if (!this._listeners.has(type)) this._listeners.set(type, []);
-        const entry = {
-            listener,
-            once: !!options.once
-        };
-        this._listeners.get(type).push(entry);
-        const off = () => this._remove(type, entry);
-        options.signal?.addEventListener?.("abort", off, {
-            once: true
-        });
-        return off;
-    }
-
-    /** subscribes for a single event */
-    once(type, listener, options = {}) {
-        return this.on(type, listener, {
-            ...options,
-            once: true
-        });
-    }
-
-    /** removes a listener added with on() */
-    off(type, listener) {
-        const entry = this._listeners.get(type)?.find((item) => item.listener === listener);
-        if (entry) this._remove(type, entry);
-    }
-
-    /** true when anything listens to type */
-    has(type) {
-        return !!this._listeners.get(type)?.length;
-    }
-
-    /**
-     * Dispatches an event to the current listeners (in subscription order).
-     * @returns {LGraphEvent} check defaultPrevented for cancelable events
-     */
-    dispatch(type, detail, options = {}) {
-        const event = new LGraphEvent(type, detail, this.owner, !!options.cancelable);
-        const entries = this._listeners.get(type);
-        if (!entries?.length) return event;
-        for (const entry of entries.slice()) {
-            if (entry.once) this._remove(type, entry);
-            try {
-                entry.listener.call(this.owner, event);
-            } catch (error) {
-                if (this.onError) this.onError(error, event);
-                else console.error?.("[LG] event listener failed", type, error);
+            if (target.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now, in every model
+                call.action_call ??= `${node.id}_act_${LiteGraph.uuidv4()}`;
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
+                target.actionDo(input?.name, param, call, link.target_slot);
+                continue;
+            }
+            const asTrigger = input?.name === "onTrigger" || (target.mode === LiteGraph.ON_TRIGGER && !target.onAction);
+            if (asTrigger) {
+                call.action_call ??= `${node.id}_trigg_${LiteGraph.uuidv4()}`;
+                if (!target.onExecute) {
+                    this.drop(target, "no-handler", {
+                        message: `${target.type} ${target.id}: triggered but has no onExecute`
+                    });
+                    continue;
+                }
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
+                target.doExecute(param, call);
+            } else if (target.onAction) {
+                call.action_call ??= `${node.id}_act_${LiteGraph.uuidv4()}`;
+                const immediateInput = this.declarationOf(target)?.immediate_inputs?.includes(input.name);
+                if (rules.delivery === "deferred" && target.onExecute && !emitNow && !immediateInput) {
+                    target._waiting_actions ??= [];
+                    target._waiting_actions.push([input.name, param, call, link.target_slot]);
+                    if (target.graph.status !== target.graph.constructor.STATUS_RUNNING && !target._stopped_queue_reported) {
+                        target._stopped_queue_reported = true;
+                        this.drop(target, "stopped-queue", {
+                            message: `${target.type} ${target.id}: an action waits in the queue until the graph runs (graph.stop({dropQueued: true}) clears it)`
+                        });
+                    }
+                    continue;
+                }
+                if (rules.refresh === "ancestors" || emitNow) this.pull(target);
+                target.actionDo(input.name, param, call, link.target_slot);
+            } else {
+                this.drop(target, "no-handler", {
+                    message: `${target.type} ${target.id}: input "${input?.name}" receives an event but the node has no onAction`
+                });
             }
         }
-        return event;
     }
 
-    _remove(type, entry) {
-        const entries = this._listeners.get(type);
-        const index = entries?.indexOf(entry) ?? -1;
-        if (index !== -1) entries.splice(index, 1);
+    /** guards an action or execution in non-legacy models; false when it must not run */
+    static enter(node, kind, options, rules) {
+        const graph = node.graph;
+        if (kind === "execute") {
+            if (graph.nodes_executing[node.id]) return this.drop(node, "reentry", {
+                message: `${node.type} ${node.id}: executed again while it was executing`
+            });
+            if (rules.once_per_frame) {
+                if (node._strict_frame === graph._frame && node._strict_graph_frame === graph) return this.drop(node, "once-per-frame", {
+                    message: `${node.type} ${node.id}: already executed in this frame (the "strict" model runs each node once per frame)`
+                });
+                node._strict_frame = graph._frame;
+                node._strict_graph_frame = graph;
+            }
+        }
+        if (this._depth >= this.maxEventDepth) {
+            return this.drop(node, "max-depth", {
+                setting: "LiteGraph.Execution.MaxEventDepth",
+                message: `${node.type} ${node.id}: event chain deeper than ${this.maxEventDepth} (setting LiteGraph.Execution.MaxEventDepth)`
+            });
+        }
+        return true;
+    }
+
+    // ---- subgraph boundaries -------------------------------------------------------------------
+
+    /**
+     * Delivers queued inner actions of a subgraph-like node's inner graph now (deferred models),
+     * up to `LiteGraph.Execution.MaxEventPasses` passes; reaching the cap is reported.
+     */
+    static flushInner(owner, inner) {
+        const max = this.maxEventPasses;
+        for (let pass = 0; pass < max; pass++) {
+            const waiting = inner._nodes.filter((n) => n._waiting_actions?.length);
+            if (!waiting.length) return true;
+            for (const n of waiting) n.executePendingActions();
+        }
+        if (inner._nodes.some((n) => n._waiting_actions?.length)) {
+            this.drop(owner, "max-passes", {
+                setting: "LiteGraph.Execution.MaxEventPasses",
+                message: `${owner.type} ${owner.id}: inner events still queued after ${max} passes (setting LiteGraph.Execution.MaxEventPasses)`
+            });
+            return false;
+        }
+        return true;
+    }
+
+    /** an event entering a subgraph: fresh interface data first (inputs pushed, graph/input nodes updated) */
+    static enterBoundary(owner) {
+        const inner = owner.subgraph;
+        if (!inner) return;
+        owner._pushInputs?.();
+        for (const node of inner._nodes) {
+            if (node.type === "graph/input" && node.properties?.type !== LiteGraph.EVENT && node.properties?.type !== "action" && node.mode !== LiteGraph.NEVER) {
+                node.onExecute?.();
+            }
+        }
+    }
+
+    // ---- bypass ------------------------------------------------------------------------------------
+
+    /**
+     * What a BYPASS node does instead of its own code: every data output takes the value of the
+     * input it maps to (bypassSource), or undefined; with `events`, an event that reached the node
+     * is forwarded to its connected event outputs.
+     * @param {object} node
+     * @param {{events?: boolean, param?: any, options?: object}} [run]
+     */
+    static passThrough(node, {
+        events = false,
+        param,
+        options
+    } = {}) {
+        const outputs = node.outputs ?? [];
+        for (let index = 0; index < outputs.length; index++) {
+            if (this.isEventType(outputs[index].type)) continue;
+            const source = this.bypassSource(node, index);
+            node.setOutputData(index, source < 0 ? undefined : node.getInputData(source));
+        }
+        if (!events) return;
+        for (let index = 0; index < outputs.length; index++) {
+            if (this.isEventType(outputs[index].type) && outputs[index].links?.length) node.triggerSlot(index, param, null, {
+                ...options
+            });
+        }
+    }
+
+    /**
+     * The input a bypassed node passes to a data output: the input at the same index when its type
+     * fits, otherwise the first data input whose type fits; -1 when none does.
+     */
+    static bypassSource(node, outputIndex) {
+        const output = node.outputs?.[outputIndex];
+        const inputs = node.inputs ?? [];
+        if (!output) return -1;
+        const fits = (input) => !!input && !this.isEventType(input.type) && LiteGraph.isValidConnection(input.type, output.type);
+        if (fits(inputs[outputIndex])) return outputIndex;
+        return inputs.findIndex(fits);
+    }
+
+    static isEventType(type) {
+        return type === LiteGraph.EVENT || type === LiteGraph.ACTION;
+    }
+
+    // ---- node declarations (static def.execution) -------------------------------------------------
+
+    /**
+     * Normalizes a node type's execution declaration:
+     * `{models: {<model>: false | {default_mode, modes}}, modes, default_mode, emit: "immediate", ticks, pure, loop, immediate_inputs}`.
+     * @returns {Readonly<object>|null}
+     */
+    static normalizeDeclaration(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const modes = (value) => Array.isArray(value) ? Object.freeze(value.filter((m) => Number.isInteger(m))) : undefined;
+        const models = {};
+        for (const [name, entry] of Object.entries(raw.models ?? {})) {
+            models[name] = entry === false ? false : Object.freeze({
+                default_mode: entry?.default_mode,
+                modes: modes(entry?.modes)
+            });
+        }
+        return Object.freeze({
+            models: Object.freeze(models),
+            modes: modes(raw.modes),
+            default_mode: Number.isInteger(raw.default_mode) ? raw.default_mode : undefined,
+            emit: raw.emit === "immediate" ? "immediate" : undefined,
+            ticks: !!raw.ticks,
+            pure: !!raw.pure,
+            loop: !!raw.loop,
+            immediate_inputs: Object.freeze(Array.isArray(raw.immediate_inputs) ? [...raw.immediate_inputs] : []),
+        });
+    }
+
+    /** the execution declaration of a node or type (from its definition), or null */
+    static declarationOf(nodeOrType) {
+        const type = typeof nodeOrType === "string" ? nodeOrType : nodeOrType?.type;
+        if (!type) return null;
+        return LiteGraph.getNodeDefinition?.(type)?.execution ?? null;
+    }
+
+    static get allowAnyMode() {
+        return !!this.setting("LiteGraph.Execution.AllowAnyMode", false);
+    }
+
+    /** the modes a node (or type) may use under a model; NEVER and BYPASS are always allowed */
+    static validModes(nodeOrType, modelName) {
+        const all = [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.NEVER, LiteGraph.ON_TRIGGER, LiteGraph.BYPASS, LiteGraph.ON_REQUEST];
+        const decl = this.declarationOf(nodeOrType);
+        if (!decl) return all;
+        const per = decl.models?.[modelName];
+        const modes = per === false ? [] : [...(per?.modes ?? decl.modes ?? all)];
+        for (const mode of [LiteGraph.NEVER, LiteGraph.BYPASS])
+            if (!modes.includes(mode)) modes.push(mode);
+        return modes;
+    }
+
+    /** true for modes in which the node's own code does not run (NEVER, BYPASS) */
+    static isInactiveMode(mode) {
+        return mode === LiteGraph.NEVER || mode === LiteGraph.BYPASS;
+    }
+
+    /** true when the node may use the mode under its graph's model (or LiteGraph.Execution.AllowAnyMode is on) */
+    static isModeValid(node, mode, graph = node?.graph) {
+        if (this.allowAnyMode) return true;
+        return this.validModes(node, this.modelNameFor(graph)).includes(mode);
+    }
+
+    /** the refusal message for an invalid mode; names the setting that lifts it */
+    static modeRefusal(node, mode, graph = node?.graph) {
+        const model = this.modelNameFor(graph);
+        const name = (m) => LiteGraph.NODE_MODES[m] ?? String(m);
+        const valid = this.validModes(node, model).map(name).join(", ");
+        return `${node?.type ?? "node"}: mode "${name(mode)}" is not valid for this node under the "${model}" execution model (valid: ${valid}); set LiteGraph.Execution.AllowAnyMode to allow any mode`;
+    }
+
+    /** the mode a newly added node of a declared type gets under a model, or null to keep its own */
+    static declaredDefaultMode(node, rules) {
+        if (!rules || rules.legacy) return null;
+        const decl = this.declarationOf(node);
+        if (!decl) return null;
+        const per = decl.models?.[rules.name];
+        if (per && per.default_mode != null) return per.default_mode;
+        if (decl.pure && rules.refresh === "ancestors") return LiteGraph.ON_REQUEST;
+        if (decl.default_mode != null) return decl.default_mode;
+        return null;
+    }
+
+    /** the mode each node would get under a model (for "Apply the model's node modes") */
+    static modelModes(graph, rules = this.rulesFor(graph)) {
+        const out = [];
+        const visit = (g) => {
+            for (const node of g._nodes) {
+                const mode = this.declaredDefaultMode(node, rules);
+                if (mode != null && mode !== node.mode && !this.isInactiveMode(node.mode)) out.push({
+                    node,
+                    mode
+                });
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph);
+            }
+        };
+        visit(graph);
+        return out;
+    }
+
+    // ---- diagnostics ---------------------------------------------------------------------------------
+
+    /**
+     * Checks a graph (and its subgraphs) against the model and the node declarations.
+     * @returns {{model: string, issues: Array<{node, path, code, message}>}}
+     */
+    static check(graph) {
+        const root = graph.rootGraph ?? graph;
+        const model = this.modelNameFor(root);
+        const issues = [];
+        const add = (node, code, message) => issues.push({
+            node,
+            path: node.getPath?.() ?? null,
+            code,
+            message
+        });
+        const hasEventOutput = (node) => (node.outputs ?? []).some((o) => o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION);
+        const visit = (g, parentMode) => {
+            for (const node of g._nodes) {
+                const decl = this.declarationOf(node);
+                if (!this.isInactiveMode(node.mode)) {
+                    if (decl?.models?.[model] === false) add(node, "invalid-model", `${node.type}: not valid under the "${model}" execution model`);
+                    else if (!this.validModes(node, model).includes(node.mode)) add(node, "invalid-mode", this.modeRefusal(node, node.mode, root));
+                    if (decl?.ticks && (node.mode !== LiteGraph.ALWAYS || (parentMode != null && parentMode !== LiteGraph.ALWAYS))) {
+                        add(node, "ticks-not-stepped", `${node.type}: needs the step loop (ALWAYS mode${parentMode != null ? ", in an ALWAYS subgraph node" : ""}); it keeps its events until stepped`);
+                    }
+                    if (node.mode === LiteGraph.ON_REQUEST && hasEventOutput(node) && node.outputs.some((o) => (o.type === LiteGraph.EVENT || o.type === LiteGraph.ACTION) && o.links?.length)) {
+                        add(node, "on-request-emitter", `${node.type}: an event emitter in ON_REQUEST mode never fires (events are dropped while data is pulled)`);
+                    }
+                    if (decl?.loop && !node.outputs?.find((o) => o.name === "do")?.links?.length) {
+                        add(node, "loop-without-body", `${node.type}: the loop body ("do" output) is not connected`);
+                    }
+                    if (decl?.pure && model === "ancestors" && node.mode === LiteGraph.ALWAYS) {
+                        add(node, "pure-always", `${node.type}: a pure node in ALWAYS mode runs every frame; ON_REQUEST runs it only when needed`);
+                    }
+                }
+                if (node.subgraph && node.subgraph !== g) visit(node.subgraph, this.isInactiveMode(node.mode) ? LiteGraph.NEVER : (parentMode != null && parentMode !== LiteGraph.ALWAYS ? parentMode : node.mode));
+            }
+        };
+        visit(root, null);
+        return {
+            model,
+            issues
+        };
     }
 }
+
+ExecutionEngine.registerModel("ancestors", {
+    title: "Ancestors (pull)",
+    description: "Events are delivered immediately; pure ON_REQUEST nodes run only when an action, a trigger or an ALWAYS node needs their data, once per frame or call.",
+    delivery: "immediate",
+    refresh: "ancestors",
+    frame_pull: true,
+    exec_slots: true,
+});
+ExecutionEngine.registerModel("step", {
+    title: "Step (deferred actions)",
+    description: "Actions to nodes that execute wait for the node's turn in the next step.",
+    delivery: "deferred",
+});
+ExecutionEngine.registerModel("strict", {
+    title: "Strict (once per frame)",
+    description: "Deferred actions; each node executes at most once per frame.",
+    delivery: "deferred",
+    once_per_frame: true,
+});
+ExecutionEngine.registerModel("event", {
+    title: "Event (push)",
+    description: "Events are delivered immediately, without refreshing data.",
+    delivery: "immediate",
+});
 
 /**
  * Named, reusable operations shared by keybindings, menus, search and extensions.
@@ -2281,6 +3626,7 @@ class KeybindingRegistry {
      * @returns {string}
      */
     static normalize(combo) {
+        if (combo === " ") combo = "space"; // the key of a space KeyboardEvent
         if (typeof combo !== "string" || !combo.trim()) throw new TypeError("combo must be a non-empty string");
         const parts = combo.toLowerCase().split("+").map((part) => part.trim());
         // "ctrl++" means ctrl and the plus key
@@ -2304,7 +3650,8 @@ class KeybindingRegistry {
 
     /** @param {KeyboardEvent} event @returns {string|null} normalized combo, null for a bare modifier */
     static fromEvent(event) {
-        const key = String(event.key ?? "").toLowerCase();
+        let key = String(event.key ?? "").toLowerCase();
+        if (key === " ") key = "space"; // a bare " " would not survive normalize
         if (!key || ["control", "alt", "shift", "meta"].includes(key)) return null;
         const mods = [];
         if (event.ctrlKey) mods.push("ctrl");
@@ -2609,13 +3956,14 @@ class SettingsRegistry {
  * ]);
  * ```
  *
- * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}) and "node" (ctx adds `node`).
+ * Locations: "canvas" (ctx: {canvas, graph, selectedNodes}), "node" (ctx adds `node`) and
+ * "node-pin", the quick menu of a node's title box (same ctx; shown only when something is contributed).
  * Contributions are appended after the built-in items, in registration order. A failing provider
  * is skipped (and logged) so one extension cannot break the menu.
  */
 class MenuRegistry {
 
-    static LOCATIONS = ["canvas", "node"];
+    static LOCATIONS = ["canvas", "node", "node-pin"];
 
     /** @param {import("./commands.js").CommandRegistry} commands */
     constructor(commands) {
@@ -2625,7 +3973,7 @@ class MenuRegistry {
     }
 
     /**
-     * @param {"canvas"|"node"} location
+     * @param {"canvas"|"node"|"node-pin"} location
      * @param {(ctx: object) => Array<object|null>|null|undefined} provider
      * @returns {() => void} disposer
      */
@@ -2639,6 +3987,11 @@ class MenuRegistry {
             const index = list.indexOf(provider);
             if (index !== -1) list.splice(index, 1);
         };
+    }
+
+    /** true when a provider is registered for the location */
+    has(location) {
+        return !!this._providers.get(location)?.length;
     }
 
     /** Converts `{command: id}` shorthands into ContextMenu items bound to the context. */
@@ -2700,6 +4053,7 @@ class MenuRegistry {
  *     setup(ctx) {
  *         ctx.on("onNodeTypeRegistered", (info, type) => ...);           // LiteGraph-level hook
  *         ctx.onCanvas((canvas, c) => c.on("onKeyDown", (info, e) => ...)); // every canvas, now and later
+ *         ctx.listen(LiteGraph, "node-type-registered", (event) => ...);     // hooks or typed events, by name
  *         return () => { ... };                                            // optional extra cleanup
  *     },
  * });
@@ -2809,6 +4163,15 @@ class ExtensionRegistry {
             },
             /** LiteGraph-level hook (e.g. "on_lgraphcanvas_construct", "onNodeTypeRegistered"). */
             on: (name, fn, opts) => hookOn(host, name, fn, opts),
+            /** Side panel sections and editors (LiteGraph.registerPanelSection / registerPanelEditor), removed on dispose. */
+            panels: {
+                registerSection: (section) => track(host.registerPanelSection(section)),
+                registerEditor: (name, editor) => track(host.registerPanelEditor(name, editor)),
+            },
+            /** Value types (LiteGraph.registerValueType), removed on dispose. */
+            valueTypes: {
+                register: (name, definition, options) => track(host.registerValueType(name, definition, options))
+            },
             /** Adds context-menu items ("canvas" or "node"; see MenuRegistry). */
             menus: {
                 register: (location, provider) => track(host.menus.register(location, provider))
@@ -2821,6 +4184,13 @@ class ExtensionRegistry {
             },
             /** Hook on any object with a CallbackHandler (graph, node, canvas). */
             onTarget: (target, name, fn, opts) => hookOn(target, name, fn, opts),
+            /**
+             * One way to listen to both kinds, removed on dispose: hook names (`onX`, `on_x`,
+             * `getXMenuOptions`) register a hook handler, other names ("node-added", "*") a typed listener.
+             */
+            listen: (target, name, fn, opts) => /^(on|get)[A-Z_]/.test(name) ?
+                hookOn(target, name, fn, opts) :
+                ctx.onEvent(target, name, fn, opts),
             /** Runs fn for every live canvas and every canvas created later, with a per-canvas `on`. */
             onCanvas: (fn) => {
                 const apply = (canvas) => {
@@ -3677,9 +5047,25 @@ class DragAndScale {
      * @param {HTMLElement} element - The HTML element to bind the events to.
      */
     bindEvents(element) {
+        this.unbindEvents();
         this.last_mouse = new Float32Array(2);
-        element.addEventListener("pointerdown", this.onMouseDown);
-        element.addEventListener("wheel", this.onWheel);
+        this._events = new AbortController();
+        element.addEventListener("pointerdown", this.onMouseDown, {
+            signal: this._events.signal
+        });
+        element.addEventListener("wheel", this.onWheel, {
+            signal: this._events.signal
+        });
+    }
+
+    /**
+     * Removes the listeners bindEvents added. LGraphCanvas never binds them: its pointer input
+     * (pan as a CanvasPointer gesture, wheel zoom) goes through the canvas.
+     */
+    unbindEvents() {
+        this._events?.abort();
+        this._events = null;
+        this.abortController?.abort();
     }
 
     onMouseDown = (event) => {
@@ -4507,7 +5893,7 @@ class LGraph {
     static STATUS_RUNNING = 2;
 
     /** top-level document fields modelled by this runtime; any other loaded field is preserved verbatim on serialize */
-    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version"];
+    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version", "litegraph_modes"];
 
     /** fresh id counters; last_node_id/last_link_id are accessors over these */
     static createState() {
@@ -4531,7 +5917,166 @@ class LGraph {
 
     /** dispatch only when someone listens (no allocation otherwise) */
     _emit(type, detail, options) {
+        let recorded = false;
+        if (options && "recorded" in options) {
+            recorded = !!options.recorded;
+            const {
+                recorded: _ignored,
+                ...rest
+            } = options;
+            options = Object.keys(rest).length ? rest : undefined;
+        }
+        const kind = recorded ? null : LGraph.CHANGE_KINDS[type];
+        if (kind) {
+            (this._pendingChangeKinds ??= new Set()).add(kind);
+            // a change no history entry records (e.g. node.connect from code) is reported once, after the current task step
+            if (!this._transaction && !this.isConfiguring) this._scheduleChangeFlush();
+        }
         return this._events?.has(type) ? this._events.dispatch(type, detail, options) : null;
+    }
+
+    /** typed events that say what kind of change the next `graph-changed` reports */
+    static CHANGE_KINDS = Object.freeze({
+        "node-added": "node-added",
+        "node-removed": "node-removed",
+        "link-connected": "link",
+        "link-removed": "link",
+        "node-property-changed": "property",
+        "widget-changed": "widget",
+        "reroute-added": "reroute",
+        "reroute-removed": "reroute",
+        "node-replaced": "node-replaced",
+        "subgraph-definition-changed": "subgraph",
+        "subgraph-forked": "subgraph",
+    });
+
+    /** the kind of a change named only by its history action (moves, groups, ...) */
+    static _kindOfAction(action) {
+        const name = String(action ?? "").toLowerCase();
+        if (/group/.test(name)) return "group";
+        if (/reroute/.test(name)) return "reroute";
+        if (/subgraph|definition|component/.test(name)) return "subgraph";
+        if (/move|resize|align|arrange|layout|pos|size|collapse|pin/.test(name)) return "layout";
+        if (/link|connect/.test(name)) return "link";
+        if (/propert/.test(name)) return "property";
+        if (/widget/.test(name)) return "widget";
+        if (/add|paste|insert|clone/.test(name)) return "node-added";
+        if (/remove|delete/.test(name)) return "node-removed";
+        return "other";
+    }
+
+    /**
+     * Reports one recorded change (one per transaction) as `graph-changed {kind, kinds, action,
+     * revision, graph}` on this graph and, from a subgraph, on the root graph too, then updates
+     * the modified state.
+     */
+    /** notes the kind of a change about to be recorded (so the event after it is not reported again) */
+    _markChange(kind) {
+        (this._pendingChangeKinds ??= new Set()).add(kind);
+    }
+
+    _scheduleChangeFlush() {
+        if (this._changeFlushQueued) return;
+        this._changeFlushQueued = true;
+        queueMicrotask(() => {
+            this._changeFlushQueued = false;
+            if (!this._pendingChangeKinds?.size || this._transaction || this.isConfiguring) return;
+            this._reportChange(null, {
+                untracked: true
+            });
+        });
+    }
+
+    _reportChange(action, {
+        untracked = false
+    } = {}) {
+        const kinds = this._pendingChangeKinds?.size ? [...this._pendingChangeKinds] : [LGraph._kindOfAction(action)];
+        this._pendingChangeKinds = null;
+        if (untracked)(this.rootGraph ?? this)._modifiedExtra = true;
+        const detail = {
+            kind: kinds[0],
+            kinds,
+            action: action ?? "",
+            revision: this.revision,
+            graph: this
+        };
+        this._emit("graph-changed", detail);
+        const root = this.rootGraph;
+        if (root && root !== this) {
+            root._emit("graph-changed", {
+                ...detail,
+                kind: "subgraph",
+                kinds: ["subgraph", ...kinds.filter((k) => k !== "subgraph")]
+            });
+            root._modifiedExtra = true;
+            root._updateModified();
+        } else {
+            this._updateModified();
+        }
+    }
+
+    /** true when the document changed since it was loaded or last marked saved (markSaved) */
+    get isModified() {
+        return (this._savedRevision ?? 0) !== this.revision || !!this._modifiedExtra;
+    }
+
+    /** Marks the current state as saved: isModified becomes false (emits modified-changed). */
+    markSaved() {
+        this._savedRevision = this.revision;
+        this._modifiedExtra = false;
+        this._updateModified();
+    }
+
+    /** Marks the document as modified without a recorded change (e.g. a restored draft). */
+    markModified() {
+        this._modifiedExtra = true;
+        this._updateModified();
+    }
+
+    _updateModified() {
+        const modified = this.isModified;
+        if (modified === !!this._lastModified) return;
+        this._lastModified = modified;
+        this._emit("modified-changed", {
+            modified
+        });
+    }
+
+    // ---- execution state (protocol: ExecutionState) ---------------------------------------
+
+    /**
+     * Sets a node's execution state and, when someone listens on the root graph, emits it as
+     * `execution-state {message, node}`.
+     * @param {object} node - a node of this graph
+     * @param {string} kind - "status", "progress", "error" or "reset"
+     * @param {object} [fields] - status, value, max, message
+     */
+    reportExecutionState(node, kind, fields = {}) {
+        const root = this.rootGraph ?? this;
+        const listening = !!root._events?.has("execution-state");
+        const message = ExecutionState.create(kind, listening ? (node?.getPath?.() ?? null) : null, fields);
+        if (node) ExecutionState.applyToNode(node, message);
+        else if (kind === "reset") ExecutionState.clear(root);
+        if (listening) root._emit("execution-state", {
+            message,
+            node: node ?? null
+        });
+        return message;
+    }
+
+    /**
+     * Applies an execution-state message received from elsewhere (the runner): the node at its
+     * path gets the state, and the root graph emits `execution-state {message, node, remote: true}`.
+     * @returns {object|null} the node changed (the root graph for a full reset), or null
+     */
+    applyExecutionState(message) {
+        const target = ExecutionState.apply(this, message);
+        if (target)(this.rootGraph ?? this)._emit("execution-state", {
+            message,
+            node: target === (this.rootGraph ?? this) ? null : target,
+            remote: true
+        });
+        return target;
     }
 
     get last_node_id() {
@@ -4569,31 +6114,15 @@ class LGraph {
         /** number of saved changes to this document */
         this.revision = 0;
 
-        this.callbackhandler_setup();
-
         this.clear();
 
         if (o) {
             this.configure(o);
         }
 
-        LiteGraph.processCallbackHandlers("on_lgraph_construct", {
-            def_cb: LiteGraph.on_lgraph_construct
-        }, this);
-    }
-
-    callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler() {
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        return this.cb_handler.processCallbackHandlers(...arguments);
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraph_construct", [this], LiteGraph, "graph-created", {
+            graph: this
+        });
     }
 
     /**
@@ -4677,6 +6206,8 @@ class LGraph {
         // custom data
         this.config = {};
         this.configApplyDefaults();
+        // a new document runs under the default model; a loaded one under its config.execution (absent: legacy)
+        this._execution_from_document = false;
 
         this.vars = {};
         this.extra = {}; // to store custom data
@@ -4877,7 +6408,8 @@ class LGraph {
             this.processCallbackHandlers("onPlayEvent", {
                 def_cb: this.onPlayEvent
             });
-            this.sendEventToAllNodes("onStart");
+            // every node that can run gets onStart, not only ALWAYS nodes (B10)
+            this.sendEventToAllNodes("onStart", undefined, [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST]);
         } catch (error) {
             try {
                 this.stop();
@@ -4890,6 +6422,8 @@ class LGraph {
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
+        this._shareTiming();
+        if (!this._subgraph_node) this.reportExecutionState(null, "reset");
 
         const onAnimationFrame = () => {
             if (this.execution_timer_id !== -1) {
@@ -4922,11 +6456,52 @@ class LGraph {
     }
 
     /**
+     * Reports a node error: `node-error {error, node, path}` on this graph and an `error` execution
+     * state on the failing node. The innermost failing node travels with the error (`error.node`,
+     * set by doExecute and actionDo), so outer graphs report it with its path. Used by `runStep`
+     * and by event entry points outside a step.
+     */
+    _reportNodeError(error) {
+        const failing = typeof error?.node?.getPath === "function" ? error.node : null;
+        this._emit("node-error", {
+            error,
+            node: failing,
+            path: failing?.getPath() ?? null
+        });
+        if (failing?.graph && failing.execution_state?.status !== "error") {
+            failing.graph.reportExecutionState(failing, "error", {
+                message: error?.message ?? String(error)
+            });
+        }
+    }
+
+    /** clears queued (deferred) actions here and in inner graphs */
+    _dropQueuedActions() {
+        for (const node of this._nodes) {
+            if (node._waiting_actions?.length) node._waiting_actions = [];
+            node._stopped_queue_reported = false;
+            if (node.subgraph && node.subgraph !== this) node.subgraph._dropQueuedActions();
+        }
+    }
+
+    /** gives the inner graphs of subgraph and function nodes this graph's clock origin (B13) */
+    _shareTiming() {
+        for (const node of this._nodes) {
+            const inner = node.subgraph;
+            if (!inner || inner === this) continue;
+            inner.starttime = this.starttime;
+            inner.last_update_time = this.last_update_time;
+            inner._shareTiming();
+        }
+    }
+
+    /**
      * Stops the execution loop of the graph
      * @method stop execution
      */
-    stop() {
+    stop(options = {}) {
         this._pending_start = null;
+        if (options?.dropQueued) this._dropQueuedActions();
         if (this.status == LGraph.STATUS_STOPPED) {
             return;
         }
@@ -5032,24 +6607,50 @@ class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        // an inner graph keeps its parent's clock origin (B13)
+        const parent = this._subgraph_node?.graph;
+        if (parent && this.starttime !== parent.starttime) {
+            this.starttime = parent.starttime;
+            this.last_update_time = Math.max(this.last_update_time, parent.last_update_time);
+        }
         const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
+        const rules = ExecutionEngine.rulesFor(this);
+        const wasStepping = this._stepping;
+        const outerCall = ExecutionEngine._call;
+        this._stepping = true;
         const resetExecutionState = () => {
             this.nodes_executing = [];
             this.nodes_actioning = [];
             this.node_ancestorsCalculated = [];
             this.nodes_executedAction = [];
         };
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         try {
             for (let step = 0; step < num; step++) {
+                this._frame = (this._frame ?? 0) + 1;
+                if (!rules.legacy && !outerCall) ExecutionEngine._call = `frame_${ExecutionEngine._callCount++}`;
                 // Changes made during one cycle take effect in the following cycle.
                 const nodes = this._nodes_executable ?? this._nodes;
                 const count = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
                 for (let index = 0; index < count; index++) {
                     const node = nodes[index];
                     if (node.graph !== this) continue;
-                    if (LiteGraph.use_deferred_actions) node.executePendingActions();
-                    if (node.mode === LiteGraph.ALWAYS) node.doExecute?.();
+                    if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
+                    // a BYPASS node takes the turn too, so the values it passes on stay current
+                    if ((node.mode === LiteGraph.ALWAYS || node.mode === LiteGraph.BYPASS) && node.doExecute) {
+                        if (rules.frame_pull) ExecutionEngine.pull(node);
+                        this._step_node = node; // its own turn: runStep reports it below
+                        try {
+                            node.doExecute();
+                        } finally {
+                            this._step_node = null;
+                        }
+                        // one message per change, not one per step
+                        if (node.execution_state?.status !== "done") this.reportExecutionState(node, "status", {
+                            status: "done"
+                        });
+                    }
                 }
                 this.fixedtime += this.fixedtime_lapse;
                 this.processCallbackHandlers("onExecuteStep", {
@@ -5067,13 +6668,7 @@ class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
-            // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
-            const failing = typeof error?.node?.getPath === "function" ? error.node : null;
-            this._emit("node-error", {
-                error,
-                node: failing,
-                path: failing?.getPath() ?? null
-            });
+            this._reportNodeError(error);
             try {
                 this.stop();
             } catch (cleanupError) {
@@ -5082,6 +6677,9 @@ class LGraph {
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
         } finally {
+            LiteGraph._dispatch_depth--;
+            this._stepping = wasStepping;
+            ExecutionEngine._call = outerCall;
             const now = LiteGraph.getTime();
             this.execution_time = 0.001 * Math.max(1, now - start);
             this.globaltime += this.execution_time;
@@ -5425,7 +7023,8 @@ class LGraph {
         const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
         const errors = [];
         for (const node of nodes) {
-            if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
+            if (node.graph !== this) continue;
+            if (Array.isArray(mode) ? !mode.includes(node.mode) : (mode != null && node.mode !== mode)) continue;
             try {
                 if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
                     try {
@@ -5506,11 +7105,23 @@ class LGraph {
                 action: "groupAdd",
                 doSave: opts.doProcessChange
             });
+            this._emit("group-added", {
+                group: node
+            });
             return;
         }
 
         // Directly constructed registered nodes need the same setup as createNode.
         node.post_constructor?.();
+
+        // a new node of a declared type gets its execution model's default mode (a loaded node keeps its own)
+        if (node._constructed_mode !== undefined) {
+            if (!this.isConfiguring && node.mode === node._constructed_mode) {
+                const mode = ExecutionEngine.declaredDefaultMode(node, ExecutionEngine.rulesFor(this));
+                if (mode != null) node.mode = mode;
+            }
+            delete node._constructed_mode;
+        }
 
         // nodes
         if (node.id != -1 && this._nodes_by_id[node.id] != null) {
@@ -5569,12 +7180,15 @@ class LGraph {
             node.autoSize(!node.hasDefaultSize?.());
         }
         // record after the node is in the graph, so the history snapshot contains it
+        if (opts.doProcessChange) this._markChange("node-added");
         this.onGraphChanged({
             action: "nodeAdd",
             doSave: opts.doProcessChange
         });
         this._emit("node-added", {
             node
+        }, {
+            recorded: opts.doProcessChange
         });
         this.setDirtyCanvas(true);
         this.change();
@@ -5597,6 +7211,9 @@ class LGraph {
             node.graph = null;
             this.onGraphChanged({
                 action: "groupRemove"
+            });
+            this._emit("group-removed", {
+                group: node
             });
             this.setDirtyCanvas(true, true);
             this.change();
@@ -5685,11 +7302,14 @@ class LGraph {
                 def_cb: this.onNodeRemoved
             }, node));
 
+            this._markChange("node-removed");
             cleanup(() => this.onGraphChanged({
                 action: "nodeRemove"
             }));
             cleanup(() => this._emit("node-removed", {
                 node
+            }, {
+                recorded: true
             }));
 
             // close panels
@@ -6140,15 +7760,25 @@ class LGraph {
     }
 
     /**
-     * Triggers the 'onTrigger' method on nodes with a specific title by passing a value to them.
-     * // TODO check this, investigate, _last_trigger_time ? who calls triggerInput ? who calls onTrigger ?
+     * Fires a trigger on the nodes with this title, as an event reaching their `onTrigger` input would:
+     * each runs through the execution engine (`doExecute(value)`: model rules, execution state, a
+     * `node-error` on failure). A NEVER node is skipped with an `event-dropped` (`mode`). A node that
+     * defines its own `onTrigger(value)` method gets that call instead, inside the same event entry.
      * @param {string} name - The title of the nodes to trigger.
-     * @param {any} value - The value to pass to the 'onTrigger' method of the nodes.
+     * @param {any} value - The value passed to the nodes (`param` of `onExecute`).
      */
     triggerInput(name, value) {
-        var nodes = this.findNodesByTitle(name);
-        for (var i = 0; i < nodes.length; ++i) {
-            nodes[i].onTrigger(value);
+        for (const node of this.findNodesByTitle(name)) {
+            if (node.mode === LiteGraph.NEVER) {
+                ExecutionEngine.drop(node, "mode", {
+                    message: `${node.type} ${node.id}: the node is NEVER; the trigger is not delivered`
+                });
+                continue;
+            }
+            if (typeof node.onTrigger === "function") node._dispatchEvent(() => node.onTrigger(value));
+            else if (node.onExecute) node.doExecute(value, {
+                action_call: `${node.id}_trigg_${LiteGraph.uuidv4()}`
+            });
         }
     }
 
@@ -6206,6 +7836,7 @@ class LGraph {
         }
         if (--transaction.depth > 0) return false;
         this._transaction = null;
+        if (!transaction.changed && this._pendingChangeKinds?.size) this._scheduleChangeFlush();
         if (transaction.changed) {
             this.onGraphChanged({
                 action: transaction.label,
@@ -6239,7 +7870,12 @@ class LGraph {
             if (snapshot) {
                 this._transaction = null;
                 const history = this.history;
-                this.configure(snapshot);
+                this._configureReason = "rollback";
+                try {
+                    this.configure(snapshot);
+                } finally {
+                    this._configureReason = null;
+                }
                 this.history = history;
             }
             throw error;
@@ -6343,6 +7979,357 @@ class LGraph {
             node.disconnectInput(link.target_slot); /* , optsIn */
             this.afterChange();
         }
+    }
+
+    /**
+     * Arranges nodes with a layout engine (LiteGraph.layout), as one undo step. With `nodes` only
+     * those move (a selection), anchored at their current top-left corner; otherwise every node
+     * moves, anchored at the graph's current top-left. Pinned nodes stay. Reroutes on the links
+     * between moved nodes follow them, and groups whose nodes all moved are fitted around them.
+     * @param {{engine?: string, nodes?: object[], direction?: "LR"|"RL"|"TB"|"BT",
+     *   spacing?: {node?: number, rank?: number}}} [options]
+     *   engine: default the setting `LiteGraph.Layout.Engine` ("dagre")
+     * @returns {Promise<{engine: string, moved: number}>}
+     */
+    async autoLayout({
+        engine,
+        nodes,
+        direction = "LR",
+        spacing = {}
+    } = {}) {
+        const settings = LiteGraph.settings;
+        const name = engine ?? (settings?.has?.("LiteGraph.Layout.Engine") ? settings.get("LiteGraph.Layout.Engine") : null) ?? "dagre";
+        const impl = LiteGraph.layout?.get(name);
+        if (!impl) throw new Error(`autoLayout: unknown layout engine ${name} (registered: ${LiteGraph.layout?.list().join(", ")})`);
+        const targets = (nodes ?? this._nodes).filter((node) => node?.graph === this && !node.flags?.pinned);
+        if (!targets.length) return {
+            engine: name,
+            moved: 0
+        };
+        let lib = null;
+        if (impl.library) {
+            try {
+                lib = await LiteGraph.LibraryManager.waitForLib(impl.library);
+            } catch (error) {
+                throw new Error(`autoLayout: the ${impl.library} library could not be loaded (${error?.message ?? error}); install it (npm install @dagrejs/dagre) or use the engine "layered", which needs nothing`, {
+                    cause: error
+                });
+            }
+        }
+        const model = LiteGraph.layout.constructor.buildModel(this, targets);
+        const options = {
+            direction,
+            spacing: {
+                node: spacing.node ?? 40,
+                rank: spacing.rank ?? 80
+            }
+        };
+        const {
+            positions
+        } = await impl.layout(model, options, lib);
+        // keep the arranged block where it was: align its top-left corner with the old one
+        let oldX = Infinity,
+            oldY = Infinity,
+            newX = Infinity,
+            newY = Infinity;
+        for (const box of model.nodes) {
+            const p = positions?.[box.id];
+            if (!p) continue;
+            oldX = Math.min(oldX, box.x);
+            oldY = Math.min(oldY, box.y);
+            newX = Math.min(newX, p[0]);
+            newY = Math.min(newY, p[1]);
+        }
+        if (!Number.isFinite(newX)) return {
+            engine: name,
+            moved: 0
+        };
+        const dx = oldX - newX;
+        const dy = oldY - newY;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        // groups wholly made of moved nodes are fitted afterwards
+        const moving = new Set(targets.filter((node) => positions[node.id]));
+        const groups = this._groups.filter((group) => {
+            group.recomputeInsideNodes?.();
+            const inside = group._nodes ?? [];
+            return inside.length && inside.every((node) => moving.has(node));
+        });
+        let moved = 0;
+        this.transact("autoLayout", () => {
+            const shift = new Map();
+            for (const node of moving) {
+                const p = positions[node.id];
+                const x = Math.round(p[0] + dx);
+                const y = Math.round(p[1] + dy + title);
+                shift.set(node.id, [x - node.pos[0], y - node.pos[1]]);
+                node.pos[0] = x;
+                node.pos[1] = y;
+                moved++;
+            }
+            const rerouted = new Set();
+            for (const link of Object.values(this.links ?? {})) {
+                if (!link || link.parentId === undefined || !shift.has(link.origin_id) || !shift.has(link.target_id)) continue;
+                const a = shift.get(link.origin_id),
+                    b = shift.get(link.target_id);
+                for (const reroute of this.getRerouteChain?.(link) ?? []) {
+                    if (rerouted.has(reroute.id)) continue;
+                    rerouted.add(reroute.id);
+                    reroute.pos[0] = Math.round(reroute.pos[0] + (a[0] + b[0]) / 2);
+                    reroute.pos[1] = Math.round(reroute.pos[1] + (a[1] + b[1]) / 2);
+                }
+            }
+            for (const group of groups) group.fitToContents?.();
+            this._markChange("layout");
+            this.onGraphChanged({
+                action: "autoLayout"
+            });
+        });
+        this.setDirtyCanvas(true, true);
+        return {
+            engine: name,
+            moved
+        };
+    }
+
+    /**
+     * Missing node types in this graph (and, with `deep`, in its subgraphs): one entry per type,
+     * with where the type comes from (the node's stored pack stamp, the pack index, or ComfyUI's
+     * `cnr_id` / `aux_id`) and a registered replacement.
+     * @param {{deep?: boolean}} [options] - deep (default true): include subgraphs
+     * @returns {Array<{type: string, count: number, available: boolean, nodes: Array<{id: *, path: string}>,
+     *   pack: {id: string, version: string|null, source: "stamp"|"index"|"comfy", installed?: boolean}|null,
+     *   replacement: {type: string, auto: boolean, available: boolean, reason?: string}|null}>}
+     */
+    getMissingNodes({
+        deep = true
+    } = {}) {
+        const byType = new Map();
+        const visit = (graph) => {
+            for (const node of graph._nodes) {
+                if (PackRegistry.isMissingNodePlaceholder(node)) {
+                    const stored = node.last_serialization;
+                    let entry = byType.get(stored.type);
+                    if (!entry) {
+                        const mapping = LiteGraph.getNodeReplacement?.(stored.type);
+                        entry = {
+                            type: stored.type,
+                            count: 0,
+                            available: !!LiteGraph.registered_node_types[stored.type],
+                            nodes: [],
+                            pack: LGraph._packHint(stored),
+                            replacement: mapping ? {
+                                type: mapping.new_type,
+                                auto: mapping.auto,
+                                available: !!LiteGraph.registered_node_types[mapping.new_type],
+                                ...(mapping.reason ? {
+                                    reason: mapping.reason
+                                } : {}),
+                            } : null,
+                        };
+                        byType.set(stored.type, entry);
+                    }
+                    entry.count++;
+                    entry.nodes.push({
+                        id: node.id,
+                        path: node.getPath?.() ?? String(node.id)
+                    });
+                }
+                if (deep && node.subgraph) visit(node.subgraph);
+            }
+        };
+        visit(this);
+        return [...byType.values()];
+    }
+
+    /** where a stored node says its type comes from */
+    static _packHint(stored) {
+        const properties = stored?.properties ?? {};
+        if (typeof properties.pack === "string" && properties.pack) {
+            return {
+                id: properties.pack,
+                version: properties.pack_ver ?? null,
+                source: "stamp"
+            };
+        }
+        const known = LiteGraph.packs?.findPackForType(stored?.type);
+        if (known) return {
+            id: known.id,
+            version: known.version,
+            source: "index",
+            installed: known.installed
+        };
+        const comfy = properties.cnr_id || properties.aux_id;
+        if (typeof comfy === "string" && comfy) return {
+            id: comfy,
+            version: properties.ver ?? null,
+            source: "comfy"
+        };
+        return null;
+    }
+
+    /** The mapping replaceNode would use for a node, or null. */
+    _replacementFor(node) {
+        const type = PackRegistry.storedNodeType(node);
+        const mapping = LiteGraph.getNodeReplacement?.(type);
+        if (mapping) return mapping;
+        // a placeholder whose type has been registered since loading is rebuilt as that type
+        if (PackRegistry.isMissingNodePlaceholder(node) && LiteGraph.registered_node_types[type]) return {
+            old_type: type,
+            new_type: type
+        };
+        return null;
+    }
+
+    /**
+     * Replaces a node by a node of another type, as one undo step: id, position, title, colours,
+     * mode and the mapped links, properties and widget values are kept. Links on slots the
+     * mapping cannot place are removed and listed in `dropped`.
+     * @param {object} node - a node of this graph (a missing-type placeholder or a live node)
+     * @param {object|string} [mapping] - a mapping (see LiteGraph.registerNodeReplacement), a type
+     *   name, or nothing for the registered mapping of the node's type
+     * @returns {{node: object, dropped: Array<{kind: string, slot: number, name: string, link: *}>}}
+     */
+    replaceNode(node, mapping) {
+        if (!node || node.graph !== this) throw new Error("replaceNode: the node is not in this graph");
+        const type = PackRegistry.storedNodeType(node);
+        const resolved = typeof mapping === "string" ? {
+            old_type: type,
+            new_type: mapping
+        } : (mapping ?? this._replacementFor(node));
+        if (!resolved) throw new Error(`replaceNode: no replacement is registered for ${type}`);
+        if (!LiteGraph.registered_node_types[resolved.new_type]) throw new Error(`replaceNode: node type ${resolved.new_type} is not registered`);
+        return this.transact(`Replace ${type}`, () => {
+            const result = PackRegistry.replaceNodeInGraph(this, node, resolved);
+            this._emit("node-replaced", {
+                node: result.node,
+                from: type,
+                to: resolved.new_type,
+                dropped: result.dropped
+            });
+            return result;
+        }, {
+            rollback: true
+        });
+    }
+
+    /**
+     * Replaces every node that has a usable replacement, as one undo step per graph: by default
+     * the missing-type placeholders whose replacement type (or own type) is registered.
+     * @param {{filter?: (node: object) => boolean, deep?: boolean}} [options]
+     *   filter: which nodes to replace (default: missing-type placeholders);
+     *   deep (default true): also inside subgraphs (each inner graph records its own step)
+     * @returns {{replaced: Array<{id: *, path: string, from: string, to: string, dropped: object[]}>,
+     *   skipped: Array<{id: *, path: string, type: string, reason: string}>}}
+     */
+    replaceNodes({
+        filter = PackRegistry.isMissingNodePlaceholder,
+        deep = true
+    } = {}) {
+        const replaced = [];
+        const skipped = [];
+        const candidates = this._nodes.filter((node) => filter(node));
+        const plans = [];
+        for (const node of candidates) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = this._replacementFor(node);
+            const path = node.getPath?.() ?? String(node.id);
+            if (!mapping) skipped.push({
+                id: node.id,
+                path,
+                type,
+                reason: "no replacement registered"
+            });
+            else if (!LiteGraph.registered_node_types[mapping.new_type]) skipped.push({
+                id: node.id,
+                path,
+                type,
+                reason: `${mapping.new_type} is not registered`
+            });
+            else plans.push({
+                node,
+                type,
+                mapping,
+                path
+            });
+        }
+        if (plans.length) {
+            this.transact("Replace nodes", () => {
+                for (const plan of plans) {
+                    const result = PackRegistry.replaceNodeInGraph(this, plan.node, plan.mapping);
+                    replaced.push({
+                        id: result.node.id,
+                        path: plan.path,
+                        from: plan.type,
+                        to: plan.mapping.new_type,
+                        dropped: result.dropped
+                    });
+                }
+            }, {
+                rollback: true
+            });
+        }
+        if (deep) {
+            for (const node of this._nodes) {
+                if (!node.subgraph) continue;
+                const inner = node.subgraph.replaceNodes({
+                    filter,
+                    deep
+                });
+                replaced.push(...inner.replaced);
+                skipped.push(...inner.skipped);
+            }
+        }
+        return {
+            replaced,
+            skipped
+        };
+    }
+
+    /** Applies `auto` replacement mappings while configuring (no undo step, no revision change). */
+    _applyAutoReplacements() {
+        const replaced = [];
+        const settings = LiteGraph.settings;
+        if (settings?.has?.("LiteGraph.Packs.AutoReplace") && !settings.get("LiteGraph.Packs.AutoReplace")) return replaced;
+        const plans = [];
+        for (const node of this._nodes) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = LiteGraph.getNodeReplacement?.(type);
+            if (mapping?.auto && LiteGraph.registered_node_types[mapping.new_type]) plans.push({
+                node,
+                type,
+                mapping
+            });
+        }
+        if (!plans.length) return replaced;
+        const outer = this._transaction;
+        if (!outer) this._transaction = {
+            depth: 1,
+            label: "configure",
+            changed: false
+        };
+        try {
+            for (const {
+                    node,
+                    type,
+                    mapping
+                }
+                of plans) {
+                try {
+                    const result = PackRegistry.replaceNodeInGraph(this, node, mapping);
+                    replaced.push({
+                        id: result.node.id,
+                        from: type,
+                        to: mapping.new_type,
+                        dropped: result.dropped
+                    });
+                } catch (error) {
+                    LiteGraph.log_warn("lgraph", "configure", "automatic replacement failed", type, error);
+                }
+            }
+        } finally {
+            if (!outer) this._transaction = null;
+        }
+        return replaced;
     }
 
     /**
@@ -6512,12 +8499,15 @@ class LGraph {
         const reroute = new Reroute(++this.state.lastRerouteId, pos, link?.parentId);
         this.reroutes.set(reroute.id, reroute);
         if (link) link.parentId = reroute.id;
+        this._markChange("reroute");
         this.onGraphChanged({
             action: "rerouteAdd"
         });
         this._emit("reroute-added", {
             reroute,
             link: link ?? null
+        }, {
+            recorded: true
         });
         this.setDirtyCanvas(true, true);
         return reroute;
@@ -6549,11 +8539,14 @@ class LGraph {
             else floating.parentId = reroute.parentId;
         }
         this.reroutes.delete(id);
+        this._markChange("reroute");
         this.onGraphChanged({
             action: "rerouteRemove"
         });
         this._emit("reroute-removed", {
             reroute
+        }, {
+            recorded: true
         });
         this.setDirtyCanvas(true, true);
         return true;
@@ -6801,10 +8794,11 @@ class LGraph {
             nodes: nodesInfo,
             links: links,
             groups: groupsInfo,
-            config: this.config,
+            config: this._serializeConfig(),
             extra: this._serializeExtra(),
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
+            litegraph_modes: LiteGraph.MODES_VERSION, // mode numbering (2: BYPASS = 4, ON_REQUEST = 5)
             state: {
                 ...this.state
             }, // all id counters (nodes, links, groups, reroutes)
@@ -6822,6 +8816,98 @@ class LGraph {
         LiteGraph.log_verbose("lgraph", "serialize", data);
 
         return data;
+    }
+
+    /** config as saved: a new root document records the model it runs under */
+    _serializeConfig() {
+        // a copy: history snapshots must not share the live config object
+        if (this._subgraph_node || this._execution_from_document || this.config?.execution) return {
+            ...this.config
+        };
+        return {
+            ...this.config,
+            execution: ExecutionEngine.resolveDefaultModel()
+        };
+    }
+
+    // ---- execution model (Wave 6) -----------------------------------------------------------
+
+    /** the name of the execution model this graph runs under (resolved from the root's config) */
+    get executionModel() {
+        return ExecutionEngine.modelNameFor(this);
+    }
+
+    /** the same as `setExecutionModel(name)`: one undo step; an unknown name throws */
+    set executionModel(name) {
+        this.setExecutionModel(name);
+    }
+
+    /** the rules of this graph's execution model */
+    getExecutionRules() {
+        return ExecutionEngine.rulesFor(this);
+    }
+
+    /**
+     * Sets the document's execution model (on the root graph's `config.execution`) as one undo step.
+     * @param {string} name - a registered model ("ancestors", "step", "strict", "event", "legacy", ...)
+     * @returns {boolean} true when it changed
+     */
+    setExecutionModel(name) {
+        const root = this.rootGraph;
+        if (!ExecutionEngine.getModel(name)) throw new Error(`unknown execution model "${name}"; known: ${ExecutionEngine.listModels().map((m) => m.name).join(", ")}`);
+        if (root.config.execution === name) return false;
+        root.transact("executionModel", () => {
+            root.config = {
+                ...root.config,
+                execution: name
+            };
+            root.onGraphChanged({
+                action: "executionModel"
+            });
+        });
+        root._emit("execution-model-changed", {
+            model: name
+        });
+        return true;
+    }
+
+    /**
+     * Checks the document against its execution model and the node declarations: invalid model or
+     * mode, a `ticks` node that is not stepped, an ON_REQUEST event emitter, a loop without a body.
+     * @returns {{model: string, issues: Array<{node: object, path: string|null, code: string, message: string}>}}
+     */
+    checkExecution() {
+        const report = ExecutionEngine.check(this);
+        const root = this.rootGraph;
+        // badges read the last report (LiteGraph.Node.ExecutionBadge)
+        root._execution_issues = new Map(report.issues.map((issue) => [issue.node, issue]));
+        return report;
+    }
+
+    /**
+     * Applies the model's default modes to the nodes of declared types (one undo step).
+     * @returns {number} the nodes changed
+     */
+    applyExecutionModelModes() {
+        const root = this.rootGraph;
+        const changes = ExecutionEngine.modelModes(root);
+        if (!changes.length) return 0;
+        root.transact("executionModelModes", () => {
+            for (const {
+                    node,
+                    mode
+                }
+                of changes) node.mode = mode;
+            // a changed node inside a subgraph instance edits that instance: its definition is
+            // synced from it when the document is saved (registerSubgraphDefinitions)
+            for (const inner of new Set(changes.map(({
+                    node
+                }) => node.graph).filter((g) => g && g !== root))) inner.revision++;
+            root.onGraphChanged({
+                action: "executionModelModes"
+            });
+        });
+        return changes.length;
     }
 
     /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
@@ -7067,6 +9153,68 @@ class LGraph {
         }
     }
 
+    /**
+     * Brings a document's node modes to the current numbering (BYPASS = 4, ON_REQUEST = 5), in place:
+     * the root, nested subgraphs and subgraph definitions. Which numbering a document uses:
+     * - `litegraph_modes` 2 or more: current, nothing to do;
+     * - `litegraph_version` without `litegraph_modes`: written by this library before the change,
+     *   where 4 was ON_REQUEST: 4 becomes 5;
+     * - neither (ComfyUI, upstream litegraph, other editors): 4 is BYPASS, as written, unless the
+     *   setting `LiteGraph.Compat.UnmarkedMode4` (or `options.unmarked`) is "on_request".
+     * In an old document, nodes listed in `extra.comfy_bypassed` (ComfyUI imports kept BYPASS as
+     * NEVER) become BYPASS and the list is removed. The document is then marked with the current
+     * `litegraph_modes`.
+     * @param {object} data - a graph document
+     * @param {{unmarked?: "bypass"|"on_request"}} [options]
+     * @returns {{numbering: "current"|"old"|"unmarked", changed: number}}
+     */
+    static migrateModes(data, options = {}) {
+        if (!data || typeof data !== "object") return {
+            numbering: "current",
+            changed: 0
+        };
+        let numbering = "current";
+        if (!(Number(data.litegraph_modes) >= 2)) numbering = data.litegraph_version ? "old" : "unmarked";
+        let unmarked = options.unmarked;
+        if (numbering === "unmarked" && !unmarked) {
+            try {
+                unmarked = LiteGraph.settings?.get("LiteGraph.Compat.UnmarkedMode4");
+            } catch {
+                unmarked = undefined;
+            }
+        }
+        const renumber = numbering === "old" || (numbering === "unmarked" && unmarked === "on_request");
+        let changed = 0;
+        if (renumber) {
+            const seen = new Set();
+            const visit = (graph) => {
+                if (!graph || typeof graph !== "object" || seen.has(graph)) return;
+                seen.add(graph);
+                const bypassed = new Set(Array.isArray(graph.extra?.comfy_bypassed) ? graph.extra.comfy_bypassed : []);
+                if (bypassed.size) delete graph.extra.comfy_bypassed;
+                for (const node of Array.isArray(graph.nodes) ? graph.nodes : []) {
+                    if (!node || typeof node !== "object") continue;
+                    if (node.mode === 4) {
+                        node.mode = 5;
+                        changed++;
+                    } else if (node.mode === 2 && bypassed.has(node.id)) {
+                        node.mode = 4;
+                        changed++;
+                    }
+                    visit(node.subgraph);
+                }
+                for (const definition of graph.definitions?.subgraphs ?? []) visit(definition);
+            };
+            visit(data);
+            if (changed) LiteGraph.log_info?.("lgraph", "migrateModes", `${changed} node(s) in mode 4 (On Request in the old numbering) now use mode 5`);
+        }
+        data.litegraph_modes = LiteGraph.MODES_VERSION;
+        return {
+            numbering,
+            changed
+        };
+    }
+
     /** true while this graph, or a graph containing it, is being configured (loading) */
     get isConfiguring() {
         for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
@@ -7092,6 +9240,9 @@ class LGraph {
         if (!keep_old) {
             this.clear();
         }
+
+        // mode numbering: documents from before numbering 2 (ON_REQUEST was 4) are renumbered once, here
+        if (!this._subgraph_node) LGraph.migrateModes(data);
 
         // subgraph definitions: instances that reference one get their inner graph; the root keeps the registry
         let subgraphErrors = [];
@@ -7142,6 +9293,7 @@ class LGraph {
             }
             this[i] = data[i]; // TODO should probably use LiteGraph.cloneObject
         }
+        if (!keep_old) this._execution_from_document = true; // a document without config.execution runs as "legacy"
 
         var error = false;
 
@@ -7150,9 +9302,12 @@ class LGraph {
         if (nodes) {
             for (let i = 0, l = nodes.length; i < l; ++i) {
                 var n_info = nodes[i]; // stored info
-                var node = LiteGraph.createNode(n_info.type, n_info.title);
+                // a renamed type (an automatic replacement) loads as a placeholder and is replaced below, quietly
+                const renamed = !LiteGraph.registered_node_types[n_info.type] && LiteGraph.getNodeReplacement?.(n_info.type)?.auto && LiteGraph.settings?.get("LiteGraph.Packs.AutoReplace") !== false;
+                var node = renamed ? null : LiteGraph.createNode(n_info.type, n_info.title);
                 if (!node) {
-                    LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
+                    if (renamed) LiteGraph.log_debug("lgraph", "configure", "renamed node type", n_info.type, "->", renamed && LiteGraph.getNodeReplacement(n_info.type).new_type);
+                    else LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
 
                     // in case of error we create a replacement node to avoid losing info
                     node = new LiteGraph.LGraphNode();
@@ -7172,8 +9327,15 @@ class LGraph {
             nodes.forEach((n_info) => {
                 const node = this.getNodeById(n_info.id);
                 node?.configure(n_info);
+                // a placeholder shows its missing type (serialize keeps the stored title)
+                if (node?.has_errors && node.last_serialization === n_info && !n_info.title) node.title = n_info.type;
             });
         }
+
+        // replacement mappings marked auto (renamed types): applied while loading, without an undo step
+        const replaced = this._applyAutoReplacements();
+        // a replaced placeholder is no longer an error
+        if (replaced.length) error = this._nodes.some((node) => PackRegistry.isMissingNodePlaceholder(node));
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
         this.state = {
@@ -7220,8 +9382,39 @@ class LGraph {
         this.setDirtyCanvas(true, true);
         this._emit("configured", {
             data,
-            error
+            error,
+            replaced
         });
+        this._pendingChangeKinds = null;
+        if (!this._subgraph_node) {
+            // a loaded document is saved as it is; undo and rollbacks compare with the saved revision
+            if (!this._configureReason) this._savedRevision = this.revision;
+            this._modifiedExtra = false;
+            this._emit("graph-changed", {
+                kind: "configure",
+                kinds: ["configure"],
+                action: "configure",
+                revision: this.revision,
+                graph: this,
+                reason: this._configureReason ?? "load"
+            });
+            this._updateModified();
+        }
+        if (!this._subgraph_node && this._events?.has("missing-nodes")) {
+            const report = this.getMissingNodes();
+            if (report.length) this._emit("missing-nodes", {
+                report,
+                reason: this._configureReason ?? "load"
+            });
+        }
+        // execution diagnostics of the loaded document (only when someone listens)
+        if (!this._subgraph_node && this._events?.has("execution-check")) {
+            const report = this.checkExecution();
+            this._emit("execution-check", {
+                report,
+                reason: this._configureReason ?? "load"
+            });
+        }
         return error;
     }
 
@@ -7317,6 +9510,7 @@ class LGraph {
                 action: opts.action,
                 revision: this.revision
             });
+            this._reportChange(opts.action);
         }
 
         if (opts.action) {
@@ -7455,7 +9649,12 @@ class LGraph {
 
         if (obH.actionHistory[opts.iVersion] && obH.actionHistory[opts.iVersion].graphSave) {
             var tmpHistory = JSON.stringify(this.history);
-            this.configure(obH.actionHistory[opts.iVersion].graphSave);
+            this._configureReason = "history";
+            try {
+                this.configure(obH.actionHistory[opts.iVersion].graphSave);
+            } finally {
+                this._configureReason = null;
+            }
             this.history = JSON.parse(tmpHistory);
             LiteGraph.log_debug("history loaded: " + opts.iVersion, obH.actionHistory[opts.iVersion].actionName); // debug history
             this.onGraphLoaded({
@@ -7528,6 +9727,21 @@ class LGraph {
     }
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraph);
+
+/**
+ * onSelectionChange (with `selected_nodes`, as before), then `selection-changed {nodes, items}`.
+ * A function, not a method: the selection methods also run on canvas-like objects (`deselectNode.call(obj, node)`).
+ */
+function selectionChanged(canvas) {
+    CallbackHandler.fireHookThenEvent(canvas, "onSelectionChange", [canvas.selected_nodes], canvas, "selection-changed",
+        () => ({
+            nodes: Object.values(canvas.selected_nodes),
+            items: canvas.selectedItems
+        }));
+}
+
 /**
  * This class is in charge of rendering one graph inside a canvas. And provides all the interaction required.
  * Valid callbacks are: onNodeSelected, onNodeDeselected, onShowNodePanel, onNodeDblClicked
@@ -7560,9 +9774,6 @@ class LGraphCanvas {
 
         };
         this.options = options;
-
-        // register CallbackHandler methods on this
-        this.callbackhandler_setup();
 
         // if(graph === undefined)
         //	throw new Error("No graph assigned");
@@ -7633,6 +9844,12 @@ class LGraphCanvas {
         this.render_link_tooltip = true;
 
         this.links_render_mode = LiteGraph.SPLINE_LINK;
+        /** link router name (LiteGraph.linkRouters); null: from links_render_mode */
+        this.link_router = null;
+        /** active link style names; null: the setting LiteGraph.Canvas.LinkStyles */
+        this.link_styles = null;
+        /** a slot type whose links stay bright with the "dim-by-type" style */
+        this.link_type_focus = null;
 
         // TODO refactor: options object do need refactoring .. all the options are actually outside of it
         this.autoresize = options.autoresize;
@@ -7675,6 +9892,14 @@ class LGraphCanvas {
         this.viewport = options.viewport || null; // to constraint render area to a portion of the canvas
         this.low_quality_rendering_threshold = 5; // amount of slow fps to switch to low quality rendering
 
+        // canvas options saved with "Save canvas as defaults" (options panel; setting LiteGraph.Canvas.Defaults)
+        const savedDefaults = LiteGraph.settings?.has?.("LiteGraph.Canvas.Defaults") ? LiteGraph.settings.get("LiteGraph.Canvas.Defaults") : null;
+        if (savedDefaults && typeof savedDefaults === "object") {
+            for (const [key, value] of Object.entries(savedDefaults)) {
+                if (key in this && typeof value !== "object" && typeof value !== "function") this[key] = value;
+            }
+        }
+
         // link canvas and graph
         graph?.attachCanvas(this);
         this.setCanvas(canvas, options.skip_events);
@@ -7684,34 +9909,11 @@ class LGraphCanvas {
             this.startRendering();
         }
 
-        // (the CallbackHandler was created at the top of the constructor; creating it again here
-        // would drop every handler registered while constructing)
-        LiteGraph.processCallbackHandlers("on_lgraphcanvas_construct", {
-            def_cb: LiteGraph.on_lgraphcanvas_construct
-        }, this);
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraphcanvas_construct", [this], LiteGraph, "canvas-created", {
+            canvas: this
+        });
         // extensions registered through LiteGraph.registerExtension see every canvas
         LiteGraph.extensions?.attachCanvas(this);
-    }
-
-    callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        // this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        // this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        // this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
-    }
-
-    registerCallbackHandler() {
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        // if(!this.cb_handler) this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     /**
@@ -8096,6 +10298,7 @@ class LGraphCanvas {
         // Keyboard
         canvas.addEventListener("keydown", this.processKey);
         document.addEventListener("keyup", this.processKey); // in document, otherwise it doesn't fire keyup
+        canvas.addEventListener("blur", this._endSpacePan); // a space released elsewhere does not keep panning
 
         // Drop
         canvas.addEventListener("dragover", this._doNothing, false);
@@ -8134,6 +10337,7 @@ class LGraphCanvas {
         // Keyboard
         canvas.removeEventListener("keydown", this.processKey);
         document.removeEventListener("keyup", this.processKey);
+        canvas.removeEventListener("blur", this._endSpacePan);
 
         // Drop
         canvas.removeEventListener("dragover", this._doNothing, false);
@@ -8216,6 +10420,33 @@ class LGraphCanvas {
      * @param {number|string} shape - e.g. LiteGraph.BOX_SHAPE or "box"
      * @param {number} fallback - returned for unknown values
      */
+    /**
+     * The way an arrow slot points, as a unit vector: along the flow (into the node for an input,
+     * out of it for an output). `dir` is where links attach (LiteGraph.UP/DOWN/LEFT/RIGHT); without one
+     * the arrow points right, as in the slot rows.
+     */
+    static slotFlow(is_input, dir) {
+        const out = {
+            [LiteGraph.UP]: [0, -1],
+            [LiteGraph.DOWN]: [0, 1],
+            [LiteGraph.LEFT]: [-1, 0],
+            [LiteGraph.RIGHT]: [1, 0]
+        } [dir];
+        if (!out) return [1, 0];
+        return is_input ? [-out[0], -out[1]] : out;
+    }
+
+    /** adds an arrow path at pos pointing along flow (tip 8 ahead, base 4 behind, 12 wide) */
+    static pathSlotArrow(ctx, pos, flow) {
+        const [fx, fy] = flow;
+        const tip = [pos[0] + fx * 8, pos[1] + fy * 8 + 0.5];
+        const base = [pos[0] - fx * 4, pos[1] - fy * 4 + 0.5];
+        ctx.moveTo(tip[0], tip[1]);
+        ctx.lineTo(base[0] - fy * 6, base[1] + fx * 6);
+        ctx.lineTo(base[0] + fy * 6, base[1] - fx * 6);
+        ctx.closePath();
+    }
+
     static resolveShape(shape, fallback) {
         if (typeof shape === "number" && shape > 0) return shape;
         const named = {
@@ -8370,6 +10601,7 @@ class LGraphCanvas {
             return;
         }
         this.stopRendering();
+        this.hideMinimap();
         if (this.canvas && typeof document !== "undefined") {
             this.closePanels?.();
             this.search_box?.close?.();
@@ -8534,438 +10766,453 @@ class LGraphCanvas {
         //     return;
 
         // TAG callback graphrenderer event entrypoint
-        var cbRet = this.processCallbackHandlers("onClear", {
+        var cbRet = this.processCallbackHandlers("onMouse", {
             def_cb: this.onMouse
         }, e);
-        if ((typeof(cbRet) != "undefined" && cbRet !== null) && (cbRet === false || (typeof(cbRet) == "object" && cbRet.return_value === false))) {
+        if (CallbackHandler.is(cbRet, false)) {
             LiteGraph.log_info("lgraphcanvas", "processMouseDown", "callback prevents continue");
             return;
         }
 
-        // left button mouse / single finger
-        if (e.which == 1 && !this.userInput_isNotPrimary) {
+        // space held: a press pans the view, whatever is under the pointer
+        if (e.which == 1 && !this.userInput_isNotPrimary && this._space_pan && this.allow_dragcanvas) {
+            this._dragCanvasGesture(e, false);
+        } else
 
-            if (e.ctrlKey) {
-                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "starting box selection");
-                this.dragging_rectangle = new Float32Array(4);
-                this.dragging_rectangle[0] = e.canvasX;
-                this.dragging_rectangle[1] = e.canvasY;
-                this.dragging_rectangle[2] = 1;
-                this.dragging_rectangle[3] = 1;
-                skip_action = true;
-            }
+            // left button mouse / single finger
+            if (e.which == 1 && !this.userInput_isNotPrimary) {
 
-            // clone node ALT dragging
-            if (LiteGraph.alt_drag_do_clone_nodes && e.altKey && node && this.allow_interaction && !skip_action && !this.read_only) {
-                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "cloning node");
-                let original_node = node;
-                let cloned = node.clone();
-                if (cloned) {
-                    cloned.pos[0] += 5;
-                    cloned.pos[1] += 5;
-                    this.graph.add(cloned, false, {
-                        doCalcSize: false
-                    });
-                    node = cloned;
-
-                    if (LiteGraph.alt_shift_drag_connect_clone_with_input && e.shiftKey) {
-                        // process links
-                        LiteGraph.log_verbose("lgraphcanvas", "processMouseDown", "altCloned", original_node, node);
-                        if (original_node.inputs && original_node.inputs.length) {
-                            // DBG("cycle original inputs",original_node.inputs);
-                            for (var j = 0; j < original_node.inputs.length; ++j) {
-                                var input = original_node.inputs[j];
-                                if (!input || input.link == null) {
-                                    // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "processMouseDown", "alt drag cloning", "not input link",input);
-                                    continue;
-                                }
-                                var ob_link = this.graph.links[input.link];
-                                if (!ob_link) {
-                                    LiteGraph.log_warn("lgraphcanvas", "processMouseDown", "not graph link info for input", input, original_node);
-                                    continue;
-                                }
-                                if (ob_link.type === LiteGraph.EVENT) {
-                                    // TODO put a sequencer in the middle or implement multi input
-                                    LiteGraph.log_info("lgraphcanvas", "processMouseDown", "alt drag cloning", "skip moving events", input);
-                                    continue;
-                                }
-                                var source_node;
-                                if (ob_link.origin_id) {
-                                    source_node = this.graph.getNodeById(ob_link.origin_id);
-                                }
-                                var target_node = node;
-                                if (source_node && target_node) {
-                                    LiteGraph.log_verbose("lgraphcanvas", "processMouseDown", "alt drag cloning", "connect newly created", source_node, target_node, ob_link);
-                                    // DBG LiteGraph.log_info("connect cloned node",ob_link.origin_slot, target_node, ob_link.target_slot);
-                                    source_node.connect(ob_link.origin_slot, target_node, ob_link.target_slot);
-                                }
-                            }
-                        }
-                    }
-
+                // Ctrl: a box selection, except on a group's title band, where it moves the group
+                // without its nodes (the group drag reads Ctrl while moving)
+                const ctrlGroup = e.ctrlKey && !node ? this.graph.getGroupOnPos(e.canvasX, e.canvasY) : null;
+                const ctrlOnGroupTitle = ctrlGroup && this.isOverGroupTitle(ctrlGroup, e.canvasX, e.canvasY);
+                if (e.ctrlKey && !ctrlOnGroupTitle) {
+                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "starting box selection");
+                    this.dragging_rectangle = new Float32Array(4);
+                    this.dragging_rectangle[0] = e.canvasX;
+                    this.dragging_rectangle[1] = e.canvasY;
+                    this.dragging_rectangle[2] = 1;
+                    this.dragging_rectangle[3] = 1;
                     skip_action = true;
-                    if (!block_drag_node) {
-                        if (this.allow_dragnodes) {
-                            this._dragNodesGesture(node);
-                        }
-                        if (!this.selected_nodes[node.id]) {
-                            this.processNodeSelected(node, e);
-                        }
-                    }
                 }
-            }
 
-            var clicking_canvas_bg = false;
+                // clone node ALT dragging
+                if (LiteGraph.alt_drag_do_clone_nodes && e.altKey && node && this.allow_interaction && !skip_action && !this.read_only) {
+                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "cloning node");
+                    let original_node = node;
+                    let cloned = node.clone();
+                    if (cloned) {
+                        cloned.pos[0] += 5;
+                        cloned.pos[1] += 5;
+                        this.graph.add(cloned, false, {
+                            doCalcSize: false
+                        });
+                        node = cloned;
 
-            // when clicked on top of a node
-            // and it is not interactive
-            // or action skipped or read_only
-            if (node && (this.allow_interaction || node.flags.allow_interaction) && !skip_action && !this.read_only) {
-                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicking on node");
-                if (!this.live_mode && !node.flags.pinned) {
-                    this.bringToFront(node);
-                } // if it wasn't selected?
+                        if (LiteGraph.alt_shift_drag_connect_clone_with_input && e.shiftKey) {
+                            // process links
+                            LiteGraph.log_verbose("lgraphcanvas", "processMouseDown", "altCloned", original_node, node);
+                            if (original_node.inputs && original_node.inputs.length) {
+                                // DBG("cycle original inputs",original_node.inputs);
+                                for (var j = 0; j < original_node.inputs.length; ++j) {
+                                    var input = original_node.inputs[j];
+                                    if (!input || input.link == null) {
+                                        // DBG EXCESS LiteGraph.log_verbose("lgraphcanvas", "processMouseDown", "alt drag cloning", "not input link",input);
+                                        continue;
+                                    }
+                                    var ob_link = this.graph.links[input.link];
+                                    if (!ob_link) {
+                                        LiteGraph.log_warn("lgraphcanvas", "processMouseDown", "not graph link info for input", input, original_node);
+                                        continue;
+                                    }
+                                    if (ob_link.type === LiteGraph.EVENT) {
+                                        // TODO put a sequencer in the middle or implement multi input
+                                        LiteGraph.log_info("lgraphcanvas", "processMouseDown", "alt drag cloning", "skip moving events", input);
+                                        continue;
+                                    }
+                                    var source_node;
+                                    if (ob_link.origin_id) {
+                                        source_node = this.graph.getNodeById(ob_link.origin_id);
+                                    }
+                                    var target_node = node;
+                                    if (source_node && target_node) {
+                                        LiteGraph.log_verbose("lgraphcanvas", "processMouseDown", "alt drag cloning", "connect newly created", source_node, target_node, ob_link);
+                                        // DBG LiteGraph.log_info("connect cloned node",ob_link.origin_slot, target_node, ob_link.target_slot);
+                                        source_node.connect(ob_link.origin_slot, target_node, ob_link.target_slot);
+                                    }
+                                }
+                            }
+                        }
 
-                // not dragging mouse to connect two slots
-                // interaction allowed, not collpased, not live_mode
-                if (this.allow_interaction && !this.connecting_node && !node.flags.collapsed && !this.live_mode) {
-                    // Search for corner for resize
-                    if (!skip_action &&
-                        node.resizable !== false && !node.flags.pinned &&
-                        LiteGraph.isInsideRectangle(
-                            e.canvasX,
-                            e.canvasY,
-                            node.pos[0] + node.size[0] - 9,
-                            node.pos[1] + node.size[1] - 9,
-                            18,
-                            18,
-                        )
-                    ) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "start resizing node");
-                        this.graph.beforeChange();
-                        this.resizing_node = node;
-                        this.canvas.style.cursor = "se-resize";
                         skip_action = true;
-                    } else {
-                        // search for outputs
-                        if (node.outputs) {
-                            for (let i = 0, l = node.outputs.length; i < l; ++i) {
-                                let output = node.outputs[i];
-                                let link_pos = node.getConnectionPos(false, i);
-                                if (
-                                    LiteGraph.isInsideRectangle(
-                                        e.canvasX,
-                                        e.canvasY,
-                                        link_pos[0] - 15,
-                                        link_pos[1] - 10,
-                                        30,
-                                        20,
-                                    )
-                                ) {
-                                    this.linkConnector.startFromOutput(node, i);
-                                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on output slot", node, output);
-
-                                    if (LiteGraph.shift_click_do_break_link_from) {
-                                        // break with shift
-                                        if (e.shiftKey) {
-                                            node.disconnectOutput(i);
-                                        }
-                                    } else {
-                                        // move with shift: detach every link of this output and drag them together
-                                        if (e.shiftKey && this.linkConnector.moveOutputLinks(node, i)) {
-                                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "moving links source slot", this.linkConnector.movingInputs);
-                                            this.dirty_bgcanvas = true;
-                                            skip_action = true;
-                                        }
-                                    }
-
-                                    if (is_double_click) {
-                                        // TAG callback node event entrypoint
-                                        node.processCallbackHandlers("onOutputDblClick", {
-                                            def_cb: node.onOutputDblClick
-                                        }, i, e);
-                                    } else {
-                                        // TAG callback node event entrypoint
-                                        node.processCallbackHandlers("onOutputClick", {
-                                            def_cb: node.onOutputClick
-                                        }, i, e);
-                                    }
-
-                                    skip_action = true;
-                                    break;
-                                }
+                        if (!block_drag_node) {
+                            if (this.allow_dragnodes) {
+                                this._dragNodesGesture(node);
+                            }
+                            if (!this.selected_nodes[node.id]) {
+                                this.processNodeSelected(node, e);
                             }
                         }
-
-                        // search for inputs
-                        if (node.inputs) {
-                            for (let i = 0, l = node.inputs.length; i < l; ++i) {
-                                let input = node.inputs[i];
-                                let link_pos = node.getConnectionPos(true, i);
-                                if (
-                                    LiteGraph.isInsideRectangle(
-                                        e.canvasX,
-                                        e.canvasY,
-                                        link_pos[0] - 15,
-                                        link_pos[1] - 10,
-                                        30,
-                                        20,
-                                    )
-                                ) {
-                                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on input slot", node, input);
-                                    if (is_double_click) {
-                                        // TAG callback node event entrypoint
-                                        node.processCallbackHandlers("onInputDblClick", {
-                                            def_cb: node.onInputDblClick
-                                        }, i, e);
-                                    } else {
-                                        // TAG callback node event entrypoint
-                                        node.processCallbackHandlers("onInputClick", {
-                                            def_cb: node.onInputClick
-                                        }, i, e);
-                                    }
-
-                                    if (input.link !== null) {
-                                        var link_info = this.graph.links[
-                                            input.link
-                                        ]; // before disconnecting
-                                        if (LiteGraph.click_do_break_link_to) {
-                                            node.disconnectInput(i);
-                                            this.dirty_bgcanvas = true;
-                                            skip_action = true;
-                                        } else {
-                                            // do same action as has not node ?
-                                        }
-
-                                        if (
-                                            // this.allow_reconnect_links ||
-                                            // this.move_destination_link_without_shift ||
-                                            e.shiftKey
-                                        ) {
-                                            if (!LiteGraph.click_do_break_link_to) {
-                                                // detach and drag it from its origin; cancelling restores it
-                                                this.linkConnector.moveInputLink(node, i);
-                                            } else if (this.graph._nodes_by_id[link_info.origin_id]) {
-                                                this.linkConnector.startFromOutput(this.graph._nodes_by_id[link_info.origin_id], link_info.origin_slot);
-                                            }
-                                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "moving link destination slot", this.connecting_node, this.connecting_slot, this.connecting_output, this.connecting_pos);
-                                            this.dirty_bgcanvas = true;
-                                            skip_action = true;
-                                        }
-
-
-                                    } else {
-                                        // has not node
-                                    }
-
-                                    if (!skip_action) {
-                                        // connect from in to out, from to to from
-                                        this.linkConnector.startFromInput(node, i);
-
-                                        this.dirty_bgcanvas = true;
-                                        skip_action = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        // a link drag started on a slot is a pointer gesture
-                        if (this.linkConnector.isConnecting) this._linkDragGesture();
-                    } // not resizing
+                    }
                 }
 
-                // it wasn't clicked on the links boxes, nor on slots
-                if (!skip_action) {
-                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "check clicked on node", node);
-                    var block_drag_node = false;
-                    var pos = [e.canvasX - node.pos[0], e.canvasY - node.pos[1]];
+                var clicking_canvas_bg = false;
 
-                    // title buttons: a click runs the button, the press does not drag the node
-                    const titleButton = !node.flags.collapsed && pos[1] < 0 ? this.getNodeTitleButtonAt(node, pos[0], pos[1]) : null;
-                    if (titleButton) {
-                        this.pointer.onClick = (ev) => this.clickNodeTitleButton(node, titleButton, ev);
-                        block_drag_node = true;
-                    }
+                // when clicked on top of a node
+                // and it is not interactive
+                // or action skipped or read_only
+                if (node && (this.allow_interaction || node.flags.allow_interaction) && !skip_action && !this.read_only) {
+                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicking on node");
+                    if (!this.live_mode && !node.flags.pinned) {
+                        this.bringToFront(node);
+                    } // if it wasn't selected?
 
-                    // widgets: a whole widget gesture (click, or drag until pointer up) is one undo step
-                    const widgetGraph = this.graph;
-                    widgetGraph.beginTransaction("widgetChanged");
-                    var widget;
-                    try {
-                        widget = this.processNodeWidgets(node, this.graph_mouse, e);
-                    } catch (error) {
-                        widgetGraph.commitTransaction();
-                        throw error;
-                    }
-                    if (widget) {
-                        block_drag_node = true;
-                        this.node_widget = [node, widget];
-                        this._widget_transaction = widgetGraph;
-                    } else {
-                        widgetGraph.commitTransaction();
-                    }
-
-                    let cbRet = null;
-
-                    // double clicking
-                    if (this.allow_interaction && is_double_click && this.selected_nodes[node.id]) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "double clicked on node", node);
-                        // TAG callback node event entrypoint
-                        cbRet = node.processCallbackHandlers("onDblClick", {
-                            def_cb: node.onDblClick
-                        }, e, pos, this);
-                        if (cbRet !== null && (cbRet === true || (typeof(cbRet) == "object" && cbRet.return_value))) {
-                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onDblClick", cbRet);
+                    // not dragging mouse to connect two slots
+                    // interaction allowed, not collpased, not live_mode
+                    if (this.allow_interaction && !this.connecting_node && !node.flags.collapsed && !this.live_mode) {
+                        // Search for corner for resize
+                        if (!skip_action &&
+                            node.resizable !== false && !node.flags.pinned &&
+                            LiteGraph.isInsideRectangle(
+                                e.canvasX,
+                                e.canvasY,
+                                node.pos[0] + node.size[0] - 9,
+                                node.pos[1] + node.size[1] - 9,
+                                18,
+                                18,
+                            )
+                        ) {
+                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "start resizing node");
+                            this.graph.beforeChange();
+                            this.resizing_node = node;
+                            this.canvas.style.cursor = "se-resize";
+                            skip_action = true;
                         } else {
-                            this.processNodeDblClicked(node);
-                        }
-                        block_drag_node = true;
+                            // search for outputs
+                            if (node.outputs) {
+                                for (let i = 0, l = node.outputs.length; i < l; ++i) {
+                                    let output = node.outputs[i];
+                                    let link_pos = node.getConnectionPos(false, i);
+                                    if (
+                                        LiteGraph.isInsideRectangle(
+                                            e.canvasX,
+                                            e.canvasY,
+                                            link_pos[0] - 15,
+                                            link_pos[1] - 10,
+                                            30,
+                                            20,
+                                        )
+                                    ) {
+                                        this.linkConnector.startFromOutput(node, i);
+                                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on output slot", node, output);
+
+                                        if (LiteGraph.shift_click_do_break_link_from) {
+                                            // break with shift
+                                            if (e.shiftKey) {
+                                                node.disconnectOutput(i);
+                                            }
+                                        } else {
+                                            // move with shift: detach every link of this output and drag them together
+                                            if (e.shiftKey && this.linkConnector.moveOutputLinks(node, i)) {
+                                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "moving links source slot", this.linkConnector.movingInputs);
+                                                this.dirty_bgcanvas = true;
+                                                skip_action = true;
+                                            }
+                                        }
+
+                                        if (is_double_click) {
+                                            // TAG callback node event entrypoint
+                                            node.processCallbackHandlers("onOutputDblClick", {
+                                                def_cb: node.onOutputDblClick
+                                            }, i, e);
+                                        } else {
+                                            // TAG callback node event entrypoint
+                                            node.processCallbackHandlers("onOutputClick", {
+                                                def_cb: node.onOutputClick
+                                            }, i, e);
+                                        }
+
+                                        skip_action = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // search for inputs
+                            if (node.inputs) {
+                                for (let i = 0, l = node.inputs.length; i < l; ++i) {
+                                    let input = node.inputs[i];
+                                    let link_pos = node.getConnectionPos(true, i);
+                                    if (
+                                        LiteGraph.isInsideRectangle(
+                                            e.canvasX,
+                                            e.canvasY,
+                                            link_pos[0] - 15,
+                                            link_pos[1] - 10,
+                                            30,
+                                            20,
+                                        )
+                                    ) {
+                                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on input slot", node, input);
+                                        if (is_double_click) {
+                                            // TAG callback node event entrypoint
+                                            node.processCallbackHandlers("onInputDblClick", {
+                                                def_cb: node.onInputDblClick
+                                            }, i, e);
+                                        } else {
+                                            // TAG callback node event entrypoint
+                                            node.processCallbackHandlers("onInputClick", {
+                                                def_cb: node.onInputClick
+                                            }, i, e);
+                                        }
+
+                                        if (input.link !== null) {
+                                            var link_info = this.graph.links[
+                                                input.link
+                                            ]; // before disconnecting
+                                            if (LiteGraph.click_do_break_link_to) {
+                                                node.disconnectInput(i);
+                                                this.dirty_bgcanvas = true;
+                                                skip_action = true;
+                                            } else {
+                                                // do same action as has not node ?
+                                            }
+
+                                            if (
+                                                // this.allow_reconnect_links ||
+                                                // this.move_destination_link_without_shift ||
+                                                e.shiftKey
+                                            ) {
+                                                if (!LiteGraph.click_do_break_link_to) {
+                                                    // detach and drag it from its origin; cancelling restores it
+                                                    this.linkConnector.moveInputLink(node, i);
+                                                } else if (this.graph._nodes_by_id[link_info.origin_id]) {
+                                                    this.linkConnector.startFromOutput(this.graph._nodes_by_id[link_info.origin_id], link_info.origin_slot);
+                                                }
+                                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "moving link destination slot", this.connecting_node, this.connecting_slot, this.connecting_output, this.connecting_pos);
+                                                this.dirty_bgcanvas = true;
+                                                skip_action = true;
+                                            }
+
+
+                                        } else {
+                                            // has not node
+                                        }
+
+                                        if (!skip_action) {
+                                            // connect from in to out, from to to from
+                                            this.linkConnector.startFromInput(node, i);
+
+                                            this.dirty_bgcanvas = true;
+                                            skip_action = true;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // a link drag started on a slot is a pointer gesture
+                            if (this.linkConnector.isConnecting) this._linkDragGesture();
+                        } // not resizing
                     }
 
-                    // TAG callback node event entrypoint
-                    cbRet = node.processCallbackHandlers("onMouseDown", {
-                        def_cb: node.onMouseDown
-                    }, e, pos, this);
+                    // it wasn't clicked on the links boxes, nor on slots
+                    if (!skip_action) {
+                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "check clicked on node", node);
+                        var block_drag_node = false;
+                        var pos = [e.canvasX - node.pos[0], e.canvasY - node.pos[1]];
 
-                    // if do not capture mouse
-                    if (cbRet !== null && (cbRet === true || (typeof(cbRet) == "object" && cbRet.return_value))) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onMouseDownCbRet", cbRet);
-                        block_drag_node = true;
-                    } else {
-                        // open subgraph button
-                        if (node.subgraph && !node.skip_subgraph_button) {
-                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on subgraph");
-                            if (!node.flags.collapsed && pos[0] > node.size[0] - LiteGraph.NODE_TITLE_HEIGHT && pos[1] < 0) {
-                                setTimeout(() => {
-                                    this.openSubgraph(node.subgraph);
-                                }, 10);
-                            }
-                        }
-
-                        if (this.live_mode) {
-                            clicking_canvas_bg = true;
+                        // title buttons: a click runs the button, the press does not drag the node
+                        const titleButton = !node.flags.collapsed && pos[1] < 0 ? this.getNodeTitleButtonAt(node, pos[0], pos[1]) : null;
+                        if (titleButton) {
+                            this.pointer.onClick = (ev) => this.clickNodeTitleButton(node, titleButton, ev);
                             block_drag_node = true;
                         }
-                    }
 
-                    if (!block_drag_node) {
-                        // a press on a selected node keeps the selection, so a drag moves all of it;
-                        // a click (no drag) then applies the usual selection change
-                        const keepSelection = this.allow_dragnodes && node.is_selected;
-                        if (this.allow_dragnodes) {
-                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "started dragging", node);
-                            this._dragNodesGesture(node, keepSelection ? e : null);
+                        // widgets: a whole widget gesture (click, or drag until pointer up) is one undo step
+                        const widgetGraph = this.graph;
+                        widgetGraph.beginTransaction("widgetChanged");
+                        var widget;
+                        try {
+                            widget = this.processNodeWidgets(node, this.graph_mouse, e);
+                        } catch (error) {
+                            widgetGraph.commitTransaction();
+                            throw error;
                         }
-                        if (!keepSelection) this.processNodeSelected(node, e);
-                    } else {
-                        /**
-                         * Don't call the function if the block is already selected.
-                         * Otherwise, it could cause the block to be unselected while its panel is open.
-                         */
-                        if (!node.is_selected) {
-                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "node selected", node);
-                            this.processNodeSelected(node, e);
-                        }
-                    }
-
-                    this.dirty_canvas = true;
-                }
-            } else { // clicked outside of nodes
-                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked outside nodes");
-
-                // reroutes: drag them, double click removes
-                const reroute = !skip_action && !this.read_only ? this.graph.getRerouteOnPos?.(e.canvasX, e.canvasY) : null;
-                if (reroute) {
-                    if (is_double_click) {
-                        this.graph.removeReroute(reroute.id);
-                    } else if (e.shiftKey && LinkConnector.rerouteEnd(reroute, this.graph)) {
-                        // shift: a click adds the reroute to the selection, a drag starts a new link from it
-                        this.pointer.onClick = () => this.selectItem(reroute, true);
-                        this.pointer.onDragStart = () => this._startLinkDrag(() => this.linkConnector.startFromReroute(reroute, this.graph));
-                    } else {
-                        // a press on a selected reroute keeps the selection, so a drag moves all of it;
-                        // a click then applies the usual selection change
-                        const keepSelection = !!reroute.selected;
-                        if (!keepSelection) this.selectItem(reroute, e.shiftKey || e.ctrlKey);
-                        this._dragRerouteGesture(reroute);
-                        if (keepSelection) this.pointer.onClick = () => this.selectItem(reroute, e.shiftKey || e.ctrlKey);
-                    }
-                    skip_action = true;
-                }
-
-                if (!skip_action) {
-
-                    // search for mouseDown on LINKS: a click opens the link menu, a drag moves the link
-                    if (!this.read_only) {
-                        for (let i = 0; i < this.visible_links.length; ++i) {
-                            var link = this.visible_links[i];
-                            var center = link._pos;
-                            if (
-                                !center ||
-                                e.canvasX < center[0] - 4 ||
-                                e.canvasX > center[0] + 4 ||
-                                e.canvasY < center[1] - 4 ||
-                                e.canvasY > center[1] + 4
-                            ) {
-                                continue;
-                            }
-                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on link", link);
-                            this._linkCenterGesture(link, e);
-                            this.over_link_center = null; // clear tooltip
-                            skip_action = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!skip_action) {
-
-                    // search for mouseDown on GROUPS
-                    this.selected_group = this.graph.getGroupOnPos(e.canvasX, e.canvasY);
-                    this.selected_group_resizing = false;
-                    if (this.selected_group && !this.read_only) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on group", link);
-                        if (e.ctrlKey) {
-                            this.dragging_rectangle = null;
-                        }
-
-                        const toggleRect = this.getGroupToggleRect(this.selected_group);
-                        if (toggleRect && LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, ...toggleRect)) {
-                            // the header toggle: a click mutes or unmutes the group's nodes
-                            const group = this.selected_group;
-                            this.selected_group = null;
-                            this.pointer.onClick = () => this.toggleGroupMuted(group);
-                            skip_action = true;
+                        if (widget) {
+                            block_drag_node = true;
+                            this.node_widget = [node, widget];
+                            this._widget_transaction = widgetGraph;
                         } else {
-                            // clicking the title band selects the group (shift/ctrl adds to the selection)
-                            const title_height = (this.selected_group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
-                            if (e.canvasY < this.selected_group.pos[1] + title_height) {
-                                this.selectItem(this.selected_group, e.shiftKey || e.ctrlKey);
+                            widgetGraph.commitTransaction();
+                        }
+
+                        let cbRet = null;
+
+                        // double clicking
+                        if (this.allow_interaction && is_double_click && this.selected_nodes[node.id]) {
+                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "double clicked on node", node);
+                            // TAG callback node event entrypoint
+                            cbRet = node.processCallbackHandlers("onDblClick", {
+                                def_cb: node.onDblClick
+                            }, e, pos, this);
+                            if (CallbackHandler.handled(cbRet)) {
+                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onDblClick", cbRet);
+                            } else {
+                                this.processNodeDblClicked(node);
+                            }
+                            block_drag_node = true;
+                        }
+
+                        // TAG callback node event entrypoint
+                        cbRet = node.processCallbackHandlers("onMouseDown", {
+                            def_cb: node.onMouseDown
+                        }, e, pos, this);
+
+                        // if do not capture mouse
+                        if (CallbackHandler.handled(cbRet)) {
+                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onMouseDownCbRet", cbRet);
+                            block_drag_node = true;
+                        } else {
+                            // open subgraph button
+                            if (node.subgraph && !node.skip_subgraph_button) {
+                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on subgraph");
+                                if (!node.flags.collapsed && pos[0] > node.size[0] - LiteGraph.NODE_TITLE_HEIGHT && pos[1] < 0) {
+                                    setTimeout(() => {
+                                        this.openSubgraph(node.subgraph);
+                                    }, 10);
+                                }
                             }
 
-                            var dist = LiteGraph.distance([e.canvasX, e.canvasY], [this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1]]);
-                            this._dragGroupGesture(this.selected_group, dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15));
+                            if (this.live_mode) {
+                                clicking_canvas_bg = true;
+                                block_drag_node = true;
+                            }
+                        }
+
+                        if (!block_drag_node) {
+                            // a press on a selected node keeps the selection, so a drag moves all of it;
+                            // a click (no drag) then applies the usual selection change
+                            const keepSelection = this.allow_dragnodes && node.is_selected;
+                            if (this.allow_dragnodes) {
+                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "started dragging", node);
+                                this._dragNodesGesture(node, keepSelection ? e : null);
+                            }
+                            if (!keepSelection) this.processNodeSelected(node, e);
+                        } else {
+                            /**
+                             * Don't call the function if the block is already selected.
+                             * Otherwise, it could cause the block to be unselected while its panel is open.
+                             */
+                            if (!node.is_selected) {
+                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "node selected", node);
+                                this.processNodeSelected(node, e);
+                            }
+                        }
+
+                        this.dirty_canvas = true;
+                    }
+                } else { // clicked outside of nodes
+                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked outside nodes");
+
+                    // reroutes: drag them, double click removes
+                    const reroute = !skip_action && !this.read_only ? this.graph.getRerouteOnPos?.(e.canvasX, e.canvasY) : null;
+                    if (reroute) {
+                        if (is_double_click) {
+                            this.graph.removeReroute(reroute.id);
+                        } else if (e.shiftKey && LinkConnector.rerouteEnd(reroute, this.graph)) {
+                            // shift: a click adds the reroute to the selection, a drag starts a new link from it
+                            this.pointer.onClick = () => this.selectItem(reroute, true);
+                            this.pointer.onDragStart = () => this._startLinkDrag(() => this.linkConnector.startFromReroute(reroute, this.graph));
+                        } else {
+                            // a press on a selected reroute keeps the selection, so a drag moves all of it;
+                            // a click then applies the usual selection change
+                            const keepSelection = !!reroute.selected;
+                            if (!keepSelection) this.selectItem(reroute, e.shiftKey || e.ctrlKey);
+                            this._dragRerouteGesture(reroute);
+                            if (keepSelection) this.pointer.onClick = () => this.selectItem(reroute, e.shiftKey || e.ctrlKey);
+                        }
+                        skip_action = true;
+                    }
+
+                    if (!skip_action) {
+
+                        // search for mouseDown on LINKS: a click opens the link menu, a drag moves the link
+                        if (!this.read_only) {
+                            for (let i = 0; i < this.visible_links.length; ++i) {
+                                var link = this.visible_links[i];
+                                var center = link._pos;
+                                if (
+                                    !center ||
+                                    e.canvasX < center[0] - 4 ||
+                                    e.canvasX > center[0] + 4 ||
+                                    e.canvasY < center[1] - 4 ||
+                                    e.canvasY > center[1] + 4
+                                ) {
+                                    continue;
+                                }
+                                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on link", link);
+                                this._linkCenterGesture(link, e);
+                                this.over_link_center = null; // clear tooltip
+                                skip_action = true;
+                                break;
+                            }
                         }
                     }
 
-                    if (!skip_action && is_double_click && !this.read_only && this.allow_searchbox) {
-                        LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "showing search box");
-                        this.showSearchBox(e);
-                        e.preventDefault();
-                        e.stopPropagation();
+                    if (!skip_action) {
+
+                        // search for mouseDown on GROUPS
+                        this.selected_group = this.graph.getGroupOnPos(e.canvasX, e.canvasY);
+                        this.selected_group_resizing = false;
+                        if (this.selected_group && !this.read_only) {
+                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "clicked on group", link);
+                            if (e.ctrlKey) {
+                                this.dragging_rectangle = null;
+                            }
+
+                            const toggleRect = this.getGroupToggleRect(this.selected_group);
+                            if (toggleRect && LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, ...toggleRect)) {
+                                // the header toggle: a click mutes or unmutes the group's nodes
+                                const group = this.selected_group;
+                                this.selected_group = null;
+                                this.pointer.onClick = () => this.toggleGroupMuted(group);
+                                skip_action = true;
+                            } else {
+                                const group = this.selected_group;
+                                const onTitle = this.isOverGroupTitle(group, e.canvasX, e.canvasY);
+                                // clicking the title band selects the group (shift/ctrl adds to the selection)
+                                if (onTitle) {
+                                    this.selectItem(group, e.shiftKey || e.ctrlKey);
+                                }
+                                const dist = LiteGraph.distance([e.canvasX, e.canvasY], [group.pos[0] + group.size[0], group.pos[1] + group.size[1]]);
+                                const resizing = dist * this.ds.scale < (this.options.groups_triangle_handler_size ?? 15);
+                                if (resizing || this.groupPressMoves(group, e, onTitle)) {
+                                    this._dragGroupGesture(group, resizing);
+                                } else {
+                                    // the body pans the view (LiteGraph.Group.BodyDrag "pan"), as empty canvas does
+                                    this.selected_group = null;
+                                }
+                            }
+                        }
+
+                        if (!skip_action && is_double_click && !this.read_only && this.allow_searchbox) {
+                            LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "showing search box");
+                            this.showSearchBox(e);
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }
+
+                        LiteGraph.log_debug("DEBUG canvas click is_double_click,this.allow_searchbox", is_double_click, this.allow_searchbox);
+                        clicking_canvas_bg = true;
                     }
-
-                    LiteGraph.log_debug("DEBUG canvas click is_double_click,this.allow_searchbox", is_double_click, this.allow_searchbox);
-                    clicking_canvas_bg = true;
                 }
-            }
 
-            if (!skip_action && clicking_canvas_bg && this.allow_dragcanvas) {
-                LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging_canvas start");
-                this.dragging_canvas = true;
-            }
+                if (!skip_action && clicking_canvas_bg && this.allow_dragcanvas) {
+                    LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging_canvas start");
+                    this._dragCanvasGesture(e, true);
+                }
 
-        } else if (e.which == 2) {
+            } else if (e.which == 2) {
             // middle button
 
             if (LiteGraph.middle_click_slot_add_default_node) {
@@ -9032,7 +11279,7 @@ class LGraphCanvas {
                 }
             } else if (!skip_action && this.allow_dragcanvas) {
                 LiteGraph.log_verbose("pointerevents: dragging_canvas start from middle button");
-                this.dragging_canvas = true;
+                this._dragCanvasGesture(e, false);
             }
 
 
@@ -9531,7 +11778,7 @@ class LGraphCanvas {
                 if (
                     node &&
                     e.click_time < 300 && !gesture.dragged &&
-                    LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT)
+                    this.isOverNodePin(node, e.canvasX, e.canvasY)
                 ) {
                     node.collapse();
                 }
@@ -9611,6 +11858,7 @@ class LGraphCanvas {
             this.pointer_is_down = false;
             this.pointer_is_double = false;
         }
+        if (this._space_pan) this.dragging_canvas = true; // space still held: moving keeps panning
 
         this.graph.change();
 
@@ -9703,6 +11951,160 @@ class LGraphCanvas {
 
         e.preventDefault();
         return false; // prevent default
+    }
+
+    /** true when a graph-space position is on a node's pin (the title box; a click there collapses the node) */
+    isOverNodePin(node, canvasx, canvasy) {
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        return LiteGraph.isInsideRectangle(canvasx, canvasy, node.pos[0], node.pos[1] - title, title, title);
+    }
+
+    /**
+     * The pin's look for the classic style: today's colour chain (execution status, `boxcolor`, the
+     * mode colour with node_box_coloured_by_mode, the run flash with node_box_coloured_when_on) and a
+     * circle or square after the node shape.
+     */
+    classicNodePinStyle(node, shape) {
+        let fill = false;
+        if (LiteGraph.node_box_coloured_by_mode && LiteGraph.NODE_MODES_COLORS[node.mode]) fill = LiteGraph.NODE_MODES_COLORS[node.mode];
+        if (LiteGraph.node_box_coloured_when_on) fill = node.action_triggered ? "#FFF" : (node.execute_triggered ? "#AAA" : fill);
+        const statusColor = this.executionOverlaysEnabled() ? LGraphCanvas.EXECUTION_STATUS_COLORS[node.execution_state?.status] : null;
+        const round = shape == LiteGraph.ROUND_SHAPE || shape == LiteGraph.CIRCLE_SHAPE || shape == LiteGraph.CARD_SHAPE;
+        return {
+            shape: round ? "circle" : "square",
+            fill: (statusColor || node.boxcolor || fill) || LiteGraph.NODE_DEFAULT_BOXCOLOR
+        };
+    }
+
+    /**
+     * The pin's look: the style named by the setting LiteGraph.Node.PinStyle (LiteGraph.registerNodePinStyle),
+     * or classic. A style returns `{shape, fill, stroke, lineWidth, alpha, size, glow: {color, radius, alpha},
+     * mark, markColor, redraw}` or null for classic.
+     */
+    resolveNodePinStyle(node, shape) {
+        let name = "classic";
+        try {
+            name = LiteGraph.settings?.get("LiteGraph.Node.PinStyle") ?? "classic";
+        } catch {
+            /* no platform */ }
+        const style = name !== "classic" ? LiteGraph.nodePinStyles?.get(name) : null;
+        if (style) {
+            try {
+                const spec = style(node, this, {
+                    shape
+                });
+                if (spec) return spec;
+            } catch (error) {
+                LiteGraph.log_warn?.("lgraphcanvas", "pin style failed", name, error);
+            }
+        }
+        return this.classicNodePinStyle(node, shape);
+    }
+
+    /** Draws a node's pin centred in the title box (node space, title above y = 0). */
+    drawNodePin(ctx, node, title_height, shape, low_quality) {
+        const spec = this.resolveNodePinStyle(node, shape);
+        const size = spec.size ?? 10;
+        const half = size * 0.5;
+        const cx = title_height * 0.5;
+        const cy = title_height * -0.5;
+        if (low_quality) {
+            // a black backing and a square, whatever the style
+            ctx.fillStyle = "black";
+            ctx.fillRect(cx - half - 1, cy - half - 1, size + 2, size + 2);
+            ctx.fillStyle = spec.fill || spec.stroke || LiteGraph.NODE_DEFAULT_BOXCOLOR;
+            ctx.fillRect(cx - half, cy - half, size, size);
+            return;
+        }
+        const alpha = ctx.globalAlpha;
+        if (spec.glow?.color) {
+            ctx.globalAlpha = alpha * (spec.glow.alpha ?? 0.5);
+            ctx.fillStyle = spec.glow.color;
+            ctx.beginPath();
+            ctx.arc(cx, cy, half + (spec.glow.radius ?? 4), 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = alpha * (spec.alpha ?? 1);
+        ctx.beginPath();
+        switch (spec.shape) {
+            case "square":
+                ctx.rect(cx - half, cy - half, size, size);
+                break;
+            case "diamond":
+                ctx.moveTo(cx, cy - half - 1);
+                ctx.lineTo(cx + half + 1, cy);
+                ctx.lineTo(cx, cy + half + 1);
+                ctx.lineTo(cx - half - 1, cy);
+                ctx.closePath();
+                break;
+            case "triangle":
+                ctx.moveTo(cx + half + 1, cy);
+                ctx.lineTo(cx - half + 1, cy - half);
+                ctx.lineTo(cx - half + 1, cy + half);
+                ctx.closePath();
+                break;
+            default:
+                ctx.arc(cx, cy, half, 0, Math.PI * 2);
+        }
+        if (spec.fill) {
+            ctx.fillStyle = spec.fill;
+            ctx.fill();
+        }
+        if (spec.stroke) {
+            ctx.strokeStyle = spec.stroke;
+            ctx.lineWidth = spec.lineWidth ?? 1.5;
+            ctx.stroke();
+        }
+        if (spec.mark) {
+            ctx.strokeStyle = spec.markColor ?? spec.stroke ?? "#000";
+            ctx.fillStyle = spec.markColor ?? spec.stroke ?? "#000";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            if (spec.mark === "slash") {
+                ctx.moveTo(cx - half, cy + half);
+                ctx.lineTo(cx + half, cy - half);
+                ctx.stroke();
+            } else if (spec.mark === "bar") {
+                ctx.moveTo(cx - half - 2, cy);
+                ctx.lineTo(cx + half + 2, cy);
+                ctx.stroke();
+            } else if (spec.mark === "dot") {
+                ctx.arc(cx, cy, Math.max(1.5, half * 0.4), 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1;
+        if (spec.redraw) this.dirty_canvas = true; // an animated pin (e.g. a fading run glow)
+    }
+
+    /**
+     * The quick menu of the pin (right-click on the title box, or on the title with the setting
+     * LiteGraph.Node.TitleQuickMenu): the items contributed to the "node-pin" menu location, then
+     * "More…" for the full node menu.
+     */
+    getNodePinMenuOptions(node) {
+        const items = LiteGraph.menus?.collect("node-pin", LiteGraph.commands.contextFor(this, {
+            node
+        })) ?? [];
+        return [...items, null, {
+            content: "More…",
+            callback: (_value, _options, e) => this.processContextMenu(node, e, {
+                full: true
+            })
+        }];
+    }
+
+    /** true when a right-click at the event opens the pin's quick menu instead of the node menu */
+    isNodePinMenuEvent(node, event) {
+        if (!node || !LiteGraph.menus?.has?.("node-pin")) return false;
+        if (this.isOverNodePin(node, event.canvasX, event.canvasY)) return true;
+        let titleQuick = false;
+        try {
+            titleQuick = !!LiteGraph.settings?.get("LiteGraph.Node.TitleQuickMenu");
+        } catch {
+            /* no platform */ }
+        return titleQuick && event.canvasY < node.pos[1] && event.canvasY >= node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT;
     }
 
     /**
@@ -9826,6 +12228,13 @@ class LGraphCanvas {
      * TODO : processKey save keys being down, fire single first keyDown instead of constantly pressed (use new event and promote that), clean on up
      * NOTE should use event.repeat meanwhile
      */
+    /** space released (or focus lost): stop panning; a pan gesture in progress clears the flag when it ends */
+    _endSpacePan = () => {
+        if (!this._space_pan) return;
+        this._space_pan = false;
+        if (!(this.pointer?.isDown && this.pointer.hasHandlers)) this.dragging_canvas = false;
+    };
+
     processKey = (e) => {
         if (!this.graph) {
             return;
@@ -9854,7 +12263,8 @@ class LGraphCanvas {
         if (e.type == "keydown") {
 
             if (e.keyCode == 32) {
-                // space
+                // space: moving the pointer pans (legacy flag), a press pans as a gesture (processMouseDown)
+                this._space_pan = true;
                 this.dragging_canvas = true;
                 block_default = true;
             }
@@ -9923,7 +12333,7 @@ class LGraphCanvas {
                         def_cb: this.selected_nodes[i].onKeyDown
                     }, e);
                     // could a node stop replicating to the others ?
-                    if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+                    if (CallbackHandler.is(r, true)) {
                         LiteGraph.log_debug("lgraphcanvas", "processKey", "onKeyDown has been processed with result true, prevent event bubbling");
                         block_default = true;
                     }
@@ -9935,7 +12345,7 @@ class LGraphCanvas {
             r = this.processCallbackHandlers("onKeyDown", {
                 def_cb: this.onKeyDown
             }, e);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 LiteGraph.log_debug("lgraphcanvas", "processKey", "onKeyDown has been processed with result true, prevent event bubbling");
                 block_default = true;
             } else {
@@ -9944,8 +12354,7 @@ class LGraphCanvas {
 
         } else if (e.type == "keyup") {
             if (e.keyCode == 32) {
-                // space
-                this.dragging_canvas = false;
+                this._endSpacePan();
             }
 
             if (this.selected_nodes) {
@@ -10156,6 +12565,14 @@ class LGraphCanvas {
         e.preventDefault();
         this.adjustMouseEvent(e);
 
+        // a node type dragged from a palette (LGraphCanvas.NODE_DRAG_MIME)
+        const nodeType = e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes(LGraphCanvas.NODE_DRAG_MIME) ?
+            e.dataTransfer.getData(LGraphCanvas.NODE_DRAG_MIME) : null;
+        if (nodeType && !this.read_only && this.graph) {
+            LiteGraph.palette?.insert(this, nodeType, [e.canvasX, e.canvasY]);
+            return true;
+        }
+
         let r = null;
 
         var x = e.clientX;
@@ -10186,10 +12603,10 @@ class LGraphCanvas {
             r = this.processCallbackHandlers("onDropItem", {
                 def_cb: this.onDropItem
             }, e);
-            if (r === null || !r || (typeof(r) == "object" && !r.return_value)) {
+            if (!CallbackHandler.valueOf(r)) {
                 LiteGraph.log_verbose("lgraphcanvas", "processDrop", "running default implementation", e);
                 this.checkDropItem(e);
-                return r === null ? r : (typeof(r) == "object" ? r.return_value : r); // this is probably ignored
+                return CallbackHandler.valueOf(r); // this is probably ignored
             } else {
                 return r; // this is probably ignored
             }
@@ -10213,7 +12630,7 @@ class LGraphCanvas {
                     }, file);
 
                     // if not getting a positive result, process file as data and call onDropData
-                    if (!r || (typeof(r) == "object" && !r.return_value)) {
+                    if (!CallbackHandler.valueOf(r)) {
 
                         // prepare reader
                         var reader = new FileReader();
@@ -10246,7 +12663,7 @@ class LGraphCanvas {
                 def_cb: node.onDropItem
             }, e);
             // if getting a positive result, return
-            if (r === true || (typeof(r) == "object" && r.return_value)) {
+            if (CallbackHandler.handled(r)) {
                 return true;
             }
 
@@ -10255,7 +12672,7 @@ class LGraphCanvas {
                 def_cb: this.onDropItem
             }, e);
             // if getting a positive result, return
-            if (r === true || (typeof(r) == "object" && r.return_value)) {
+            if (CallbackHandler.handled(r)) {
                 return true;
             }
 
@@ -10292,12 +12709,7 @@ class LGraphCanvas {
 
     processNodeDblClicked(n) {
 
-        let r = this.processCallbackHandlers("onShowNodePanel", {
-            def_cb: this.onShowNodePanel
-        }, n);
-        if (r === null || ((typeof(r) == "object" && (r.return_value === null || !r.return_value)))) {
-            this.showShowNodePanel(n); // use onShowNodePanel, this is an only local method
-        }
+        this.openNodePanel(n);
 
         this.processCallbackHandlers("onNodeDblClicked", {
             def_cb: this.onNodeDblClicked
@@ -10310,6 +12722,10 @@ class LGraphCanvas {
         this.processCallbackHandlers("onNodeSelected", {
             def_cb: this.onNodeSelected
         }, node);
+        // an open node panel follows the selection when its pin is on (setting LiteGraph.Panel.FollowSelection)
+        if (node && this.node_panel && this.node_panel.node !== node && LiteGraph.settings?.has?.("LiteGraph.Panel.FollowSelection") && LiteGraph.settings.get("LiteGraph.Panel.FollowSelection")) {
+            this.openNodePanel(node);
+        }
     }
 
     /**
@@ -10359,12 +12775,7 @@ class LGraphCanvas {
                 });
             });
         });
-        this.processCallbackHandlers("onSelectionChange", {
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", {
-            nodes: Object.values(this.selected_nodes)
-        });
+        selectionChanged(this);
         this.setDirty(true);
     }
 
@@ -10384,12 +12795,7 @@ class LGraphCanvas {
         this.processCallbackHandlers("onNodeDeselected", {
             def_cb: this.onNodeDeselected
         }, node);
-        this.processCallbackHandlers("onSelectionChange", {
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", {
-            nodes: Object.values(this.selected_nodes)
-        });
+        selectionChanged(this);
 
         // Remove highlighted
         node.inputs?.forEach((input) => {
@@ -10429,12 +12835,7 @@ class LGraphCanvas {
         for (const item of this._selected_items ?? []) item.selected = false;
         this._selected_items?.clear();
 
-        this.processCallbackHandlers("onSelectionChange", {
-            def_cb: this.onSelectionChange
-        }, this.selected_nodes);
-        this._emit?.("selection-changed", {
-            nodes: Object.values(this.selected_nodes)
-        });
+        selectionChanged(this);
         this.setDirty(true);
     }
 
@@ -10479,10 +12880,7 @@ class LGraphCanvas {
         if (!this._selected_items.has(item)) {
             this._selected_items.add(item);
             item.selected = true;
-            this._emit?.("selection-changed", {
-                nodes: Object.values(this.selected_nodes),
-                items: this.selectedItems
-            });
+            selectionChanged(this);
         }
         this.setDirty(true, true);
     }
@@ -10496,10 +12894,7 @@ class LGraphCanvas {
         }
         if (this._selected_items.delete(item)) {
             item.selected = false;
-            this._emit?.("selection-changed", {
-                nodes: Object.values(this.selected_nodes),
-                items: this.selectedItems
-            });
+            selectionChanged(this);
             this.setDirty(true, true);
         }
     }
@@ -10682,6 +13077,39 @@ class LGraphCanvas {
      * drag is one undo step. A click on the collapse box (left of the title) collapses the node.
      * `node_dragged` is set for the whole gesture, for code that reads it.
      */
+    /**
+     * Pans the view as a CanvasPointer gesture (left drag on empty canvas, or middle drag).
+     * A left click without a drag clears the selection, as before.
+     * @param {PointerEvent} e - the pointer down
+     * @param {boolean} clickDeselects
+     */
+    _dragCanvasGesture(e, clickDeselects) {
+        const pointer = this.pointer;
+        if (!pointer?.isDown || pointer.hasHandlers) {
+            // no gesture tracked (not the primary pointer), or another gesture (a group) owns it: the flag as before
+            this.dragging_canvas = true;
+            return;
+        }
+        this.dragging_canvas = true;
+        let last = [pointer.downEvent.x, pointer.downEvent.y]; // from the press: no movement is lost to the drift tolerance
+        pointer.onDrag = (moveEvent) => {
+            const x = moveEvent.clientX;
+            const y = moveEvent.clientY;
+            this.ds.offset[0] += (x - last[0]) / this.ds.scale;
+            this.ds.offset[1] += (y - last[1]) / this.ds.scale;
+            last = [x, y];
+            this.dirty_canvas = true;
+            this.dirty_bgcanvas = true;
+        };
+        if (clickDeselects) {
+            pointer.onClick = () => this.deselectAllNodes(); // a click is short (CanvasPointer.click_time) and still
+        }
+        pointer.finally = () => {
+            this.dragging_canvas = !!this._space_pan; // space still held: moving keeps panning
+            this.dirty_canvas = true;
+        };
+    }
+
     _dragNodesGesture(node, deferredSelect = null) {
         const graph = this.graph;
         const pointer = this.pointer;
@@ -10712,7 +13140,7 @@ class LGraphCanvas {
             this.dirty_bgcanvas = true;
         };
         pointer.onClick = (e) => {
-            if (LiteGraph.isInsideRectangle(e.canvasX, e.canvasY, node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT, LiteGraph.NODE_TITLE_HEIGHT)) {
+            if (this.isOverNodePin(node, e.canvasX, e.canvasY)) {
                 node.collapse();
                 this.setDirty(true, true);
             }
@@ -11187,6 +13615,24 @@ class LGraphCanvas {
      * renders the whole canvas content, by rendering in two separated canvas, one containing the background grid and the connections, and one containing the nodes)
      * @method draw
      **/
+    /**
+     * Emits `viewport-changed {offset, scale, visible_area}` once when the view moved or zoomed
+     * since the last frame (checked when drawing, so no timer is needed).
+     */
+    _checkViewportChanged() {
+        const ds = this.ds;
+        if (!ds) return;
+        const last = this._last_viewport;
+        if (last && last[0] === ds.offset[0] && last[1] === ds.offset[1] && last[2] === ds.scale) return;
+        this._last_viewport = [ds.offset[0], ds.offset[1], ds.scale];
+        if (!last) return; // the first frame is not a change
+        this._emit("viewport-changed", {
+            offset: [ds.offset[0], ds.offset[1]],
+            scale: ds.scale,
+            visible_area: Array.from(ds.visible_area ?? [])
+        });
+    }
+
     draw(force_canvas, force_bgcanvas) {
         if (!this.canvas || this.canvas.width == 0 || this.canvas.height == 0) {
             return;
@@ -11200,6 +13646,7 @@ class LGraphCanvas {
         if (this.graph) {
             this.ds.computeVisibleArea(this.viewport);
         }
+        this._checkViewportChanged();
 
         if (
             this.dirty_bgcanvas ||
@@ -11345,7 +13792,7 @@ class LGraphCanvas {
                 var connInOrOut = this.connecting_output || this.connecting_input;
 
                 var connType = connInOrOut.type;
-                var connDir = connInOrOut.dir;
+                var connDir = this.connecting_node?.getExecSlotPlacement?.(!this.connecting_output, connInOrOut)?.dir ?? connInOrOut.dir;
                 if (connDir == null) {
                     if (this.connecting_output)
                         connDir = this.connecting_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT;
@@ -11784,7 +14231,7 @@ class LGraphCanvas {
         let r = this.processCallbackHandlers("onRenderBackground", {
             def_cb: this.onRenderBackground
         }, canvas, ctx);
-        if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+        if (CallbackHandler.is(r, true)) {
             bg_already_painted = true;
         }
 
@@ -11949,7 +14396,7 @@ class LGraphCanvas {
             let r = node.processCallbackHandlers("onDrawCollapsed", {
                 def_cb: node.onDrawCollapsed
             }, ctx, this);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 return;
             }
         }
@@ -12069,9 +14516,11 @@ class LGraphCanvas {
                     let pos = node.getConnectionPos(true, i, slot_pos);
                     pos[0] -= node.pos[0];
                     pos[1] -= node.pos[1];
-                    // widget inputs sit on their widget rows: they must not push the widgets down
+                    // widget inputs sit on their widget rows and placed exec slots on the edges: they must not push the widgets down
                     const is_widget_input = LiteGraph.LGraphNode.isWidgetInputSlot(slot);
-                    if (!is_widget_input && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                    const exec_place = node.getExecSlotPlacement?.(true, slot);
+                    const is_exec = !!LiteGraph.LGraphNode.isExecSlot(slot) || slot.name == "onTrigger";
+                    if (!is_widget_input && !exec_place && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
                         max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
                     }
 
@@ -12079,7 +14528,7 @@ class LGraphCanvas {
 
                     if (slot_type == "array") {
                         slot_shape = LiteGraph.GRID_SHAPE; // place in addInput? addOutput instead?
-                    } else if (slot.name == "onTrigger" || slot.name == "onExecuted") {
+                    } else if (is_exec) {
                         slot_shape = LiteGraph.ARROW_SHAPE;
                     } else if (slot_type === LiteGraph.EVENT || slot_type === LiteGraph.ACTION) {
                         slot_shape = LiteGraph.BOX_SHAPE;
@@ -12104,10 +14553,7 @@ class LGraphCanvas {
                             );
                         }
                     } else if (slot_shape === LiteGraph.ARROW_SHAPE) {
-                        ctx.moveTo(pos[0] + 8, pos[1] + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] + 6 + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] - 6 + 0.5);
-                        ctx.closePath();
+                        LGraphCanvas.pathSlotArrow(ctx, pos, LGraphCanvas.slotFlow(true, exec_place?.dir));
                     } else if (slot_shape === LiteGraph.GRID_SHAPE) {
                         ctx.rect(pos[0] - 4, pos[1] - 4, 2, 2);
                         ctx.rect(pos[0] - 1, pos[1] - 4, 2, 2);
@@ -12128,10 +14574,8 @@ class LGraphCanvas {
                     ctx.fill();
 
                     // render name (a widget input is labelled by its widget)
-                    if (render_text && !is_widget_input &&
-                        !(slot.name == "onTrigger" || slot.name == "onExecuted")
-                    ) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                    if (render_text && !is_widget_input && !is_exec) {
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.UP) {
@@ -12162,7 +14606,9 @@ class LGraphCanvas {
                     let pos = node.getConnectionPos(false, i, slot_pos);
                     pos[0] -= node.pos[0];
                     pos[1] -= node.pos[1];
-                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                    const exec_place = node.getExecSlotPlacement?.(false, slot);
+                    const is_exec = !!LiteGraph.LGraphNode.isExecSlot(slot) || slot.name == "onExecuted";
+                    if (!exec_place && max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
                         max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
                     }
 
@@ -12180,7 +14626,7 @@ class LGraphCanvas {
 
                     if (slot_type == "array") {
                         slot_shape = LiteGraph.GRID_SHAPE;
-                    } else if (slot.name == "onTrigger" || slot.name == "onExecuted") {
+                    } else if (is_exec) {
                         slot_shape = LiteGraph.ARROW_SHAPE;
                     } else if (slot_type === LiteGraph.EVENT || slot_type === LiteGraph.ACTION) {
                         slot_shape = LiteGraph.BOX_SHAPE;
@@ -12205,10 +14651,7 @@ class LGraphCanvas {
                             );
                         }
                     } else if (slot_shape === LiteGraph.ARROW_SHAPE) {
-                        ctx.moveTo(pos[0] + 8, pos[1] + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] + 6 + 0.5);
-                        ctx.lineTo(pos[0] - 4, pos[1] - 6 + 0.5);
-                        ctx.closePath();
+                        LGraphCanvas.pathSlotArrow(ctx, pos, LGraphCanvas.slotFlow(false, exec_place?.dir));
                     } else if (slot_shape === LiteGraph.GRID_SHAPE) {
                         ctx.rect(pos[0] - 4, pos[1] - 4, 2, 2);
                         ctx.rect(pos[0] - 1, pos[1] - 4, 2, 2);
@@ -12237,10 +14680,8 @@ class LGraphCanvas {
                         ctx.stroke();
 
                     // render output name
-                    if (render_text &&
-                        !(slot.name == "onTrigger" || slot.name == "onExecuted")
-                    ) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                    if (render_text && !is_exec) {
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.DOWN) {
@@ -12430,7 +14871,7 @@ class LGraphCanvas {
         let r = this.processCallbackHandlers("onDrawLinkTooltip", {
             def_cb: this.onDrawLinkTooltip
         }, ctx, link, this);
-        if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+        if (CallbackHandler.is(r, true)) {
             return;
         }
 
@@ -12554,7 +14995,7 @@ class LGraphCanvas {
             r = node.processCallbackHandlers("onDrawTitleBar", {
                 def_cb: node.onDrawTitleBar
             }, ctx, title_height, size, this.ds.scale, fgcolor);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+            if (CallbackHandler.is(r, true)) {
                 // managed
             } else if (
                 title_mode != LiteGraph.TRANSPARENT_TITLE &&
@@ -12596,71 +15037,11 @@ class LGraphCanvas {
                 ctx.shadowColor = "transparent";
             }
 
-            let colState = false;
-            if (LiteGraph.node_box_coloured_by_mode && LiteGraph.NODE_MODES_COLORS[node.mode]) {
-                colState = LiteGraph.NODE_MODES_COLORS[node.mode];
-            }
-            if (LiteGraph.node_box_coloured_when_on) {
-                colState = node.action_triggered ? "#FFF" : (node.execute_triggered ? "#AAA" : colState);
-            }
-
-            // title box
-            var box_size = 10;
+            // title box (the pin): the onDrawTitleBox hook, else the pin style (LiteGraph.Node.PinStyle)
             r = node.processCallbackHandlers("onDrawTitleBox", {
                 def_cb: node.onDrawTitleBox
             }, ctx, title_height, size, this.ds.scale);
-            if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
-                // managed
-            } else if (
-                shape == LiteGraph.ROUND_SHAPE ||
-                shape == LiteGraph.CIRCLE_SHAPE ||
-                shape == LiteGraph.CARD_SHAPE
-            ) {
-                if (low_quality) {
-                    ctx.fillStyle = "black";
-                    ctx.beginPath();
-                    ctx.arc(
-                        title_height * 0.5,
-                        title_height * -0.5,
-                        box_size * 0.5 + 1,
-                        0,
-                        Math.PI * 2,
-                    );
-                    ctx.fill();
-                }
-
-                ctx.fillStyle = node.boxcolor || colState || LiteGraph.NODE_DEFAULT_BOXCOLOR;
-                if (low_quality)
-                    ctx.fillRect(title_height * 0.5 - box_size * 0.5, title_height * -0.5 - box_size * 0.5, box_size, box_size);
-                else {
-                    ctx.beginPath();
-                    ctx.arc(
-                        title_height * 0.5,
-                        title_height * -0.5,
-                        box_size * 0.5,
-                        0,
-                        Math.PI * 2,
-                    );
-                    ctx.fill();
-                }
-            } else {
-                if (low_quality) {
-                    ctx.fillStyle = "black";
-                    ctx.fillRect(
-                        (title_height - box_size) * 0.5 - 1,
-                        (title_height + box_size) * -0.5 - 1,
-                        box_size + 2,
-                        box_size + 2,
-                    );
-                }
-                ctx.fillStyle = node.boxcolor || colState || LiteGraph.NODE_DEFAULT_BOXCOLOR;
-                ctx.fillRect(
-                    (title_height - box_size) * 0.5,
-                    (title_height + box_size) * -0.5,
-                    box_size,
-                    box_size,
-                );
-            }
+            if (!CallbackHandler.is(r, true)) this.drawNodePin(ctx, node, title_height, shape, low_quality);
             ctx.globalAlpha = old_alpha;
 
             // title text
@@ -12674,35 +15055,7 @@ class LGraphCanvas {
                 this.title_text_font,
                 selected,
             );
-            if (!low_quality) {
-                ctx.font = this.title_text_font;
-                var title = String(node.getTitle());
-                if (title) {
-                    if (selected) {
-                        ctx.fillStyle = LiteGraph.NODE_SELECTED_TITLE_COLOR;
-                    } else {
-                        ctx.fillStyle =
-                            node.constructor.title_text_color ||
-                            this.node_title_color;
-                    }
-                    if (node.flags.collapsed) {
-                        ctx.textAlign = "left";
-                        ctx.fillText(
-                            title, // NO? .substring(0,20), // avoid urls too long
-                            title_height, // + measure.width * 0.5,
-                            LiteGraph.NODE_TITLE_TEXT_Y - title_height,
-                        );
-                        ctx.textAlign = "left";
-                    } else {
-                        ctx.textAlign = "left";
-                        ctx.fillText(
-                            title,
-                            title_height,
-                            LiteGraph.NODE_TITLE_TEXT_Y - title_height,
-                        );
-                    }
-                }
-            }
+            if (!low_quality) this.drawNodeTitleText(node, ctx, title_height, selected);
 
             // subgraph box
             if (!node.flags.collapsed && node.subgraph && !node.skip_subgraph_button) {
@@ -12786,6 +15139,10 @@ class LGraphCanvas {
             ctx.stroke();
             ctx.strokeStyle = fgcolor;
             ctx.globalAlpha = 1;
+        }
+
+        if (node.execution_state && this.executionOverlaysEnabled()) {
+            this.drawNodeExecutionOverlay(node, ctx, size, render_title ? title_height : 0, shape, low_quality);
         }
 
         // these counter helps in conditioning drawing based on if the node has been executed or an action occurred
@@ -12931,12 +15288,10 @@ class LGraphCanvas {
                 if (!start_slot || !end_slot) {
                     continue;
                 }
-                var start_dir =
-                    start_slot.dir ||
-                    (start_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT);
-                var end_dir =
-                    end_slot.dir ||
-                    (node.horizontal ? LiteGraph.UP : LiteGraph.LEFT);
+                var start_dir = start_node.getSlotDir ? start_node.getSlotDir(false, start_node_slot) :
+                    start_slot.dir || (start_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT);
+                var end_dir = node.getSlotDir ? node.getSlotDir(true, i) :
+                    end_slot.dir || (node.horizontal ? LiteGraph.UP : LiteGraph.LEFT);
 
                 const points = [start_node_slotpos, ...reroutes.map((reroute) => reroute.pos), end_node_slotpos];
                 this.renderLinkPath(ctx, points, link, false, 0, null, start_dir, end_dir);
@@ -12962,8 +15317,19 @@ class LGraphCanvas {
      * @method renderLinkPath
      **/
     renderLinkPath(ctx, points, link, skip_border, flow, color, start_dir, end_dir) {
+        // one style for the whole path (its segments are one link)
+        const style = link ? this.resolveLinkStyle(new RenderLink({
+            a: points[0],
+            b: points[points.length - 1],
+            startDir: start_dir,
+            endDir: end_dir,
+            link
+        })) : null;
+        if (style?.visible === false) return;
         if (points.length <= 2) {
-            this.renderLink(ctx, points[0], points[points.length - 1], link, skip_border, flow, color, start_dir, end_dir);
+            this.renderLink(ctx, points[0], points[points.length - 1], link, skip_border, flow, color, start_dir, end_dir, undefined, {
+                style
+            });
             return;
         }
         let segmentColor = color;
@@ -12979,6 +15345,13 @@ class LGraphCanvas {
                 last ? color : segmentColor,
                 k === 0 ? start_dir : LiteGraph.RIGHT,
                 last ? end_dir : LiteGraph.LEFT,
+                undefined, {
+                    style: style && !last ? {
+                        ...style,
+                        label: undefined
+                    } : style,
+                    source: link
+                },
             );
         }
     }
@@ -13057,7 +15430,26 @@ class LGraphCanvas {
         start_dir,
         end_dir,
         num_sublines,
+        options = {},
     ) {
+        start_dir = start_dir || LiteGraph.RIGHT;
+        end_dir = end_dir || LiteGraph.LEFT;
+        const rl = new RenderLink({
+            a,
+            b,
+            startDir: start_dir,
+            endDir: end_dir,
+            link: link ?? null,
+            color,
+            type: (link ?? options.source)?.type,
+            kind: link ? "link" : (options.source ? "segment" : "drag")
+        });
+        // style: given by renderLinkPath, else resolved here for a link
+        const style = options.style !== undefined ? options.style : (link ? this.resolveLinkStyle(rl) : null);
+        if (style?.visible === false) return; // not drawn, not hit-testable
+        const router = this.getLinkRouter();
+        if (!router) return; // unknown
+
         if (link) {
             this.visible_links.push(link);
         }
@@ -13069,17 +15461,17 @@ class LGraphCanvas {
         if (!color) {
             color = this.default_link_color;
         }
+        if (style?.color) color = style.color;
         if (link != null && this.highlighted_links[link.id]) {
             color = "#FFF";
         }
-
-        start_dir = start_dir || LiteGraph.RIGHT;
-        end_dir = end_dir || LiteGraph.LEFT;
-
-        var dist = LiteGraph.distance(a, b);
+        const restoreAlpha = ctx.globalAlpha;
+        if (style && style.alpha !== 1) ctx.globalAlpha = restoreAlpha * style.alpha;
+        const lineWidth = style?.width ?? this.connections_width;
+        if (style?.dash) ctx.setLineDash?.(style.dash);
 
         if (this.render_connections_border && this.ds.scale > 0.6) {
-            ctx.lineWidth = this.connections_width + 4;
+            ctx.lineWidth = lineWidth + 4;
         }
         ctx.lineJoin = "round";
         num_sublines = num_sublines || 1;
@@ -13087,121 +15479,11 @@ class LGraphCanvas {
             ctx.lineWidth = 0.5;
         }
 
-        // begin line shape
+        // begin line shape: the router adds the path (LiteGraph.linkRouters)
         ctx.beginPath();
         for (let i = 0; i < num_sublines; i += 1) {
             var offsety = (i - (num_sublines - 1) * 0.5) * 5;
-
-            if (this.links_render_mode == LiteGraph.SPLINE_LINK) {
-                ctx.moveTo(a[0], a[1] + offsety);
-                let start_offset_x = 0;
-                let start_offset_y = 0;
-                let end_offset_x = 0;
-                let end_offset_y = 0;
-                switch (start_dir) {
-                    case LiteGraph.LEFT:
-                        start_offset_x = dist * -0.25;
-                        break;
-                    case LiteGraph.RIGHT:
-                        start_offset_x = dist * 0.25;
-                        break;
-                    case LiteGraph.UP:
-                        start_offset_y = dist * -0.25;
-                        break;
-                    case LiteGraph.DOWN:
-                        start_offset_y = dist * 0.25;
-                        break;
-                }
-                switch (end_dir) {
-                    case LiteGraph.LEFT:
-                        end_offset_x = dist * -0.25;
-                        break;
-                    case LiteGraph.RIGHT:
-                        end_offset_x = dist * 0.25;
-                        break;
-                    case LiteGraph.UP:
-                        end_offset_y = dist * -0.25;
-                        break;
-                    case LiteGraph.DOWN:
-                        end_offset_y = dist * 0.25;
-                        break;
-                }
-                ctx.bezierCurveTo(
-                    a[0] + start_offset_x,
-                    a[1] + start_offset_y + offsety,
-                    b[0] + end_offset_x,
-                    b[1] + end_offset_y + offsety,
-                    b[0],
-                    b[1] + offsety,
-                );
-            } else if (this.links_render_mode == LiteGraph.LINEAR_LINK) {
-                ctx.moveTo(a[0], a[1] + offsety);
-                let start_offset_x = 0;
-                let start_offset_y = 0;
-                let end_offset_x = 0;
-                let end_offset_y = 0;
-                switch (start_dir) {
-                    case LiteGraph.LEFT:
-                        start_offset_x = -1;
-                        break;
-                    case LiteGraph.RIGHT:
-                        start_offset_x = 1;
-                        break;
-                    case LiteGraph.UP:
-                        start_offset_y = -1;
-                        break;
-                    case LiteGraph.DOWN:
-                        start_offset_y = 1;
-                        break;
-                }
-                switch (end_dir) {
-                    case LiteGraph.LEFT:
-                        end_offset_x = -1;
-                        break;
-                    case LiteGraph.RIGHT:
-                        end_offset_x = 1;
-                        break;
-                    case LiteGraph.UP:
-                        end_offset_y = -1;
-                        break;
-                    case LiteGraph.DOWN:
-                        end_offset_y = 1;
-                        break;
-                }
-                var l = 15;
-                ctx.lineTo(
-                    a[0] + start_offset_x * l,
-                    a[1] + start_offset_y * l + offsety,
-                );
-                ctx.lineTo(
-                    b[0] + end_offset_x * l,
-                    b[1] + end_offset_y * l + offsety,
-                );
-                ctx.lineTo(b[0], b[1] + offsety);
-            } else if (this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
-                ctx.moveTo(a[0], a[1]);
-                var start_x = a[0];
-                var start_y = a[1];
-                var end_x = b[0];
-                var end_y = b[1];
-                if (start_dir == LiteGraph.RIGHT) {
-                    start_x += 10;
-                } else {
-                    start_y += 10;
-                }
-                if (end_dir == LiteGraph.LEFT) {
-                    end_x -= 10;
-                } else {
-                    end_y -= 10;
-                }
-                ctx.lineTo(start_x, start_y);
-                ctx.lineTo((start_x + end_x) * 0.5, start_y);
-                ctx.lineTo((start_x + end_x) * 0.5, end_y);
-                ctx.lineTo(end_x, end_y);
-                ctx.lineTo(b[0], b[1]);
-            } else {
-                return;
-            } // unknown
+            router.path(ctx, rl, offsety);
         }
 
         // rendering the outline of the connection can be a little bit slow
@@ -13214,12 +15496,13 @@ class LGraphCanvas {
             ctx.stroke();
         }
 
-        ctx.lineWidth = this.connections_width;
+        ctx.lineWidth = lineWidth;
         ctx.fillStyle = ctx.strokeStyle = color;
         ctx.stroke();
+        if (style?.dash) ctx.setLineDash?.([]);
         // end line shape
 
-        var pos = this.computeConnectionPoint(a, b, 0.5, start_dir, end_dir);
+        var pos = router.point(rl, 0.5);
         if (link && link._pos) {
             link._pos[0] = pos[0];
             link._pos[1] = pos[1];
@@ -13234,34 +15517,10 @@ class LGraphCanvas {
             // render arrow
             if (this.render_connection_arrows) {
                 // compute two points in the connection
-                var posA = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.25,
-                    start_dir,
-                    end_dir,
-                );
-                var posB = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.26,
-                    start_dir,
-                    end_dir,
-                );
-                var posC = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.75,
-                    start_dir,
-                    end_dir,
-                );
-                var posD = this.computeConnectionPoint(
-                    a,
-                    b,
-                    0.76,
-                    start_dir,
-                    end_dir,
-                );
+                var posA = router.point(rl, 0.25);
+                var posB = router.point(rl, 0.26);
+                var posC = router.point(rl, 0.75);
+                var posD = router.point(rl, 0.76);
 
                 // compute the angle between them so the arrow points in the right direction
                 var angleA = 0;
@@ -13305,29 +15564,100 @@ class LGraphCanvas {
             ctx.fillStyle = color;
             for (let i = 0; i < 5; ++i) {
                 var f = (LiteGraph.getTime() * 0.001 + i * 0.2) % 1;
-                pos = this.computeConnectionPoint(
-                    a,
-                    b,
-                    f,
-                    start_dir,
-                    end_dir,
-                );
+                pos = router.point(rl, f);
                 ctx.beginPath();
                 ctx.arc(pos[0], pos[1], 5, 0, 2 * Math.PI);
                 ctx.fill();
             }
         }
+
+        // a label (link style) at the centre
+        if (style?.label && this.ds.scale >= 0.6 && typeof ctx.fillText === "function") {
+            const center = router.point(rl, 0.5);
+            ctx.save();
+            ctx.font = "11px Arial";
+            ctx.textAlign = "center";
+            const width = (ctx.measureText?.(style.label)?.width ?? 0) + 8;
+            ctx.fillStyle = "rgba(20,20,20,0.85)";
+            ctx.fillRect(center[0] - width / 2, center[1] - 20, width, 14);
+            ctx.fillStyle = color;
+            ctx.fillText(style.label, center[0], center[1] - 9);
+            ctx.restore();
+        }
+        ctx.globalAlpha = restoreAlpha;
+    }
+
+    /**
+     * Shows a minimap over this canvas (bottom right of its parent element); see MiniMap.
+     * @returns {MiniMap|null} null without a DOM
+     */
+    showMinimap(options) {
+        if (this.minimap) return this.minimap;
+        if (!this.canvas?.ownerDocument) return null;
+        this.minimap = new MiniMap(this, options);
+        return this.minimap;
+    }
+
+    hideMinimap() {
+        this.minimap?.dispose();
+        this.minimap = null;
+    }
+
+    /** @returns {boolean} true when the minimap is now shown */
+    toggleMinimap(options) {
+        if (this.minimap) {
+            this.hideMinimap();
+            return false;
+        }
+        return !!this.showMinimap(options);
+    }
+
+    /** The link router this canvas draws with: `link_router` by name, else the one for `links_render_mode`. */
+    getLinkRouter() {
+        const routers = LiteGraph.linkRouters;
+        const byMode = LinkRouterRegistry.nameForMode(this.links_render_mode);
+        return (this.link_router ? routers?.get(this.link_router) : null) ?? routers?.get(byMode) ?? null;
+    }
+
+    /** Active link style names: `link_styles`, else the setting `LiteGraph.Canvas.LinkStyles`. */
+    getActiveLinkStyles() {
+        if (Array.isArray(this.link_styles)) return this.link_styles;
+        const settings = LiteGraph.settings;
+        const value = settings?.has?.("LiteGraph.Canvas.LinkStyles") ? settings.get("LiteGraph.Canvas.LinkStyles") : null;
+        return Array.isArray(value) ? value : [];
+    }
+
+    /** Composes the active link styles for a RenderLink (null when none applies). */
+    resolveLinkStyle(rl) {
+        const active = this.getActiveLinkStyles();
+        if (!active.length || !LiteGraph.linkStyles) return null;
+        // the context is computed once per frame
+        if (this._link_style_ctx_frame !== this.frame || !this._link_style_ctx) {
+            const settings = LiteGraph.settings;
+            const hidden = settings?.has?.("LiteGraph.Canvas.HiddenLinkTypes") ? settings.get("LiteGraph.Canvas.HiddenLinkTypes") : null;
+            this._link_style_ctx = {
+                canvas: this,
+                selectedIds: new Set(Object.values(this.selected_nodes ?? {}).map((node) => node?.id)),
+                focusType: this.link_type_focus ?? this.connecting_output?.type ?? this.connecting_input?.type ?? null,
+                hiddenTypes: Array.isArray(hidden) ? hidden.map(String) : [],
+            };
+            this._link_style_ctx_frame = this.frame;
+        }
+        return LiteGraph.linkStyles.resolve(rl, this._link_style_ctx, active);
     }
 
     // returns the link center point based on curvature
     computeConnectionPoint(a, b, t, start_dir, end_dir) {
         start_dir = start_dir || LiteGraph.RIGHT;
         end_dir = end_dir || LiteGraph.LEFT;
-
-        // follow the path renderLink actually draws, not always the spline
-        if (this.links_render_mode == LiteGraph.LINEAR_LINK || this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
-            return LGraphCanvas.pointAlongPolyline(this.getLinkPolyline(a, b, start_dir, end_dir), t);
-        }
+        // (also called with a plain object as `this`: fall back to the router of its render mode)
+        const router = typeof this.getLinkRouter === "function" ? this.getLinkRouter() : LiteGraph.linkRouters?.get(LinkRouterRegistry.nameForMode(this.links_render_mode));
+        if (router) return router.point(new RenderLink({
+            a,
+            b,
+            startDir: start_dir,
+            endDir: end_dir
+        }), t);
 
         var dist = LiteGraph.distance(a, b);
         var p0 = a;
@@ -13488,6 +15818,102 @@ class LGraphCanvas {
     }
 
     /** Draws a node's badges and title buttons (see getNodeTitleDecorations). */
+    /** drag data type for a node type dragged onto the canvas (the value is the type) */
+    static NODE_DRAG_MIME = "application/x-litegraph-node-type";
+
+    /** title-box colours for execution states (setting LiteGraph.Canvas.ExecutionOverlays) */
+    static EXECUTION_STATUS_COLORS = {
+        queued: "#888",
+        running: "#FC3",
+        done: "#5C5",
+        error: "#E44",
+        skipped: "#666"
+    };
+
+    /** true when execution overlays are drawn (setting `LiteGraph.Canvas.ExecutionOverlays`) */
+    executionOverlaysEnabled() {
+        const settings = LiteGraph.settings;
+        return !settings?.has?.("LiteGraph.Canvas.ExecutionOverlays") || settings.get("LiteGraph.Canvas.ExecutionOverlays") !== false;
+    }
+
+    slot_label_mode = "icon+text";
+
+    /** The icon of a node: `node.icon`, else the definition's `icon` (a short text glyph or an image). */
+    getNodeIcon(node) {
+        return node.icon ?? LiteGraph.getNodeDefinition?.(node.type)?.icon ?? null;
+    }
+
+    /**
+     * Draws the title text, after the node's icon when it has one (`node.icon` or `def.icon`: a
+     * short string such as an emoji, or a loaded image).
+     */
+    drawNodeTitleText(node, ctx, title_height, selected) {
+        ctx.font = this.title_text_font;
+        ctx.textAlign = "left";
+        const y = LiteGraph.NODE_TITLE_TEXT_Y - title_height;
+        let x = title_height;
+        const icon = this.getNodeIcon(node);
+        const textColor = selected ? LiteGraph.NODE_SELECTED_TITLE_COLOR : (node.constructor.title_text_color || this.node_title_color);
+        if (typeof icon === "string" && icon) {
+            ctx.fillStyle = textColor;
+            ctx.fillText(icon, x, y);
+            x += ctx.measureText(icon).width + 4;
+        } else if (icon && typeof icon === "object" && (icon.complete || icon.width) && typeof ctx.drawImage === "function") {
+            const side = Math.round(title_height * 0.6);
+            try {
+                ctx.drawImage(icon, x, -title_height + (title_height - side) / 2, side, side);
+                x += side + 4;
+            } catch {
+                // an image that cannot be drawn is skipped
+            }
+        }
+        const title = String(node.getTitle() ?? "");
+        if (!title) return;
+        ctx.fillStyle = textColor;
+        ctx.fillText(title, x, y);
+    }
+
+    /**
+     * Draws the execution state of a node (`node.execution_state`, see ExecutionState): an
+     * outline for running and error, a progress bar under the title, and the error message
+     * under the node.
+     */
+    drawNodeExecutionOverlay(node, ctx, size, title_height, shape, low_quality) {
+        const state = node.execution_state;
+        const color = LGraphCanvas.EXECUTION_STATUS_COLORS[state.status];
+        const collapsed = !!node.flags?.collapsed;
+        const width = collapsed ? (node._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH) : size[0];
+        const height = collapsed ? 0 : size[1];
+        if (state.status === "running" || state.status === "error") {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = state.status === "error" ? 3 : 2;
+            ctx.beginPath();
+            if (shape == LiteGraph.BOX_SHAPE || low_quality || typeof ctx.roundRect !== "function") ctx.rect(-2, -title_height - 2, width + 4, height + title_height + 4);
+            else ctx.roundRect(-2, -title_height - 2, width + 4, height + title_height + 4, [this.round_radius + 2]);
+            ctx.stroke();
+            ctx.restore();
+        }
+        if (Number.isFinite(state.value) && Number.isFinite(state.max) && state.max > 0 && state.status !== "done") {
+            const fraction = Math.max(0, Math.min(1, state.value / state.max));
+            ctx.save();
+            ctx.fillStyle = "rgba(0,0,0,0.35)";
+            ctx.fillRect(0, -3, width, 3);
+            ctx.fillStyle = LGraphCanvas.EXECUTION_STATUS_COLORS.running;
+            ctx.fillRect(0, -3, width * fraction, 3);
+            ctx.restore();
+        }
+        if (state.status === "error" && state.message && !low_quality && !collapsed) {
+            ctx.save();
+            ctx.font = "11px Arial";
+            ctx.textAlign = "left";
+            ctx.fillStyle = color;
+            const text = state.message.length > 80 ? state.message.slice(0, 79) + "…" : state.message;
+            ctx.fillText(text, 0, height + 16);
+            ctx.restore();
+        }
+    }
+
     drawNodeTitleDecorations(node, ctx, title_height) {
         const layout = this.getNodeTitleDecorations(node, ctx);
         node._title_decorations = layout; // used for hit testing until the next draw
@@ -13565,6 +15991,13 @@ class LGraphCanvas {
 
     // corner points of a LINEAR_LINK / STRAIGHT_LINK path, as drawn by renderLink
     getLinkPolyline(a, b, start_dir, end_dir) {
+        const fromRouter = LiteGraph.linkRouters?.polyline(this.link_router ?? LinkRouterRegistry.nameForMode(this.links_render_mode), new RenderLink({
+            a,
+            b,
+            startDir: start_dir,
+            endDir: end_dir
+        }));
+        if (fromRouter) return fromRouter;
         if (this.links_render_mode == LiteGraph.STRAIGHT_LINK) {
             var start_x = a[0] + (start_dir == LiteGraph.RIGHT ? 10 : 0);
             var start_y = a[1] + (start_dir == LiteGraph.RIGHT ? 0 : 10);
@@ -13790,37 +16223,86 @@ class LGraphCanvas {
         } // end for
 
         function inner_value_change(widget, value, old_value) {
-            LiteGraph.log_debug("inner_value_change for processNodeWidgets", widget, value);
-            const value_original = value;
-            if (widget.type == "number") {
-                value = Number(value);
-            }
-            widget.value = value;
-            // value changed: notify with the new value (text widgets used to report the old one)
-            if (old_value != value) {
-                node.processCallbackHandlers("onWidgetChanged", {
-                    def_cb: node.onWidgetChanged
-                }, widget.name, value, old_value, widget);
-                node.graph.onGraphChanged({
-                    action: "widgetChanged",
-                    doSave: true
-                }); // tag: graph event entrypoint
-                node.graph._emit?.("widget-changed", {
-                    node,
-                    widget,
-                    value,
-                    previous: old_value
-                });
-            }
-            if (widget.options && widget.options.property && node.properties[widget.options.property] !== undefined) {
-                node.setProperty(widget.options.property, value);
-            }
-            if (widget.callback) {
-                widget.callback(widget.value, that, node, pos, event, value_original);
-            }
+            (that.applyWidgetValue ?? LGraphCanvas.prototype.applyWidgetValue).call(that, node, widget, value, {
+                old_value,
+                pos,
+                event
+            });
         }
 
         return null;
+    }
+
+    /**
+     * Writes a value into a node widget the way a canvas edit does: the value is normalized by the
+     * widget's value type (LiteGraph.valueTypes), `onWidgetChanged` runs, a bound property
+     * (`options.property`) is written, the change is recorded and `widget-changed` is emitted, then
+     * the widget callback runs. The canvas pointer handling and the node panel both use it.
+     * @param {object} node
+     * @param {object} widget
+     * @param {*} value
+     * @param {{old_value?: *, pos?: number[], event?: Event}} [context] - old_value defaults to the widget's current value
+     * @returns {boolean} true when the value changed
+     */
+    applyWidgetValue(node, widget, value, context = {}) {
+        const old_value = Object.hasOwn(context, "old_value") ? context.old_value : widget.value;
+        LiteGraph.log_debug("lgraphcanvas", "applyWidgetValue", widget, value);
+        const value_original = value;
+        if (widget.type == "number") {
+            value = Number(value);
+        } else if (LiteGraph.valueTypes?.has(widget.type)) {
+            try {
+                value = LiteGraph.valueTypes.coerce(widget.type, value, widget.options);
+            } catch (error) {
+                this.showExecutionNotice?.(`${widget.label || widget.name}: ${error.message}`);
+                return false;
+            }
+        }
+        widget.value = value;
+        const changed = !LGraphCanvas.sameValue(old_value, value);
+        // value changed: notify with the new value (text widgets used to report the old one)
+        if (changed) {
+            node.processCallbackHandlers("onWidgetChanged", {
+                def_cb: node.onWidgetChanged,
+            }, widget.name, value, old_value, widget);
+        }
+        // a bound property is written before the change is recorded, so the history entry includes it
+        if (widget.options && widget.options.property && node.properties?.[widget.options.property] !== undefined) {
+            node.setProperty(widget.options.property, value);
+        }
+        if (changed && node.graph) {
+            node.graph._markChange?.("widget");
+            node.graph.onGraphChanged({
+                action: "widgetChanged",
+                doSave: true
+            }); // tag: graph event entrypoint
+            node.graph._emit?.("widget-changed", {
+                node,
+                widget,
+                value,
+                previous: old_value
+            }, {
+                recorded: true
+            });
+        }
+        if (widget.callback) {
+            widget.callback(widget.value, this, node, context.pos, context.event, value_original);
+        }
+        this.dirty_canvas = true;
+        return changed;
+    }
+
+    /** Loose equality for widget and property values; arrays and objects compare by content. */
+    static sameValue(a, b) {
+        if (a == b) return true;
+        if (a && b && typeof a === "object" && typeof b === "object") {
+            try {
+                return JSON.stringify(a) === JSON.stringify(b);
+            } catch {
+                return false;
+            }
+        }
+        return false;
     }
 
     /**
@@ -13865,31 +16347,91 @@ class LGraphCanvas {
             ctx.lineTo(pos[0] + size[0], pos[1] + size[1] - this.options.groups_triangle_handler_size);
             ctx.fill();
 
-            var font_size = group.font_size || this.options.groups_title_font_size || LiteGraph.DEFAULT_GROUP_FONT_SIZE;
+            // the title, kept left of the header toggle (clipped there, so it never runs under it)
+            var font_size = this.getGroupTitleFontSize(group);
+            const toggleRect = this.getGroupToggleRect(group);
+            const textWidth = Math.max(0, (toggleRect ? toggleRect[0] - 4 / this.ds.scale : pos[0] + size[0]) - pos[0] - 4);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(pos[0], pos[1], textWidth + 4, size[1]);
+            ctx.clip();
             ctx.font = font_size + "px " + this.options.groups_title_font;
             ctx.textAlign = this.options.groups_title_alignment;
             if (this.options.groups_title_wrap) {
-                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, size[0], font_size);
+                LiteGraph.canvasFillTextMultiline(ctx, group.title, pos[0] + 4, pos[1] + font_size, textWidth, font_size);
             } else {
                 ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
             }
-            this.drawGroupToggle(group, ctx);
+            ctx.restore();
+            this.drawGroupToggle(group, ctx, toggleRect);
         }
 
         ctx.restore();
     }
 
+    /** a LiteGraph.Group.* setting, or the fallback when there is no settings registry */
+    _groupSetting(name, fallback) {
+        try {
+            const value = LiteGraph.settings?.get?.("LiteGraph.Group." + name);
+            return value ?? fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
+    /**
+     * The font size a group's title is drawn with, in graph units. With LiteGraph.Group.TitleScale
+     * (default on) its on-screen size is kept between LiteGraph.Group.TitleMinPx and TitleMaxPx;
+     * off, it is the group's font_size at every zoom (legacy).
+     */
+    getGroupTitleFontSize(group) {
+        const base = group.font_size || this.options.groups_title_font_size || LiteGraph.DEFAULT_GROUP_FONT_SIZE || LiteGraph.DEFAULT_GROUP_FONT || 24;
+        const scale = this.ds?.scale || 1;
+        if (!this._groupSetting("TitleScale", true)) return base;
+        const min = Number(this._groupSetting("TitleMinPx", 12)) || 0;
+        const max = Number(this._groupSetting("TitleMaxPx", 48)) || Infinity;
+        const px = Math.min(Math.max(base * scale, min), Math.max(min, max));
+        return px / scale;
+    }
+
+    /** height of a group's title band in graph units (first title line) */
+    getGroupTitleHeight(group) {
+        return this.getGroupTitleFontSize(group) * 1.4;
+    }
+
+    /** true when a graph-space position is on the group's title band */
+    isOverGroupTitle(group, canvasx, canvasy) {
+        return canvasx >= group.pos[0] && canvasx <= group.pos[0] + group.size[0] &&
+            canvasy >= group.pos[1] && canvasy < group.pos[1] + Math.min(this.getGroupTitleHeight(group), group.size[1]);
+    }
+
+    /**
+     * Whether a press on a group (not its toggle or resize corner) moves it. The title band always
+     * does (Ctrl there moves the group alone); the body does with Alt, or always when
+     * LiteGraph.Group.BodyDrag is "move" (legacy). Otherwise a body drag pans the view.
+     */
+    groupPressMoves(group, e, onTitle = this.isOverGroupTitle(group, e.canvasX, e.canvasY)) {
+        if (onTitle || e.altKey) return true;
+        return this._groupSetting("BodyDrag", "pan") === "move";
+    }
+
     /**
      * The header toggle of a group (right end of its title band), in graph space, or null when
-     * LiteGraph.Group.HeaderToggle is off.
+     * LiteGraph.Group.HeaderToggle is off or it would be too small to see. Node-pin sized
+     * (LGraphGroup.opts.toggle_size), at most toggle_max_px on screen, hidden below toggle_min_px.
      * @returns {number[]|null} [x, y, w, h]
      */
     getGroupToggleRect(group) {
-        if (!LiteGraph.settings?.get?.("LiteGraph.Group.HeaderToggle")) return null;
-        const title_height = (group.font_size ?? LiteGraph.DEFAULT_GROUP_FONT ?? 24) * 1.4;
-        const side = Math.max(10, title_height - 10);
-        if (group.size[0] < side * 3) return null;
-        return [group.pos[0] + group.size[0] - side - 5, group.pos[1] + (title_height - side) / 2, side, side];
+        if (!this._groupSetting("HeaderToggle", true)) return null;
+        const opts = LiteGraph.LGraphGroup?.opts ?? {};
+        const scale = this.ds?.scale || 1;
+        const px = Math.min((opts.toggle_size ?? 10) * scale, opts.toggle_max_px ?? 14);
+        if (px < (opts.toggle_min_px ?? 6)) return null;
+        const side = px / scale;
+        const pad = 6 / scale;
+        if (group.size[0] < side * 3 + pad * 2) return null;
+        const band = Math.min(this.getGroupTitleHeight(group), group.size[1]);
+        return [group.pos[0] + group.size[0] - side - pad, group.pos[1] + (band - side) / 2, side, side];
     }
 
     /** true when the group has nodes and all of them are muted (mode NEVER) */
@@ -13907,21 +16449,27 @@ class LGraphCanvas {
         return mode;
     }
 
-    /** Draws a group's header toggle: filled while its nodes run, hollow when they are all muted. */
-    drawGroupToggle(group, ctx) {
-        const rect = this.getGroupToggleRect(group);
+    /**
+     * Draws a group's header toggle like a node pin: a dot while its nodes run, a ring when they are
+     * all muted.
+     */
+    drawGroupToggle(group, ctx, rect = this.getGroupToggleRect(group)) {
         if (!rect) return;
         const muted = (group._nodes ?? []).length > 0 && group._nodes.every((node) => node.mode === LiteGraph.NEVER);
-        const [x, y, w, h] = rect;
+        const [x, y, w] = rect;
+        const color = LiteGraph.NODE_DEFAULT_BOXCOLOR || "#666";
         ctx.save();
         ctx.globalAlpha = this.editor_alpha;
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = "rgba(255,255,255,0.7)";
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
         ctx.beginPath();
-        ctx.arc(x + w / 2, y + h / 2, w / 2 - 1, 0, Math.PI * 2);
-        if (muted) ctx.stroke();
-        else ctx.fill();
+        ctx.arc(x + w / 2, y + w / 2, w / 2, 0, Math.PI * 2);
+        if (muted) {
+            ctx.lineWidth = 1.5 / this.ds.scale;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
         ctx.restore();
     }
 
@@ -14244,12 +16792,16 @@ class LGraphCanvas {
         }
     }
 
-    /** submenu: the document's subgraph definitions, inserted linked or as a copy */
+    /** submenu: a blueprint file, and the document's subgraph definitions (linked or as a copy) */
     static onMenuInsertSubgraph(value, options, event, prev_menu) {
         const canvas = LGraphCanvas.active_canvas;
         const graph = canvas?.graph;
         if (!graph) return;
-        const entries = [];
+        const entries = [{
+            content: "From file…",
+            file: true
+        }];
+        if (graph.rootGraph.subgraphs.size) entries.push(null);
         for (const definition of graph.rootGraph.subgraphs.values()) {
             const name = definition.name ?? "Subgraph";
             entries.push({
@@ -14268,6 +16820,10 @@ class LGraphCanvas {
             event,
             parentMenu: prev_menu,
             callback: (entry) => {
+                if (entry?.file) {
+                    canvas.pickBlueprintFile(pos);
+                    return;
+                }
                 const node = graph.insertDefinition(entry.id, {
                     pos,
                     linked: entry.linked
@@ -14276,6 +16832,46 @@ class LGraphCanvas {
                 canvas.setDirty(true, true);
             },
         });
+    }
+
+    /**
+     * Inserts a blueprint (a subgraph definition, or a document with definitions.subgraphs) from a
+     * JSON file as a copy at `pos`; a file input is opened unless a File is given.
+     * @param {number[]} [pos] - graph coordinates
+     * @param {File|Blob} [file]
+     * @returns {Promise<object|null>} the inserted node
+     */
+    async pickBlueprintFile(pos = this.graph_mouse, file = null) {
+        if (!file) {
+            const doc = this.canvas?.ownerDocument ?? globalThis.document;
+            if (!doc) return null;
+            file = await new Promise((resolve) => {
+                const input = doc.createElement("input");
+                input.type = "file";
+                input.accept = ".json,application/json";
+                input.addEventListener("change", () => resolve(input.files?.[0] ?? null), {
+                    once: true
+                });
+                input.click();
+            });
+            if (!file) return null;
+        }
+        let node = null;
+        try {
+            const json = JSON.parse(await file.text());
+            node = this.graph.insertBlueprint(json, {
+                pos: [pos[0], pos[1]]
+            });
+            this.selectNodes([node]);
+            this.setDirty(true, true);
+        } catch (error) {
+            LiteGraph.log_warn("lgraphcanvas", "pickBlueprintFile", `not a subgraph blueprint: ${error.message}`);
+            this._emit?.("blueprint-error", {
+                error,
+                file
+            });
+        }
+        return node;
     }
 
     static onGroupAlign(value, options, event, prev_menu) {
@@ -14401,13 +16997,7 @@ class LGraphCanvas {
         r = node.processCallbackHandlers("onGetInputs", {
             def_cb: node.onGetInputs
         });
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = r.return_value;
-            } else if (typeof(r.length) !== "undefined") {
-                options = r;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options, true);
 
         var entries = [];
         if (options) {
@@ -14442,20 +17032,17 @@ class LGraphCanvas {
         r = node.processCallbackHandlers("onMenuNodeInputs", {
             def_cb: node.onMenuNodeInputs
         }, entries);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                entries = r.return_value;
-            }
-        }
+        entries = CallbackHandler.objectOf(r, entries);
 
-        if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
+        if (ExecutionEngine.execSlotsFor(node.graph)) { // LiteGraph.Node.ExecSlots, the flag or the model
             if (node.findInputSlot("onTrigger") == -1) {
                 entries.push({
                     content: "On Trigger",
                     value: ["onTrigger", LiteGraph.EVENT, {
                         nameLocked: true,
                         removable: true,
-                        optional: true
+                        optional: true,
+                        exec: "trigger"
                     }],
                     className: "event"
                 }); // , opts: {}
@@ -14517,13 +17104,7 @@ class LGraphCanvas {
         let r = node.processCallbackHandlers("onGetOutputs", {
             def_cb: node.onGetOutputs
         });
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = r.return_value;
-            } else if (typeof(r.length) !== "undefined") {
-                options = r;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options, true);
 
         var entries = [];
         if (options) {
@@ -14565,13 +17146,9 @@ class LGraphCanvas {
         r = node.processCallbackHandlers("onMenuNodeOutputs", {
             def_cb: node.onMenuNodeOutputs
         }, entries);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                entries = r.return_value;
-            }
-        }
+        entries = CallbackHandler.objectOf(r, entries);
 
-        if (LiteGraph.do_add_triggers_slots) { // canvas.allow_addOutSlot_onExecuted
+        if (ExecutionEngine.execSlotsFor(node.graph)) { // LiteGraph.Node.ExecSlots, the flag or the model
             if (node.findOutputSlot("onExecuted") == -1) {
                 entries.push({
                     content: "On Executed",
@@ -14582,6 +17159,7 @@ class LGraphCanvas {
                             nameLocked: true,
                             removable: true,
                             optional: true,
+                            exec: "executed",
                         },
                     ],
                     className: "event",
@@ -15801,7 +18379,7 @@ class LGraphCanvas {
                 let r = that.processCallbackHandlers("onSearchBoxSelection", {
                     def_cb: that.onSearchBoxSelection
                 }, name, event, graphcanvas);
-                if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+                if (CallbackHandler.is(r, true)) {
                     // managed
                 } else {
                     var extra = LiteGraph.searchbox_extras[name.toLowerCase()];
@@ -16206,8 +18784,12 @@ class LGraphCanvas {
         let type = info && info !== null ? info.type : "string";
 
         let input_html;
+        // other value types (vec3, color, text, int, ...) are typed as text and parsed by their type
+        const legacy_text = ["string", "number", "array", "object", "code"].includes(type);
+        const value_type = legacy_text ? null : LiteGraph.valueTypes?.get(type);
+        const typed_by_value_type = !!value_type && !["enum", "boolean"].includes(value_type.name) && value_type.editor !== "readonly";
 
-        if (type == "string" || type == "number" || type == "array" || type == "object" || type == "code") {
+        if (legacy_text || typed_by_value_type) {
             input_html = "<input autofocus type='text' class='value'/>";
         } else if ((type == "enum" || type == "combo") && info.values) {
             LiteGraph.log_debug("lgraphcanvas", "showEditPropertyValue", "CREATING ENUM COMBO", input, type, dialog);
@@ -16275,7 +18857,9 @@ class LGraphCanvas {
                 });
 
                 v = node.properties[property] !== undefined ? node.properties[property] : "";
-                if (type !== 'string') {
+                if (typed_by_value_type) {
+                    v = LiteGraph.valueTypes.format(type, v, info);
+                } else if (type !== 'string') {
                     v = JSON.stringify(v);
                 }
 
@@ -16316,20 +18900,35 @@ class LGraphCanvas {
             if (type == "array" || type == "object") {
                 value = JSON.parse(value);
             }
+            if (typed_by_value_type) {
+                try {
+                    value = LiteGraph.valueTypes.coerce(type, LiteGraph.valueTypes.parse(type, value, info), info);
+                } catch (error) {
+                    LiteGraph.log_warn("lgraphcanvas", "showEditPropertyValue", "value refused", property, error.message);
+                    return;
+                }
+            }
             const prevValue = node.properties[property];
             node.properties[property] = value;
-            node.graph?.onGraphChanged({
-                action: "propertyChanged",
-                doSave: true
-            });
 
-            // Call onPropertyChanged and block the change if needed
-            let r = node.processCallbackHandlers("onPropertyChanged", {
-                def_cb: node.onPropertyChanged
-            }, property, value, prevValue);
-            if (r === false || (r !== null && (typeof(r) == "object" && r.return_value === false))) {
+            // as setProperty: onPropertyChanged returning false vetoes (reverted, no event, no history entry)
+            const r = CallbackHandler.fireHookThenEvent(node, "onPropertyChanged", [property, value, prevValue], node.graph, "node-property-changed",
+                () => node.properties[property] !== prevValue ? {
+                    node,
+                    name: property,
+                    value: node.properties[property],
+                    previous: prevValue
+                } : null, {
+                    veto: false
+                });
+            if (CallbackHandler.is(r, false)) {
                 node.properties[property] = prevValue;
                 LiteGraph.log_debug("lgraphcanvas", "showEditPropertyValue", "setValue", "prevent property set by cbHandler", property, value, prevValue, r);
+            } else {
+                node.graph?.onGraphChanged({
+                    action: "propertyChanged",
+                    doSave: true
+                });
             }
 
             if (options.onclose)
@@ -16443,206 +19042,20 @@ class LGraphCanvas {
         return dialog;
     }
 
+    /**
+     * Creates a side panel (see src/panels.js): header, optional toolbar and tabs, content, footer.
+     * Former API kept: addWidget, addHTML, addButton, addSeparator, clear, close, toggleAltContent,
+     * toggleFooterVisibility, content / alt_content / footer / title_element. New: addRow, addSection,
+     * addTabs / useTab, addToolbar, addNote, applyFilter, applySort.
+     * @param {string} title
+     * @param {object} [options] - {closable, window, width, height, onOpen, onClose, id}
+     * @returns {HTMLElement}
+     */
     createPanel(title, options) {
-        options = options || {};
-
-        var ref_window = options.window || window;
-        var root = document.createElement("div");
-        root.className = "litegraph dialog";
-        root.innerHTML = "<div class='dialog-header'><span class='dialog-title'></span></div><div class='dialog-content'></div><div style='display:none;' class='dialog-alt-content'></div><div class='dialog-footer'></div>";
-        root.header = root.querySelector(".dialog-header");
-
-        if (options.width)
-            root.style.width = options.width + (options.width.constructor === Number ? "px" : "");
-        if (options.height)
-            root.style.height = options.height + (options.height.constructor === Number ? "px" : "");
-        if (options.closable) {
-            var close = document.createElement("span");
-            close.innerHTML = "&#10005;";
-            close.classList.add("close");
-            close.addEventListener("click", function() {
-                root.close();
-            });
-            root.header.appendChild(close);
-        }
-        root.title_element = root.querySelector(".dialog-title");
-        root.title_element.innerText = title;
-        root.content = root.querySelector(".dialog-content");
-        root.alt_content = root.querySelector(".dialog-alt-content");
-        root.footer = root.querySelector(".dialog-footer");
-
-        root.close = function() {
-            if (root.onClose && typeof root.onClose == "function") {
-                root.onClose();
-            }
-            if (root.parentNode)
-                root.parentNode.removeChild(root);
-            /* XXX CHECK THIS */
-            if (this.parentNode) {
-                this.parentNode.removeChild(this);
-            }
-            /* XXX this was not working, was fixed with an IF, check this */
-            // check: maybe need a .call(this)
-        }
-
-        // function to swap panel content
-        root.toggleAltContent = function(force) {
-            let vTo, vAlt;
-            if (typeof force != "undefined") {
-                vTo = force ? "block" : "none";
-                vAlt = force ? "none" : "block";
-            } else {
-                vTo = root.alt_content.style.display != "block" ? "block" : "none";
-                vAlt = root.alt_content.style.display != "block" ? "none" : "block";
-            }
-            root.alt_content.style.display = vTo;
-            root.content.style.display = vAlt;
-        }
-
-        root.toggleFooterVisibility = function(force) {
-            let vTo;
-            if (typeof force != "undefined") {
-                vTo = force ? "block" : "none";
-            } else {
-                vTo = root.footer.style.display != "block" ? "block" : "none";
-            }
-            root.footer.style.display = vTo;
-        }
-
-        root.clear = function() {
-            this.content.innerHTML = "";
-        }
-
-        root.addHTML = function(code, classname, on_footer) {
-            var elem = document.createElement("div");
-            if (classname)
-                elem.className = classname;
-            elem.innerHTML = code;
-            if (on_footer)
-                root.footer.appendChild(elem);
-            else
-                root.content.appendChild(elem);
-            return elem;
-        }
-
-        root.addButton = function(name, callback, options) {
-            var elem = document.createElement("button");
-            elem.innerText = name;
-            elem.options = options;
-            elem.classList.add("btn");
-            elem.addEventListener("click", callback);
-            root.footer.appendChild(elem);
-            return elem;
-        }
-
-        root.addSeparator = function() {
-            var elem = document.createElement("div");
-            elem.className = "separator";
-            root.content.appendChild(elem);
-        }
-
-        root.addWidget = function(type, name, value, options, callback) {
-            options = options || {};
-            var str_value = String(value);
-            type = type.toLowerCase();
-            if (type == "number")
-                str_value = LiteGraph.formatNumber(value, 3);
-
-            var elem = document.createElement("div");
-            elem.className = "property";
-            elem.innerHTML = "<span class='property_name'></span><span class='property_value'></span>";
-            elem.querySelector(".property_name").innerText = options.label || name;
-            var value_element = elem.querySelector(".property_value");
-            value_element.innerText = str_value;
-            elem.dataset["property"] = name;
-            elem.dataset["type"] = options.type || type;
-            // if(elem.dataset["type"]=="number"){
-            //     elem.dataset["precision"] = options.precision || 3;
-            // }
-            elem.options = options;
-            elem.value = value;
-
-            LiteGraph.log_debug("lgraphcanvas", "createPanel", "addWidget", type, value, value_element, options);
-
-            if (type == "code") {
-                elem.addEventListener("click", function(_event) {
-                    root.inner_showCodePad(this.dataset["property"]);
-                });
-            } else if (type == "boolean") {
-                elem.classList.add("boolean");
-                if (value)
-                    elem.classList.add("bool-on");
-                elem.addEventListener("click", function() {
-                    // var v = node.properties[this.dataset["property"]];
-                    // node.setProperty(this.dataset["property"],!v); this.innerText = v ? "on" : "off";
-                    var propname = this.dataset["property"];
-                    this.value = !this.value;
-                    this.classList.toggle("bool-on");
-                    this.querySelector(".property_value").innerText = this.value ? "on" : "off";
-                    innerChange(propname, this.value);
-                });
-            } else if (type == "string" || type == "number" || type == "undefined") {
-                value_element.setAttribute("contenteditable", true);
-                value_element.addEventListener("keydown", function(e) {
-                    if (e.key == "Enter" && (type != "string" || !e.shiftKey)) { // allow for multiline; key also covers NumpadEnter
-                        e.preventDefault();
-                        this.blur();
-                    }
-                });
-                value_element.addEventListener("blur", function() {
-                    var v = this.innerText;
-                    var propname = this.parentNode.dataset["property"];
-                    var proptype = this.parentNode.dataset["type"];
-                    if (proptype == "number")
-                        v = Number(v);
-                    innerChange(propname, v);
-                });
-            } else if (type == "enum" || type == "combo") {
-                str_value = LGraphCanvas.getPropertyPrintableValue(value, options.values);
-                value_element.innerText = str_value;
-
-                LiteGraph.log_debug("lgraphcanvas", "createPanel", "addWidget", "ENUM COMBO", type, str_value, value_element, options);
-
-                value_element.addEventListener("click", function(event) {
-                    var values = options.values || [];
-                    var propname = this.parentNode.dataset["property"];
-                    var elem_that = this;
-                    LiteGraph.ContextMenu(
-                        values, {
-                            event: event,
-                            className: "dark",
-                            callback: inner_clicked,
-                        },
-                        ref_window,
-                    );
-
-                    function inner_clicked(v) {
-                        // node.setProperty(propname,v);
-                        // graphcanvas.dirty_canvas = true;
-                        elem_that.innerText = v;
-                        innerChange(propname, v);
-                        return false;
-                    }
-                });
-            }
-
-            root.content.appendChild(elem);
-
-            function innerChange(name, value) {
-                LiteGraph.log_debug("lgraphcanvas", "createPanel", "addWidget", "innerChange", name, value, options);
-                // that.dirty_canvas = true;
-                if (options.callback)
-                    options.callback(name, value, options);
-                if (callback)
-                    callback(name, value, options);
-            }
-
-            return elem;
-        }
-
-        if (root.onOpen && typeof root.onOpen == "function") root.onOpen();
-
-        return root;
+        return PanelBuilder.create(title, {
+            ...(options || {}),
+            canvas: this
+        });
     }
 
     static getPropertyPrintableValue(value, values) {
@@ -16672,13 +19085,16 @@ class LGraphCanvas {
         }
     }
 
+    /**
+     * Opens the graph options panel: Graph (execution model, document facts), Canvas (this view's
+     * options, LGraphCanvas.optionInfo) and Settings (LiteGraph.settings) tabs, with search.
+     */
     showShowGraphOptionsPanel(refOpts, obEv) {
         let graphcanvas;
         if (this.constructor && this.constructor.name == "HTMLDivElement") {
             // assume coming from the menu event click
             if (!obEv?.event?.target?.lgraphcanvas) {
                 LiteGraph.log_warn("lgraphcanvas", "showShowGraphOptionsPanel", "References not found to add optionPanel", refOpts, obEv); // need a ref to canvas obj
-                LiteGraph.log_debug("lgraphcanvas", "showShowGraphOptionsPanel", "!obEv || !obEv.event || !obEv.event.target || !obEv.event.target.lgraphcanvas", obEv, obEv.event, obEv.event.target, obEv.event.target.lgraphcanvas);
                 return;
             }
             graphcanvas = obEv.event.target.lgraphcanvas;
@@ -16686,238 +19102,70 @@ class LGraphCanvas {
             // assume called internally
             graphcanvas = this;
         }
-        graphcanvas.closePanels();
-        var ref_window = graphcanvas.getCanvasWindow();
-        var panel = graphcanvas.createPanel("Options", {
-            closable: true,
-            window: ref_window,
-            onOpen: function() {
-                graphcanvas.OPTIONPANEL_IS_OPEN = true;
-            },
-            onClose: function() {
-                graphcanvas.OPTIONPANEL_IS_OPEN = false;
-                graphcanvas.options_panel = null;
-            },
-        });
-        graphcanvas.options_panel = panel;
-        panel.id = "option-panel";
-        panel.classList.add("settings");
-
-        function inner_refresh() {
-
-            panel.content.innerHTML = ""; // clear
-
-            const fUpdate = (name, value, options) => {
-                switch (name) {
-                    /* case "Render mode":
-                        // Case ""..
-                        if (options.values && options.key){
-                            var kV = Object.values(options.values).indexOf(value);
-                            if (kV>=0 && options.values[kV]){
-                                LiteGraph.log_debug("update graph options: "+options.key+": "+kV);
-                                graphcanvas[options.key] = kV;
-                                //LiteGraph.log_debug(graphcanvas);
-                                break;
-                            }
-                        }
-                        LiteGraph.log_warn("unexpected options");
-                        LiteGraph.log_debug(options);
-                        break;*/
-                    default:
-                        LiteGraph.log_verbose("lgraphcanvas", "showShowGraphOptionsPanel", "want to update graph options: " + name + ": " + value);
-                        if (options && options.key) {
-                            name = options.key;
-                        }
-                        if (options.values) {
-                            value = Object.values(options.values).indexOf(value);
-                        }
-                        LiteGraph.log_verbose("lgraphcanvas", "showShowGraphOptionsPanel", "update graph option: " + name + ": " + value);
-                        graphcanvas[name] = value;
-                        break;
-                }
-            };
-
-            // panel.addWidget( "string", "Graph name", "", {}, fUpdate); // implement
-
-            var aProps = [...(LiteGraph.availableCanvasOptions || [])].sort();
-            for (var pI in aProps) {
-                var pX = aProps[pI];
-                panel.addWidget("boolean", pX, graphcanvas[pX], {
-                    key: pX,
-                    on: "on",
-                    off: "off"
-                }, fUpdate);
-            }
-
-            panel.addWidget("combo", "Render mode", LiteGraph.LINK_RENDER_MODES[graphcanvas.links_render_mode], {
-                key: "links_render_mode",
-                values: LiteGraph.LINK_RENDER_MODES
-            }, fUpdate);
-
-            panel.addSeparator();
-
-            panel.footer.innerHTML = ""; // clear
-
-        }
-        inner_refresh();
-
-        graphcanvas.canvas.parentNode.appendChild(panel);
+        return PanelBuilder.showGraphOptions(graphcanvas);
     }
 
-    showShowNodePanel(node) {
-        this.SELECTED_NODE = node;
-        this.closePanels();
-        var ref_window = this.getCanvasWindow();
-
-        var graphcanvas = this;
-        var panel = this.createPanel(node.title || "", {
-            closable: true,
-            window: ref_window,
-            onOpen: function() {
-                graphcanvas.NODEPANEL_IS_OPEN = true;
-            },
-            onClose: function() {
-                graphcanvas.NODEPANEL_IS_OPEN = false;
-                graphcanvas.node_panel = null;
-            },
+    /**
+     * Shows a short notice over the canvas (execution refusals: invalid modes, skipped nodes).
+     * Without a DOM it only logs. The element has the class "litegraph-execution-notice".
+     */
+    showExecutionNotice(message, ms = 6000) {
+        LiteGraph.log_warn("lgraphcanvas", "execution", message);
+        const host = this.canvas?.parentNode;
+        const doc = this.canvas?.ownerDocument;
+        if (!host || !doc) return null;
+        this._executionNotice?.remove();
+        const notice = doc.createElement("div");
+        notice.className = "litegraph-execution-notice";
+        notice.textContent = message;
+        Object.assign(notice.style, {
+            position: "absolute",
+            left: "50%",
+            top: "48px",
+            transform: "translateX(-50%)",
+            maxWidth: "70%",
+            padding: "6px 10px",
+            background: "rgba(60,30,20,0.92)",
+            color: "#FDB",
+            border: "1px solid #A64",
+            borderRadius: "4px",
+            font: "12px Arial, sans-serif",
+            zIndex: 20,
+            pointerEvents: "none",
         });
-        graphcanvas.node_panel = panel;
-        panel.id = "node-panel";
-        panel.node = node;
-        panel.classList.add("settings");
-
-        function inner_refresh() {
-            panel.content.innerHTML = ""; // clear
-            panel.addHTML("<span class='node_type'>" + node.type + "</span>" +
-                "<span class='node_desc'>" + (node.constructor.desc || "") + "</span>" +
-                (node.graph?._subgraph_node ? "<span class='node_desc'>path " + String(node.getPath()).replace(/[<>&"']/g, "") + "</span>" : "") +
-                "<span class='separator'></span>");
-
-            panel.addHTML("<h3>Properties</h3>");
-
-            const fUpdate = (name, value) => {
-                graphcanvas.graph.beforeChange(node);
-                switch (name) {
-                    case "Title":
-                        node.title = value;
-                        break;
-                    case "Mode":
-                        var kV = Object.values(LiteGraph.NODE_MODES).indexOf(value);
-                        if (kV >= 0 && LiteGraph.NODE_MODES[kV]) {
-                            node.changeMode(kV);
-                        } else {
-                            LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected mode", value, kV);
-                        }
-                        break;
-                    case "Color":
-                        if (LGraphCanvas.node_colors[value]) {
-                            node.color = LGraphCanvas.node_colors[value].color;
-                            node.bgcolor = LGraphCanvas.node_colors[value].bgcolor;
-                        } else {
-                            LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected color", value);
-                        }
-                        break;
-                    default:
-                        node.setProperty(name, value);
-                        break;
-                }
-                graphcanvas.graph.afterChange();
-                graphcanvas.dirty_canvas = true;
-            };
-
-            panel.addWidget("string", "Title", node.title, {}, fUpdate);
-
-            panel.addWidget("combo", "Mode", LiteGraph.NODE_MODES[node.mode], {
-                values: LiteGraph.NODE_MODES
-            }, fUpdate);
-
-            var nodeCol = "";
-            if (node.color !== undefined) {
-                nodeCol = Object.keys(LGraphCanvas.node_colors).filter(function(nK) {
-                    return LGraphCanvas.node_colors[nK].color == node.color;
-                });
+        host.appendChild(notice);
+        this._executionNotice = notice;
+        setTimeout(() => {
+            if (this._executionNotice === notice) {
+                notice.remove();
+                this._executionNotice = null;
             }
+        }, ms);
+        return notice;
+    }
 
-            panel.addWidget("combo", "Color", nodeCol, {
-                values: Object.keys(LGraphCanvas.node_colors)
-            }, fUpdate);
+    /**
+     * Opens the node details panel: header, General, Properties, Widgets, Inputs, Outputs, Execution
+     * and Advanced sections, contributed sections, live refresh and one undo step per edit.
+     * The node hooks onAddPropertyToPanel and onShowCustomPanelInfo still apply.
+     */
+    showShowNodePanel(node) {
+        return PanelBuilder.showNode(this, node);
+    }
 
-            for (var pName in node.properties) {
-                var value = node.properties[pName];
-                var info = node.getPropertyInfo(pName);
-                let type = info && info !== null ? info.type : "string";
-
-                // in case the user wants control over the side panel widget
-                if (node.onAddPropertyToPanel && node.onAddPropertyToPanel(pName, panel, value, info, fUpdate)) {
-                    continue;
-                }
-                panel.addWidget(info.widget || type, pName, value, info, fUpdate);
-            }
-
-            panel.addSeparator();
-
-            if (node.onShowCustomPanelInfo)
-                node.onShowCustomPanelInfo(panel);
-
-            panel.footer.innerHTML = ""; // clear
-            panel.addButton("Delete", function() {
-                if (node.block_delete)
-                    return;
-                node.graph.remove(node);
-                panel.close();
-            }).classList.add("delete");
+    /**
+     * Opens the node panel the way a double click does: the onShowNodePanel callback may handle it.
+     * @returns {boolean} true when the built-in panel was opened
+     */
+    openNodePanel(node) {
+        let r = this.processCallbackHandlers("onShowNodePanel", {
+            def_cb: this.onShowNodePanel
+        }, node);
+        if (!CallbackHandler.valueOf(r)) {
+            this.showShowNodePanel(node); // use onShowNodePanel, this is an only local method
+            return true;
         }
-
-        panel.inner_showCodePad = function(propname) {
-            panel.classList.remove("settings");
-            panel.classList.add("centered");
-
-            /* TODO restore, export to extensions
-            if(window.CodeFlask) //disabled for now
-            {
-                panel.content.innerHTML = "<div class='code'></div>";
-                var flask = new CodeFlask( "div.code", { language: 'js' });
-                flask.updateCode(node.properties[propname]);
-                flask.onUpdate( function(code) {
-                    node.setProperty(propname, code);
-                });
-            }
-            else
-            {*/
-            panel.alt_content.innerHTML = "<textarea class='code'></textarea>";
-            var textarea = panel.alt_content.querySelector("textarea");
-            var fDoneWith = () => {
-                panel.toggleAltContent(false); // if(node_prop_div) node_prop_div.style.display = "block"; // panel.close();
-                panel.toggleFooterVisibility(true);
-                textarea.parentNode.removeChild(textarea);
-                panel.classList.add("settings");
-                panel.classList.remove("centered");
-                inner_refresh();
-            }
-            textarea.value = node.properties[propname];
-            textarea.addEventListener("keydown", function(e) {
-                if (e.key == "Enter" && e.ctrlKey) {
-                    node.setProperty(propname, textarea.value);
-                    fDoneWith();
-                }
-            });
-            panel.toggleAltContent(true);
-            panel.toggleFooterVisibility(false);
-            textarea.style.height = "calc(100% - 40px)";
-            /* }*/
-            var assign = panel.addButton("Assign", function() {
-                node.setProperty(propname, textarea.value);
-                fDoneWith();
-            });
-            panel.alt_content.appendChild(assign); // panel.content.appendChild(assign);
-            var button = panel.addButton("Close", fDoneWith);
-            button.style.float = "right";
-            panel.alt_content.appendChild(button); // panel.content.appendChild(button);
-        }
-
-        inner_refresh();
-
-        this.canvas.parentNode.appendChild(panel);
+        return false;
     }
 
     showSubgraphPropertiesDialog(node) {
@@ -17053,12 +19301,11 @@ class LGraphCanvas {
      * @returns void 
      */
     closePanels() {
-        var panel = document.querySelector("#node-panel");
-        if (panel)
-            panel.close(); // ? panel.close.call(panel);
-        panel = document.querySelector("#option-panel");
-        if (panel)
-            panel.close(); // ? panel.close.call(panel);
+        this.node_panel?.close?.();
+        this.options_panel?.close?.();
+        const doc = this.canvas?.ownerDocument ?? (typeof document !== "undefined" ? document : null);
+        doc?.querySelector("#node-panel")?.close?.();
+        doc?.querySelector("#option-panel")?.close?.();
     }
 
     /**
@@ -17103,8 +19350,9 @@ class LGraphCanvas {
     }
 
     static onMenuNodeMode(value, options, e, menu, node) {
+        const validModes = node && LiteGraph.getValidNodeModes ? LiteGraph.getValidNodeModes(node) : LiteGraph.NODE_MODES.map((_, i) => i);
         LiteGraph.ContextMenu(
-            LiteGraph.NODE_MODES, {
+            LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i)), {
                 event: e,
                 callback: inner_clicked,
                 parentMenu: menu,
@@ -17118,9 +19366,9 @@ class LGraphCanvas {
             }
             var kV = Object.values(LiteGraph.NODE_MODES).indexOf(v);
             const fApplyMultiNode = (node) => {
-                if (kV >= 0 && LiteGraph.NODE_MODES[kV])
-                    node.changeMode(kV);
-                else {
+                if (kV >= 0 && LiteGraph.NODE_MODES[kV]) {
+                    if (node.changeMode(kV) === false && node.mode_refusal) LGraphCanvas.active_canvas?.showExecutionNotice(node.mode_refusal);
+                } else {
                     LiteGraph.log_warn("lgraphcanvas", "onMenuNodeMode", "unexpected mode", v, kV);
                     node.changeMode(LiteGraph.ALWAYS);
                 }
@@ -17348,7 +19596,7 @@ class LGraphCanvas {
         let r = this.processCallbackHandlers("getMenuOptions", {
             def_cb: this.getMenuOptions
         });
-        if (r !== null && (r === true || (typeof(r) == "object" && r.return_value === true))) {
+        if (CallbackHandler.is(r, true)) {
             // managed
         } else {
 
@@ -17366,14 +19614,22 @@ class LGraphCanvas {
                     content: "Add Group",
                     callback: LGraphCanvas.onGroupAdd
                 },
-                ...(that.graph?.rootGraph?.subgraphs?.size ? [{
+                {
                     content: "Insert subgraph",
                     has_submenu: true,
                     callback: LGraphCanvas.onMenuInsertSubgraph
-                }] : []),
+                },
                 // { content: "Arrange", callback: that.graph.arrange },
                 // {content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
+            // graph info: the document's execution model and the canvas options (LiteGraph.showCanvasOptions)
+            if (LiteGraph.showCanvasOptions) {
+                const model = this.graph?.executionModel;
+                options.push({
+                    content: model ? `Options (execution: ${model})` : "Options",
+                    callback: () => this.showShowGraphOptionsPanel()
+                });
+            }
 
             if (this.selectedItems.length) {
                 options.push({
@@ -17412,11 +19668,8 @@ class LGraphCanvas {
         r = this.processCallbackHandlers("getExtraMenuOptions", {
             def_cb: this.getExtraMenuOptions
         }, this, options);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = options.concat(r.return_value);
-            }
-        }
+        const extra = CallbackHandler.objectOf(r);
+        if (extra !== undefined) options = options.concat(extra);
 
         // extension contributions (LiteGraph.menus.register("canvas", ...))
         if (options) LiteGraph.menus?.contribute("canvas", LiteGraph.commands.contextFor(this), options);
@@ -17430,11 +19683,7 @@ class LGraphCanvas {
         let r = node.processCallbackHandlers("getMenuOptions", {
             def_cb: node.getMenuOptions
         }, this);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                options = r.return_value;
-            }
-        }
+        options = CallbackHandler.objectOf(r, options);
         if (options === null) {
             options = [{
                     content: "Inputs",
@@ -17518,26 +19767,20 @@ class LGraphCanvas {
         //     }
         // }
 
-        if (LiteGraph.do_add_triggers_slots)
-            options[1].disabled = false;
+        if (ExecutionEngine.execSlotsFor(node.graph)) {
+            // the Outputs entry can add onExecuted (a getMenuOptions hook may give its own list)
+            const outputsItem = options.find((item) => item?.callback === LGraphCanvas.showMenuNodeOptionalOutputs);
+            if (outputsItem) outputsItem.disabled = false;
+        }
 
         r = node.processCallbackHandlers("getExtraMenuOptions", {
             def_cb: node.getExtraMenuOptions
         }, this, options);
-        if (r !== null && (typeof(r) == "object")) {
-            if (typeof(r.return_value) == "object") {
-                if (typeof(r.return_value.length) !== "undefined" && r.return_value.length) {
-                    options = options.concat(r.return_value);
-                } else {
-                    LiteGraph.log_warn("getExtraMenuOptions", "not array", r.return_value);
-                }
-            } else {
-                if (typeof(r.length) !== "undefined" && r.length) {
-                    options = options.concat(r);
-                } else {
-                    // LiteGraph.log_verbose("getExtraMenuOptions", "not returning additional options", r);
-                }
-            }
+        // an array, or {return_value: array}; a non-array return_value is reported
+        const extra = CallbackHandler.objectOf(r, undefined, true);
+        if (extra !== undefined) {
+            if (extra.length) options = options.concat(extra);
+            else if (extra !== r) LiteGraph.log_warn("getExtraMenuOptions", "not array", extra);
         }
 
         if (node.clonable !== false) {
@@ -17625,11 +19868,16 @@ class LGraphCanvas {
                     options: modes,
                     callback: (entry) => {
                         if (!group?.graph) return;
+                        let skipped = [];
                         group.graph.transact("groupNodesMode", () => {
-                            if (group.setNodesMode(entry.mode).length) group.graph.onGraphChanged({
+                            const changed = group.setNodesMode(entry.mode);
+                            skipped = changed.skipped ?? [];
+                            if (changed.length) group.graph.onGraphChanged({
                                 action: "groupNodesMode"
                             });
                         });
+                        // nodes whose type refuses the mode keep theirs: say which, and the setting that lifts it
+                        if (skipped.length) canvas.showExecutionNotice?.(`${skipped.length} node(s) kept their mode (${skipped.map((n) => n.title || n.type).join(", ")}): their type does not allow "${entry.content}". Setting LiteGraph.Execution.AllowAnyMode allows any mode.`);
                         canvas.setDirty(true, true);
                     },
                 },
@@ -17655,7 +19903,9 @@ class LGraphCanvas {
         return o;
     }
 
-    processContextMenu(node, event) {
+    processContextMenu(node, event, {
+        full = false
+    } = {}) {
         var that = this;
         var canvas = LGraphCanvas.active_canvas;
         var ref_window = canvas.getCanvasWindow();
@@ -17683,8 +19933,9 @@ class LGraphCanvas {
             let r = node.processCallbackHandlers("getSlotMenuOptions", {
                 def_cb: node.getSlotMenuOptions
             }, slot);
-            if (r !== null && (typeof(r) == "object" && typeof(r.return_value) == "object")) {
-                menu_info = r.return_value;
+            const custom = CallbackHandler.objectOf(r);
+            if (custom !== undefined) {
+                menu_info = custom;
             } else {
                 if (LiteGraph.canSetSlotsLabels) {
                     menu_info.push({
@@ -17715,6 +19966,17 @@ class LGraphCanvas {
                 }
             }
             var slotOb = slot.input || slot.output;
+            if (slotOb.label_icon) {
+                const escape = (value) => String(value).replace(/[&<>]/g, (char) => ({
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;"
+                })[char]);
+                menu_info.unshift({
+                    content: `${escape(slotOb.name)} · ${escape(slotOb.type || "*")}`,
+                    disabled: true
+                }, null);
+            }
             options.title = slotOb.type || "*";
             if (slotOb.type == LiteGraph.ACTION) {
                 options.title = "Action";
@@ -17729,6 +19991,10 @@ class LGraphCanvas {
             } else if (slotOb.type == LiteGraph.EVENT) {
                 options.title = "Event";
             }
+        } else if (!full && this.isNodePinMenuEvent(node, event)) {
+            // on the pin (or the title, with LiteGraph.Node.TitleQuickMenu): the quick menu
+            menu_info = this.getNodePinMenuOptions(node);
+            options.title = node.title || node.type;
         } else {
             if (node) {
                 // on node
@@ -17897,6 +20163,215 @@ class LGraphCanvas {
 
     static search_limit = -1;
 
+    /**
+     * What the Canvas tab of the options panel shows for each canvas option: label, tooltip,
+     * category (Rendering, Links, Interaction, Advanced), type and default. Options listed in
+     * LiteGraph.availableCanvasOptions without an entry appear under "Other"; entries with
+     * `always: true` are shown even when not listed there.
+     */
+    static optionInfo = {
+        highquality_render: {
+            category: "Rendering",
+            label: "High-quality rendering",
+            default: true,
+            tooltip: "Draw rounded shapes, shadows and full detail. Off draws simple boxes, which is faster on large graphs."
+        },
+        use_gradients: {
+            category: "Rendering",
+            label: "Title gradients",
+            default: false,
+            tooltip: "Fill title bars with a gradient instead of a flat colour."
+        },
+        render_shadows: {
+            category: "Rendering",
+            label: "Node shadows",
+            default: true,
+            tooltip: "Draw a shadow under each node."
+        },
+        render_title_colored: {
+            category: "Rendering",
+            label: "Coloured titles",
+            default: true,
+            tooltip: "Colour each title bar with the node's colour."
+        },
+        render_collapsed_slots: {
+            category: "Rendering",
+            label: "Slots on collapsed nodes",
+            default: true,
+            tooltip: "Show the input and output dots of collapsed nodes."
+        },
+        render_execution_order: {
+            category: "Rendering",
+            label: "Execution order",
+            default: false,
+            tooltip: "Show each node's position in the execution order on its title bar."
+        },
+        render_canvas_border: {
+            category: "Rendering",
+            label: "Canvas border",
+            default: true,
+            tooltip: "Draw a frame around the drawing area."
+        },
+        show_info: {
+            category: "Rendering",
+            label: "Info overlay",
+            default: true,
+            tooltip: "Show zoom, node count and frame rate in the corner."
+        },
+        clear_background: {
+            category: "Rendering",
+            label: "Clear each frame",
+            default: true,
+            tooltip: "Clear the canvas before drawing each frame. Turn off only when the host draws the background itself."
+        },
+        always_render_background: {
+            category: "Rendering",
+            label: "Redraw background every frame",
+            default: false,
+            tooltip: "Redraw the grid on every frame, not only when the view changed."
+        },
+        round_radius: {
+            category: "Rendering",
+            label: "Corner radius",
+            type: "int",
+            min: 0,
+            max: 24,
+            unit: "px",
+            default: 8,
+            always: true,
+            tooltip: "Radius of the rounded corners of nodes and groups."
+        },
+        slot_label_mode: {
+            category: "Nodes",
+            label: "Slot labels",
+            type: "enum",
+            values: ["text", "icon+text", "icon"],
+            default: "icon+text",
+            always: true,
+            tooltip: "Show optional slot glyphs with the label or alone. Right-click the socket for its original name and type."
+        },
+        links_render_mode: {
+            category: "Links",
+            label: "Link shape",
+            type: "enum",
+            store: "index",
+            values: () => LiteGraph.LINK_RENDER_MODES,
+            default: 2,
+            always: true,
+            tooltip: "How links are drawn: straight (right angles), linear or spline (curves).",
+            examples: ["Spline: smooth curves", "Straight: right angles, tidy layouts"]
+        },
+        connections_width: {
+            category: "Links",
+            label: "Link width",
+            type: "number",
+            min: 1,
+            max: 12,
+            step: 0.5,
+            unit: "px",
+            default: 3,
+            always: true,
+            tooltip: "Thickness of links."
+        },
+        render_connections_border: {
+            category: "Links",
+            label: "Link outline",
+            default: true,
+            tooltip: "Draw a dark outline around links so they stand out on any background."
+        },
+        render_connections_shadows: {
+            category: "Links",
+            label: "Link shadows",
+            default: false,
+            tooltip: "Draw shadows under links. Slow on large graphs."
+        },
+        render_connection_arrows: {
+            category: "Links",
+            label: "Flow arrows",
+            default: false,
+            tooltip: "Draw arrows along links, pointing in the direction data flows."
+        },
+        render_link_tooltip: {
+            category: "Links",
+            label: "Link value tooltip",
+            default: true,
+            tooltip: "Show the value a link carries when the pointer is over its centre."
+        },
+        move_destination_link_without_shift: {
+            category: "Links",
+            label: "Drag links off inputs",
+            default: false,
+            tooltip: "Dragging from a connected input moves its link without holding Shift."
+        },
+        allow_interaction: {
+            category: "Interaction",
+            label: "Widgets and buttons",
+            default: true,
+            tooltip: "Allow clicking widgets, title buttons and collapse boxes."
+        },
+        allow_dragnodes: {
+            category: "Interaction",
+            label: "Move nodes",
+            default: true,
+            tooltip: "Move nodes by dragging them."
+        },
+        allow_dragcanvas: {
+            category: "Interaction",
+            label: "Pan by dragging",
+            default: true,
+            tooltip: "Pan the view by dragging the background."
+        },
+        allow_searchbox: {
+            category: "Interaction",
+            label: "Search on double click",
+            default: true,
+            tooltip: "Double-clicking the background opens the node search."
+        },
+        read_only: {
+            category: "Interaction",
+            label: "Read only",
+            default: false,
+            tooltip: "Nodes can be selected and inspected, but the graph cannot be changed from this canvas."
+        },
+        free_resize: {
+            category: "Interaction",
+            label: "Free resize",
+            tooltip: "Resize nodes to any size, below their computed minimum."
+        },
+        live_mode: {
+            category: "Interaction",
+            label: "Live mode",
+            default: false,
+            tooltip: "Hide the editing chrome (titles, slots) and show only the nodes' live content."
+        },
+        pause_rendering: {
+            category: "Advanced",
+            label: "Pause drawing",
+            default: false,
+            tooltip: "Stop drawing this canvas. The graph keeps running."
+        },
+        set_canvas_dirty_on_mouse_event: {
+            category: "Advanced",
+            label: "Redraw on pointer events",
+            default: true,
+            tooltip: "Redraw on every pointer event. Off saves CPU, but hover effects may lag."
+        },
+        low_quality_rendering_threshold: {
+            category: "Advanced",
+            label: "Low-quality threshold",
+            type: "int",
+            min: 0,
+            default: 5,
+            always: true,
+            tooltip: "Slow frames in a row before drawing switches to low quality."
+        },
+        allow_addOutSlot_onExecuted: {
+            category: "Advanced",
+            label: "Add onExecuted slot",
+            tooltip: "Legacy: let the canvas add an onExecuted output slot (see LiteGraph.do_add_triggers_slots)."
+        },
+    };
+
     static node_colors = {
         red: {
             color: "#322",
@@ -17979,6 +20454,9 @@ class LGraphCanvas {
 
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphCanvas);
+
 /* LGraphCanvas render */
 var temp = new Float32Array(4);
 var temp_vec2 = new Float32Array(2);
@@ -17995,7 +20473,10 @@ var tempB = new Float32Array(2);
 class LGraphGroup {
 
     static opts = {
-        inclusion_distance: 36 // distance to border to consider included inside the group 
+        inclusion_distance: 36, // distance to border to consider included inside the group
+        toggle_size: 10, // header toggle size in graph units (as the node pin)
+        toggle_max_px: 14, // largest on-screen header toggle
+        toggle_min_px: 6, // smaller on screen than this, the toggle is hidden
     }
 
     /**
@@ -18012,24 +20493,6 @@ class LGraphGroup {
         this._nodes = [];
         this._groups = [];
         this.graph = null;
-        this.callbackhandler_setup();
-    }
-
-    callbackhandler_setup() {
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -18168,13 +20631,25 @@ class LGraphGroup {
 
     /**
      * Sets the execution mode of every node inside the group (LiteGraph.ALWAYS, NEVER, ...).
-     * @returns {Array<object>} the nodes changed
+     * Nodes whose type declares the mode invalid keep theirs: they are listed in `changed.skipped`.
+     * @returns {Array<object>} the nodes changed, with `skipped` (the nodes that refused the mode)
      */
     setNodesMode(mode) {
-        if (!this.graph) return [];
+        const changed = [];
+        // the nodes that refused the mode (not enumerable: the result stays a plain list)
+        Object.defineProperty(changed, "skipped", {
+            value: [],
+            enumerable: false
+        });
+        if (!this.graph) return changed;
         this.recomputeInsideNodes();
-        const changed = this._nodes.filter((node) => node.mode !== mode);
-        for (const node of changed) node.changeMode ? node.changeMode(mode) : (node.mode = mode);
+        for (const node of this._nodes.filter((n) => n.mode !== mode)) {
+            const ok = node.changeMode ? node.changeMode(mode) !== false : ((node.mode = mode), true);
+            (ok ? changed : changed.skipped).push(node);
+        }
+        if (changed.skipped.length) {
+            LiteGraph.log_warn("lgraphgroup", "setNodesMode", `${changed.skipped.length} node(s) kept their mode: ${changed.skipped.map((n) => n.mode_refusal ?? n.type).join("; ")}`);
+        }
         return changed;
     }
 
@@ -18226,6 +20701,9 @@ class LGraphGroup {
     isPointInside = LiteGraph.LGraphNode.prototype.isPointInside;
     setDirtyCanvas = LiteGraph.LGraphNode.prototype.setDirtyCanvas;
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphGroup);
 
 // src/lgraphnode.js
 /*
@@ -18299,7 +20777,6 @@ class LGraphNode {
         return LGraphNode._default_sizes.has(this.size);
     }
 
-    cb_handler = false;
     executionEnvironment = "all"; // 'browser', 'node', 'all'
     requiredLibraries = []; // List of library keys
 
@@ -18336,15 +20813,23 @@ class LGraphNode {
             LGraphNode._default_sizes.add(this.size);
         }
         this.size_basic ??= this.size;
-        this.callbackhandler_setup();
+    }
+
+    /**
+     * Whether a declared runtime ("node", "browser", "bun", "all", ...) matches the current one.
+     * Bun implements the Node.js APIs, so a "node" declaration also runs on Bun; "bun" means Bun only.
+     */
+    static runtimeMatches(declared, runtime = getRuntime()) {
+        return !declared || ["all", "both", "any", "*", runtime].includes(declared) ||
+            (declared === "node" && runtime === "bun");
     }
 
     validateExecutionEnvironment() {
-        return !this.executionEnvironment || ["all", "both", "any", "*", getRuntime()].includes(this.executionEnvironment);
+        return LGraphNode.runtimeMatches(this.executionEnvironment);
     }
 
     validateRuntime() {
-        return !this.runtime || ["all", "both", "any", "*", getRuntime()].includes(this.runtime);
+        return LGraphNode.runtimeMatches(this.runtime);
     }
 
     /** Initialize exactly once; basic nodes are ready synchronously, dependencies asynchronously. */
@@ -18404,23 +20889,6 @@ class LGraphNode {
 
     loadRequiredLibraries() {
         return this.loadLibraries(this.requiredLibraries || []);
-    }
-
-    callbackhandler_setup() {
-        if (!this.cb_handler) this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers() {
-        if (!this.cb_handler) this.callbackhandler_setup(); // needed if constructor calls callback events
-        return this.cb_handler.processCallbackHandlers(...arguments);
     }
 
     set pos(v) {
@@ -18622,7 +21090,7 @@ class LGraphNode {
                     o[key] = LiteGraph.cloneObject(placeholderSource[key]);
                 }
             }
-            if (o.title === undefined) delete o.title;
+            if (o.title === undefined || (!("title" in placeholderSource) && o.title === placeholderSource.type)) delete o.title;
             for (const key of ["inputs", "outputs", "properties"]) {
                 const v = o[key];
                 const empty = Array.isArray(v) ? !v.length : (v && typeof v === "object" && !Object.keys(v).length);
@@ -18705,6 +21173,34 @@ class LGraphNode {
     }
 
     /**
+     * Reports this node's progress (execution-state protocol): drawn as a bar on the node and
+     * sent to listeners of the root graph's `execution-state` event (the runner forwards them).
+     * @param {number} value
+     * @param {number} [max=1]
+     * @param {string} [message]
+     */
+    reportProgress(value, max = 1, message) {
+        return this.graph?.reportExecutionState(this, "progress", {
+            value,
+            max,
+            message
+        }) ?? null;
+    }
+
+    /**
+     * Sets this node's execution status: "queued", "running", "done", "error" or "skipped"
+     * (null clears it). Long-running nodes use it to show work in progress.
+     */
+    setExecutionStatus(status, message) {
+        if (!this.graph) return null;
+        if (status === null || status === undefined) return this.graph.reportExecutionState(this, "reset");
+        return this.graph.reportExecutionState(this, status === "error" ? "error" : "status", {
+            status,
+            message
+        });
+    }
+
+    /**
      * sets the value of a property
      * @method setProperty
      * @param {String} name
@@ -18721,22 +21217,19 @@ class LGraphNode {
         const prevValue = this.properties[name];
         this.properties[name] = value;
 
-        // Call onPropertyChanged and revert the change if needed
-        let r = this.processCallbackHandlers("onPropertyChanged", {
-            def_cb: this.onPropertyChanged
-        }, name, value, prevValue);
-        if (r === false || (r !== null && (typeof(r) == "object" && r.return_value === false))) {
-            this.properties[name] = prevValue;
-            LiteGraph.log_debug("lgraphnode", "setProperty", "prevent property set by cbHandler", name, value, prevValue, r);
-        }
-
-        if (this.properties[name] !== prevValue) {
-            this.graph?._emit?.("node-property-changed", {
+        // onPropertyChanged returning false vetoes: the value is reverted and no event fires
+        const r = CallbackHandler.fireHookThenEvent(this, "onPropertyChanged", [name, value, prevValue], this.graph, "node-property-changed",
+            () => this.properties[name] !== prevValue ? {
                 node: this,
                 name,
                 value: this.properties[name],
                 previous: prevValue
+            } : null, {
+                veto: false
             });
+        if (CallbackHandler.is(r, false)) {
+            this.properties[name] = prevValue;
+            LiteGraph.log_debug("lgraphnode", "setProperty", "prevent property set by cbHandler", name, value, prevValue, r);
         }
 
         // Update the widget value associated with the property name
@@ -18785,6 +21278,8 @@ class LGraphNode {
                 link.data = data;
             }
         });
+        // a new data version on the links: the ancestors model re-runs pure consumers only on newer data
+        ExecutionEngine.stamp(this.outputs[slot].links, this.graph);
     }
 
     /**
@@ -18867,10 +21362,16 @@ class LGraphNode {
             return link.data;
         }
 
-        // TODO Consider moving this out of here and use a single ancestorsCalculation (for each event?)
-        // CHECK THIS : used in logic/while , is ATM necessary? does this solve reading self value while executing loops ?
+        const rules = ExecutionEngine.rulesFor(this.graph);
+        if (!rules.legacy) {
+            // a forced pull runs the origin once per frame or call (or again on newer input data); under
+            // the ancestors model only ON_REQUEST origins: ALWAYS nodes give this frame's value
+            // a node that ticks (Timer, Delay) is never re-run by a pull
+            if (node.mode === LiteGraph.ON_REQUEST || node.mode === LiteGraph.BYPASS || (rules.refresh !== "ancestors" && !ExecutionEngine.declarationOf(node)?.ticks)) ExecutionEngine.ensureFresh(node);
+            return link.data;
+        }
+
         if (refresh_tree) {
-            LiteGraph.log_warn("CHECK THIS", "lgraphnode", "getInputData", "Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             LiteGraph.log_debug("lgraphnode", "getInputData", "Refreshing ancestors tree by ForcedUpdateSlotData", link, slot, this);
             let uIdRand = this.id + "_getInputData_forced_" + LiteGraph.uuidv4();
             let optsAncestors = {
@@ -19122,28 +21623,132 @@ class LGraphNode {
             .filter((target_node) => target_node);
     }
 
+    /**
+     * Adds the built-in exec input `onTrigger` (an event there executes the node) unless it exists.
+     * It is appended, so the indices of the other slots never change.
+     * @returns {number} its index
+     */
     addOnTriggerInput() {
         var trigS = this.findInputSlot("onTrigger");
         if (trigS == -1) { // !trigS ||
             this.addInput("onTrigger", LiteGraph.EVENT, {
                 removable: true,
-                nameLocked: true
+                nameLocked: true,
+                exec: "trigger"
             });
             return this.findInputSlot("onTrigger");
         }
         return trigS;
     }
 
+    /**
+     * Adds the built-in exec output `onExecuted` (fired after the node executed or ran an action)
+     * unless it exists. It is appended, so the indices of the other slots never change.
+     * @returns {number} its index
+     */
     addOnExecutedOutput() {
         var trigS = this.findOutputSlot("onExecuted");
         if (trigS == -1) { // !trigS ||
             this.addOutput("onExecuted", LiteGraph.ACTION, {
                 removable: true,
-                nameLocked: true
+                nameLocked: true,
+                exec: "executed"
             });
             return this.findOutputSlot("onExecuted");
         }
         return trigS;
+    }
+
+    /**
+     * The kind of a built-in exec slot: "trigger" for `onTrigger`, "executed" for `onExecuted`, else
+     * null. Slots made by addOnTriggerInput / addOnExecutedOutput carry `slot.exec`; slots saved before
+     * the marker are recognised by name, event type and the helpers' flags (`nameLocked`, `removable`),
+     * so an `onTrigger` input a node type declares itself (e.g. logic/IF) is not one.
+     * @param {object} slot
+     * @returns {"trigger"|"executed"|null}
+     */
+    static isExecSlot(slot) {
+        if (!slot) return null;
+        if (slot.exec === "trigger" || slot.exec === "executed") return slot.exec;
+        if ((slot.type !== LiteGraph.EVENT && slot.type !== LiteGraph.ACTION) || !slot.nameLocked || !slot.removable) return null;
+        return slot.name === "onTrigger" ? "trigger" : slot.name === "onExecuted" ? "executed" : null;
+    }
+
+    /** the exec-slot layout this node uses (LiteGraph.resolveExecSlotLayout), or null for slot rows */
+    getExecSlotLayout() {
+        return LiteGraph.resolveExecSlotLayout(this.exec_slot_layout ?? this.constructor.exec_slot_layout ?? LiteGraph.execSlotLayoutName());
+    }
+
+    /**
+     * The placement of an exec slot under the node's layout: `{x, y, dx, dy, dir}`, or null when the
+     * slot is not an exec slot of that side or the layout keeps it in the slot rows.
+     */
+    getExecSlotPlacement(is_input, slot) {
+        const kind = LGraphNode.isExecSlot(slot);
+        if (!kind || (kind === "trigger") !== !!is_input) return null;
+        const layout = this.getExecSlotLayout();
+        return (this.horizontal ? layout?.vertical : layout?.normal)?.[kind] ?? null;
+    }
+
+    /**
+     * Where an exec slot sits, relative to the node (title above y = 0), or null when it is in the
+     * slot rows. x anchors: left, center, right, pin (the title box); y anchors: top (of the title),
+     * title (its middle), body (the line between title and body), middle, bottom. `dx` / `dy` are
+     * canvas units, or "N%" of the width / body height.
+     * @param {boolean} is_input
+     * @param {number} slot_number
+     * @param {number[]} [out]
+     * @returns {number[]|null}
+     */
+    getExecSlotPos(is_input, slot_number, out = [0, 0]) {
+        const place = this.getExecSlotPlacement(is_input, (is_input ? this.inputs : this.outputs)?.[slot_number]);
+        if (!place) return null;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        const [w, h] = this.size;
+        const anchorsX = {
+            left: 0,
+            center: w * 0.5,
+            right: w,
+            pin: title * 0.5
+        };
+        const anchorsY = {
+            top: -title,
+            title: -title * 0.5,
+            body: 0,
+            middle: h * 0.5,
+            bottom: h
+        };
+        const offset = (value, size) => (typeof value === "string" && value.trim().endsWith("%") ? (parseFloat(value) / 100) * size : Number(value) || 0);
+        out[0] = (typeof place.x === "number" ? place.x : anchorsX[place.x] ?? 0) + offset(place.dx, w);
+        out[1] = (typeof place.y === "number" ? place.y : anchorsY[place.y] ?? 0) + offset(place.dy, h);
+        return out;
+    }
+
+    /** the direction links leave or enter a slot: an exec layout's `dir`, the slot's own `dir`, or the default */
+    getSlotDir(is_input, slot_number) {
+        const slot = (is_input ? this.inputs : this.outputs)?.[slot_number];
+        const dir = this.getExecSlotPlacement(is_input, slot)?.dir ?? slot?.dir;
+        if (dir) return dir;
+        if (this.horizontal) return is_input ? LiteGraph.UP : LiteGraph.DOWN;
+        return is_input ? LiteGraph.LEFT : LiteGraph.RIGHT;
+    }
+
+    /** true when an exec slot of this node is placed by its exec-slot layout (not in the rows) */
+    _hasPlacedExecSlot() {
+        for (const slot of this.inputs ?? [])
+            if ((slot?.exec || slot?.name === "onTrigger") && this.getExecSlotPlacement(true, slot)) return true;
+        for (const slot of this.outputs ?? [])
+            if ((slot?.exec || slot?.name === "onExecuted") && this.getExecSlotPlacement(false, slot)) return true;
+        return false;
+    }
+
+    /**
+     * true when a slot takes a row (or a column on a vertical node): not a placed exec slot and, unless
+     * `widgetInputs` is true, not a widget input (those sit on their widget's row)
+     */
+    _takesSlotRow(is_input, slot, widgetInputs = false) {
+        if (is_input && !widgetInputs && LGraphNode.isWidgetInputSlot(slot)) return false;
+        return !LGraphNode.isExecSlot(slot) || !this.getExecSlotPlacement(is_input, slot);
     }
 
     onAfterExecuteNode(param, options) {
@@ -19168,6 +21773,13 @@ class LGraphNode {
     }
 
     changeMode(modeTo) {
+        // a declared type refuses modes it cannot run in (LiteGraph.Execution.AllowAnyMode lifts this)
+        if (this.type && !ExecutionEngine.isModeValid(this, modeTo)) {
+            this.mode_refusal = ExecutionEngine.modeRefusal(this, modeTo);
+            LiteGraph.log_warn("lgraphnode", "changeMode", this.mode_refusal);
+            return false;
+        }
+        this.mode_refusal = null;
         switch (modeTo) {
 
             case LiteGraph.ON_TRIGGER:
@@ -19183,6 +21795,8 @@ class LGraphNode {
             case LiteGraph.ALWAYS:
                 break;
             case LiteGraph.ON_REQUEST:
+                break;
+            case LiteGraph.BYPASS:
                 break;
 
             default:
@@ -19209,6 +21823,7 @@ class LGraphNode {
             const action = this._waiting_actions.shift();
             this.actionDo(...action);
         }
+        if (!this._waiting_actions?.length) this._stopped_queue_reported = false;
     }
 
     /**
@@ -19218,30 +21833,51 @@ class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
-        if (graph.nodes_executing[this.id]) return;
-        if (LiteGraph.ensureNodeSingleExecution && this.exec_version != null && this.exec_version >= graph.iteration) return;
-        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        const rules = ExecutionEngine.rulesFor(graph);
+        if (!rules.legacy) {
+            if (!ExecutionEngine.enter(this, "execute", options, rules)) return;
+        } else {
+            if (graph.nodes_executing[this.id]) {
+                ExecutionEngine.drop(this, "reentry", {
+                    message: `${this.type} ${this.id}: executed again while it was executing`
+                });
+                return;
+            }
+            if (LiteGraph.ensureNodeSingleExecution && this.exec_version != null && this.exec_version >= graph.iteration) return;
+            if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        }
 
         const previousExecution = this.exec_version;
         const previousAction = graph.nodes_executedAction[this.id];
         graph.nodes_executedAction[this.id] = options.action_call;
         graph.nodes_executing[this.id] = true;
+        ExecutionEngine._depth++;
+        // run by an action, a trigger or a pull (not its own turn in the step): running -> done, once per change
+        const reportRun = graph._step_node !== this && this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onExecute", {
-                def_cb: this.onExecute
-            }, param, options);
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) ExecutionEngine.passThrough(this); // a wire: data only, its own code does not run
+            else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onExecute", {
+                    def_cb: this.onExecute
+                }, param, options);
+            }
+            if (!rules.legacy) ExecutionEngine.remember(this);
             this.exec_version = graph.iteration;
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            if (LiteGraph.properties_allow_output_binding && !bypassed) this.doUpdateBindedOutputProperties();
             this.execute_triggered = 2;
-            this.processCallbackHandlers("onAfterExecuteNode", {
+            if (!bypassed) this.processCallbackHandlers("onAfterExecuteNode", {
                 def_cb: this.onAfterExecuteNode
             }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             this.exec_version = previousExecution;
             graph.nodes_executedAction[this.id] = previousAction;
@@ -19256,8 +21892,60 @@ class LGraphNode {
         } finally {
             // A callback may remove this node or clear its graph.
             graph.nodes_executing[this.id] = false;
+            ExecutionEngine._depth--;
         }
     }
+    /**
+     * Runs an event entry point (an action, a trigger or an execution started outside a step).
+     * An error that leaves the outermost entry is reported on the root graph as `node-error`, with
+     * an `error` execution state on the failing node, the same way `runStep` reports it (B9); it is
+     * then rethrown to the caller, as before.
+     */
+    _dispatchEvent(run) {
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
+        const outerCall = ExecutionEngine._call;
+        if (!outerCall) ExecutionEngine._call = `call_${++ExecutionEngine._callCount}`;
+        try {
+            return run();
+        } catch (error) {
+            if (error && typeof error === "object" && !error.node) {
+                try {
+                    error.node = this;
+                } catch {
+                    /* a frozen error keeps its fields */ }
+            }
+            const root = this.graph?.rootGraph ?? this.graph;
+            try {
+                root?._reportNodeError(error);
+            } catch (reportError) {
+                LiteGraph.log_error("lgraphnode", "event error report failed", reportError);
+            }
+            // legacy rethrows always (as before); the other models follow LiteGraph.throw_errors
+            if (!root || ExecutionEngine.rulesFor(root).legacy || LiteGraph.throw_errors) throw error;
+            LiteGraph.log_warn("lgraphnode", "Error in an event chain", error);
+            return undefined;
+        } finally {
+            LiteGraph._dispatch_depth--;
+            ExecutionEngine._call = outerCall;
+        }
+    }
+
+    /** reports "running" for a run outside the node's own step turn, unless it already reported done */
+    _reportRunStart() {
+        const status = this.execution_state?.status;
+        if (status === "done" || status === "running" || !this.graph) return false;
+        this.graph.reportExecutionState(this, "status", {
+            status: "running"
+        });
+        return true;
+    }
+
+    _reportRunDone() {
+        if (this.graph && this.execution_state?.status === "running") this.graph.reportExecutionState(this, "status", {
+            status: "done"
+        });
+    }
+
     /**
      * retrocompatibility :: old doExecute
      * @method doExecute
@@ -19276,32 +21964,65 @@ class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
+            // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
+            return this._dispatchEvent(() => {
+                if (this.mode !== LiteGraph.NEVER && ExecutionEngine.rulesFor(this.graph).refresh === "ancestors") ExecutionEngine.pull(this);
+                return this.actionDo(action, param, options, action_slot);
+            });
+        }
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
         options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
-        if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
-        if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        const rules = ExecutionEngine.rulesFor(graph);
+        if (!rules.legacy) {
+            if (!ExecutionEngine.enter(this, "action", options, rules)) return;
+        } else {
+            if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
+            if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;
+        }
         const previousCall = graph.nodes_executedAction[this.id];
         graph.nodes_executedAction[this.id] = options.action_call;
         const previousAction = graph.nodes_actioning[this.id];
         graph.nodes_actioning[this.id] = options.action_call;
+        ExecutionEngine._depth++;
+        const reportRun = this._reportRunStart();
+        this.last_run_time = LiteGraph.getTime(); // the pin's recent-run state
         try {
-            if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
-            this.processCallbackHandlers("onAction", {
-                def_cb: this.onAction
-            }, action, param, options, action_slot);
-            if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            const bypassed = this.mode === LiteGraph.BYPASS;
+            if (bypassed) {
+                // a wire: data passes through and the event goes on to the event outputs
+                ExecutionEngine.passThrough(this, {
+                    events: true,
+                    param,
+                    options
+                });
+            } else {
+                if (LiteGraph.properties_allow_input_binding) this.doUpdateBindedInputProperties();
+                this.processCallbackHandlers("onAction", {
+                    def_cb: this.onAction
+                }, action, param, options, action_slot);
+                if (LiteGraph.properties_allow_output_binding) this.doUpdateBindedOutputProperties();
+            }
             this.action_call = options.action_call;
             graph.nodes_executedAction[this.id] = options.action_call;
             this.action_triggered = 2;
-            this.processCallbackHandlers("onAfterActionedNode", {
+            if (!bypassed) this.processCallbackHandlers("onAfterActionedNode", {
                 def_cb: this.onAfterActionedNode
             }, param, options);
+            if (reportRun) this._reportRunDone();
         } catch (error) {
             graph.nodes_executedAction[this.id] = previousCall;
+            if (error && typeof error === "object" && !error.node) {
+                try {
+                    error.node = this;
+                } catch {
+                    /* a frozen error keeps its fields */ }
+            }
             throw error;
         } finally {
             graph.nodes_actioning[this.id] = previousAction || false;
+            ExecutionEngine._depth--;
         }
     }
 
@@ -19346,6 +22067,7 @@ class LGraphNode {
         if (!this.outputs) {
             return;
         }
+        if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));
         var output = null;
         if (slot === null) {
             LiteGraph.log_error("lgraphnode", "triggerSlot", "wrong slot", slot);
@@ -19373,9 +22095,15 @@ class LGraphNode {
             return;
         }
 
+        const rules = this.graph ? ExecutionEngine.rulesFor(this.graph) : ExecutionEngine.LEGACY;
+        if (!rules.legacy) return ExecutionEngine.triggerSlot(this, slot, param, link_id, options, rules);
+
         // check for ancestors calls
         if (this.graph && this.graph.ancestorsCall) {
             LiteGraph.log_debug("ancestors call, prevent triggering slot " + slot + " on " + this.id + ":" + this.order);
+            ExecutionEngine.drop(this, "refreshing", {
+                message: `${this.type} ${this.id}: an event fired while ancestors were refreshed is dropped`
+            });
             return;
         }
 
@@ -19403,9 +22131,18 @@ class LGraphNode {
                 LiteGraph.log_warn("lgraphNODE", "triggerSlot", "link has not node", link_info, output, slot, param);
                 continue;
             }
-            if (node.mode === LiteGraph.NEVER) continue;
+            if (node.mode === LiteGraph.NEVER) {
+                ExecutionEngine.drop(node, "mode", {
+                    message: `${node.type} ${node.id}: the node is NEVER; the event is not delivered`
+                });
+                continue;
+            }
             var target_slot = node.inputs[link_info.target_slot];
-            if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
+            if (node.mode === LiteGraph.BYPASS) {
+                // a bypassed node is a wire: the event passes through now
+                if (!options.action_call) options.action_call = `${this.id}_act_${LiteGraph.uuidv4()}`;
+                node.actionDo(target_slot?.name, param, options, link_info.target_slot);
+            } else if (node.mode === LiteGraph.ON_TRIGGER || target_slot?.name === "onTrigger") {
                 // generate unique trigger ID if not present
                 if (!options.action_call)
                     options.action_call = `${this.id}_trigg_${LiteGraph.uuidv4()}`; // TODO replace here and there fakeunique ID with real unique
@@ -19441,6 +22178,12 @@ class LGraphNode {
                     node._waiting_actions.push([target_connection.name, param, {
                         ...options
                     }, link_info.target_slot]);
+                    if (node.graph.status !== node.graph.constructor.STATUS_RUNNING && !node._stopped_queue_reported) {
+                        node._stopped_queue_reported = true;
+                        ExecutionEngine.drop(node, "stopped-queue", {
+                            message: `${node.type} ${node.id}: an action waits in the queue until the graph runs (graph.stop({dropQueued: true}) clears it)`
+                        });
+                    }
                     LiteGraph.log_verbose("lgraphnode", "triggerSlot", "push to deferred", target_connection.name, param, options, link_info.target_slot); //+this.id+":"+this.order+" :: "+target_connection.name);
                 } else {
                     // trigger now the action
@@ -19452,6 +22195,9 @@ class LGraphNode {
                 // TODO CHECK
                 // LiteGraph.log_verbose("lgraphnode", "triggerSlot","not executing node, what to do with this Node Mode on slot triggered?", node.mode, this);
                 LiteGraph.log_debug("lgraphnode", "triggerSlot", "onAction not implemented on node for triggeringSlot", target_slot, node.title, "arguments", slot, param, link_id, options);
+                ExecutionEngine.drop(node, "no-handler", {
+                    message: `${node.type} ${node.id}: input "${target_slot?.name}" receives an event but the node has no onAction`
+                });
             }
         }
     }
@@ -19832,15 +22578,16 @@ class LGraphNode {
 
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
-                if (LGraphNode.isWidgetInputSlot(input)) return maxWidth; // label shown by the widget
-                const text = input.label || input.name || "";
+                if (!this._takesSlotRow(true, input)) return maxWidth; // labelled by its widget, or a placed exec slot
+                const text = LiteGraph.getSlotLabel(this, input, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
         }
         if (this.outputs) {
             output_width = this.outputs.reduce((maxWidth, output) => {
-                const text = output.label || output.name || "";
+                if (!this._takesSlotRow(false, output)) return maxWidth; // a placed exec slot has no label
+                const text = LiteGraph.getSlotLabel(this, output, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -19900,9 +22647,9 @@ class LGraphNode {
     getSlotsHeight() {
         // minimum height calculated by slots or 1
         const rowHeight = Math.max(
-            // widget inputs sit on their widget rows, not in the slot rows
-            this.inputs ? this.inputs.filter((input) => !LGraphNode.isWidgetInputSlot(input)).length : 1,
-            this.outputs ? this.outputs.length : 1,
+            // widget inputs sit on their widget rows and placed exec slots on the edges, not in the slot rows
+            this.inputs ? this.inputs.filter((input) => this._takesSlotRow(true, input)).length : 1,
+            this.outputs ? this.outputs.filter((output) => this._takesSlotRow(false, output)).length : 1,
             1,
         ) * LiteGraph.NODE_SLOT_HEIGHT + 10;
         // add margin (should this be always?)
@@ -20024,9 +22771,21 @@ class LGraphNode {
             callback: callback,
             options: options || {},
         };
-        // an instance of the registered widget class (src/widgets.js), or a plain object for unknown types
-        const WidgetClass = LiteGraph.widget_types?.[fields.type];
-        var w = WidgetClass ? new WidgetClass(fields) : fields;
+        // an instance of the registered widget class (src/widgets.js); a type that is not a widget type
+        // resolves through value types ("int" -> number widget with step 1, "color", "vec3", ...) and
+        // keeps its own name; anything else stays a plain object (legacy w.draw / w.mouse)
+        const resolved = LiteGraph.valueTypes ?
+            LiteGraph.valueTypes.resolveWidgetClass(fields.type, LiteGraph.widget_types ?? {}) :
+            (LiteGraph.widget_types?.[fields.type] ? {
+                cls: LiteGraph.widget_types[fields.type],
+                options: {}
+            } : null);
+        if (resolved && Object.keys(resolved.options).length) fields.options = {
+            ...resolved.options,
+            ...fields.options
+        };
+        if (resolved?.valueType && fields.value === undefined) fields.value = LiteGraph.valueTypes.defaultValue(fields.type, fields.options);
+        var w = resolved ? new resolved.cls(fields) : fields;
 
         if (w.options.y !== undefined) {
             w.y = w.options.y;
@@ -20226,6 +22985,9 @@ class LGraphNode {
      * @return {boolean}
      */
     isPointInside(x, y, margin = 0, skip_title) {
+        // exec slots placed on the edges stick out: half a slot around the node belongs to it
+        // (groups borrow this method, so the helper may be missing)
+        if (this._hasPlacedExecSlot?.()) margin += LiteGraph.NODE_SLOT_HEIGHT * 0.5;
         var margin_top = this.graph && this.graph.isLive() ? 0 : LiteGraph.NODE_TITLE_HEIGHT;
         if (skip_title) {
             margin_top = 0;
@@ -20357,7 +23119,8 @@ class LGraphNode {
      * Get a slot from his index or name
      * @param {boolean} is_input use look for input / output 
      * @param {number|string} slot_index_or_name 
-     * @returns 
+     * @param {boolean} [returnObj=false] return the slot object instead of its index
+     * @returns {number|Object} the slot index (or the slot with returnObj); -1 when not found
      */
     getSlot(is_input, slot_index_or_name, returnObj = false) {
         if (!is_input || is_input === LiteGraph.OUTPUT) {
@@ -20622,7 +23385,7 @@ class LGraphNode {
         }
 
         if (opts.createEventInCase && source_slotType === LiteGraph.EVENT) {
-            if (LiteGraph.do_add_triggers_slots) {
+            if (ExecutionEngine.execSlotsFor(this.graph)) {
                 source_slot = source_node.addOnExecutedOutput();
                 return source_node.connect(source_slot, this, slot);
             }
@@ -20698,12 +23461,13 @@ class LGraphNode {
 
         if (target_slot === LiteGraph.EVENT) {
 
-            if (LiteGraph.do_add_triggers_slots) {
-                // search for first slot with event? :: NO this is done outside
-                // LiteGraph.log?.("Connect: Creating triggerEvent");
-                // force mode
-                target_node.changeMode(LiteGraph.ON_TRIGGER);
-                target_slot = target_node.findInputSlot("onTrigger");
+            if (ExecutionEngine.execSlotsFor(this.graph)) {
+                // ON_TRIGGER adds both exec slots; a type that refuses the mode keeps its mode and still
+                // gets onTrigger (an event on an input named onTrigger executes the node in any mode)
+                if (!target_node.changeMode(LiteGraph.ON_TRIGGER)) {
+                    LiteGraph.log_info("lgraphnode", "connect", "onTrigger added without changing the mode", target_node.mode_refusal);
+                }
+                target_slot = target_node.addOnTriggerInput();
                 LiteGraph.log_debug("lgraphnode", "connect", "Created onTrigger slot", target_slot);
             } else {
                 return null; // -- break --
@@ -20746,7 +23510,7 @@ class LGraphNode {
         r = target_node.processCallbackHandlers("onBeforeConnectInput", {
             def_cb: target_node.onBeforeConnectInput
         }, target_slot);
-        var redirect = r !== null && typeof(r) == "object" ? r.return_value : r;
+        var redirect = CallbackHandler.valueOf(r);
         if (redirect === false) {
             LiteGraph.log_debug("lgraphnode", "connect", "Node onBeforeConnectInput refused the connection", target_slot);
             return null;
@@ -20765,7 +23529,7 @@ class LGraphNode {
         r = this.processCallbackHandlers("onConnectOutput", {
             def_cb: this.onConnectOutput
         }, slot, input.type, input, target_node, target_slot);
-        if (r !== null && (r === false || (typeof(r) == "object" && r.return_value === false))) {
+        if (CallbackHandler.is(r, false)) {
             LiteGraph.log_debug("lgraphnode", "connect", "Node onConnectOutput stopping connection", r.return_value);
             return null;
         }
@@ -20785,7 +23549,7 @@ class LGraphNode {
         r = target_node.processCallbackHandlers("onConnectInput", {
             def_cb: target_node.onConnectInput
         }, target_slot, output.type, output, this, slot);
-        if (r !== null && (r === false || (typeof(r) == "object" && r.return_value === false))) {
+        if (CallbackHandler.is(r, false)) {
             LiteGraph.log_debug("lgraphnode", "connect", "targetNode onConnectInput stopping connection", r.return_value);
             return null;
         }
@@ -20868,6 +23632,7 @@ class LGraphNode {
 
         }
 
+        this.graph._markChange?.("link");
         this.graph.onGraphChanged({
             action: "connect"
         });
@@ -20880,6 +23645,8 @@ class LGraphNode {
             originSlot: slot,
             target: target_node,
             targetSlot: target_slot
+        }, {
+            recorded: true
         });
 
         return link_info;
@@ -20965,14 +23732,18 @@ class LGraphNode {
                 input
             }
             of notifications) {
+            const recorded = opts.doProcessChange ?? true;
+            if (recorded) graph._markChange?.("link");
             notify(() => graph.onGraphChanged({
                 action,
-                doSave: opts.doProcessChange ?? true
+                doSave: recorded
             }));
             notify(() => graph._emit?.("link-removed", {
                 link,
                 origin: origin ?? null,
                 target: target ?? null
+            }, {
+                recorded
             }));
             if (target) notify(() => target.processCallbackHandlers("onConnectionsChange", {
                 def_cb: target.onConnectionsChange,
@@ -21040,6 +23811,13 @@ class LGraphNode {
             return out;
         }
 
+        // an exec slot placed by the exec-slot layout (LiteGraph.Node.ExecSlotLayout)
+        if (num_slots > slot_number && this.getExecSlotPos(is_input, slot_number, out)) {
+            out[0] += this.pos[0];
+            out[1] += this.pos[1];
+            return out;
+        }
+
         // hard-coded pos
         if (
             is_input &&
@@ -21059,10 +23837,26 @@ class LGraphNode {
             return out;
         }
 
+        // slots before this one that take a row (placed exec slots and widget inputs do not)
+        const list = is_input ? this.inputs : this.outputs;
+        let row = 0;
+        let rows = 0;
+        for (let i = 0; i < num_slots; i++) {
+            // a vertical node spreads widget inputs with the others, as before
+            if (!this._takesSlotRow(is_input, list[i], !!this.horizontal)) continue;
+            if (i < slot_number) row++;
+            rows++;
+        }
+
         // horizontal distributed slots
         if (this.horizontal) {
+            // an exec slot placed in the pin column keeps that column: the others share the rest
+            const reserved = rows < num_slots && list.some((slot) => {
+                const x = this.getExecSlotPlacement(is_input, slot)?.x;
+                return x === "pin" || x === "left";
+            }) ? LiteGraph.NODE_TITLE_HEIGHT : 0;
             out[0] =
-                this.pos[0] + (slot_number + 0.5) * (this.size[0] / num_slots);
+                this.pos[0] + reserved + (row + 0.5) * ((this.size[0] - reserved) / Math.max(rows, 1));
             if (is_input) {
                 out[1] = this.pos[1] - LiteGraph.NODE_TITLE_HEIGHT;
             } else {
@@ -21083,18 +23877,13 @@ class LGraphNode {
                     return out;
                 }
             }
-            // rows count only ordinary inputs
-            let row = 0;
-            for (let i = 0; i < slot_number; i++) {
-                if (!LGraphNode.isWidgetInputSlot(this.inputs[i])) row++;
-            }
             out[1] = this.pos[1] + (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + (this.constructor.slot_start_y || 0);
             return out;
         }
         out[0] = this.pos[0] + this.size[0] + 1 - offset;
         out[1] =
             this.pos[1] +
-            (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
+            (row + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
             (this.constructor.slot_start_y || 0);
         return out;
     }
@@ -21289,7 +24078,7 @@ class LGraphNode {
 
         var optsAncestors = {
             modesSkip: [LiteGraph.NEVER, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER],
-            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST],
+            modesOnly: [LiteGraph.ALWAYS, LiteGraph.ON_REQUEST, LiteGraph.BYPASS],
             typesSkip: [LiteGraph.ACTION],
             typesOnly: [],
         };
@@ -21634,6 +24423,9 @@ class LGraphNode {
         };
     }
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraphNode);
 
 
 /**
@@ -22302,6 +25094,31 @@ const SubgraphDefs = {
  * extracted from base nodes
  */
 
+/**
+ * Appends reroutes at `points` (origin → target order) to a link of `graph`, after the reroutes
+ * it already has, without a history entry. Returns the last reroute's id (or the link's previous
+ * parentId when there are no points).
+ */
+function subgraphAppendReroutes(graph, link, points, offset = [0, 0]) {
+    let parentId = link?.parentId;
+    for (const point of points) {
+        const reroute = new Reroute(++graph.state.lastRerouteId, [Math.round(point[0] + offset[0]), Math.round(point[1] + offset[1])], parentId);
+        graph.reroutes.set(reroute.id, reroute);
+        parentId = reroute.id;
+    }
+    if (link && parentId !== undefined) link.parentId = parentId;
+    return parentId;
+}
+
+/** removes reroutes that no link uses any more (from a list of candidates) */
+function subgraphDropUnusedReroutes(graph, ids) {
+    if (!ids.size) return;
+    const used = graph.getRerouteLinkIds();
+    const floating = graph._floatingRerouteSlots?.(used) ?? new Map();
+    for (const id of ids)
+        if (!used.has(id) && !floating.has(id)) graph.reroutes.delete(id);
+}
+
 // Subgraph: a node that contains a graph
 class Subgraph {
 
@@ -22386,7 +25203,30 @@ class Subgraph {
 
     onAction(action, param, options) {
         LiteGraph.log_debug("subgraph", "onAction", ...arguments);
-        this.subgraph.onAction(action, param, options);
+        const rules = ExecutionEngine.rulesFor(this.graph);
+        if (rules.legacy) {
+            this.subgraph.onAction(action, param, options);
+            return;
+        }
+        // crossing into the inner graph: bounded by subgraph_max_depth, with fresh interface data
+        const depth = ExecutionEngine._boundaryDepth ?? 0;
+        const limit = LiteGraph.subgraph_max_depth ?? 32;
+        if (depth >= limit) {
+            ExecutionEngine.drop(this, "max-depth", {
+                setting: "LiteGraph.subgraph_max_depth",
+                message: `${this.type} ${this.id}: events nested through more than ${limit} subgraph boundaries (LiteGraph.subgraph_max_depth)`
+            });
+            return;
+        }
+        ExecutionEngine._boundaryDepth = depth + 1;
+        try {
+            ExecutionEngine.enterBoundary(this);
+            this.subgraph.onAction(action, param, options);
+            // a subgraph node that does not step this frame still delivers its inner queued actions (B6)
+            if (rules.delivery === "deferred" && this.mode !== LiteGraph.ALWAYS) ExecutionEngine.flushInner(this, this.subgraph);
+        } finally {
+            ExecutionEngine._boundaryDepth = depth;
+        }
     }
 
     onExecute() {
@@ -23326,7 +26166,8 @@ class Subgraph {
                 };
                 entry.targets.push({
                     node: link.target_id,
-                    slot: link.target_slot
+                    slot: link.target_slot,
+                    link: link.id
                 });
                 incoming.set(key, entry);
             } else if (fromIn && !toIn) {
@@ -23341,10 +26182,25 @@ class Subgraph {
                 };
                 entry.targets.push({
                     node: link.target_id,
-                    slot: link.target_slot
+                    slot: link.target_slot,
+                    link: link.id
                 });
                 outgoing.set(key, entry);
             }
+        }
+
+        // reroute chains of the links that cross or stay inside the selection (origin → target),
+        // captured before the links go: a chain point inside the selection's box moves into the subgraph
+        const chainOf = new Map();
+        const touched = new Set();
+        for (const link of links) {
+            if (link.parentId === undefined || !(inSet.has(link.origin_id) || inSet.has(link.target_id))) continue;
+            const chain = graph.getRerouteChain(link);
+            chainOf.set(link.id, chain.map((reroute) => ({
+                id: reroute.id,
+                pos: [reroute.pos[0], reroute.pos[1]]
+            })));
+            chain.forEach((reroute) => touched.add(reroute.id));
         }
 
         // 2. copies of the nodes, without their links (ids are kept: the inner graph is empty)
@@ -23372,8 +26228,12 @@ class Subgraph {
         for (const node of selected) graph.remove(node);
         this.pos = [bounds[0], bounds[1]];
         for (const copy of copies.values()) inner.add(copy);
+        const box = [bounds[0] - 20, bounds[1] - LiteGraph.NODE_TITLE_HEIGHT - 20, bounds[2] + 20, bounds[3] + 20];
+        const insideBox = (point) => point.pos[0] >= box[0] && point.pos[0] <= box[2] && point.pos[1] >= box[1] && point.pos[1] <= box[3];
         for (const link of internal) {
-            copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+            const created = copies.get(link.origin_id).connect(link.origin_slot, copies.get(link.target_id), link.target_slot);
+            const chain = chainOf.get(link.id);
+            if (created && chain?.length) subgraphAppendReroutes(inner, created, chain.map((point) => point.pos));
         }
 
         // 4. graph inputs and outputs, then the outside wiring
@@ -23394,10 +26254,23 @@ class Subgraph {
             io.setProperty("type", entry.type);
             const name = unique(entry.name, inputNames);
             io.setProperty("name", name);
-            for (const target of entry.targets) io.connect(0, copies.get(target.node), target.slot);
+            // each crossing link: the part of its chain inside the box goes inside, the rest stays out
+            let outerPart = null;
+            for (const target of entry.targets) {
+                const created = io.connect(0, copies.get(target.node), target.slot);
+                const chain = chainOf.get(target.link) ?? [];
+                const split = chain.findIndex(insideBox);
+                const inside = split === -1 ? [] : chain.slice(split);
+                outerPart ??= split === -1 ? chain : chain.slice(0, split);
+                if (created && inside.length) subgraphAppendReroutes(inner, created, inside.map((point) => point.pos));
+            }
             const source = graph.getNodeById(entry.origin);
             const slot = this.findInputSlot(name);
-            if (source && slot !== -1) source.connect(entry.slot, this, slot);
+            if (source && slot !== -1) {
+                const outer = source.connect(entry.slot, this, slot);
+                // the outside part keeps its reroutes (and their parents up to the source)
+                if (outer && outerPart?.length && graph.reroutes.has(outerPart[outerPart.length - 1].id)) outer.parentId = outerPart[outerPart.length - 1].id;
+            }
         }
         row = 0;
         for (const entry of outgoing.values()) {
@@ -23407,13 +26280,31 @@ class Subgraph {
             io.setProperty("type", entry.type);
             const name = unique(entry.name, outputNames);
             io.setProperty("name", name);
-            copies.get(entry.origin).connect(entry.slot, io, 0);
+            const innerLink = copies.get(entry.origin).connect(entry.slot, io, 0);
             const slot = this.findOutputSlot(name);
+            let innerDone = false;
             for (const target of entry.targets) {
+                const chain = chainOf.get(target.link) ?? [];
+                // the leading points inside the box go inside (once: they are the origin's side), the rest stays out
+                let split = 0;
+                while (split < chain.length && insideBox(chain[split])) split++;
+                if (!innerDone && innerLink && split) {
+                    subgraphAppendReroutes(inner, innerLink, chain.slice(0, split).map((point) => point.pos));
+                    innerDone = true;
+                }
                 const node = graph.getNodeById(target.node);
-                if (node && slot !== -1) this.connect(slot, node, target.slot);
+                if (!node || slot === -1) continue;
+                const outer = this.connect(slot, node, target.slot);
+                const outside = chain.slice(split);
+                if (outer && outside.length && graph.reroutes.has(outside[outside.length - 1].id)) {
+                    const first = graph.reroutes.get(outside[0].id);
+                    if (first) delete first.parentId; // it now starts at the subgraph node
+                    outer.parentId = outside[outside.length - 1].id;
+                }
             }
         }
+        // reroutes that moved inside (or were only on removed links) leave the parent graph
+        subgraphDropUnusedReroutes(graph, touched);
         this.setSize(this.computeSize());
         return this;
     }
@@ -23438,7 +26329,8 @@ class Subgraph {
             const link = input.link != null ? graph.links[input.link] : null;
             if (link) outerSource.set(input.name, {
                 node: graph.getNodeById(link.origin_id),
-                slot: link.origin_slot
+                slot: link.origin_slot,
+                parentId: link.parentId
             });
         });
         const outerTargets = new Map(); // output name -> [{node, slot}]
@@ -23446,7 +26338,8 @@ class Subgraph {
             outerTargets.set(output.name, (output.links ?? []).map((id) => graph.links[id]).filter(Boolean)
                 .map((link) => ({
                     node: graph.getNodeById(link.target_id),
-                    slot: link.target_slot
+                    slot: link.target_slot,
+                    chain: graph.getRerouteChain(link).map((reroute) => reroute.id)
                 })));
         });
 
@@ -23470,7 +26363,10 @@ class Subgraph {
             copies.set(node.id, copy);
         }
 
-        // what to connect, resolved through the graph inputs and outputs
+        // what to connect, resolved through the graph inputs and outputs; each pair carries its
+        // reroutes: the outside chain to the subgraph input, the inner chain, the outside chain from the output
+        const offset = [this.pos[0] - minX, this.pos[1] - minY];
+        const innerPoints = (link) => inner.getRerouteChain(link).map((reroute) => reroute.pos);
         const plan = [];
         const sourceOf = (link) => {
             const origin = inner.getNodeById(link.origin_id);
@@ -23484,21 +26380,48 @@ class Subgraph {
             const target = inner.getNodeById(link.target_id);
             const source = sourceOf(link);
             if (!source?.node) continue;
+            const route = {
+                before: source.parentId,
+                points: innerPoints(link),
+                innerLink: link.id
+            };
             if (isOutput(target)) {
                 for (const outer of outerTargets.get(target.properties.name) ?? []) {
-                    if (outer.node) plan.push([source, outer]);
+                    if (outer.node) plan.push([source, outer, {
+                        ...route,
+                        after: outer.chain
+                    }]);
                 }
             } else if (copies.has(link.target_id)) {
                 plan.push([source, {
                     node: copies.get(link.target_id),
                     slot: link.target_slot
-                }]);
+                }, route]);
             }
         }
 
         graph.remove(this);
         for (const copy of copies.values()) graph.add(copy);
-        for (const [source, target] of plan) source.node.connect(source.slot, target.node, target.slot);
+        const innerEnds = new Map(); // inner link id -> last reroute id created for it (shared by its outputs)
+        for (const [source, target, route] of plan) {
+            const created = source.node.connect(source.slot, target.node, target.slot);
+            if (!created) continue;
+            // the outside chain before the subgraph input (kept objects)
+            if (route.before !== undefined && graph.reroutes.has(route.before)) created.parentId = route.before;
+            // the inner chain, created once per inner link
+            if (route.points.length) {
+                if (innerEnds.has(route.innerLink)) created.parentId = innerEnds.get(route.innerLink);
+                else innerEnds.set(route.innerLink, subgraphAppendReroutes(graph, created, route.points, offset));
+            }
+            // the outside chain after the subgraph output (kept objects), attached after the inner one
+            const after = (route.after ?? []).filter((id) => graph.reroutes.has(id));
+            if (after.length) {
+                const first = graph.reroutes.get(after[0]);
+                if (created.parentId === undefined) delete first.parentId;
+                else first.parentId = created.parentId;
+                created.parentId = after[after.length - 1];
+            }
+        }
         return [...copies.values()];
     }
 
@@ -23581,26 +26504,55 @@ class GraphInput {
         }
         this.properties.type = type;
 
-        // update widget
-        if (type == "number") {
-            this.value_widget.type = "number";
-            this.value_widget.value = Number(); // 0
-        } else if (type == "boolean") {
-            this.value_widget.type = "toggle";
-            this.value_widget.value = this.value_widget.value && (this.value_widget.value + "").toLocaleLowerCase() !== "false" && this.value_widget.value !== "" ? true : false; // "true"
-        } else if (type == "string") {
-            this.value_widget.type = "text";
-            this.value_widget.value = this.value_widget.value + ""; // ""
-        } else {
-            this.value_widget.type = null;
-            // this.value_widget.value = null;
-        }
+        // update widget: the value widget becomes the widget of the input's value type (any registered
+        // type: number, int, boolean, string, color, vec3, ...); its value is kept, converted to the type
+        this.setValueWidgetType(type);
         this.properties.value = this.value_widget.value;
 
         // update graph
         if (this.graph && this.name_in_graph) {
             this.graph.changeInputType(this.name_in_graph, type);
         }
+    }
+
+    /**
+     * Replaces the value widget by the widget of a value type (LiteGraph.valueTypes), keeping the
+     * value when the type can convert it, else the type's default. Unknown types keep the widget
+     * with a null type, as before.
+     */
+    setValueWidgetType(type) {
+        const old = this.value_widget;
+        const types = LiteGraph.valueTypes;
+        const resolved = type !== LiteGraph.EVENT && types?.has(type) ? types.resolveWidgetClass(String(type), LiteGraph.widget_types ?? {}) : null;
+        if (!resolved) {
+            old.type = null;
+            return old;
+        }
+        const options = {
+            ...resolved.options
+        };
+        let value = old.value;
+        try {
+            value = types.coerce(type, value, options);
+            if (types.validate(type, value, options)) value = types.defaultValue(type, options);
+        } catch {
+            value = types.defaultValue(type, options);
+        }
+        if (old.constructor === resolved.cls && old.type === String(type).toLowerCase()) {
+            old.value = value;
+            return old;
+        }
+        const widget = new resolved.cls({
+            type: String(type).toLowerCase(),
+            name: old.name,
+            value,
+            callback: old.callback,
+            options
+        });
+        const index = this.widgets.indexOf(old);
+        if (index >= 0) this.widgets[index] = widget;
+        this.value_widget = widget;
+        return widget;
     }
 
     // this is executed AFTER the property has changed
@@ -23883,6 +26835,13 @@ class NodeFunction extends Subgraph {
 
     static title = "Function";
     static desc = "Calls a subgraph definition";
+    // runs only on call: ON_EVENT for new nodes outside legacy (Wave 6)
+    static def = {
+        execution: {
+            default_mode: 1
+        }, // LiteGraph.ON_EVENT (litegraph.js is not initialized yet here)
+        usage: "Pick a subgraph definition; each event on call pushes the inputs, runs the inner graph once and fires done with the outputs set.",
+    };
 
     constructor() {
         super();
@@ -24002,13 +26961,11 @@ class NodeFunction extends Subgraph {
     onAction(action, param, options) {
         if (action === "call") return this.call(param, options);
         this._migrate();
+        if (!ExecutionEngine.rulesFor(this.graph).legacy) ExecutionEngine.enterBoundary(this);
         this.subgraph.onAction(action, param, options); // an interface event input
-        // the inner graph only steps on call: deliver the event chain now (deferred actions)
-        for (let pass = 0; pass < 64; pass++) {
-            const waiting = this.subgraph._nodes.filter((node) => node._waiting_actions?.length);
-            if (!waiting.length) break;
-            for (const node of waiting) node.executePendingActions();
-        }
+        // the inner graph only steps on call: deliver the event chain now (deferred actions), up to
+        // LiteGraph.Execution.MaxEventPasses passes (64); reaching the cap is reported
+        ExecutionEngine.flushInner(this, this.subgraph);
     }
 
     onExecute() {
@@ -24097,9 +27054,17 @@ class LibraryManager {
         }
         try {
             this.vm = await import("vm").then(m => m.default || m);
-            this.fetch = await import("node-fetch").then(m => m.default || m);
         } catch (e) {
-            console.warn("Error importing Node.js modules:", e);
+            console.warn("Error importing 'vm':", e);
+        }
+        // Node.js 18+ has fetch; node-fetch (optional dependency) is only the fallback
+        this.fetch = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
+        if (!this.fetch) {
+            try {
+                this.fetch = await import("node-fetch").then(m => m.default || m);
+            } catch {
+                console.warn("No fetch: use Node.js 18 or later, or install the optional package: npm install node-fetch");
+            }
         }
     }
 
@@ -24296,7 +27261,18 @@ class LibraryManager {
     async loadPackages(library) {
         const modules = [];
         for (const name of library.npmPackages) {
-            modules.push(this.selectExport(await import(name), library.defaultExport));
+            let namespace;
+            try {
+                namespace = await import(name);
+            } catch (error) {
+                const missing = error?.code === "ERR_MODULE_NOT_FOUND" || error?.code === "MODULE_NOT_FOUND";
+                if (!missing) throw error;
+                // integrations are optional dependencies: name the package and how to get it
+                throw new Error(`Optional package '${name}' is not installed (library ${library.key}): npm install ${name}`, {
+                    cause: error
+                });
+            }
+            modules.push(this.selectExport(namespace, library.defaultExport));
         }
         return modules;
     }
@@ -24879,11 +27855,14 @@ class NumberWidget extends BaseWidget {
         const old_value = env.old_value;
         if (event.type == "pointermove") {
             const deltaX = event.deltaX || event.deltax || 0;
-            if (deltaX) this.value += deltaX * 0.1 * (options.step || 1);
-            this.value = BaseWidget.clampToOptions(this.value, options);
+            // drag on an unrounded copy, so rounded types (int) still move with small steps
+            const raw = (typeof this._drag_raw === "number" ? this._drag_raw : this.value) + deltaX * 0.1 * (options.step || 1);
+            this._drag_raw = BaseWidget.clampToOptions(raw, options);
+            this.value = options.round ? BaseWidget.clampToOptions(Math.round(this._drag_raw / options.round) * options.round, options) : this._drag_raw;
         } else if (event.type == "pointerdown") {
             const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
             this.value = BaseWidget.clampToOptions(this.value + delta * (options.step || 1), options);
+            this._drag_raw = this.value;
         } else if (event.type == "pointerup") {
             const delta = env.x < 40 ? -1 : env.x > env.widget_width - 40 ? 1 : 0;
             if (event.click_time < 200 && delta == 0) {
@@ -24994,6 +27973,177 @@ class TextWidget extends BaseWidget {
     }
 }
 
+/** Draws the label on the left of a pill; returns the x where the value area starts. */
+function drawWidgetLabel(widget, ctx, y, H, env) {
+    const margin = env.margin;
+    const label = widget.label || widget.name;
+    if (label == null || !env.show_label || !env.show_text) return margin * 2;
+    ctx.fillStyle = env.colors.secondary;
+    ctx.textAlign = "left";
+    ctx.fillText(String(label), margin * 2, y + H * 0.7);
+    return margin * 3 + ctx.measureText(String(label)).width;
+}
+
+/**
+ * A colour value ("#rrggbb", "#rrggbbaa" or any CSS colour): a swatch with its text. Clicking the
+ * swatch opens the browser's colour picker (the alpha suffix is kept); clicking the label lets you
+ * type any CSS colour.
+ */
+class ColorWidget extends BaseWidget {
+    draw(ctx, node, widget_width, y, H, env) {
+        const margin = env.margin;
+        BaseWidget.drawPill(ctx, widget_width, y, H, env);
+        if (env.show_text && !this.disabled) ctx.stroke();
+        const swatch_w = Math.min(48, widget_width * 0.3);
+        const sx = widget_width - margin * 2 - swatch_w;
+        ctx.save();
+        ctx.fillStyle = "#555";
+        ctx.fillRect(sx, y + 3, swatch_w, H - 6);
+        ctx.fillStyle = this.value ? String(this.value) : "transparent";
+        ctx.fillRect(sx, y + 3, swatch_w, H - 6);
+        ctx.restore();
+        if (!env.show_text) return;
+        const start = drawWidgetLabel(this, ctx, y, H, env);
+        ctx.fillStyle = env.colors.text;
+        ctx.textAlign = "right";
+        const room = sx - margin - start;
+        ctx.fillText(LGraphCanvas.fitText(ctx, String(this.value ?? ""), room), sx - margin, y + H * 0.7);
+    }
+
+    onPointer(event, env) {
+        if (event.type !== "pointerdown" || this.options.read_only) return;
+        const old_value = env.old_value;
+        const swatch_w = Math.min(48, env.widget_width * 0.3);
+        const onSwatch = env.x > env.widget_width - swatch_w - 40;
+        const doc = env.ref_window?.document ?? (typeof document !== "undefined" ? document : null);
+        const hex = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.exec(String(this.value ?? ""));
+        if (onSwatch && doc) {
+            const input = doc.createElement("input");
+            input.type = "color";
+            input.value = hex ? String(this.value).slice(0, 7) : "#ffffff";
+            Object.assign(input.style, {
+                position: "fixed",
+                left: (event.clientX ?? 0) + "px",
+                top: (event.clientY ?? 0) + "px",
+                opacity: "0",
+                width: "1px",
+                height: "1px",
+                pointerEvents: "none"
+            });
+            const alpha = hex?.[1] ?? "";
+            const apply = () => env.changed(this, input.value + alpha, old_value);
+            input.addEventListener("input", apply);
+            input.addEventListener("change", () => {
+                apply();
+                input.remove();
+            });
+            input.addEventListener("blur", () => input.remove());
+            doc.body.appendChild(input);
+            ColorWidget.lastPicker = input;
+            if (typeof input.showPicker === "function") {
+                try {
+                    input.showPicker();
+                } catch {
+                    input.click();
+                }
+            } else {
+                input.click();
+            }
+            return;
+        }
+        env.canvas.prompt("Colour", this.value ?? "", (typed) => env.changed(this, typed, old_value), event);
+    }
+}
+
+/**
+ * A vector of numbers (vec2, vec3, vec4; `options.size`): one draggable field per component.
+ * Drag a field to change that component, click it to type it, click the label to type them all.
+ */
+class VectorWidget extends BaseWidget {
+    static size(widget) {
+        return widget.options.size ?? (Array.isArray(widget.value) ? widget.value.length : 3);
+    }
+
+    static layout(widget, ctx, widget_width, env) {
+        const margin = env.margin;
+        const size = VectorWidget.size(widget);
+        const label = widget.label || widget.name;
+        const label_w = env.show_label && label != null ? Math.min(widget_width * 0.35, 12 + (ctx?.measureText?.(String(label)).width ?? String(label).length * 7)) : 0;
+        const start = margin * 2 + label_w;
+        const cell = (widget_width - margin * 2 - start) / size;
+        return {
+            size,
+            start,
+            cell
+        };
+    }
+
+    draw(ctx, node, widget_width, y, H, env) {
+        BaseWidget.drawPill(ctx, widget_width, y, H, env);
+        if (env.show_text && !this.disabled) ctx.stroke();
+        if (!env.show_text) return;
+        drawWidgetLabel(this, ctx, y, H, env);
+        const {
+            size,
+            start,
+            cell
+        } = VectorWidget.layout(this, ctx, widget_width, env);
+        const values = Array.isArray(this.value) ? this.value : [];
+        const precision = this.options.precision ?? 3;
+        for (let i = 0; i < size; ++i) {
+            const x = start + i * cell;
+            ctx.fillStyle = "rgba(0,0,0,0.25)";
+            ctx.fillRect(x + 1, y + 3, cell - 2, H - 6);
+            ctx.fillStyle = env.colors.text;
+            ctx.textAlign = "center";
+            ctx.fillText(LGraphCanvas.fitText(ctx, LiteGraph.formatNumber(Number(values[i] ?? 0), precision), cell - 4), x + cell * 0.5, y + H * 0.7);
+        }
+    }
+
+    onPointer(event, env) {
+        if (this.options.read_only) return;
+        const old_value = env.old_value;
+        const {
+            size,
+            start,
+            cell
+        } = VectorWidget.layout(this, null, env.widget_width, {
+            margin: env.margin ?? 15,
+            show_label: true
+        });
+        const current = Array.from({
+            length: size
+        }, (_, i) => Number((Array.isArray(this.value) ? this.value[i] : 0) ?? 0));
+        if (event.type == "pointerdown") {
+            this._drag_index = env.x < start ? -1 : Math.max(0, Math.min(size - 1, Math.floor((env.x - start) / cell)));
+            this._drag_raw = current[this._drag_index];
+            this._drag_moved = false;
+        } else if (event.type == "pointermove" && this._drag_index >= 0) {
+            const deltaX = event.deltaX || event.deltax || 0;
+            if (!deltaX) return;
+            this._drag_moved = true;
+            this._drag_raw = BaseWidget.clampToOptions(this._drag_raw + deltaX * 0.1 * (this.options.step || 0.1), this.options);
+            const next = current.slice();
+            next[this._drag_index] = this.options.round ? Math.round(this._drag_raw / this.options.round) * this.options.round : this._drag_raw;
+            this.value = next;
+            setTimeout(() => env.changed(this, next, old_value), 20);
+            env.canvas.dirty_canvas = true;
+        } else if (event.type == "pointerup" && !this._drag_moved) {
+            const index = this._drag_index;
+            if (index === -1 || index === undefined) {
+                env.canvas.prompt("Value", current.join(", "), (typed) => env.changed(this, typed, old_value), event);
+            } else {
+                env.canvas.prompt(`Component ${index + 1}`, current[index], (typed) => {
+                    const next = current.slice();
+                    const computed = evaluateMathExpression(typed);
+                    next[index] = Number.isFinite(computed) ? computed : Number(typed);
+                    env.changed(this, next, old_value);
+                }, event);
+            }
+        }
+    }
+}
+
 /** The built-in widget types (several type names share a class). */
 function defaultWidgetTypes() {
     return {
@@ -25006,20 +28156,48 @@ function defaultWidgetTypes() {
         enum: ComboWidget,
         text: TextWidget,
         string: TextWidget,
+        color: ColorWidget,
+        vector: VectorWidget,
     };
 }
 
+/** Widget types that existed before value types: a plain object of these types never kept its own draw. */
+const LEGACY_WIDGET_TYPES = new Set(["button", "toggle", "boolean", "slider", "number", "combo", "enum", "text", "string"]);
+
 /**
- * The behaviour to use for a widget: its own class methods when it is a BaseWidget, otherwise the
- * registered class for its type (applied to the plain object), otherwise null (legacy draw/mouse).
- * @returns {BaseWidget|null} an object whose draw/onPointer should be called with the widget as `this`
+ * The behaviour to use for a widget, as an object whose draw/onPointer are called with the widget
+ * as `this`, or null for the legacy custom hooks (`w.draw` / `w.mouse`):
+ * - a BaseWidget instance uses its own class, except a built-in class whose `type` was changed after
+ *   creation (`w.type = "toggle"`), which uses the class of its new type;
+ * - a plain object uses the registered class for its type; a type that resolves only through value
+ *   types (LiteGraph.valueTypes), or a type added with them (color, vector), keeps the object's own
+ *   draw/mouse when it has them, as unknown types always did.
+ * @returns {BaseWidget|null}
  */
 function widgetImplementation(widget, types = LiteGraph.widget_types) {
     if (!widget) return null;
-    if (widget instanceof BaseWidget) return widget;
-    const cls = types?.[widget.type];
+    const resolve = (type) => {
+        if (typeof type !== "string" || !type) return null;
+        return types?.[type] ?? LiteGraph.valueTypes?.resolveWidgetClass(type, types ?? {})?.cls ?? null;
+    };
+    if (widget instanceof BaseWidget) {
+        if (BUILTIN_WIDGET_CLASSES.has(widget.constructor)) {
+            const cls = resolve(widget.type);
+            if (cls && !(widget instanceof cls)) return cls.prototype;
+        }
+        return widget;
+    }
+    // own properties only: a widget made by another copy of the library (a bundle next to the src
+    // modules) inherits draw from its class and must still get the class behaviour
+    const ownHooks = (Object.hasOwn(widget, "draw") && typeof widget.draw === "function") ||
+        (Object.hasOwn(widget, "mouse") && typeof widget.mouse === "function");
+    if (ownHooks && !LEGACY_WIDGET_TYPES.has(widget.type)) return null;
+    const cls = resolve(widget.type);
     return cls ? cls.prototype : null;
 }
+
+/** The classes defaultWidgetTypes() registers (a changed `type` on their instances is followed). */
+const BUILTIN_WIDGET_CLASSES = new Set([ButtonWidget, ToggleWidget, SliderWidget, NumberWidget, ComboWidget, TextWidget, ColorWidget, VectorWidget]);
 
 /**
  * Evaluates arithmetic typed into a number field: numbers, + - * / % **, parentheses, unary signs,
@@ -25095,6 +28273,2918 @@ function evaluateMathExpression(text) {
         return NaN;
     }
 }
+
+/**
+ * Value types: one place that says how a value of a given type is edited, on the canvas and in
+ * panels ("widget for type").
+ *
+ *   LiteGraph.registerValueType("percent", {
+ *       base: "number", aliases: ["PERCENT"], label: "Percentage",
+ *       description: "A number from 0 to 100.", examples: ["50", "12.5"],
+ *       widget: "slider", editor: "slider", options: { min: 0, max: 100, step: 1, unit: "%" },
+ *   });
+ *
+ * Fields of a definition (all optional):
+ * - `base`: a type whose fields are inherited (options are merged, the base's first)
+ * - `aliases`: other names (names and aliases are matched without regard to case)
+ * - `label`, `description`, `examples`: shown by the panels as the row's help
+ * - `widget`: canvas widget type (`LiteGraph.widget_types`); `editor`: panel editor (`LiteGraph.panel_editors`)
+ * - `options`: default widget and editor options (a property's own info wins over them)
+ * - `default`: value, or a function returning one
+ * - `coerce(value, options)`: normalizes a typed or picked value
+ * - `validate(value, options)`: null, or a message saying why the value is refused
+ * - `format(value, options)`: text shown for the value
+ * - `parse(text, options)`: value from typed text
+ *
+ * Resolution order of the consumers: a registered editor or widget type with the asked name wins,
+ * then the value type's `editor` / `widget`. See the panels and widgets plan
+ * (agents/plans/2026-11-22-panels-options-node-details.md).
+ */
+class ValueTypeRegistry {
+
+    constructor() {
+        /** @type {Map<string, object>} lower-case name -> definition as registered */
+        this._defs = new Map();
+        /** @type {Map<string, string>} lower-case alias -> lower-case name */
+        this._aliases = new Map();
+        /** @type {Map<string, object>} resolved definitions (cleared on every change) */
+        this._resolved = new Map();
+        for (const [name, def] of Object.entries(ValueTypeRegistry.builtins())) this.register(name, def);
+    }
+
+    /**
+     * Registers a value type.
+     * @param {string} name
+     * @param {object} def
+     * @param {{replace?: boolean}} [options] - replace: allow replacing a registered type (built-ins included)
+     * @returns {() => void} disposer; it restores the replaced definition, if any
+     */
+    register(name, def = {}, {
+        replace = false
+    } = {}) {
+        if (typeof name !== "string" || !name) throw new TypeError("value type name must be a non-empty string");
+        if (!def || typeof def !== "object") throw new TypeError(`value type ${name}: definition must be an object`);
+        const key = name.toLowerCase();
+        const previous = this._defs.get(key);
+        if (previous && !replace) throw new Error(`value type ${name} is already registered (pass {replace: true} to replace it)`);
+        const entry = {
+            ...def,
+            name: previous?.name ?? name,
+            aliases: [...(def.aliases ?? [])]
+        };
+        if (previous) this._unlinkAliases(previous);
+        this._defs.set(key, entry);
+        for (const alias of entry.aliases) {
+            const aliasKey = String(alias).toLowerCase();
+            if (!this._defs.has(aliasKey)) this._aliases.set(aliasKey, key);
+        }
+        this._resolved.clear();
+        return () => {
+            if (this._defs.get(key) !== entry) return;
+            this._unlinkAliases(entry);
+            if (previous) {
+                this._defs.set(key, previous);
+                for (const alias of previous.aliases) this._aliases.set(String(alias).toLowerCase(), key);
+            } else {
+                this._defs.delete(key);
+            }
+            this._resolved.clear();
+        };
+    }
+
+    _unlinkAliases(entry) {
+        const key = entry.name.toLowerCase();
+        for (const alias of entry.aliases) {
+            const aliasKey = String(alias).toLowerCase();
+            if (this._aliases.get(aliasKey) === key) this._aliases.delete(aliasKey);
+        }
+    }
+
+    /** @returns {string|null} the registered (lower-case) key of a name or alias */
+    _key(name) {
+        if (name == null) return null;
+        const key = String(name).toLowerCase();
+        if (this._defs.has(key)) return key;
+        return this._aliases.get(key) ?? null;
+    }
+
+    /** true when a name or alias is registered */
+    has(name) {
+        return this._key(name) !== null;
+    }
+
+    /**
+     * The resolved definition: the base chain merged (the type's own fields win, options merged).
+     * @param {string} name - name or alias
+     * @returns {object|null}
+     */
+    get(name) {
+        const key = this._key(name);
+        if (!key) return null;
+        if (this._resolved.has(key)) return this._resolved.get(key);
+        const chain = [];
+        const seen = new Set();
+        for (let at = key; at && !seen.has(at); at = this._key(this._defs.get(at)?.base)) {
+            seen.add(at);
+            chain.unshift(this._defs.get(at));
+        }
+        const resolved = {};
+        for (const def of chain) {
+            const {
+                options,
+                ...rest
+            } = def;
+            Object.assign(resolved, rest);
+            resolved.options = {
+                ...(resolved.options ?? {}),
+                ...(options ?? {})
+            };
+        }
+        resolved.name = this._defs.get(key).name;
+        resolved.aliases = [...this._defs.get(key).aliases];
+        resolved.bases = chain.slice(0, -1).map((def) => def.name).reverse();
+        Object.freeze(resolved.options);
+        Object.freeze(resolved);
+        this._resolved.set(key, resolved);
+        return resolved;
+    }
+
+    /** @returns {object[]} the resolved definitions, in registration order */
+    list() {
+        return [...this._defs.keys()].map((key) => this.get(key));
+    }
+
+    /** The default value of a type (null when unknown). */
+    defaultValue(name, options) {
+        const def = this.get(name);
+        if (!def) return null;
+        return typeof def.default === "function" ? def.default(options ?? def.options) : structuredCloneValue(def.default);
+    }
+
+    /** Normalizes a value through the type's coerce (unchanged for unknown types). */
+    coerce(name, value, options) {
+        const def = this.get(name);
+        if (!def?.coerce) return value;
+        return def.coerce(value, {
+            ...def.options,
+            ...(options ?? {})
+        });
+    }
+
+    /** @returns {string|null} why the value is refused, or null */
+    validate(name, value, options) {
+        const def = this.get(name);
+        if (!def?.validate) return null;
+        return def.validate(value, {
+            ...def.options,
+            ...(options ?? {})
+        }) ?? null;
+    }
+
+    /** Text for a value (String(value) or JSON for unknown types). */
+    format(name, value, options) {
+        const def = this.get(name);
+        if (def?.format) return def.format(value, {
+            ...def.options,
+            ...(options ?? {})
+        });
+        return ValueTypeRegistry.formatAny(value);
+    }
+
+    /** Value from typed text (the text itself for unknown types). */
+    parse(name, text, options) {
+        const def = this.get(name);
+        if (def?.parse) return def.parse(text, {
+            ...def.options,
+            ...(options ?? {})
+        });
+        return text;
+    }
+
+    /**
+     * The panel editor for a property: candidates are info.editor, info.widget, info.type, then the
+     * JS type of the value. A candidate naming a registered editor is used as is; otherwise its value
+     * type's editor. Options: the value type's, then the info's own.
+     * @param {object} [info] - property info (getPropertyInfo), setting definition or widget options
+     * @param {*} [value]
+     * @param {Record<string, object>} [editors] - registered editors
+     * @returns {{editor: string, type: string|null, options: object, valueType: object|null}}
+     */
+    resolveEditor(info, value, editors = {}) {
+        info = info ?? {};
+        const candidates = [info.editor, info.widget, info.type, info.valueType, jsTypeOf(value)].filter((c) => typeof c === "string" && c);
+        for (const candidate of candidates) {
+            const valueType = this.get(candidate);
+            if (editors[candidate] || editors[candidate.toLowerCase()]) {
+                const editor = editors[candidate] ? candidate : candidate.toLowerCase();
+                return {
+                    editor,
+                    type: valueType?.name ?? candidate,
+                    valueType,
+                    options: {
+                        ...(valueType?.options ?? {}),
+                        ...stripMeta(info)
+                    }
+                };
+            }
+            if (valueType?.editor && editors[valueType.editor]) {
+                return {
+                    editor: valueType.editor,
+                    type: valueType.name,
+                    valueType,
+                    options: {
+                        ...valueType.options,
+                        ...stripMeta(info)
+                    }
+                };
+            }
+        }
+        const valueType = this.get(info.type) ?? null;
+        return {
+            editor: "readonly",
+            type: valueType?.name ?? info.type ?? info.widget ?? info.editor ?? jsTypeOf(value),
+            valueType,
+            options: {
+                ...(valueType?.options ?? {}),
+                ...stripMeta(info)
+            }
+        };
+    }
+
+    /**
+     * The canvas widget class for a type: a registered widget type wins, then the value type's widget.
+     * @param {string} type
+     * @param {Record<string, Function>} widgetTypes - LiteGraph.widget_types
+     * @returns {{cls: Function, options: object, valueType: object|null}|null}
+     */
+    resolveWidgetClass(type, widgetTypes = {}) {
+        if (typeof type !== "string" || !type) return null;
+        const own = widgetTypes[type] ?? widgetTypes[type.toLowerCase()];
+        const valueType = this.get(type);
+        if (own) return {
+            cls: own,
+            options: {},
+            valueType
+        };
+        const cls = valueType?.widget ? widgetTypes[valueType.widget] : null;
+        return cls ? {
+            cls,
+            options: {
+                ...valueType.options
+            },
+            valueType
+        } : null;
+    }
+
+    /** Text for any value: numbers trimmed, objects as JSON. */
+    static formatAny(value) {
+        if (value === undefined) return "";
+        if (value === null) return "null";
+        if (typeof value === "number") return String(parseFloat(value.toFixed(5)));
+        if (typeof value === "object") {
+            try {
+                return JSON.stringify(value);
+            } catch {
+                return String(value);
+            }
+        }
+        return String(value);
+    }
+
+    /** Clamps to options.min / options.max. */
+    static clampNumber(value, options = {}) {
+        if (options.min != null && value < options.min) value = options.min;
+        if (options.max != null && value > options.max) value = options.max;
+        return value;
+    }
+
+    /** The built-in value types (see the table in the panels and widgets plan). */
+    static builtins() {
+        const toNumber = (value, options) => {
+            if (typeof value === "string") {
+                const computed = evaluateMathExpression(value);
+                value = Number.isFinite(computed) ? computed : Number(value);
+            } else if (typeof value === "boolean") {
+                value = value ? 1 : 0;
+            } else {
+                value = Number(value);
+            }
+            if (!Number.isFinite(value)) return value;
+            if (options.round) value = Math.round(value / options.round) * options.round;
+            return ValueTypeRegistry.clampNumber(value, options);
+        };
+        const numberValidate = (value) => (typeof value === "number" && Number.isFinite(value) ? null : "Not a number");
+        const formatNumber = (value, options) => {
+            if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
+            const precision = options.precision ?? 3;
+            const text = String(parseFloat(value.toFixed(precision)));
+            return options.unit ? `${text} ${options.unit}` : text;
+        };
+        const parseJSON = (text) => {
+            if (typeof text !== "string") return text;
+            return JSON.parse(text);
+        };
+        const vector = (size) => ({
+            label: `Vector ${size}`,
+            description: `${size} numbers. Type them separated by commas or spaces.`,
+            examples: [Array.from({
+                length: size
+            }, (_, i) => i).join(", ")],
+            widget: "vector",
+            editor: "vector",
+            aliases: [`VEC${size}`, `vector${size}`],
+            options: {
+                size,
+                precision: 3
+            },
+            default: () => new Array(size).fill(0),
+            coerce: (value, options) => {
+                let list = value;
+                if (typeof list === "string") list = list.split(/[\s,;]+/).filter(Boolean);
+                if (list && typeof list === "object" && !Array.isArray(list) && typeof list.length === "number") list = Array.from(list);
+                if (!Array.isArray(list)) list = [list];
+                const out = [];
+                for (let i = 0; i < options.size; ++i) {
+                    const n = toNumber(list[i] ?? 0, options);
+                    out.push(Number.isFinite(n) ? n : 0);
+                }
+                return out;
+            },
+            validate: (value, options) => (Array.isArray(value) && value.length === options.size && value.every((n) => typeof n === "number" && Number.isFinite(n)) ? null : `Needs ${options.size} numbers`),
+            format: (value, options) => (Array.isArray(value) ? value.map((n) => formatNumber(n, {
+                precision: options.precision
+            })).join(", ") : String(value)),
+            parse: (text, options) => vector(options.size).coerce(text, options),
+        });
+        return {
+            boolean: {
+                label: "On / off",
+                aliases: ["bool", "toggle", "BOOLEAN", "checkbox"],
+                widget: "toggle",
+                editor: "boolean",
+                default: false,
+                coerce: (value) => (typeof value === "string" ? !["", "false", "0", "off", "no"].includes(value.trim().toLowerCase()) : !!value),
+                format: (value, options) => (value ? options.on ?? "on" : options.off ?? "off"),
+                parse: (text) => !["", "false", "0", "off", "no"].includes(String(text).trim().toLowerCase()),
+            },
+            number: {
+                label: "Number",
+                description: "A number. Arithmetic is allowed when typing (2*8+1, pi/2).",
+                examples: ["1.5", "2*8+1"],
+                aliases: ["float", "double", "FLOAT", "real"],
+                widget: "number",
+                editor: "number",
+                options: {
+                    precision: 3
+                },
+                default: 0,
+                coerce: toNumber,
+                validate: numberValidate,
+                format: formatNumber,
+                parse: (text, options) => toNumber(text, options),
+            },
+            int: {
+                base: "number",
+                label: "Whole number",
+                description: "A whole number. Typed values are rounded.",
+                examples: ["3", "-10"],
+                aliases: ["integer", "INT"],
+                options: {
+                    step: 1,
+                    precision: 0,
+                    round: 1
+                },
+            },
+            slider: {
+                base: "number",
+                label: "Number in a range",
+                widget: "slider",
+                editor: "slider",
+                options: {
+                    min: 0,
+                    max: 1
+                },
+            },
+            string: {
+                label: "Text",
+                aliases: ["str", "STRING"],
+                widget: "text",
+                editor: "string",
+                default: "",
+                coerce: (value) => (value == null ? "" : typeof value === "object" ? ValueTypeRegistry.formatAny(value) : String(value)),
+                format: (value) => (value == null ? "" : String(value)),
+                parse: (text) => String(text),
+            },
+            text: {
+                base: "string",
+                label: "Multi-line text",
+                aliases: ["multiline", "textarea"],
+                editor: "text",
+                options: {
+                    multiline: true
+                },
+            },
+            enum: {
+                label: "Choice",
+                description: "One of a list of values.",
+                aliases: ["combo", "COMBO", "select", "choice"],
+                widget: "combo",
+                editor: "combo",
+                default: null,
+                validate: (value, options) => {
+                    const values = typeof options.values === "function" ? null : options.values;
+                    if (!values) return null;
+                    const allowed = Array.isArray(values) ? values : Object.values(values);
+                    return allowed.some((v) => v == value) || (!Array.isArray(values) && Object.hasOwn(values, value)) ? null : "Not one of the choices";
+                },
+            },
+            color: {
+                label: "Colour",
+                description: "A CSS colour: #rrggbb, #rrggbbaa, rgb(...) or a name.",
+                examples: ["#ff8800", "#33669980", "rebeccapurple"],
+                aliases: ["colour", "COLOR"],
+                widget: "color",
+                editor: "color",
+                default: "#ffffff",
+                coerce: (value) => {
+                    if (value == null) return "";
+                    if (Array.isArray(value)) {
+                        // [r, g, b(, a)] in 0..1, as some nodes store it
+                        const hex = (n) => Math.round(Math.max(0, Math.min(1, Number(n) || 0)) * 255).toString(16).padStart(2, "0");
+                        return "#" + value.slice(0, 4).map(hex).join("");
+                    }
+                    const text = String(value).trim();
+                    const short = /^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(text);
+                    if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toLowerCase();
+                    if (/^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(text)) return (text.startsWith("#") ? text : "#" + text).toLowerCase();
+                    return text;
+                },
+                validate: (value) => (typeof value === "string" ? null : "Not a colour"),
+            },
+            vec2: vector(2),
+            vec3: vector(3),
+            vec4: vector(4),
+            array: {
+                label: "List",
+                description: "A JSON list.",
+                examples: ["[1, 2, 3]", "[\"a\", \"b\"]"],
+                aliases: ["list"],
+                widget: "text",
+                editor: "json",
+                default: () => [],
+                coerce: (value) => (typeof value === "string" ? parseJSON(value) : value),
+                validate: (value) => (Array.isArray(value) ? null : "Needs a JSON list"),
+                format: (value) => ValueTypeRegistry.formatAny(value),
+                parse: parseJSON,
+            },
+            object: {
+                label: "Object",
+                description: "A JSON value.",
+                examples: ["{\"key\": 1}"],
+                aliases: ["dict", "json", "map"],
+                widget: "text",
+                editor: "json",
+                default: () => ({}),
+                coerce: (value) => (typeof value === "string" ? parseJSON(value) : value),
+                format: (value) => ValueTypeRegistry.formatAny(value),
+                parse: parseJSON,
+            },
+            code: {
+                base: "string",
+                label: "Code",
+                description: "Source code. Ctrl+Enter assigns it.",
+                widget: "text",
+                editor: "code",
+                options: {
+                    multiline: true
+                },
+            },
+            resource: {
+                base: "string",
+                label: "File or URL",
+                description: "A path or URL. A host can add a picker with options.pick.",
+                aliases: ["file", "url", "texture", "image", "asset"],
+                editor: "resource",
+                options: {
+                    placeholder: "path or URL"
+                },
+            },
+            event: {
+                label: "Event",
+                aliases: ["action", "-1"],
+                editor: "readonly",
+                default: null,
+            },
+        };
+    }
+}
+
+/** The JS type name of a value, as the panels use it to pick an editor. */
+function jsTypeOf(value) {
+    if (value === undefined || value === null) return null;
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+}
+
+/** Info fields that are about the property, not editor options. */
+function stripMeta(info) {
+    const {
+        editor,
+        widget,
+        type,
+        valueType,
+        name,
+        ...rest
+    } = info ?? {}; // eslint-disable-line no-unused-vars
+    return rest;
+}
+
+/** A copy of plain defaults (arrays and objects are not shared between widgets). */
+function structuredCloneValue(value) {
+    if (value === null || typeof value !== "object") return value;
+    try {
+        return structuredClone(value);
+    } catch {
+        return value;
+    }
+}
+
+/**
+ * Side panels: the shell (sections, tabs, toolbar with search / sort / modified-only filter,
+ * resizing, docking side), the property editors that fit each value type, and the two built-in
+ * panels: graph options (Graph / Canvas / Settings tabs) and node details.
+ *
+ * `LGraphCanvas.createPanel` returns a panel built here and keeps its former API
+ * (addWidget, addHTML, addButton, addSeparator, clear, close, toggleAltContent,
+ * toggleFooterVisibility, content / alt_content / footer / title_element).
+ *
+ * Editors: `LiteGraph.registerPanelEditor(name, {create(ctx) -> {element, set(value), focus?, destroy?}})`.
+ * Which editor a value gets is decided by LiteGraph.valueTypes.resolveEditor (see src/valuetypes.js).
+ * See the panels and widgets plan (agents/plans/2026-11-22-panels-options-node-details.md).
+ */
+
+// ---- small DOM helpers (prefixed: the build concatenates modules into one scope) ----
+
+function panelEl(doc, tag, className, text) {
+    const el = doc.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+}
+
+/** "render_connections_border" -> "Render connections border"; "showInfo" -> "Show info" */
+function panelHumanize(name) {
+    const text = String(name ?? "")
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/[_.-]+/g, " ")
+        .trim()
+        .toLowerCase();
+    return text ? text[0].toUpperCase() + text.slice(1) : "";
+}
+
+function panelSetting(id, fallback) {
+    const settings = LiteGraph.settings;
+    if (!settings?.has?.(id)) return fallback;
+    const value = settings.get(id);
+    return value === undefined ? fallback : value;
+}
+
+function panelSaveSetting(id, value) {
+    try {
+        if (LiteGraph.settings?.has?.(id)) LiteGraph.settings.set(id, value);
+    } catch {
+        /* refused value: keep it in the panel only */ }
+}
+
+function panelCombos(values, target) {
+    if (typeof values === "function") values = values(target, target?.node ?? target);
+    if (!values) return {
+        list: [],
+        map: false
+    };
+    if (Array.isArray(values)) return {
+        list: values.map((v) => ({
+            value: v,
+            label: v
+        })),
+        map: false
+    };
+    return {
+        list: Object.entries(values).map(([k, v]) => ({
+            key: k,
+            value: v
+        })),
+        map: true
+    };
+}
+
+function panelIsEditing(el) {
+    const active = el?.ownerDocument?.activeElement;
+    return !!active && el.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+}
+
+// ---- editors ----
+
+/** Commits the input's text on Enter (Ctrl+Enter for multi-line) and on blur; Escape reverts. */
+function panelBindText(input, ctx, getCurrent, multiline = false) {
+    let reverting = false;
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            reverting = true;
+            input.value = getCurrent();
+            input.blur();
+            reverting = false;
+        } else if (e.key === "Enter" && (!multiline || e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            input.blur();
+        }
+        e.stopPropagation(); // keep canvas shortcuts (Delete, Ctrl+Z ...) out of text fields
+    });
+    input.addEventListener("blur", () => {
+        if (!reverting && input.value !== getCurrent()) ctx.commit(input.value);
+    });
+}
+
+/** Drag on a label element to change a number (Shift: fine steps); one preview stream, one commit. */
+function panelScrub(handle, ctx, getValue, apply) {
+    if (!handle || ctx.readonly) return;
+    handle.classList.add("lg-scrub");
+    handle.title ||= "Drag to change, Shift for fine steps";
+    handle.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0 || e.pointerType === "touch") return;
+        const start = Number(getValue()) || 0;
+        const x0 = e.clientX;
+        let moved = false;
+        let last = start;
+        const step = ctx.options.step || (ctx.options.precision === 0 ? 1 : 0.1);
+        const move = (ev) => {
+            const dx = ev.clientX - x0;
+            if (!moved && Math.abs(dx) < 3) return;
+            moved = true;
+            last = start + Math.round(dx / 2) * step * (ev.shiftKey ? 0.1 : 1);
+            apply(last, false);
+        };
+        const up = () => {
+            handle.ownerDocument.removeEventListener("pointermove", move);
+            handle.ownerDocument.removeEventListener("pointerup", up);
+            if (moved) apply(last, true);
+        };
+        handle.ownerDocument.addEventListener("pointermove", move);
+        handle.ownerDocument.addEventListener("pointerup", up);
+        e.preventDefault();
+    });
+}
+
+function panelNumberText(value, options) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value == null ? "" : String(value);
+    return String(parseFloat(value.toFixed(options.precision ?? 3)));
+}
+
+/** The built-in panel editors (names used by value types and `info.widget` / `info.editor`). */
+function defaultPanelEditors() {
+    return {
+        readonly: {
+            create(ctx) {
+                const element = panelEl(ctx.doc, "span", "lg-readonly");
+                const set = (value) => {
+                    element.textContent = LiteGraph.valueTypes?.format(ctx.type, value, ctx.options) ?? String(value);
+                };
+                set(ctx.value);
+                if (!ctx.valueType && ctx.type && !["object", "array"].includes(ctx.type)) element.title = `No editor is registered for type "${ctx.type}"`;
+                return {
+                    element,
+                    set
+                };
+            },
+        },
+        boolean: {
+            create(ctx) {
+                const element = panelEl(ctx.doc, "label", "lg-switch");
+                const input = panelEl(ctx.doc, "input");
+                input.type = "checkbox";
+                input.disabled = !!ctx.readonly;
+                const text = panelEl(ctx.doc, "span", "lg-switch-text");
+                element.append(input, panelEl(ctx.doc, "span", "lg-switch-track"), text);
+                const set = (value) => {
+                    input.checked = !!value;
+                    text.textContent = value ? ctx.options.on ?? "on" : ctx.options.off ?? "off";
+                    ctx.row?.classList.toggle("bool-on", !!value);
+                };
+                set(ctx.value);
+                input.addEventListener("change", () => ctx.commit(input.checked));
+                element.addEventListener("click", (e) => e.stopPropagation());
+                return {
+                    element,
+                    set,
+                    focus: () => input.focus(),
+                    // the whole row toggles, as the former panel did
+                    onRowClick: () => {
+                        if (!ctx.readonly) {
+                            input.checked = !input.checked;
+                            ctx.commit(input.checked);
+                        }
+                    },
+                };
+            },
+        },
+        number: {
+            create(ctx) {
+                const element = panelEl(ctx.doc, "span", "lg-number");
+                const input = panelEl(ctx.doc, "input", "lg-input");
+                input.type = "text";
+                input.inputMode = "decimal";
+                input.readOnly = !!ctx.readonly;
+                input.spellcheck = false;
+                element.append(input);
+                if (ctx.options.unit) element.append(panelEl(ctx.doc, "span", "lg-unit", ctx.options.unit));
+                let current = ctx.value;
+                const set = (value) => {
+                    current = value;
+                    input.value = panelNumberText(value, ctx.options);
+                };
+                set(ctx.value);
+                panelBindText(input, ctx, () => panelNumberText(current, ctx.options));
+                input.addEventListener("keydown", (e) => {
+                    if (ctx.readonly || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+                    e.preventDefault();
+                    const step = (ctx.options.step || (ctx.options.precision === 0 ? 1 : 0.1)) * (e.shiftKey ? 10 : e.altKey ? 0.1 : 1);
+                    ctx.commit((Number(current) || 0) + (e.key === "ArrowUp" ? step : -step));
+                });
+                panelScrub(ctx.label, ctx, () => current, (value, final) => {
+                    input.value = panelNumberText(value, ctx.options);
+                    if (final) ctx.commit(value);
+                    else ctx.preview(value);
+                });
+                return {
+                    element,
+                    set,
+                    focus: () => input.focus()
+                };
+            },
+        },
+        slider: {
+            create(ctx) {
+                const options = ctx.options;
+                const element = panelEl(ctx.doc, "span", "lg-slider");
+                const range = panelEl(ctx.doc, "input", "lg-range");
+                range.type = "range";
+                range.min = options.min ?? 0;
+                range.max = options.max ?? 1;
+                range.step = options.step || ((range.max - range.min) / 100) || "any";
+                range.disabled = !!ctx.readonly;
+                const number = panelEl(ctx.doc, "input", "lg-input lg-input-short");
+                number.type = "text";
+                number.inputMode = "decimal";
+                number.readOnly = !!ctx.readonly;
+                element.append(range, number);
+                let current = ctx.value;
+                const set = (value) => {
+                    current = value;
+                    range.value = value;
+                    number.value = panelNumberText(value, options);
+                };
+                set(ctx.value);
+                range.addEventListener("input", () => {
+                    number.value = panelNumberText(Number(range.value), options);
+                    ctx.preview(Number(range.value));
+                });
+                range.addEventListener("change", () => ctx.commit(Number(range.value)));
+                panelBindText(number, ctx, () => panelNumberText(current, options));
+                return {
+                    element,
+                    set,
+                    focus: () => number.focus()
+                };
+            },
+        },
+        string: {
+            create(ctx) {
+                const input = panelEl(ctx.doc, "input", "lg-input");
+                input.type = "text";
+                input.readOnly = !!ctx.readonly;
+                if (ctx.options.placeholder) input.placeholder = ctx.options.placeholder;
+                let current = ctx.value;
+                const set = (value) => {
+                    current = value;
+                    input.value = value == null ? "" : String(value);
+                };
+                set(ctx.value);
+                panelBindText(input, ctx, () => (current == null ? "" : String(current)));
+                return {
+                    element: input,
+                    set,
+                    focus: () => input.focus()
+                };
+            },
+        },
+        text: {
+            create(ctx) {
+                const input = panelEl(ctx.doc, "textarea", "lg-input lg-textarea");
+                input.rows = 1;
+                input.readOnly = !!ctx.readonly;
+                if (ctx.options.placeholder) input.placeholder = ctx.options.placeholder;
+                const grow = () => {
+                    input.style.height = "auto";
+                    if (input.scrollHeight) input.style.height = Math.min(input.scrollHeight + 2, 240) + "px";
+                };
+                let current = ctx.value;
+                const set = (value) => {
+                    current = value;
+                    input.value = value == null ? "" : String(value);
+                    grow();
+                };
+                set(ctx.value);
+                input.addEventListener("input", grow);
+                input.title ||= "Ctrl+Enter to apply";
+                panelBindText(input, ctx, () => (current == null ? "" : String(current)), true);
+                return {
+                    element: input,
+                    set,
+                    focus: () => input.focus()
+                };
+            },
+        },
+        combo: {
+            create(ctx) {
+                const element = panelEl(ctx.doc, "span", "lg-combo");
+                const select = panelEl(ctx.doc, "select", "lg-input");
+                select.disabled = !!ctx.readonly;
+                let entries = [];
+                // property maps are {label: value} and store the value; canvas widget maps are
+                // {value: label} and store the key (options.map_stores: "key")
+                const storesKey = ctx.options.map_stores === "key";
+                const fill = () => {
+                    const {
+                        list,
+                        map
+                    } = panelCombos(ctx.options.values, ctx.target);
+                    entries = list.map((entry) => (map ?
+                        (storesKey ? {
+                            value: entry.key,
+                            label: entry.value
+                        } : {
+                            value: entry.value,
+                            label: entry.key
+                        }) :
+                        entry));
+                    select.replaceChildren(...entries.map((entry, index) => {
+                        const option = panelEl(ctx.doc, "option", null, entry.label);
+                        option.value = String(index);
+                        return option;
+                    }));
+                };
+                fill();
+                let filter = null;
+                if (entries.length > 12 && !ctx.readonly) {
+                    filter = panelEl(ctx.doc, "input", "lg-input lg-combo-filter");
+                    filter.type = "search";
+                    filter.placeholder = "Filter choices";
+                    filter.addEventListener("input", () => {
+                        const q = filter.value.toLowerCase();
+                        for (const option of select.options) option.hidden = !!q && !option.textContent.toLowerCase().includes(q);
+                    });
+                    filter.addEventListener("keydown", (e) => e.stopPropagation());
+                    element.append(filter);
+                }
+                element.append(select);
+                const set = (value) => {
+                    let index = entries.findIndex((entry) => entry.value === value);
+                    if (index < 0) index = entries.findIndex((entry) => entry.value == value); // eslint-disable-line eqeqeq
+                    if (index < 0 && value != null && value !== "") {
+                        // a value outside the list stays visible and selected
+                        entries.push({
+                            value,
+                            label: String(value),
+                            extra: true
+                        });
+                        const option = panelEl(ctx.doc, "option", null, `${value} (not a choice)`);
+                        option.value = String(entries.length - 1);
+                        select.append(option);
+                        index = entries.length - 1;
+                    }
+                    select.value = String(index);
+                };
+                set(ctx.value);
+                select.addEventListener("change", () => ctx.commit(entries[Number(select.value)]?.value));
+                select.addEventListener("keydown", (e) => e.stopPropagation());
+                return {
+                    element,
+                    set,
+                    focus: () => select.focus()
+                };
+            },
+        },
+        color: {
+            create(ctx) {
+                const element = panelEl(ctx.doc, "span", "lg-color");
+                const picker = panelEl(ctx.doc, "input", "lg-color-picker");
+                picker.type = "color";
+                picker.disabled = !!ctx.readonly;
+                const text = panelEl(ctx.doc, "input", "lg-input");
+                text.type = "text";
+                text.readOnly = !!ctx.readonly;
+                text.spellcheck = false;
+                element.append(picker, text);
+                let current = ctx.value;
+                const hex = (value) => /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.exec(String(value ?? ""));
+                const set = (value) => {
+                    current = value;
+                    text.value = value == null ? "" : String(value);
+                    const m = hex(value);
+                    picker.value = m ? String(value).slice(0, 7) : "#000000";
+                    element.classList.toggle("lg-color-empty", !value);
+                };
+                set(ctx.value);
+                const alpha = () => hex(current)?.[1] ?? "";
+                picker.addEventListener("input", () => ctx.preview(picker.value + alpha()));
+                picker.addEventListener("change", () => ctx.commit(picker.value + alpha()));
+                panelBindText(text, ctx, () => (current == null ? "" : String(current)));
+                const presets = ctx.options.presets ?? null;
+                if (presets && !ctx.readonly) {
+                    const row = panelEl(ctx.doc, "span", "lg-swatches");
+                    for (const preset of presets) {
+                        const swatch = panelEl(ctx.doc, "button", "lg-swatch");
+                        swatch.type = "button";
+                        swatch.style.background = preset;
+                        swatch.title = preset;
+                        swatch.addEventListener("click", () => ctx.commit(preset));
+                        row.append(swatch);
+                    }
+                    element.append(row);
+                }
+                if (ctx.options.clearable && !ctx.readonly) {
+                    const clear = panelEl(ctx.doc, "button", "lg-icon-btn", "✕");
+                    clear.type = "button";
+                    clear.title = "Clear";
+                    clear.addEventListener("click", () => ctx.commit(""));
+                    element.append(clear);
+                }
+                return {
+                    element,
+                    set,
+                    focus: () => text.focus()
+                };
+            },
+        },
+        vector: {
+            create(ctx) {
+                const size = ctx.options.size ?? (Array.isArray(ctx.value) ? ctx.value.length : 3);
+                const element = panelEl(ctx.doc, "span", "lg-vector");
+                const axes = ["X", "Y", "Z", "W"];
+                let current = Array.isArray(ctx.value) ? ctx.value.slice() : new Array(size).fill(0);
+                const inputs = [];
+                for (let i = 0; i < size; ++i) {
+                    const cell = panelEl(ctx.doc, "span", "lg-vector-cell");
+                    const axis = panelEl(ctx.doc, "span", "lg-axis", axes[i] ?? i + 1);
+                    const input = panelEl(ctx.doc, "input", "lg-input");
+                    input.type = "text";
+                    input.inputMode = "decimal";
+                    input.readOnly = !!ctx.readonly;
+                    const componentCtx = {
+                        ...ctx,
+                        commit: (value) => {
+                            const next = current.slice();
+                            next[i] = value;
+                            ctx.commit(next);
+                        },
+                        preview: (value) => {
+                            const next = current.slice();
+                            next[i] = value;
+                            ctx.preview(next);
+                        },
+                    };
+                    panelBindText(input, componentCtx, () => panelNumberText(current[i], ctx.options));
+                    panelScrub(axis, componentCtx, () => current[i], (value, final) => {
+                        input.value = panelNumberText(value, ctx.options);
+                        if (final) componentCtx.commit(value);
+                        else componentCtx.preview(value);
+                    });
+                    cell.append(axis, input);
+                    element.append(cell);
+                    inputs.push(input);
+                }
+                const set = (value) => {
+                    current = Array.isArray(value) ? value.slice() : new Array(size).fill(0);
+                    inputs.forEach((input, i) => {
+                        input.value = panelNumberText(Number(current[i] ?? 0), ctx.options);
+                    });
+                };
+                set(ctx.value);
+                return {
+                    element,
+                    set,
+                    focus: () => inputs[0]?.focus()
+                };
+            },
+        },
+        json: {
+            create(ctx) {
+                const input = panelEl(ctx.doc, "textarea", "lg-input lg-textarea lg-mono");
+                input.readOnly = !!ctx.readonly;
+                input.spellcheck = false;
+                input.title = "JSON. Ctrl+Enter to apply";
+                let current = ctx.value;
+                const text = (value) => {
+                    try {
+                        return JSON.stringify(value, null, 1);
+                    } catch {
+                        return String(value);
+                    }
+                };
+                const set = (value) => {
+                    current = value;
+                    input.value = text(value);
+                    input.rows = Math.min(8, Math.max(1, input.value.split("\n").length));
+                };
+                set(ctx.value);
+                panelBindText(input, ctx, () => text(current), true);
+                return {
+                    element: input,
+                    set,
+                    focus: () => input.focus()
+                };
+            },
+        },
+        code: {
+            create(ctx) {
+                // the node panel's code pad when there is one, else an inline monospace editor
+                if (typeof ctx.panel?.inner_showCodePad === "function" && !ctx.options.inline) {
+                    const button = panelEl(ctx.doc, "button", "lg-btn lg-code-btn", "Edit code…");
+                    button.type = "button";
+                    button.disabled = !!ctx.readonly;
+                    const preview = panelEl(ctx.doc, "code", "lg-code-preview");
+                    const element = panelEl(ctx.doc, "span", "lg-code");
+                    element.append(button, preview);
+                    const set = (value) => {
+                        preview.textContent = String(value ?? "").split("\n")[0].slice(0, 60);
+                    };
+                    set(ctx.value);
+                    button.addEventListener("click", () => ctx.panel.inner_showCodePad(ctx.name));
+                    return {
+                        element,
+                        set,
+                        focus: () => button.focus()
+                    };
+                }
+                const editor = defaultPanelEditors().text.create({
+                    ...ctx,
+                    options: {
+                        ...ctx.options
+                    }
+                });
+                editor.element.classList.add("lg-mono");
+                return editor;
+            },
+        },
+        resource: {
+            create(ctx) {
+                const element = panelEl(ctx.doc, "span", "lg-resource");
+                const inner = defaultPanelEditors().string.create(ctx);
+                element.append(inner.element);
+                if (typeof ctx.options.pick === "function" && !ctx.readonly) {
+                    const button = panelEl(ctx.doc, "button", "lg-icon-btn", "…");
+                    button.type = "button";
+                    button.title = "Choose";
+                    button.addEventListener("click", async () => {
+                        const picked = await ctx.options.pick(ctx);
+                        if (picked !== undefined && picked !== null) ctx.commit(picked);
+                    });
+                    element.append(button);
+                }
+                return {
+                    element,
+                    set: inner.set,
+                    focus: inner.focus
+                };
+            },
+        },
+    };
+}
+
+// ---- the panel shell ----
+
+/**
+ * Builds panels: a `div.litegraph.dialog.lg-panel` element with the former createPanel methods,
+ * plus sections, tabs, a toolbar and typed rows. See the module comment.
+ */
+class PanelBuilder {
+
+    /**
+     * @param {string} title
+     * @param {object} [options] - {closable, window, width, height, onOpen, onClose, id, canvas}
+     * @returns {HTMLElement} the panel element, with its methods
+     */
+    static create(title, options = {}) {
+        const ref_window = options.window || (typeof window !== "undefined" ? window : null);
+        const doc = ref_window?.document ?? globalThis.document;
+        const root = panelEl(doc, "div", "litegraph dialog lg-panel");
+        root.header = panelEl(doc, "div", "dialog-header");
+        root.title_element = panelEl(doc, "span", "dialog-title", title ?? "");
+        root.actions = panelEl(doc, "span", "lg-panel-actions");
+        root.header.append(root.title_element, root.actions);
+        root.toolbar = panelEl(doc, "div", "lg-panel-toolbar");
+        root.toolbar.hidden = true;
+        root.tabbar = panelEl(doc, "div", "lg-panel-tabs");
+        root.tabbar.hidden = true;
+        root.tabbar.setAttribute("role", "tablist");
+        root.content = panelEl(doc, "div", "dialog-content");
+        root.alt_content = panelEl(doc, "div", "dialog-alt-content");
+        root.alt_content.style.display = "none";
+        root.footer = panelEl(doc, "div", "dialog-footer");
+        root.empty_element = panelEl(doc, "div", "lg-empty");
+        root.empty_element.hidden = true;
+        root.append(root.header, root.toolbar, root.tabbar, root.content, root.alt_content, root.footer);
+        root.content.append(root.empty_element);
+        root.panel_id = options.id ?? "panel";
+        root.canvas = options.canvas ?? null;
+        root.tabIndex = -1;
+        root._doc = doc;
+        root._ref_window = ref_window;
+        root._target = root.content;
+        root._rows = [];
+        root._row_counter = 0;
+        root._disposers = [];
+        root.filter_state = {
+            query: "",
+            modified: false,
+            sort: options.sort ?? "declared"
+        };
+
+        if (options.width) root.style.width = options.width + (options.width.constructor === Number ? "px" : "");
+        if (options.height) root.style.height = options.height + (options.height.constructor === Number ? "px" : "");
+        if (options.closable) {
+            const close = panelEl(doc, "span", "close", "✕");
+            close.title = "Close (Esc)";
+            close.setAttribute("role", "button");
+            close.addEventListener("click", () => root.close());
+            root.header.appendChild(close);
+        }
+        root.onOpen = options.onOpen;
+        root.onClose = options.onClose;
+
+        root.close = function() {
+            for (const dispose of root._disposers.splice(0)) {
+                try {
+                    dispose();
+                } catch (error) {
+                    LiteGraph.log_warn("panels", "close", error);
+                }
+            }
+            if (root.onClose && typeof root.onClose == "function") root.onClose();
+            root.parentNode?.removeChild(root);
+        };
+        /** runs fn when the panel closes (event subscriptions, timers) */
+        root.addDisposer = (fn) => {
+            if (typeof fn === "function") root._disposers.push(fn);
+        };
+
+        root.toggleAltContent = function(force) {
+            const show = force !== undefined ? !!force : root.alt_content.style.display != "block";
+            root.alt_content.style.display = show ? "block" : "none";
+            root.content.style.display = show ? "none" : "";
+        };
+        root.toggleFooterVisibility = function(force) {
+            const show = force !== undefined ? !!force : root.footer.style.display == "none";
+            root.footer.style.display = show ? "" : "none";
+        };
+        root.clear = function() {
+            root.content.replaceChildren(root.empty_element);
+            root._rows = [];
+            root._target = root.content;
+            root._tabs = null;
+            root._target_pane = null;
+            root._section = null;
+            root.tabbar.replaceChildren();
+            root.tabbar.hidden = true;
+        };
+
+        /** Adds HTML (trusted markup only; use addNote for text) to the current section or the footer. */
+        root.addHTML = function(code, classname, on_footer) {
+            const elem = panelEl(doc, "div", classname);
+            elem.innerHTML = code;
+            (on_footer ? root.footer : root._target).appendChild(elem);
+            return elem;
+        };
+        /** Adds a text note (set as text, never as markup). */
+        root.addNote = function(text, classname = "lg-note") {
+            const elem = panelEl(doc, "div", classname, text);
+            root._target.appendChild(elem);
+            return elem;
+        };
+        root.addButton = function(name, callback, options) {
+            const elem = panelEl(doc, "button", "btn", name);
+            elem.type = "button";
+            elem.options = options;
+            elem.addEventListener("click", callback);
+            root.footer.appendChild(elem);
+            return elem;
+        };
+        root.addSeparator = function() {
+            const elem = panelEl(doc, "div", "separator");
+            root._target.appendChild(elem);
+            return elem;
+        };
+
+        /**
+         * Adds a collapsible section; later rows go into it until endSection() or the next section.
+         * The open/closed state is remembered (setting LiteGraph.Panel.Collapsed) per panel id.
+         * @param {string} title
+         * @param {{id?: string, collapsed?: boolean, description?: string, className?: string}} [opts]
+         * @returns {HTMLDetailsElement} the section; `.body` holds its rows
+         */
+        root.addSection = function(title, opts = {}) {
+            const parent = root._section_parent ?? root._target_pane ?? root.content;
+            const id = opts.id ?? String(title).toLowerCase().replace(/\W+/g, "-");
+            const section = panelEl(doc, "details", "lg-section" + (opts.className ? " " + opts.className : ""));
+            section.dataset.section = id;
+            const stored = panelSetting("LiteGraph.Panel.Collapsed", {})?.[root.panel_id]?.[id];
+            section.open = stored !== undefined ? !stored : !opts.collapsed;
+            const summary = panelEl(doc, "summary", "lg-section-title");
+            summary.append(panelEl(doc, "span", "lg-section-name", title));
+            section.count_element = panelEl(doc, "span", "lg-section-count");
+            summary.append(section.count_element);
+            section.append(summary);
+            if (opts.description) section.append(panelEl(doc, "div", "lg-section-desc", opts.description));
+            section.body = panelEl(doc, "div", "lg-section-body");
+            section.append(section.body);
+            section.addEventListener("toggle", () => {
+                if (root.classList.contains("lg-filtering")) return; // sections a search opened are not remembered
+                const all = {
+                    ...(panelSetting("LiteGraph.Panel.Collapsed", {}) ?? {})
+                };
+                all[root.panel_id] = {
+                    ...(all[root.panel_id] ?? {}),
+                    [id]: !section.open
+                };
+                panelSaveSetting("LiteGraph.Panel.Collapsed", all);
+            });
+            parent.insertBefore(section, parent === root.content ? root.empty_element : null);
+            root._target = section.body;
+            root._section = section;
+            return section;
+        };
+        root.endSection = function() {
+            root._target = root._target_pane ?? root.content;
+            root._section = null;
+        };
+
+        /**
+         * Adds tabs; useTab(id) sends later sections and rows to that tab. While a search or the
+         * modified-only filter is active, every tab is shown with its title, so results from all tabs appear.
+         * @param {{id: string, title: string}[]} tabs
+         * @param {string} [active]
+         */
+        root.addTabs = function(tabs, active) {
+            root._tabs = new Map();
+            root.tabbar.hidden = false;
+            for (const tab of tabs) {
+                const button = panelEl(doc, "button", "lg-tab", tab.title);
+                button.type = "button";
+                button.setAttribute("role", "tab");
+                button.dataset.tab = tab.id;
+                button.addEventListener("click", () => root.showTab(tab.id));
+                root.tabbar.append(button);
+                const pane = panelEl(doc, "div", "lg-tab-pane");
+                pane.dataset.tab = tab.id;
+                pane.append(panelEl(doc, "div", "lg-tab-heading", tab.title));
+                root.content.insertBefore(pane, root.empty_element);
+                root._tabs.set(tab.id, {
+                    button,
+                    pane,
+                    title: tab.title
+                });
+            }
+            root.showTab(active ?? tabs[0]?.id);
+        };
+        root.showTab = function(id) {
+            if (!root._tabs?.has(id)) return;
+            root.active_tab = id;
+            for (const [tabId, tab] of root._tabs) {
+                tab.button.classList.toggle("active", tabId === id);
+                tab.button.setAttribute("aria-selected", String(tabId === id));
+                tab.pane.classList.toggle("active", tabId === id);
+            }
+            root.onTabChanged?.(id);
+        };
+        root.useTab = function(id) {
+            const tab = root._tabs?.get(id);
+            root._target_pane = tab?.pane ?? null;
+            root._target = tab?.pane ?? root.content;
+            root._section = null;
+        };
+
+        /**
+         * Adds a typed row: the editor comes from LiteGraph.valueTypes.resolveEditor(info, value).
+         * @param {object} spec
+         * @param {string} spec.name - key (dataset.property)
+         * @param {*} spec.value
+         * @param {object} [spec.info] - type, widget, editor, label, tooltip, description, examples,
+         *   min, max, step, precision, unit, values, readonly, placeholder, default_value, ...
+         * @param {string} [spec.label]
+         * @param {(value: *) => (void|false)} [spec.commit] - final value (return false to refuse)
+         * @param {(value: *) => void} [spec.preview] - live value while dragging (default: commit)
+         * @param {*} [spec.defaultValue] - shows reset and the modified marker when given
+         * @param {string[]} [spec.keywords] - more text the search matches
+         * @param {object} [spec.target] - passed to combo value functions and editors
+         * @returns {HTMLElement} the row (`.value`, `.options`, `.setValue(v)`, `.editor`)
+         */
+        root.addRow = function(spec) {
+            const info = spec.info ?? {};
+            const resolved = LiteGraph.valueTypes ?
+                LiteGraph.valueTypes.resolveEditor(info, spec.value, LiteGraph.panel_editors ?? {}) :
+                {
+                    editor: "readonly",
+                    type: info.type ?? null,
+                    options: {
+                        ...info
+                    },
+                    valueType: null
+                };
+            const type = resolved.valueType?.name ?? resolved.type;
+            const options = resolved.options;
+            const readonly = !!(info.readonly || options.read_only || spec.readonly);
+            // a read-only value reads as text, not as a disabled field (switches and colours keep their look)
+            if (readonly && !["boolean", "color", "nodecolor", "readonly"].includes(resolved.editor) && !info.editor) resolved.editor = "readonly";
+            const editorDef = LiteGraph.panel_editors?.[resolved.editor] ?? defaultPanelEditors()[resolved.editor] ?? defaultPanelEditors().readonly;
+
+            const row = panelEl(doc, "div", "property lg-row");
+            row.dataset.property = spec.name;
+            row.dataset.type = info.type ?? type ?? "";
+            row.dataset.editor = resolved.editor;
+            row.dataset.order = String(root._row_counter++);
+            if (readonly) row.classList.add("lg-readonly-row");
+            const label = spec.label ?? info.label ?? spec.name;
+            const nameEl = panelEl(doc, "span", "property_name");
+            const labelText = panelEl(doc, "span", "lg-label", label);
+            nameEl.append(labelText);
+            const tooltip = info.tooltip ?? spec.tooltip ?? null;
+            const description = info.description ?? spec.description ?? null;
+            const examples = info.examples ?? spec.examples ?? null;
+            const titleParts = [tooltip, spec.name !== label ? spec.name : null].filter(Boolean);
+            if (titleParts.length) nameEl.title = titleParts.join("\n");
+            const valueEl = panelEl(doc, "span", "property_value");
+            const tail = panelEl(doc, "span", "lg-row-tail");
+            row.append(nameEl, valueEl, tail);
+            let help = null;
+            if (description || examples?.length || (tooltip && tooltip.length > 60)) {
+                const toggle = panelEl(doc, "button", "lg-help-btn", "?");
+                toggle.type = "button";
+                toggle.title = "Show the description";
+                toggle.setAttribute("aria-expanded", "false");
+                nameEl.append(toggle);
+                help = panelEl(doc, "div", "lg-row-help");
+                help.hidden = true;
+                if (description || tooltip) help.append(panelEl(doc, "div", "lg-row-desc", description ?? tooltip));
+                if (examples?.length) {
+                    const ex = panelEl(doc, "div", "lg-row-examples");
+                    ex.append(panelEl(doc, "span", "lg-row-examples-title", "Examples: "));
+                    examples.forEach((example, i) => {
+                        if (i) ex.append(doc.createTextNode(" · "));
+                        ex.append(panelEl(doc, "code", null, example));
+                    });
+                    help.append(ex);
+                }
+                toggle.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    help.hidden = !help.hidden;
+                    toggle.setAttribute("aria-expanded", String(!help.hidden));
+                });
+                row.append(help);
+            }
+            const errorEl = panelEl(doc, "div", "lg-row-error");
+            errorEl.hidden = true;
+            row.append(errorEl);
+
+            let current = spec.value;
+            const hasDefault = Object.hasOwn(spec, "defaultValue") || Object.hasOwn(info, "default_value");
+            const defaultValue = Object.hasOwn(spec, "defaultValue") ? spec.defaultValue : info.default_value;
+            let reset = null;
+            if (hasDefault && !readonly) {
+                reset = panelEl(doc, "button", "lg-reset", "↺");
+                reset.type = "button";
+                reset.title = "Reset to default: " + panelValueText(type, defaultValue, options);
+                reset.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    apply(defaultValue, true);
+                });
+                tail.append(reset);
+            }
+            const updateModified = () => {
+                const modified = hasDefault && !LGraphCanvas.sameValue(current, defaultValue);
+                row.classList.toggle("lg-modified", modified);
+                if (reset) reset.hidden = !modified;
+            };
+            const showError = (message) => {
+                errorEl.textContent = message ?? "";
+                errorEl.hidden = !message;
+                row.classList.toggle("lg-invalid", !!message);
+            };
+            let handle = null;
+            const apply = (raw, final) => {
+                let value = raw;
+                if (type && LiteGraph.valueTypes?.has(type)) {
+                    try {
+                        value = LiteGraph.valueTypes.coerce(type, raw, options);
+                    } catch (error) {
+                        showError(error.message);
+                        if (final) handle?.set(current);
+                        return false;
+                    }
+                    const message = LiteGraph.valueTypes.validate(type, value, options);
+                    if (message) {
+                        showError(message);
+                        if (final) handle?.set(current);
+                        return false;
+                    }
+                }
+                showError(null);
+                if (!final) {
+                    (spec.preview ?? spec.commit)?.(value);
+                    return true;
+                }
+                const result = spec.commit?.(value);
+                if (result === false) {
+                    handle?.set(current);
+                    return false;
+                }
+                current = value;
+                row.value = value;
+                handle?.set(value);
+                updateModified();
+                return true;
+            };
+            const ctx = {
+                doc,
+                name: spec.name,
+                value: spec.value,
+                options,
+                info,
+                type,
+                valueType: resolved.valueType,
+                readonly,
+                row,
+                label: labelText,
+                panel: root,
+                target: spec.target ?? null,
+                commit: (value) => apply(value, true),
+                preview: (value) => apply(value, false),
+                describe: (text) => {
+                    if (help) help.firstChild.textContent = text;
+                },
+            };
+            handle = editorDef.create(ctx) ?? defaultPanelEditors().readonly.create(ctx);
+            valueEl.append(handle.element);
+            if (handle.onRowClick) {
+                row.classList.add("boolean");
+                row.addEventListener("click", (e) => {
+                    if (e.target === row || nameEl.contains(e.target)) handle.onRowClick();
+                });
+            }
+            row.editor = handle;
+            row.options = info;
+            row.value = spec.value;
+            row.dataset.search = [label, spec.name, tooltip, description, ...(spec.keywords ?? [])].filter(Boolean).join(" \n").toLowerCase();
+            /** pushes an outside change into the row (ignored while the row is being edited) */
+            row.setValue = (value) => {
+                if (panelIsEditing(row)) return;
+                current = value;
+                row.value = value;
+                handle.set(value);
+                updateModified();
+            };
+            updateModified();
+            root._target.appendChild(row);
+            root._rows.push(row);
+            if (root.filter_state.query || root.filter_state.modified) root.applyFilter();
+            return row;
+        };
+
+        /** Former API: a row for a value; calls options.callback then callback with (name, value, options). */
+        root.addWidget = function(type, name, value, options, callback) {
+            options = options || {};
+            type = String(type ?? "string").toLowerCase();
+            if (type === "undefined") type = "string";
+            const info = {
+                ...options,
+                widget: type
+            };
+            if (type === "enum" || type === "combo") info.widget = "combo";
+            const row = root.addRow({
+                name,
+                label: options.label || name,
+                value,
+                info,
+                commit: (v) => {
+                    LiteGraph.log_debug("panels", "addWidget", "change", name, v);
+                    if (options.callback) options.callback(name, v, options);
+                    if (callback) callback(name, v, options);
+                },
+            });
+            row.dataset.type = options.type || type;
+            row.options = options;
+            return row;
+        };
+
+        /**
+         * Adds the toolbar: search, sort, modified-only filter, expand / collapse all.
+         * @param {{placeholder?: string, sorts?: {id: string, label: string}[], sort?: string, modified?: boolean}} [opts]
+         */
+        root.addToolbar = function(opts = {}) {
+            root.toolbar.hidden = false;
+            root.toolbar.replaceChildren();
+            const search = panelEl(doc, "input", "lg-input lg-search");
+            search.type = "search";
+            search.placeholder = opts.placeholder ?? "Search";
+            search.setAttribute("aria-label", search.placeholder);
+            search.addEventListener("input", () => {
+                root.filter_state.query = search.value;
+                root.applyFilter();
+            });
+            search.addEventListener("keydown", (e) => {
+                if (e.key === "Escape" && search.value) {
+                    search.value = "";
+                    root.filter_state.query = "";
+                    root.applyFilter();
+                    e.stopPropagation();
+                }
+                e.stopPropagation();
+            });
+            root.search_input = search;
+            root.toolbar.append(search);
+            const tools = panelEl(doc, "span", "lg-toolbar-tools");
+            if (opts.sorts?.length) {
+                const sort = panelEl(doc, "select", "lg-input lg-sort");
+                sort.title = "Sort";
+                for (const option of opts.sorts) {
+                    const el = panelEl(doc, "option", null, option.label);
+                    el.value = option.id;
+                    sort.append(el);
+                }
+                sort.value = root.filter_state.sort = opts.sort ?? opts.sorts[0].id;
+                sort.addEventListener("change", () => {
+                    root.filter_state.sort = sort.value;
+                    root.applySort();
+                    opts.onSort?.(sort.value);
+                });
+                tools.append(sort);
+                root.sort_select = sort;
+            }
+            if (opts.modified !== false) {
+                const label = panelEl(doc, "label", "lg-toggle-chip");
+                const box = panelEl(doc, "input");
+                box.type = "checkbox";
+                label.append(box, doc.createTextNode(" Modified"));
+                label.title = "Show only values that differ from their default";
+                box.addEventListener("change", () => {
+                    root.filter_state.modified = box.checked;
+                    root.applyFilter();
+                });
+                tools.append(label);
+                root.modified_input = box;
+            }
+            const expand = panelEl(doc, "button", "lg-icon-btn", "⊞");
+            expand.type = "button";
+            expand.title = "Expand all";
+            expand.addEventListener("click", () => root.setAllSections(true));
+            const collapse = panelEl(doc, "button", "lg-icon-btn", "⊟");
+            collapse.type = "button";
+            collapse.title = "Collapse all";
+            collapse.addEventListener("click", () => root.setAllSections(false));
+            tools.append(expand, collapse);
+            root.toolbar.append(tools);
+            return search;
+        };
+        root.setAllSections = function(open) {
+            for (const section of root.content.querySelectorAll("details.lg-section")) {
+                if (section.open !== open) {
+                    section.open = open;
+                    section.dispatchEvent(new(root._ref_window?.Event ?? Event)("toggle"));
+                }
+            }
+        };
+
+        /** Shows the rows matching the search and the modified-only filter; updates counts and the empty state. */
+        root.applyFilter = function() {
+            const query = root.filter_state.query.trim().toLowerCase();
+            const modifiedOnly = root.filter_state.modified;
+            const filtering = !!query || modifiedOnly;
+            root.classList.toggle("lg-filtering", filtering);
+            let visible = 0;
+            for (const row of root._rows) {
+                const match = (!query || query.split(/\s+/).every((term) => row.dataset.search.includes(term))) &&
+                    (!modifiedOnly || row.classList.contains("lg-modified"));
+                row.hidden = !match;
+                if (match) visible++;
+                PanelBuilder.highlight(row.querySelector(".lg-label"), query);
+            }
+            for (const section of root.content.querySelectorAll("details.lg-section")) {
+                const rows = [...section.body.querySelectorAll(":scope > .lg-row, :scope > .lg-subsection > .lg-row")];
+                const shown = rows.filter((row) => !row.hidden).length;
+                section.count_element.textContent = rows.length ? (filtering ? `${shown}/${rows.length}` : String(rows.length)) : "";
+                section.hidden = filtering && shown === 0;
+                // a search opens the sections it found something in, and closes them again afterwards
+                if (filtering && shown && !section.open) {
+                    section.dataset.autoOpened = "1";
+                    section.open = true;
+                }
+                if (!filtering && section.dataset.autoOpened) {
+                    delete section.dataset.autoOpened;
+                    section.open = false;
+                }
+            }
+            for (const tab of root._tabs?.values() ?? []) {
+                const shown = [...tab.pane.querySelectorAll(".lg-row")].some((row) => !row.hidden);
+                tab.pane.classList.toggle("lg-has-results", shown);
+                tab.button.classList.toggle("lg-tab-dim", filtering && !shown);
+            }
+            root.empty_element.hidden = !filtering || visible > 0;
+            root.empty_element.textContent = query ? `Nothing matches “${root.filter_state.query.trim()}”` : "No value differs from its default";
+            return visible;
+        };
+
+        /** Orders the rows of each section: declared, az, or modified first. */
+        root.applySort = function() {
+            const mode = root.filter_state.sort;
+            const containers = new Set(root._rows.map((row) => row.parentNode).filter(Boolean));
+            for (const container of containers) {
+                const rows = [...container.children].filter((child) => child.classList?.contains("lg-row"));
+                if (rows.length < 2) continue;
+                const anchor = rows[0].previousSibling;
+                const order = (row) => Number(row.dataset.order);
+                const label = (row) => row.querySelector(".lg-label")?.textContent.toLowerCase() ?? "";
+                rows.sort((a, b) => {
+                    if (mode === "az") return label(a).localeCompare(label(b));
+                    if (mode === "modified") {
+                        const d = Number(b.classList.contains("lg-modified")) - Number(a.classList.contains("lg-modified"));
+                        if (d) return d;
+                    }
+                    return order(a) - order(b);
+                });
+                let at = anchor ? anchor.nextSibling : container.firstChild;
+                for (const row of rows) {
+                    container.insertBefore(row, at);
+                    at = row.nextSibling;
+                }
+            }
+        };
+
+        // Escape closes (fields handle their own Escape first)
+        root.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && options.closable) {
+                e.stopPropagation();
+                root.close();
+            }
+        });
+        // pointer and wheel events stay in the panel (the canvas below must not pan or zoom)
+        for (const type of ["pointerdown", "wheel", "dblclick", "contextmenu"]) {
+            root.addEventListener(type, (e) => {
+                if (type !== "pointerdown" || e.target !== root) e.stopPropagation();
+            }, {
+                passive: true
+            });
+        }
+
+        if (root.onOpen && typeof root.onOpen == "function") root.onOpen();
+        return root;
+    }
+
+    /** Wraps the matched terms of an element's text in <mark> (text only, nothing parsed). */
+    static highlight(el, query) {
+        if (!el) return;
+        const text = el.textContent;
+        if (!query) {
+            if (el.querySelector("mark")) el.textContent = text;
+            return;
+        }
+        const terms = query.split(/\s+/).filter(Boolean).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+        const re = new RegExp(`(${terms.join("|")})`, "ig");
+        const parts = text.split(re);
+        el.replaceChildren(...parts.map((part, i) => (i % 2 ? Object.assign(el.ownerDocument.createElement("mark"), {
+            textContent: part
+        }) : el.ownerDocument.createTextNode(part))));
+    }
+}
+
+/** Shorthand used for reset tooltips. */
+function panelValueText(type, value, options) {
+    return LiteGraph.valueTypes ? LiteGraph.valueTypes.format(type, value, options) : String(value);
+}
+
+/**
+ * Places panels on their host element: the docking side and width (settings LiteGraph.Panel.Side
+ * and LiteGraph.Panel.Width), the resize handle and the side switch. Floating, movable and stacked
+ * panels (idea X-13) are meant to be added here without changing the panels.
+ */
+class PanelHost {
+    static place(panel, parent, options = {}) {
+        const doc = panel.ownerDocument;
+        const side = options.side ?? panelSetting("LiteGraph.Panel.Side", "left");
+        PanelHost.setSide(panel, side);
+        const width = options.width ?? panelSetting("LiteGraph.Panel.Width", null);
+        if (width && !panel.style.width) panel.style.width = width + "px";
+        if (!panel.querySelector(":scope > .lg-panel-resize")) {
+            const handle = panelEl(doc, "div", "lg-panel-resize");
+            handle.title = "Drag to resize";
+            handle.addEventListener("pointerdown", (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const x0 = e.clientX;
+                const w0 = panel.getBoundingClientRect().width || panel.offsetWidth || 400;
+                const max = Math.max(320, (panel.parentNode?.clientWidth || 1600) - 40);
+                const move = (ev) => {
+                    const dx = (ev.clientX - x0) * (panel.classList.contains("lg-dock-right") ? -1 : 1);
+                    panel.style.width = Math.round(Math.min(max, Math.max(280, w0 + dx))) + "px";
+                };
+                const up = () => {
+                    doc.removeEventListener("pointermove", move);
+                    doc.removeEventListener("pointerup", up);
+                    panelSaveSetting("LiteGraph.Panel.Width", parseInt(panel.style.width, 10) || null);
+                };
+                doc.addEventListener("pointermove", move);
+                doc.addEventListener("pointerup", up);
+            });
+            panel.append(handle);
+            const dock = panelEl(doc, "button", "lg-icon-btn lg-dock-btn", "⇆");
+            dock.type = "button";
+            dock.title = "Move to the other side";
+            dock.addEventListener("click", () => {
+                const next = panel.classList.contains("lg-dock-right") ? "left" : "right";
+                PanelHost.setSide(panel, next);
+                panelSaveSetting("LiteGraph.Panel.Side", next);
+            });
+            panel.actions?.prepend(dock);
+        }
+        parent?.appendChild(panel);
+        return panel;
+    }
+
+    static setSide(panel, side) {
+        panel.classList.toggle("lg-dock-right", side === "right");
+        panel.classList.toggle("lg-dock-left", side !== "right");
+    }
+}
+
+// ---- graph options panel ----
+
+/** The canvas switches and values the Canvas tab shows (keys of LGraphCanvas.optionInfo plus host additions). */
+function panelCanvasOptionKeys() {
+    const listed = [...(LiteGraph.availableCanvasOptions || [])];
+    const order = Object.keys(LGraphCanvas.optionInfo ?? {});
+    const extra = Object.entries(LGraphCanvas.optionInfo ?? {}).filter(([, info]) => info.always).map(([key]) => key);
+    // in the order of LGraphCanvas.optionInfo; options without metadata keep their listed order, last
+    const rank = (key) => (order.includes(key) ? order.indexOf(key) : order.length + listed.indexOf(key));
+    return [...new Set([...listed, ...extra])].sort((a, b) => rank(a) - rank(b));
+}
+
+function panelCanvasDefaults() {
+    return panelSetting("LiteGraph.Canvas.Defaults", {}) ?? {};
+}
+
+/**
+ * Builds the graph options panel of a canvas: Graph, Canvas and Settings tabs.
+ * @param {LGraphCanvas} graphcanvas
+ * @returns {HTMLElement} the panel
+ */
+PanelBuilder.showGraphOptions = function(graphcanvas) {
+    graphcanvas.closePanels();
+    const ref_window = graphcanvas.getCanvasWindow();
+    const panel = graphcanvas.createPanel("Options", {
+        closable: true,
+        window: ref_window,
+        id: "options",
+        onOpen() {
+            graphcanvas.OPTIONPANEL_IS_OPEN = true;
+        },
+        onClose() {
+            graphcanvas.OPTIONPANEL_IS_OPEN = false;
+            graphcanvas.options_panel = null;
+        },
+    });
+    graphcanvas.options_panel = panel;
+    panel.id = "option-panel";
+    panel.classList.add("settings");
+    const root = graphcanvas.graph?.rootGraph ?? graphcanvas.graph;
+    let active = "graph";
+
+    const refresh = () => {
+        const query = panel.filter_state.query;
+        const modified = panel.filter_state.modified;
+        const scroll = panel.content.scrollTop;
+        panel.clear();
+        panel.footer.replaceChildren();
+        panel.addTabs([{
+                id: "graph",
+                title: "Graph"
+            },
+            {
+                id: "canvas",
+                title: "Canvas"
+            },
+            {
+                id: "settings",
+                title: "Settings"
+            },
+            ...panelContributedTabs("options"),
+        ], active);
+        panel.onTabChanged = (id) => {
+            active = id;
+        };
+
+        // Graph: the document
+        panel.useTab("graph");
+        let pendingModes = 0;
+        if (root?.setExecutionModel && LiteGraph.listExecutionModels) {
+            panel.addSection("Execution", {
+                id: "graph-execution"
+            });
+            const models = LiteGraph.listExecutionModels();
+            const model = LiteGraph.getExecutionModel(root.executionModel);
+            const values = models.map((m) => m.name);
+            panel.addRow({
+                name: "Execution model",
+                value: root.executionModel,
+                info: {
+                    type: "enum",
+                    values,
+                    tooltip: "How the graph runs: which nodes run on each step and in which order. Stored in the document (config.execution).",
+                    description: models.map((m) => `${m.name}: ${m.description ?? m.title ?? ""}`).join("\n"),
+                    examples: ["ancestors: a node runs only after the nodes it reads from", "legacy: every node runs in order on each step"],
+                },
+                keywords: ["model", "execution", "run", "order", ...values],
+                commit: (value) => {
+                    try {
+                        if (root.setExecutionModel(value)) graphcanvas.setDirty(true, true);
+                    } catch (error) {
+                        graphcanvas.showExecutionNotice(error.message);
+                        return false;
+                    }
+                    setTimeout(refresh, 0);
+                },
+            });
+            panel.addNote(model?.description ?? model?.title ?? "", "execution-model-info");
+            pendingModes = LiteGraph.ExecutionEngine?.modelModes?.(root)?.length ?? 0;
+            if (pendingModes) panel.addNote(`${pendingModes} node(s) use a mode other than the one this model declares for their type. "Apply the model's node modes" below changes them (one undo step).`, "lg-note lg-warn");
+        }
+        panel.addSection("Document", {
+            id: "graph-document"
+        });
+        const count = (graph, fn) => graph?._nodes?.reduce((n, node) => n + fn(node) + (node.subgraph ? count(node.subgraph, fn) : 0), 0) ?? 0;
+        const facts = [
+            ["Nodes", root?._nodes?.length ?? 0, "Nodes in this graph (subgraph contents not included)"],
+            ["Nodes, all levels", count(root, () => 1), "Nodes in this graph and every subgraph"],
+            ["Links", Object.keys(root?.links ?? {}).length, "Links in this graph"],
+            ["Groups", root?._groups?.length ?? 0, "Groups in this graph"],
+            ["Subgraphs", count(root, (node) => (node.subgraph ? 1 : 0)), "Subgraph instances, all levels"],
+            ["Revision", root?.revision ?? 0, "Saved changes since the document was loaded"],
+        ];
+        for (const [name, value, tooltip] of facts) panel.addRow({
+            name,
+            value,
+            info: {
+                type: "int",
+                readonly: true,
+                tooltip
+            }
+        });
+        if (graphcanvas.graph !== root) {
+            panel.addRow({
+                name: "Open subgraph",
+                value: String(graphcanvas.graph?._subgraph_node?.title ?? ""),
+                info: {
+                    type: "string",
+                    readonly: true,
+                    tooltip: "The canvas shows this subgraph; the values above are the root document's"
+                }
+            });
+        }
+        panelRenderContributions(panel, "options", {
+            tab: "graph",
+            canvas: graphcanvas,
+            graph: root
+        });
+
+        // Canvas: this view
+        panel.useTab("canvas");
+        const info = LGraphCanvas.optionInfo ?? {};
+        const categories = ["Rendering", "Links", "Interaction", "Advanced", "Other"];
+        const byCategory = new Map(categories.map((c) => [c, []]));
+        for (const key of panelCanvasOptionKeys()) {
+            const meta = info[key] ?? {};
+            const category = byCategory.has(meta.category) ? meta.category : "Other";
+            byCategory.get(category).push(key);
+        }
+        for (const [category, keys] of byCategory) {
+            if (!keys.length) continue;
+            panel.addSection(category, {
+                id: "canvas-" + category.toLowerCase()
+            });
+            for (const key of keys) {
+                const meta = info[key] ?? {};
+                let value = graphcanvas[key];
+                const {
+                    label: _label,
+                    category: _category,
+                    store: _store,
+                    default: _default,
+                    always: _always,
+                    ...metaInfo
+                } = meta; // eslint-disable-line no-unused-vars
+                const rowInfo = {
+                    type: meta.type ?? (typeof value === "number" ? "number" : "boolean"),
+                    ...metaInfo
+                };
+                let defaultValue = meta.default;
+                if (meta.values && meta.store === "index") {
+                    // stored as an index into a list of names (links_render_mode)
+                    const names = typeof meta.values === "function" ? meta.values() : meta.values;
+                    rowInfo.type = "enum";
+                    rowInfo.values = names;
+                    value = names[value];
+                    defaultValue = names[defaultValue];
+                }
+                panel.addRow({
+                    name: key,
+                    label: meta.label ?? panelHumanize(key),
+                    value,
+                    info: rowInfo,
+                    ...(defaultValue !== undefined ? {
+                        defaultValue
+                    } : {}),
+                    keywords: [category, key],
+                    commit: (v) => {
+                        if (meta.values && meta.store === "index") {
+                            const names = typeof meta.values === "function" ? meta.values() : meta.values;
+                            v = names.indexOf(v);
+                        }
+                        LiteGraph.log_verbose("panels", "canvas option", key, v);
+                        graphcanvas[key] = v;
+                        graphcanvas.setDirty(true, true);
+                    },
+                });
+            }
+        }
+        panelRenderContributions(panel, "options", {
+            tab: "canvas",
+            canvas: graphcanvas,
+            graph: root
+        });
+
+        // Settings: LiteGraph.settings
+        panel.useTab("settings");
+        const settings = LiteGraph.settings;
+        if (settings) {
+            const groups = new Map();
+            for (const def of settings.list()) {
+                if (def.hidden) continue;
+                const category = def.category?.length ? def.category.filter((part) => part !== "LiteGraph").join(" / ") || "General" : "General";
+                if (!groups.has(category)) groups.set(category, []);
+                groups.get(category).push(def);
+            }
+            const names = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+            for (const category of names) {
+                panel.addSection(category, {
+                    id: "settings-" + category.toLowerCase().replace(/\W+/g, "-")
+                });
+                const defs = groups.get(category).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                for (const def of defs) {
+                    const rowInfo = {
+                        type: def.type === "text" ? "string" : def.type === "json" ? "object" : def.type,
+                        tooltip: def.tooltip,
+                        description: def.description,
+                        examples: def.examples,
+                        min: def.min,
+                        max: def.max,
+                        step: def.step,
+                        unit: def.unit,
+                    };
+                    if (def.type === "combo" && Array.isArray(def.options)) {
+                        rowInfo.type = "enum";
+                        const objects = def.options.some((o) => o && typeof o === "object");
+                        rowInfo.values = objects ? Object.fromEntries(def.options.map((o) => (o && typeof o === "object" ? [o.text ?? o.label ?? String(o.value), o.value] : [String(o), o]))) : def.options;
+                    }
+                    if (rowInfo.type === "number" && Number.isInteger(def.default) && def.step === undefined) rowInfo.type = "int";
+                    for (const k of Object.keys(rowInfo))
+                        if (rowInfo[k] === undefined) delete rowInfo[k];
+                    const defaultValue = typeof def.default === "function" ? def.default() : def.default;
+                    panel.addRow({
+                        name: def.id,
+                        label: def.name && def.name !== def.id ? def.name : panelHumanize(def.id.split(".").pop()),
+                        value: settings.get(def.id),
+                        info: rowInfo,
+                        defaultValue,
+                        keywords: [category, def.id, def.experimental ? "experimental" : ""],
+                        commit: (v) => {
+                            try {
+                                settings.set(def.id, v);
+                            } catch (error) {
+                                graphcanvas.showExecutionNotice(error.message);
+                                return false;
+                            }
+                            graphcanvas.setDirty(true, true);
+                        },
+                    }).classList.toggle("lg-experimental", !!def.experimental);
+                }
+            }
+        }
+        panelRenderContributions(panel, "options", {
+            tab: "settings",
+            canvas: graphcanvas,
+            graph: root
+        });
+        for (const tab of panelContributedTabs("options")) {
+            panel.useTab(tab.id);
+            panelRenderContributions(panel, "options", {
+                tab: tab.id,
+                canvas: graphcanvas,
+                graph: root
+            });
+        }
+        panel.useTab(null);
+
+        // footer: optional and never automatic
+        if (pendingModes) {
+            panel.addButton(`Apply the model's node modes (${pendingModes})`, () => {
+                root.applyExecutionModelModes();
+                graphcanvas.setDirty(true, true);
+                refresh();
+            }).title = "Sets the mode each node type declares under this execution model (one undo step)";
+        }
+        panel.addButton("Save canvas as defaults", () => {
+            const values = {};
+            for (const key of panelCanvasOptionKeys()) values[key] = graphcanvas[key];
+            panelSaveSetting("LiteGraph.Canvas.Defaults", values);
+            graphcanvas.showExecutionNotice?.("Canvas options saved as defaults for new canvases", 2500);
+        }).title = "New canvases start with these Canvas options (setting LiteGraph.Canvas.Defaults)";
+
+        panel.filter_state.query = query;
+        panel.filter_state.modified = modified;
+        panel.applyFilter();
+        panel.applySort();
+        panel.content.scrollTop = scroll;
+    };
+
+    panel.addToolbar({
+        placeholder: "Search options and settings",
+        sorts: [{
+            id: "declared",
+            label: "By category"
+        }, {
+            id: "az",
+            label: "A–Z"
+        }, {
+            id: "modified",
+            label: "Modified first"
+        }],
+    });
+    refresh();
+    panel.refresh = refresh;
+    PanelHost.place(panel, graphcanvas.canvas.parentNode);
+    return panel;
+};
+
+// ---- node details panel ----
+
+function panelNodeColorName(node) {
+    if (node.color === undefined && node.bgcolor === undefined) return "";
+    return Object.keys(LGraphCanvas.node_colors).find((name) => LGraphCanvas.node_colors[name].color == node.color) ?? "custom";
+}
+
+function panelShapeName(node) {
+    const names = {
+        [LiteGraph.BOX_SHAPE]: "box",
+        [LiteGraph.ROUND_SHAPE]: "round",
+        [LiteGraph.CIRCLE_SHAPE]: "circle",
+        [LiteGraph.CARD_SHAPE]: "card"
+    };
+    return names[node._shape ?? node.shape] ?? "default";
+}
+
+function panelSlotColor(canvas, type) {
+    return canvas?.default_connection_color_byType?.[type] ?? LGraphCanvas.link_type_colors?.[type] ?? "#999";
+}
+
+/** A signature of what the node panel's layout depends on (rebuilt when it changes). */
+function panelNodeSignature(node) {
+    return JSON.stringify([
+        Object.keys(node.properties ?? {}),
+        (node.widgets ?? []).map((w) => [w?.name, w?.type]),
+        (node.inputs ?? []).map((s) => [s.name, s.type, s.link != null]),
+        (node.outputs ?? []).map((s) => [s.name, s.type, s.links?.length ?? 0]),
+        node.mode,
+    ]);
+}
+
+/**
+ * Builds the node details panel.
+ * @param {LGraphCanvas} graphcanvas
+ * @param {LGraphNode} node
+ * @returns {HTMLElement} the panel
+ */
+PanelBuilder.showNode = function(graphcanvas, node) {
+    graphcanvas.SELECTED_NODE = node;
+    graphcanvas.closePanels();
+    const ref_window = graphcanvas.getCanvasWindow();
+    const panel = graphcanvas.createPanel(node.title || "", {
+        closable: true,
+        window: ref_window,
+        id: "node",
+        onOpen() {
+            graphcanvas.NODEPANEL_IS_OPEN = true;
+        },
+        onClose() {
+            graphcanvas.NODEPANEL_IS_OPEN = false;
+            graphcanvas.node_panel = null;
+        },
+    });
+    graphcanvas.node_panel = panel;
+    panel.id = "node-panel";
+    panel.node = node;
+    panel.classList.add("settings", "lg-node-panel");
+    const doc = panel._doc;
+    const graph = node.graph;
+    let signature = "";
+
+    // one undo step per edit; beforeChange/afterChange still fire for hosts that listen to them
+    const edit = (label, fn) => {
+        const g = node.graph;
+        if (!g) {
+            fn();
+            return;
+        }
+        const run = () => {
+            g.beforeChange(node);
+            try {
+                fn();
+            } finally {
+                g.onGraphChanged({
+                    action: label,
+                    doSave: true
+                });
+                g.afterChange();
+            }
+        };
+        if (g.transact) g.transact(label, run);
+        else run();
+        graphcanvas.dirty_canvas = true;
+        graphcanvas.setDirty?.(true, true);
+    };
+    // a drag (scrub, slider, colour picker) is one undo step: the first preview opens it, the commit closes it
+    let session = null;
+    const previewEdit = (label, fn) => {
+        const g = node.graph;
+        if (!g?.beginTransaction) {
+            fn();
+            return;
+        }
+        if (!session) {
+            g.beginTransaction(label);
+            g.beforeChange(node);
+            session = {
+                graph: g
+            };
+        }
+        fn();
+        g.onGraphChanged({
+            action: label,
+            doSave: true
+        });
+        graphcanvas.setDirty?.(true, true);
+    };
+    const commitEdit = (label, fn) => {
+        if (!session) {
+            edit(label, fn);
+            return;
+        }
+        const g = session.graph;
+        session = null;
+        try {
+            fn();
+        } finally {
+            g.onGraphChanged({
+                action: label,
+                doSave: true
+            });
+            g.afterChange();
+            g.commitTransaction();
+        }
+        graphcanvas.setDirty?.(true, true);
+    };
+    panel.addDisposer(() => {
+        if (session) {
+            session.graph.afterChange();
+            session.graph.commitTransaction();
+            session = null;
+        }
+    });
+
+    // the former update function, still passed to onAddPropertyToPanel(name, panel, value, info, fUpdate)
+    const fUpdate = (name, value) => {
+        edit(`Edit ${name}`, () => {
+            switch (name) {
+                case "Title":
+                    node.title = value;
+                    break;
+                case "Mode": {
+                    const kV = typeof value === "number" ? value : Object.values(LiteGraph.NODE_MODES).indexOf(value);
+                    if (kV >= 0 && LiteGraph.NODE_MODES[kV]) {
+                        if (node.changeMode(kV) === false && node.mode_refusal) graphcanvas.showExecutionNotice(node.mode_refusal);
+                    } else {
+                        LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected mode", value, kV);
+                    }
+                    break;
+                }
+                case "Color":
+                    if (!value) {
+                        delete node.color;
+                        delete node.bgcolor;
+                    } else if (LGraphCanvas.node_colors[value]) {
+                        node.color = LGraphCanvas.node_colors[value].color;
+                        node.bgcolor = LGraphCanvas.node_colors[value].bgcolor;
+                    } else {
+                        LiteGraph.log_warn("lgraphcanvas", "showShowNodePanel", "unexpected color", value);
+                    }
+                    break;
+                default:
+                    node.setProperty(name, value);
+                    break;
+            }
+        });
+    };
+    panel.fUpdate = fUpdate;
+
+    const def = LiteGraph.getNodeDefinition?.(node.type) ?? null;
+
+    const renderHeader = () => {
+        const header = panelEl(doc, "div", "lg-node-header");
+        const typeLine = panelEl(doc, "div", "lg-node-typeline");
+        typeLine.append(panelEl(doc, "code", "node_type", node.type ?? ""));
+        typeLine.append(panelEl(doc, "span", "lg-chip lg-chip-id", "#" + node.id));
+        header.append(typeLine);
+        const chips = panelEl(doc, "div", "lg-chips");
+        const chip = (text, cls, title) => {
+            const c = panelEl(doc, "span", "lg-chip " + (cls ?? ""), text);
+            if (title) c.title = title;
+            chips.append(c);
+        };
+        if (def?.category) chip(def.category, "lg-chip-cat", "Category");
+        if (def?.pack) chip(def.pack.version ? `${def.pack.title ?? def.pack.id} ${def.pack.version}` : def.pack.title ?? def.pack.id, "lg-chip-pack", "Pack");
+        if (def?.source) chip(def.source, "lg-chip-src", "Source");
+        if (def?.deprecated) chip("deprecated", "lg-chip-warn", "This node type is deprecated");
+        if (def?.experimental) chip("experimental", "lg-chip-exp", "This node type is experimental");
+        if (node.graph?._subgraph_node) chip("path " + String(node.getPath?.() ?? ""), "lg-chip-path", "Path inside the document");
+        if (chips.childNodes.length) header.append(chips);
+        const missing = LiteGraph.getMissingCapabilities?.(node.type) ?? [];
+        if (missing.length) header.append(panelEl(doc, "div", "lg-note lg-warn", `This runtime lacks: ${missing.join(", ")}. The node may not run here.`));
+        const desc = def?.description || node.constructor?.desc || "";
+        if (desc) header.append(panelEl(doc, "div", "node_desc", desc));
+        const usage = node.constructor?.def?.usage ?? def?.usage;
+        if (usage) header.append(panelEl(doc, "div", "lg-node-usage", usage));
+        panel.content.insertBefore(header, panel.empty_element);
+    };
+
+    const rowFor = (name) => panel._rows.find((row) => row.dataset.property === name && row.closest(".lg-section")?.dataset.section === "properties") ??
+        panel._rows.find((row) => row.dataset.property === name);
+
+    function inner_refresh() {
+        const scroll = panel.content.scrollTop;
+        const query = panel.filter_state.query;
+        const modified = panel.filter_state.modified;
+        panel.clear();
+        panel.title_element.textContent = node.title || "";
+        renderHeader();
+        signature = panelNodeSignature(node);
+
+        // General
+        panel.addSection("General", {
+            id: "general"
+        });
+        panel.addRow({
+            name: "Title",
+            value: node.title,
+            info: {
+                type: "string",
+                tooltip: "The title shown in the node's title bar"
+            },
+            commit: (v) => {
+                fUpdate("Title", v);
+                panel.title_element.textContent = v;
+            }
+        });
+        const validModes = LiteGraph.getValidNodeModes?.(node) ?? LiteGraph.NODE_MODES.map((_, i) => i);
+        const invalid = LiteGraph.NODE_MODES.filter((_, i) => !validModes.includes(i));
+        panel.addRow({
+            name: "Mode",
+            value: LiteGraph.NODE_MODES[node.mode],
+            info: {
+                type: "enum",
+                values: LiteGraph.NODE_MODES.filter((_, i) => validModes.includes(i)),
+                tooltip: "When the node runs" + (invalid.length ? `. Not offered for this type under the document's execution model: ${invalid.join(", ")}` : ""),
+                description: "Always: on every step it is due. On event: when an action reaches it. Never: it does not run. On trigger / on request: when triggered or when a node pulls its output.",
+            },
+            commit: (v) => fUpdate("Mode", v),
+        });
+        panel.addRow({
+            name: "Color",
+            value: panelNodeColorName(node),
+            info: {
+                editor: "nodecolor",
+                tooltip: "Title and body colours from the canvas palette"
+            },
+            target: node,
+            commit: (v) => fUpdate("Color", v),
+        });
+        panel.addRow({
+            name: "Shape",
+            value: panelShapeName(node),
+            info: {
+                type: "enum",
+                values: LiteGraph.VALID_SHAPES ?? ["default", "box", "round", "card"],
+                tooltip: "The node's outline"
+            },
+            commit: (v) => edit("Edit shape", () => {
+                node.shape = v;
+            }),
+        });
+        panel.addRow({
+            name: "Collapsed",
+            value: !!node.flags?.collapsed,
+            info: {
+                type: "boolean",
+                tooltip: "Show only the title bar"
+            },
+            commit: (v) => edit("Collapse", () => {
+                if (!!node.flags.collapsed !== v) node.collapse(true);
+            })
+        });
+        panel.addRow({
+            name: "Pinned",
+            value: !!node.flags?.pinned,
+            info: {
+                type: "boolean",
+                tooltip: "Pinned nodes cannot be moved or resized"
+            },
+            commit: (v) => edit("Pin", () => node.pin(v))
+        });
+
+        // Properties
+        const props = Object.keys(node.properties ?? {});
+        if (props.length) {
+            panel.addSection("Properties", {
+                id: "properties"
+            });
+            const entries = props.map((pName, index) => ({
+                    pName,
+                    index,
+                    info: node.getPropertyInfo(pName) ?? {}
+                }))
+                .filter((entry) => !entry.info.hidden);
+            const sortMode = panelSetting("LiteGraph.Panel.PropertySort", "declared");
+            entries.sort((a, b) => ((a.info.order ?? 0) - (b.info.order ?? 0)) || (sortMode === "az" ? a.pName.localeCompare(b.pName) : a.index - b.index));
+            const sections = new Map();
+            for (const entry of entries) {
+                const key = entry.info.section ?? "";
+                if (!sections.has(key)) sections.set(key, []);
+                sections.get(key).push(entry);
+            }
+            const body = panel._target;
+            for (const [sectionName, list] of sections) {
+                if (sectionName) {
+                    const sub = panelEl(doc, "div", "lg-subsection");
+                    sub.append(panelEl(doc, "div", "lg-subsection-title", sectionName));
+                    body.append(sub);
+                    panel._target = sub;
+                } else {
+                    panel._target = body;
+                }
+                for (const {
+                        pName,
+                        info
+                    }
+                    of list) {
+                    const value = node.properties[pName];
+                    // in case the node wants control over its panel row
+                    // (registered handlers too; any truthy legacy result means handled, a {return_value} counts by its value)
+                    const r = node.processCallbackHandlers ?
+                        node.processCallbackHandlers("onAddPropertyToPanel", {
+                            def_cb: node.onAddPropertyToPanel
+                        }, pName, panel, value, info, fUpdate) :
+                        node.onAddPropertyToPanel?.(pName, panel, value, info, fUpdate);
+                    if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) continue;
+                    panel.addRow({
+                        name: pName,
+                        value,
+                        info: {
+                            ...info,
+                            type: info.type ?? (typeof value === "number" ? "number" : undefined)
+                        },
+                        target: node,
+                        commit: (v) => commitEdit(`Edit ${pName}`, () => node.setProperty(pName, v)),
+                        preview: (v) => previewEdit(`Edit ${pName}`, () => node.setProperty(pName, v)),
+                    });
+                }
+            }
+            panel._target = body;
+        }
+
+        // Widgets that no property backs
+        const bound = new Set(props);
+        const widgets = (node.widgets ?? []).filter((w) => w && !(w.options?.property && bound.has(w.options.property)) && !bound.has(w.name));
+        if (widgets.length) {
+            panel.addSection("Widgets", {
+                id: "widgets"
+            });
+            for (const w of widgets) {
+                if (w.type === "button") {
+                    const button = panelEl(doc, "button", "lg-btn lg-widget-btn", w.label || w.name || "button");
+                    button.type = "button";
+                    button.addEventListener("click", () => {
+                        w.callback?.(w, graphcanvas, node, null, null);
+                        graphcanvas.setDirty(true, true);
+                    });
+                    const holder = panelEl(doc, "div", "property lg-row lg-button-row");
+                    holder.dataset.property = w.name ?? "";
+                    holder.dataset.order = String(panel._row_counter++);
+                    holder.dataset.search = String(w.label || w.name || "").toLowerCase();
+                    holder.append(button);
+                    panel._target.append(holder);
+                    panel._rows.push(holder);
+                    holder.setValue = () => {};
+                    continue;
+                }
+                const linked = node.isWidgetLinked?.(w);
+                const opts = {
+                    ...(w.options ?? {})
+                };
+                delete opts.property;
+                panel.addRow({
+                    name: w.name ?? "",
+                    label: w.label || w.name,
+                    value: w.value,
+                    info: {
+                        ...opts,
+                        widget: w.type === "text" && !opts.multiline ? "string" : w.type,
+                        type: w.type,
+                        map_stores: "key",
+                        readonly: !!(w.disabled || linked),
+                        tooltip: w.tooltip ?? opts.tooltip ?? (linked ? "Driven by its linked input" : undefined)
+                    },
+                    target: w,
+                    keywords: ["widget"],
+                    commit: (v) => commitEdit(`Edit ${w.name}`, () => graphcanvas.applyWidgetValue(node, w, v)),
+                    preview: (v) => previewEdit(`Edit ${w.name}`, () => graphcanvas.applyWidgetValue(node, w, v)),
+                }).dataset.widget = "1";
+            }
+        }
+
+        // Inputs and outputs
+        const slotRows = (title, id, slots, isInput) => {
+            if (!slots?.length) return;
+            panel.addSection(title, {
+                id,
+                collapsed: false
+            });
+            const slotDefs = (isInput ? def?.inputs : def?.outputs) ?? [];
+            slots.forEach((slot, index) => {
+                const row = panelEl(doc, "div", "property lg-row lg-slot");
+                row.dataset.property = slot.name ?? String(index);
+                row.dataset.order = String(panel._row_counter++);
+                const dot = panelEl(doc, "span", "lg-slot-dot");
+                dot.style.background = panelSlotColor(graphcanvas, slot.type);
+                const name = panelEl(doc, "span", "property_name");
+                name.append(dot, panelEl(doc, "span", "lg-label", slot.label || slot.localized_name || slot.name || `#${index}`));
+                const slotDef = slotDefs.find((d) => d.name === slot.name) ?? slotDefs[index];
+                const tip = slotDef?.tooltip ?? slotDef?.description ?? slot.tooltip;
+                if (tip) name.title = tip;
+                const value = panelEl(doc, "span", "property_value");
+                value.append(panelEl(doc, "code", "lg-slot-type", slot.type === LiteGraph.EVENT ? "event" : String(slot.type ?? "*")));
+                const links = isInput ? (slot.link != null ? [slot.link] : []) : (slot.links ?? []);
+                for (const linkId of links) {
+                    const link = node.graph?.links?.[linkId];
+                    if (!link) continue;
+                    const other = node.graph.getNodeById(isInput ? link.origin_id : link.target_id);
+                    if (!other) continue;
+                    const otherSlot = isInput ? other.outputs?.[link.origin_slot] : other.inputs?.[link.target_slot];
+                    const go = panelEl(doc, "button", "lg-link-btn", `${isInput ? "←" : "→"} ${other.title}${otherSlot?.name ? "." + otherSlot.name : ""}`);
+                    go.type = "button";
+                    go.title = "Select and centre this node";
+                    go.addEventListener("click", () => {
+                        graphcanvas.selectNode(other);
+                        graphcanvas.centerOnNode?.(other);
+                        graphcanvas.setDirty(true, true);
+                    });
+                    value.append(go);
+                }
+                if (!links.length) value.append(panelEl(doc, "span", "lg-muted", slot.optional ? "optional, not connected" : "not connected"));
+                row.append(name, value);
+                row.dataset.search = [slot.name, slot.label, slot.type].filter(Boolean).join(" ").toLowerCase();
+                row.setValue = () => {};
+                panel._target.append(row);
+                panel._rows.push(row);
+            });
+        };
+        slotRows("Inputs", "inputs", node.inputs, true);
+        slotRows("Outputs", "outputs", node.outputs, false);
+
+        // Execution
+        panel.addSection("Execution", {
+            id: "execution",
+            collapsed: true
+        });
+        const decl = def?.execution;
+        if (decl) {
+            for (const [key, value] of Object.entries(decl)) {
+                if (value === undefined || value === null || (Array.isArray(value) && !value.length)) continue;
+                const shown = Array.isArray(value) ? value.map((v) => (typeof v === "number" ? LiteGraph.NODE_MODES[v] ?? v : v)).join(", ") : typeof value === "number" && key.includes("mode") ? LiteGraph.NODE_MODES[value] ?? value : value;
+                panel.addRow({
+                    name: "decl." + key,
+                    label: panelHumanize(key),
+                    value: shown,
+                    info: {
+                        type: typeof shown === "boolean" ? "boolean" : "string",
+                        readonly: true,
+                        tooltip: "Declared by the node type (static def.execution)"
+                    }
+                });
+            }
+        }
+        const state = node.execution_state;
+        panel.addRow({
+            name: "state.status",
+            label: "Status",
+            value: state?.status ?? "idle",
+            info: {
+                type: "string",
+                readonly: true,
+                tooltip: "The last execution state reported for this node"
+            }
+        });
+        if (state?.max) panel.addRow({
+            name: "state.progress",
+            label: "Progress",
+            value: `${state.value ?? 0} / ${state.max}`,
+            info: {
+                type: "string",
+                readonly: true
+            }
+        });
+        if (state?.message) panel.addNote(state.message, "lg-note " + (state.status === "error" ? "lg-error" : ""));
+        try {
+            const issues = (node.graph?.checkExecution?.().issues ?? []).filter((issue) => issue.node === node);
+            for (const issue of issues) panel.addNote(`${issue.code}: ${issue.message}`, "lg-note lg-warn");
+            if (!issues.length) panel.addNote("No execution problem found for this node.", "lg-note lg-muted");
+        } catch (error) {
+            LiteGraph.log_warn("panels", "checkExecution", error);
+        }
+
+        // contributed sections (LiteGraph.registerPanelSection)
+        panelRenderContributions(panel, "node", {
+            node,
+            canvas: graphcanvas,
+            graph: node.graph
+        });
+
+        // Advanced
+        panel.addSection("Advanced", {
+            id: "advanced",
+            collapsed: true
+        });
+        panel.addRow({
+            name: "id",
+            label: "Id",
+            value: String(node.id),
+            info: {
+                type: "string",
+                readonly: true
+            }
+        });
+        if (node.graph?._subgraph_node) panel.addRow({
+            name: "path",
+            label: "Path",
+            value: String(node.getPath?.() ?? ""),
+            info: {
+                type: "string",
+                readonly: true
+            }
+        });
+        panel.addRow({
+            name: "pos",
+            label: "Position",
+            value: [...node.pos],
+            info: {
+                type: "vec2",
+                precision: 0
+            },
+            commit: (v) => commitEdit("Move node", () => {
+                node.pos[0] = v[0];
+                node.pos[1] = v[1];
+            }),
+            preview: (v) => previewEdit("Move node", () => {
+                node.pos[0] = v[0];
+                node.pos[1] = v[1];
+            }),
+        });
+        panel.addRow({
+            name: "size",
+            label: "Size",
+            value: [...node.size],
+            info: {
+                type: "vec2",
+                precision: 0,
+                min: 0
+            },
+            commit: (v) => commitEdit("Resize node", () => node.setSize(v)),
+            preview: (v) => previewEdit("Resize node", () => node.setSize(v)),
+        });
+        const swatches = Object.values(LGraphCanvas.node_colors).map((c) => c.bgcolor);
+        panel.addRow({
+            name: "bgcolor",
+            label: "Body colour",
+            value: node.bgcolor ?? "",
+            info: {
+                type: "color",
+                presets: swatches,
+                clearable: true
+            },
+            commit: (v) => edit("Edit colour", () => {
+                if (v) node.bgcolor = v;
+                else delete node.bgcolor;
+            })
+        });
+        panel.addRow({
+            name: "color",
+            label: "Title colour",
+            value: node.color ?? "",
+            info: {
+                type: "color",
+                presets: Object.values(LGraphCanvas.node_colors).map((c) => c.color),
+                clearable: true
+            },
+            commit: (v) => edit("Edit colour", () => {
+                if (v) node.color = v;
+                else delete node.color;
+            })
+        });
+        panel.addRow({
+            name: "flags",
+            label: "Flags",
+            value: {
+                ...node.flags
+            },
+            info: {
+                type: "object",
+                readonly: true
+            }
+        });
+        const json = panelEl(doc, "pre", "lg-json");
+        try {
+            json.textContent = JSON.stringify(node.serialize(), null, 1);
+        } catch (error) {
+            json.textContent = String(error);
+        }
+        const copy = panelEl(doc, "button", "lg-btn", "Copy JSON");
+        copy.type = "button";
+        copy.addEventListener("click", () => {
+            const text = json.textContent;
+            const clip = ref_window?.navigator?.clipboard;
+            if (clip?.writeText) clip.writeText(text).catch(() => {});
+        });
+        const jsonBox = panelEl(doc, "div", "lg-json-box");
+        jsonBox.append(copy, json);
+        panel._target.append(jsonBox);
+        panel.endSection();
+
+        // the node's own additions, after the sections (former hook)
+        if (node.processCallbackHandlers) node.processCallbackHandlers("onShowCustomPanelInfo", {
+            def_cb: node.onShowCustomPanelInfo
+        }, panel);
+        else node.onShowCustomPanelInfo?.(panel);
+
+        panel.footer.replaceChildren();
+        panel.addButton("Center", () => {
+            graphcanvas.centerOnNode?.(node);
+            graphcanvas.setDirty(true, true);
+        }).title = "Centre the canvas on this node";
+        if (!node.block_delete) {
+            panel.addButton("Delete", function() {
+                if (node.block_delete) return;
+                node.graph.remove(node);
+                panel.close();
+            }).classList.add("delete");
+        }
+
+        panel.filter_state.query = query;
+        panel.filter_state.modified = modified;
+        panel.applyFilter();
+        panel.applySort();
+        panel.content.scrollTop = scroll;
+    }
+    panel.inner_refresh = inner_refresh;
+    panel.refresh = inner_refresh;
+
+    panel.inner_showCodePad = function(propname) {
+        panel.classList.remove("settings");
+        panel.classList.add("centered");
+        panel.alt_content.replaceChildren();
+        const textarea = panelEl(doc, "textarea", "code");
+        panel.alt_content.append(textarea);
+        const fDoneWith = () => {
+            panel.toggleAltContent(false);
+            panel.toggleFooterVisibility(true);
+            textarea.remove();
+            panel.classList.add("settings");
+            panel.classList.remove("centered");
+            inner_refresh();
+        };
+        textarea.value = node.properties[propname] ?? "";
+        textarea.addEventListener("keydown", (e) => {
+            e.stopPropagation();
+            if (e.key == "Enter" && e.ctrlKey) {
+                fUpdate(propname, textarea.value);
+                fDoneWith();
+            }
+        });
+        panel.toggleAltContent(true);
+        panel.toggleFooterVisibility(false);
+        textarea.style.height = "calc(100% - 40px)";
+        const assign = panel.addButton("Assign", () => {
+            fUpdate(propname, textarea.value);
+            fDoneWith();
+        });
+        panel.alt_content.appendChild(assign);
+        const button = panel.addButton("Close", fDoneWith);
+        button.style.float = "right";
+        panel.alt_content.appendChild(button);
+        textarea.focus();
+    };
+
+    // follow selection (pin) and live refresh
+    const follow = panelEl(doc, "button", "lg-icon-btn lg-follow-btn", "⌖");
+    follow.type = "button";
+    const syncFollow = () => {
+        const on = !!panelSetting("LiteGraph.Panel.FollowSelection", false);
+        follow.classList.toggle("active", on);
+        follow.title = on ? "Following the selection (click to keep this node)" : "Showing this node (click to follow the selection)";
+        follow.setAttribute("aria-pressed", String(on));
+    };
+    follow.addEventListener("click", () => {
+        panelSaveSetting("LiteGraph.Panel.FollowSelection", !panelSetting("LiteGraph.Panel.FollowSelection", false));
+        syncFollow();
+    });
+    syncFollow();
+    panel.actions.prepend(follow);
+
+    panel.addToolbar({
+        placeholder: "Search this node",
+        sorts: [{
+            id: "declared",
+            label: "Declared order"
+        }, {
+            id: "az",
+            label: "A–Z"
+        }, {
+            id: "modified",
+            label: "Modified first"
+        }],
+        sort: panelSetting("LiteGraph.Panel.PropertySort", "declared") === "az" ? "az" : "declared",
+        onSort: (mode) => panelSaveSetting("LiteGraph.Panel.PropertySort", mode),
+    });
+    inner_refresh();
+
+    if (graph?.events?.on) {
+        const events = graph.events;
+        let timer = null;
+        const soon = () => {
+            if (timer) return;
+            timer = setTimeout(() => {
+                timer = null;
+                if (!panel.parentNode && !panel.isConnected) return;
+                if (panelNodeSignature(node) !== signature) {
+                    if (!panelIsEditing(panel)) inner_refresh();
+                    return;
+                }
+                rowFor("Title")?.setValue(node.title);
+                panel.title_element.textContent = node.title || "";
+                rowFor("Mode")?.setValue(LiteGraph.NODE_MODES[node.mode]);
+                rowFor("Color")?.setValue(panelNodeColorName(node));
+                rowFor("Collapsed")?.setValue(!!node.flags?.collapsed);
+                rowFor("Pinned")?.setValue(!!node.flags?.pinned);
+                rowFor("pos")?.setValue([...node.pos]);
+                rowFor("size")?.setValue([...node.size]);
+                for (const w of node.widgets ?? []) panel._rows.find((r) => r.dataset.widget && r.dataset.property === w?.name)?.setValue(w.value);
+                for (const name of Object.keys(node.properties ?? {})) rowFor(name)?.setValue(node.properties[name]);
+            }, 30);
+        };
+        panel.addDisposer(events.on("node-property-changed", (e) => {
+            if (e.detail?.node === node) rowFor(e.detail.name)?.setValue(e.detail.value);
+        }));
+        panel.addDisposer(events.on("widget-changed", (e) => {
+            if (e.detail?.node === node) panel._rows.find((r) => r.dataset.widget && r.dataset.property === e.detail.widget?.name)?.setValue(e.detail.value);
+        }));
+        panel.addDisposer(events.on("node-removed", (e) => {
+            if (e.detail?.node === node) panel.close();
+        }));
+        panel.addDisposer(events.on("graph-changed", soon));
+        panel.addDisposer(events.on("changed", soon));
+        panel.addDisposer(() => clearTimeout(timer));
+        const root = graph.rootGraph ?? graph;
+        if (root !== graph && root.events?.on) panel.addDisposer(root.events.on("execution-state", () => {
+            if (!panelIsEditing(panel)) soon();
+        }));
+        else panel.addDisposer(events.on("execution-state", () => soon()));
+    }
+
+    PanelHost.place(panel, graphcanvas.canvas.parentNode);
+    return panel;
+};
+
+/** The node colour editor: swatches of LGraphCanvas.node_colors, plus none. */
+function panelNodeColorEditor() {
+    return {
+        create(ctx) {
+            const element = panelEl(ctx.doc, "span", "lg-swatches lg-node-colors");
+            const buttons = new Map();
+            const add = (name, color) => {
+                const b = panelEl(ctx.doc, "button", "lg-swatch");
+                b.type = "button";
+                b.title = name ? panelHumanize(name) : "No colour";
+                b.disabled = !!ctx.readonly;
+                if (color) {
+                    b.style.background = color.bgcolor;
+                    b.style.borderTopColor = color.color;
+                } else {
+                    b.classList.add("lg-swatch-none");
+                }
+                b.addEventListener("click", () => ctx.commit(name));
+                buttons.set(name, b);
+                element.append(b);
+            };
+            add("", null);
+            for (const [name, color] of Object.entries(LGraphCanvas.node_colors)) add(name, color);
+            const set = (value) => {
+                for (const [name, b] of buttons) b.classList.toggle("active", name === value);
+            };
+            set(ctx.value);
+            return {
+                element,
+                set,
+                focus: () => buttons.values().next().value?.focus()
+            };
+        },
+    };
+}
+
+// ---- contributions ----
+
+function panelContributedTabs(panelName) {
+    const tabs = new Map();
+    for (const section of LiteGraph.panel_sections?.values() ?? []) {
+        if (section.panel === panelName && section.tab && !["graph", "canvas", "settings"].includes(section.tab)) {
+            tabs.set(section.tab, {
+                id: section.tab,
+                title: section.tabTitle ?? panelHumanize(section.tab)
+            });
+        }
+    }
+    return [...tabs.values()];
+}
+
+/**
+ * Renders the sections registered with LiteGraph.registerPanelSection for a panel ("node" or
+ * "options"; options sections go to their tab, "settings" by default).
+ */
+function panelRenderContributions(panel, panelName, context) {
+    const sections = [...(LiteGraph.panel_sections?.values() ?? [])]
+        .filter((s) => s.panel === panelName && (panelName !== "options" || (s.tab ?? "settings") === context.tab))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    for (const section of sections) {
+        try {
+            if (typeof section.when === "function" && !section.when(context.node ?? context.graph, context)) continue;
+            const el = panel.addSection(section.title ?? panelHumanize(section.id), {
+                id: "x-" + section.id,
+                collapsed: section.collapsed
+            });
+            el.classList.add("lg-contributed");
+            section.render(el, {
+                ...context,
+                panel,
+                section: el
+            });
+        } catch (error) {
+            LiteGraph.log_warn("panels", "section", section.id, error);
+        }
+    }
+    panel.endSection();
+}
+
+/** The editors defaultPanelEditors() does not include because they belong to the node panel. */
+PanelBuilder.extraEditors = function() {
+    return {
+        nodecolor: panelNodeColorEditor()
+    };
+};
 
 /**
  * Node search without a DOM: query parsing, matching and ranking over node definitions
@@ -25191,7 +31281,12 @@ class NodeSearch {
         return query;
     }
 
-    /** slot types of a registered type, from its definition or the slot-type registry */
+    /**
+     * Slot types of a registered type: from its definition, else from the slot-type registry, else from
+     * a probe instance (`new Class()`, cached per class) for types that declare no slots and were never
+     * created (outputs reach the registry only with `auto_load_slot_types`). A constructor that throws
+     * leaves the type without slot types.
+     */
     static _slotTypes(def, input) {
         const declared = input ? def.inputs : def.outputs;
         if (declared) return declared.map((slot) => String(slot.type ?? "").toLowerCase());
@@ -25200,7 +31295,30 @@ class NodeSearch {
         for (const [slotType, entry] of Object.entries(registry ?? {})) {
             if (entry?.nodes?.includes?.(def.type)) types.push(String(slotType).toLowerCase());
         }
-        return types;
+        if (types.length) return types;
+        const probed = NodeSearch._probeSlots(def.type);
+        return probed ? (input ? probed.inputs : probed.outputs) : types;
+    }
+
+    /** the slot types of one instance of a type, cached per class; null when it cannot be built */
+    static _probeSlots(type) {
+        const Class = LiteGraph.registered_node_types?.[type];
+        if (typeof Class !== "function") return null;
+        NodeSearch._probes ??= new WeakMap();
+        if (NodeSearch._probes.has(Class)) return NodeSearch._probes.get(Class);
+        let probed = null;
+        try {
+            const node = new Class();
+            const list = (slots) => (slots ?? []).flatMap((slot) => String(slot?.type ?? "").toLowerCase().split(","));
+            probed = {
+                inputs: list(node.inputs),
+                outputs: list(node.outputs)
+            };
+        } catch {
+            probed = null;
+        }
+        NodeSearch._probes.set(Class, probed);
+        return probed;
     }
 
     /** true when a definition passes the query's i:/o:/c:/s: filters */
@@ -25278,13 +31396,1918 @@ class NodeSearch {
     }
 }
 
+/**
+ * Node packs: a manifest (plain JSON) that names a group of node types, extensions and libraries,
+ * with a version and the litegraph range it needs. Manifests are data: nothing here fetches or
+ * evaluates code. A pack's code is whatever the page or the runner already imported; while it
+ * runs inside `register(manifest, setup)` (or between `open` and `close`), every node type it
+ * registers belongs to the pack.
+ *
+ * ```js
+ * LiteGraph.packs.register({ id: "acme-audio", version: "1.2.0", requires: { litegraph: ">=0.10" } }, () => {
+ *     LiteGraph.registerNodeType("acme/filter", Filter);
+ * });
+ * LiteGraph.getNodeDefinition("acme/filter").pack; // {id: "acme-audio", version: "1.2.0"}
+ * ```
+ *
+ * Settings: `LiteGraph.Packs.Stamp`, `LiteGraph.Packs.AutoReplace`,
+ * `LiteGraph.Packs.AllowIncompatible`, `LiteGraph.Packs.Disabled`.
+ *
+ * Design references (no code copied): ComfyUI-Manager's pack metadata and node-provenance
+ * fields, and the ComfyUI frontend's node replacement mappings.
+ */
+
+const PACK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._@/-]*$/;
+
+/** Splits "1.2.3-beta.1" into numeric parts and a pre-release tag. */
+function packParseVersion(version) {
+    const match = /^v?(\d+)(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(String(version ?? "").trim());
+    if (!match) return null;
+    const part = (value) => (value === undefined || /^[xX*]$/.test(value)) ? null : Number(value);
+    return {
+        parts: [Number(match[1]), part(match[2]), part(match[3])],
+        pre: match[4] ?? null
+    };
+}
+
+/**
+ * Compares two versions: negative, 0 or positive. A pre-release sorts before its release.
+ * @returns {number|NaN} NaN when either is not a version
+ */
+function compareVersions(a, b) {
+    const left = packParseVersion(a);
+    const right = packParseVersion(b);
+    if (!left || !right) return NaN;
+    for (let i = 0; i < 3; i++) {
+        const d = (left.parts[i] ?? 0) - (right.parts[i] ?? 0);
+        if (d) return d;
+    }
+    if (left.pre === right.pre) return 0;
+    if (left.pre === null) return 1;
+    if (right.pre === null) return -1;
+    return left.pre < right.pre ? -1 : 1;
+}
+
+/** Turns one comparator ("^1.2", "~1.2.3", ">=1", "1.x", "*") into [op, version] pairs. */
+function packExpandComparator(text) {
+    const match = /^(\^|~|>=|<=|>|<|=)?\s*(.+)$/.exec(text);
+    if (!match) return null;
+    const op = match[1] ?? "";
+    if (/^[xX*]$/.test(match[2])) return [];
+    const version = packParseVersion(match[2]);
+    if (!version) return null;
+    const [major, minor, patch] = version.parts;
+    const at = (...parts) => parts.map((p) => p ?? 0).join(".") + (version.pre && parts.length === 3 ? `-${version.pre}` : "");
+    if (op === "^") {
+        const upper = major > 0 || minor === null ? [major + 1, 0, 0] : (minor > 0 || patch === null ? [0, minor + 1, 0] : [0, 0, patch + 1]);
+        return [
+            [">=", at(major, minor, patch)],
+            ["<", `${upper.join(".")}-0`]
+        ];
+    }
+    if (op === "~") {
+        const upper = minor === null ? [major + 1, 0, 0] : [major, minor + 1, 0];
+        return [
+            [">=", at(major, minor, patch)],
+            ["<", `${upper.join(".")}-0`]
+        ];
+    }
+    if ((op === "" || op === "=") && (minor === null || patch === null)) {
+        // a partial version is a range: "1.2" means >=1.2.0 <1.3.0-0
+        const upper = minor === null ? [major + 1, 0, 0] : [major, minor + 1, 0];
+        return [
+            [">=", at(major, minor, patch)],
+            ["<", `${upper.join(".")}-0`]
+        ];
+    }
+    return [
+        [op || "=", at(major, minor, patch)]
+    ];
+}
+
+/**
+ * True when `version` satisfies `range`. Supports `*`, exact and partial versions (`1.2`, `1.x`),
+ * `>=` `>` `<=` `<` `=`, `^`, `~`, space-separated comparators (all must hold) and `||`.
+ * @param {string} version
+ * @param {string} range
+ * @returns {boolean}
+ */
+function satisfiesVersion(version, range) {
+    if (range === undefined || range === null || String(range).trim() === "") return true;
+    if (!packParseVersion(version)) return false;
+    return String(range).split("||").some((alternative) => {
+        const comparators = alternative.trim().replace(/(>=|<=|>|<|=|\^|~)\s+/g, "$1").split(/\s+/).filter(Boolean);
+        if (!comparators.length) return true;
+        return comparators.every((text) => {
+            const expanded = packExpandComparator(text);
+            if (!expanded) return false;
+            return expanded.every(([op, bound]) => {
+                const d = compareVersions(version, bound);
+                switch (op) {
+                    case ">=":
+                        return d >= 0;
+                    case ">":
+                        return d > 0;
+                    case "<=":
+                        return d <= 0;
+                    case "<":
+                        return d < 0;
+                    default:
+                        return d === 0;
+                }
+            });
+        });
+    });
+}
+
+const packStringList = (value) => Array.isArray(value) ? value.filter((v) => typeof v === "string" && v) : [];
+
+/**
+ * Checks a manifest and returns a frozen, normalized copy.
+ * @throws {TypeError} when `id` or `version` is missing or malformed
+ */
+function normalizePackManifest(manifest) {
+    if (!manifest || typeof manifest !== "object") throw new TypeError("pack manifest must be an object");
+    if (typeof manifest.id !== "string" || !PACK_ID_PATTERN.test(manifest.id)) throw new TypeError(`pack manifest: invalid id ${JSON.stringify(manifest.id)}`);
+    if (typeof manifest.version !== "string" || !packParseVersion(manifest.version)) {
+        throw new TypeError(`pack ${manifest.id}: invalid version ${JSON.stringify(manifest.version)}`);
+    }
+    const requires = (manifest.requires && typeof manifest.requires === "object") ? {
+        ...manifest.requires
+    } : {};
+    return Object.freeze({
+        ...manifest,
+        id: manifest.id,
+        version: manifest.version,
+        title: typeof manifest.title === "string" ? manifest.title : manifest.id,
+        description: typeof manifest.description === "string" ? manifest.description : "",
+        builtin: manifest.builtin === true,
+        requires: Object.freeze(requires),
+        nodes: Object.freeze(packStringList(manifest.nodes)),
+        extensions: Object.freeze(packStringList(manifest.extensions)),
+        libraries: Object.freeze(packStringList(manifest.libraries)),
+        templates: Object.freeze(Array.isArray(manifest.templates) ? [...manifest.templates] : []),
+        locales: Object.freeze(Array.isArray(manifest.locales) ? [...manifest.locales] : []),
+    });
+}
+
+/**
+ * The pack registry (`LiteGraph.packs`).
+ */
+class PackRegistry {
+
+    /** @param {object} host - the LiteGraph instance */
+    constructor(host) {
+        this.host = host;
+        /** @type {Map<string, {manifest: object, state: string, types: Set<string>, error?: string}>} */
+        this._packs = new Map();
+        /** @type {Map<string, string>} node type → pack id (installed packs) */
+        this._typeToPack = new Map();
+        /** @type {Map<string, object>} known, not installed packs (metadata only) */
+        this._indexed = new Map();
+        /** @type {string[]} packs whose registrations are being attributed (innermost last) */
+        this._open = [];
+        /** @type {Map<string, object>} old type → replacement mapping */
+        this._replacements = new Map();
+    }
+
+    _setting(id, fallback) {
+        const settings = this.host?.settings;
+        return settings?.has?.(id) ? settings.get(id) : fallback;
+    }
+
+    /** Refusal for a pack whose `requires.litegraph` does not match this runtime. */
+    _checkCompatible(manifest) {
+        const range = manifest.requires?.litegraph;
+        const version = this.host?.VERSION;
+        if (!range || satisfiesVersion(version, range)) return null;
+        return `pack ${manifest.id}@${manifest.version} requires litegraph ${range}, this is ${version}`;
+    }
+
+    /**
+     * Starts attributing node registrations to a pack (built-in node files use this; most code
+     * should use {@link register}). Pair it with {@link close}.
+     * @param {object} manifest
+     * @returns {object} the normalized manifest
+     */
+    open(manifest) {
+        const normalized = this._add(manifest);
+        this._open.push(normalized.id);
+        return normalized;
+    }
+
+    /** Stops attributing registrations to the pack opened last (or to `id`). */
+    close(id) {
+        const index = id === undefined ? this._open.length - 1 : this._open.lastIndexOf(id);
+        if (index >= 0) this._open.splice(index, 1);
+    }
+
+    /**
+     * Registers a pack. `setup(ctx)` runs at once (unless the pack is disabled); node types it
+     * registers belong to the pack, as do types listed in `manifest.nodes`.
+     * Refused (throws) when `requires.litegraph` does not match, unless the setting
+     * `LiteGraph.Packs.AllowIncompatible` is on.
+     * @param {object} manifest
+     * @param {(ctx: {manifest: object, registerNodeType: Function}) => *} [setup]
+     * @returns {() => void} disposer: unregisters the pack's node types and forgets the pack
+     */
+    register(manifest, setup) {
+        const normalized = this._add(manifest);
+        const entry = this._packs.get(normalized.id);
+        if (entry.state === "active" && typeof setup === "function") {
+            this._open.push(normalized.id);
+            try {
+                setup({
+                    manifest: normalized,
+                    registerNodeType: (type, cls) => this.host.registerNodeType(type, cls)
+                });
+            } finally {
+                this.close(normalized.id);
+            }
+        }
+        return () => this.unregister(normalized.id);
+    }
+
+    _add(manifest) {
+        const normalized = normalizePackManifest(manifest);
+        const previous = this._packs.get(normalized.id);
+        if (previous) {
+            // a newer registration of the same pack replaces the manifest and keeps its types
+            if (previous.manifest.version !== normalized.version) {
+                LiteGraph.log_debug?.("packs", "replacing", normalized.id, previous.manifest.version, "->", normalized.version);
+            }
+        }
+        const refusal = normalized.builtin ? null : this._checkCompatible(normalized);
+        if (refusal && !this._setting("LiteGraph.Packs.AllowIncompatible", false)) {
+            throw new Error(`${refusal}. Set LiteGraph.Packs.AllowIncompatible to register it anyway.`);
+        }
+        const disabled = !normalized.builtin && (this._setting("LiteGraph.Packs.Disabled", []) ?? []).includes(normalized.id);
+        const entry = {
+            manifest: normalized,
+            state: disabled ? "disabled" : (refusal ? "incompatible" : "active"),
+            types: previous?.types ?? new Set(),
+            ...(refusal ? {
+                error: refusal
+            } : {}),
+        };
+        this._packs.set(normalized.id, entry);
+        for (const type of normalized.nodes) {
+            if (this.host?.registered_node_types?.[type]) this._attribute(type, normalized.id);
+        }
+        return normalized;
+    }
+
+    /** Forgets a pack and unregisters the node types it owns. */
+    unregister(id) {
+        const entry = this._packs.get(id);
+        if (!entry) return false;
+        for (const type of [...entry.types]) {
+            if (this._typeToPack.get(type) === id && this.host?.registered_node_types?.[type]) {
+                this.host.unregisterNodeType(type);
+            }
+            this._typeToPack.delete(type);
+        }
+        this._packs.delete(id);
+        return true;
+    }
+
+    /** Called by registerNodeType: attributes the type to the open pack, or to a pack listing it. */
+    _onTypeRegistered(type) {
+        const open = this._open[this._open.length - 1];
+        if (open) return this._attribute(type, open, false);
+        for (const [id, entry] of this._packs) {
+            if (entry.manifest.nodes.includes(type)) return this._attribute(type, id, false);
+        }
+        return null;
+    }
+
+    /** Called by unregisterNodeType. */
+    _onTypeUnregistered(type) {
+        const id = this._typeToPack.get(type);
+        if (id) this._packs.get(id)?.types.delete(type);
+        this._typeToPack.delete(type);
+    }
+
+    _attribute(type, id, refresh = true) {
+        const previous = this._typeToPack.get(type);
+        if (previous && previous !== id) this._packs.get(previous)?.types.delete(type);
+        this._typeToPack.set(type, id);
+        this._packs.get(id)?.types.add(type);
+        if (refresh) this.host?.refreshNodeDefinition?.(type);
+        return id;
+    }
+
+    /**
+     * Adds known packs that are not installed (metadata only, nothing runs), so a missing type
+     * can name the pack that provides it.
+     * @param {object|object[]} manifests
+     * @returns {() => void} disposer
+     */
+    index(manifests) {
+        const ids = [];
+        for (const manifest of Array.isArray(manifests) ? manifests : [manifests]) {
+            const normalized = normalizePackManifest(manifest);
+            this._indexed.set(normalized.id, normalized);
+            ids.push(normalized.id);
+        }
+        return () => ids.forEach((id) => this._indexed.delete(id));
+    }
+
+    /** @returns {object|null} the manifest of an installed pack */
+    get(id) {
+        return this._packs.get(id)?.manifest ?? null;
+    }
+
+    /** @returns {object[]} manifests of installed packs, in registration order */
+    list() {
+        return [...this._packs.values()].map((entry) => entry.manifest);
+    }
+
+    /** @returns {{id: string, version: string, builtin: boolean}|null} the installed pack owning a type */
+    packOf(type) {
+        const id = this._typeToPack.get(type);
+        const manifest = id ? this._packs.get(id)?.manifest : null;
+        return manifest ? {
+            id: manifest.id,
+            version: manifest.version,
+            builtin: manifest.builtin
+        } : null;
+    }
+
+    /** @returns {string[]} the node types an installed pack owns */
+    typesOf(id) {
+        return [...(this._packs.get(id)?.types ?? [])];
+    }
+
+    /**
+     * Finds the pack that provides a type: an installed pack first (also a disabled one that
+     * lists the type), then the index.
+     * @returns {{id: string, version: string, installed: boolean, state?: string}|null}
+     */
+    findPackForType(type) {
+        const owner = this._typeToPack.get(type);
+        if (owner) {
+            const entry = this._packs.get(owner);
+            return {
+                id: owner,
+                version: entry.manifest.version,
+                installed: true,
+                state: entry.state
+            };
+        }
+        for (const [id, entry] of this._packs) {
+            if (entry.manifest.nodes.includes(type)) return {
+                id,
+                version: entry.manifest.version,
+                installed: true,
+                state: entry.state
+            };
+        }
+        for (const [id, manifest] of this._indexed) {
+            if (manifest.nodes.includes(type)) return {
+                id,
+                version: manifest.version,
+                installed: false
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Every known pack as plain data: installed ones with their state ("active", "disabled",
+     * "incompatible") and node types, then indexed ones (state "indexed").
+     */
+    describe() {
+        const installed = [...this._packs.values()].map((entry) => ({
+            ...entry.manifest,
+            state: entry.state,
+            types: [...entry.types].sort(),
+            ...(entry.error ? {
+                error: entry.error
+            } : {}),
+        }));
+        const indexed = [...this._indexed.values()]
+            .filter((manifest) => !this._packs.has(manifest.id))
+            .map((manifest) => ({
+                ...manifest,
+                state: "indexed",
+                types: [...manifest.nodes]
+            }));
+        return [...installed, ...indexed];
+    }
+
+    /**
+     * The templates (example graphs) of the active packs, from each manifest's `templates[]`, in the
+     * shape of the editor's examples manifest: `{pack, id, title, description, category, profile,
+     * flow, tags, packs, level, url, data}`. An entry needs a string `id` and either a `url`
+     * (relative, http or https) or an inline `data` graph; other entries are skipped.
+     * @returns {ReadonlyArray<Readonly<object>>}
+     */
+    listTemplates() {
+        const text = (value, fallback = null) => (typeof value === "string" && value ? value : fallback);
+        const out = [];
+        for (const entry of this._packs.values()) {
+            if (entry.state !== "active") continue;
+            const id = entry.manifest.id;
+            for (const t of entry.manifest.templates) {
+                if (!t || typeof t !== "object" || !text(t.id)) continue;
+                const url = text(t.url);
+                const safeUrl = url && (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^https?:/i.test(url)) ? url : null;
+                const data = t.data && typeof t.data === "object" ? t.data : null;
+                if (!safeUrl && !data) continue;
+                out.push(Object.freeze({
+                    pack: id,
+                    id: t.id,
+                    title: text(t.title, t.id),
+                    description: text(t.description, ""),
+                    category: text(t.category, "packs"),
+                    profile: text(t.profile),
+                    flow: text(t.flow),
+                    tags: Object.freeze(packStringList(t.tags)),
+                    packs: Object.freeze(packStringList(t.packs).length ? packStringList(t.packs) : [id]),
+                    level: text(t.level),
+                    url: safeUrl,
+                    data,
+                }));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Provenance to stamp on a new node of `type`: `{pack, pack_ver}` for non-builtin packs when
+     * the setting `LiteGraph.Packs.Stamp` is on, otherwise null.
+     */
+    stampFor(type) {
+        if (!this._setting("LiteGraph.Packs.Stamp", true)) return null;
+        const pack = this.packOf(type);
+        return pack && !pack.builtin ? {
+            pack: pack.id,
+            pack_ver: pack.version
+        } : null;
+    }
+
+    // ---- replacement mappings ------------------------------------------------------------
+
+    /**
+     * Registers how to replace a node type by another, as data.
+     * @param {{old_type: string, new_type: string, inputs?: object, outputs?: object,
+     *   properties?: object, widgets?: object, set?: {properties?: object}, auto?: boolean,
+     *   reason?: string}} mapping
+     *   - inputs / outputs: old slot (name or index) → new slot (name or index), or null to drop.
+     *     Unlisted slots keep their name.
+     *   - properties: old name → new name, or null to drop. Unlisted properties keep their name
+     *     when the new type has them.
+     *   - widgets: old widget index → new widget index, or null to drop. Unlisted values keep
+     *     their position.
+     *   - set.properties: values written on the new node after the mapping.
+     *   - auto: replace on load, without asking (setting `LiteGraph.Packs.AutoReplace`).
+     * @returns {() => void} disposer
+     */
+    registerReplacement(mapping) {
+        if (!mapping || typeof mapping !== "object") throw new TypeError("node replacement must be an object");
+        const {
+            old_type,
+            new_type
+        } = mapping;
+        if (typeof old_type !== "string" || !old_type) throw new TypeError("node replacement: old_type must be a non-empty string");
+        if (typeof new_type !== "string" || !new_type) throw new TypeError(`node replacement ${old_type}: new_type must be a non-empty string`);
+        for (const key of ["inputs", "outputs", "properties", "widgets", "set"]) {
+            if (mapping[key] !== undefined && (mapping[key] === null || typeof mapping[key] !== "object" || Array.isArray(mapping[key]))) {
+                throw new TypeError(`node replacement ${old_type}: ${key} must be an object`);
+            }
+        }
+        const normalized = Object.freeze({
+            ...LiteGraph.cloneObject(mapping),
+            auto: mapping.auto === true
+        });
+        this._replacements.set(old_type, normalized);
+        return () => {
+            if (this._replacements.get(old_type) === normalized) this._replacements.delete(old_type);
+        };
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a type */
+    getReplacement(type) {
+        return this._replacements.get(type) ?? null;
+    }
+
+    /** @returns {object[]} every registered replacement mapping */
+    listReplacements() {
+        return [...this._replacements.values()];
+    }
+}
+
+// ---- node replacement on a graph -----------------------------------------------------------
+
+/** true for a placeholder made by configure for a type that was not registered */
+function isMissingNodePlaceholder(node) {
+    return !!(node && node.has_errors && node.last_serialization && node.constructor === LiteGraph.LGraphNode);
+}
+
+/** The stored type of a node (a placeholder keeps the missing type in last_serialization). */
+function storedNodeType(node) {
+    return isMissingNodePlaceholder(node) ? node.last_serialization.type : node.type;
+}
+
+function packResolveSlot(slots, key) {
+    if (key === null || key === undefined) return -1;
+    if (typeof key === "number" || /^\d+$/.test(String(key))) {
+        const index = Number(key);
+        return index < (slots?.length ?? 0) ? index : -1;
+    }
+    return slots?.findIndex((slot) => slot?.name === key) ?? -1;
+}
+
+/** Target index on the new node for old slot `index` (named `name`), per a mapping. */
+function packMapSlot(map, index, name, newSlots) {
+    if (map) {
+        if (Object.hasOwn(map, name)) return packResolveSlot(newSlots, map[name]);
+        if (Object.hasOwn(map, String(index))) return packResolveSlot(newSlots, map[String(index)]);
+    }
+    return packResolveSlot(newSlots, name);
+}
+
+/**
+ * Replaces `node` in its graph by a node of `mapping.new_type`, keeping its id, position, title,
+ * colours, mode and flags, and moving its links (with their ids and reroutes) onto the mapped
+ * slots. Links on slots the mapping cannot place are removed and listed in the result.
+ * The caller wraps this in a transaction.
+ * @returns {{node: object, dropped: Array<{kind: "input"|"output", slot: number, name: string, link: *}>}}
+ */
+function replaceNodeInGraph(graph, node, mapping) {
+    const newNode = LiteGraph.createNode(mapping.new_type);
+    if (!newNode) throw new Error(`replaceNode: node type ${mapping.new_type} is not registered`);
+    const placeholder = isMissingNodePlaceholder(node);
+    const stored = placeholder ? node.last_serialization : null;
+    const dropped = [];
+
+    // what to keep from the old node
+    const customTitle = placeholder ? stored.title : (node.title !== node.constructor.title ? node.title : undefined);
+    const oldProperties = {
+        ...(placeholder ? (stored.properties ?? {}) : {}),
+        ...(node.properties ?? {})
+    };
+    const oldWidgets = placeholder ?
+        (Array.isArray(stored.widgets_values) ? stored.widgets_values : []) :
+        (node.widgets ?? []).map((w) => w?.value);
+
+    newNode.pos = [node.pos[0], node.pos[1]];
+    if (customTitle !== undefined) newNode.title = customTitle;
+    for (const key of ["color", "bgcolor", "boxcolor"])
+        if (node[key]) newNode[key] = node[key];
+    newNode.mode = node.mode ?? newNode.mode;
+    if (node.flags) newNode.flags = {
+        ...newNode.flags,
+        ...LiteGraph.cloneObject(node.flags)
+    };
+
+    // properties: same name unless mapped; the new node's own provenance stamp wins
+    const propertyMap = mapping.properties ?? {};
+    for (const [key, value] of Object.entries(oldProperties)) {
+        if (key === "pack" || key === "pack_ver") continue;
+        const target = Object.hasOwn(propertyMap, key) ? propertyMap[key] : (key in (newNode.properties ?? {}) ? key : null);
+        if (target === null || target === undefined) continue;
+        newNode.properties[target] = LiteGraph.cloneObject(value);
+    }
+    Object.assign(newNode.properties, LiteGraph.cloneObject(mapping.set?.properties ?? {}));
+
+    // widgets: same position unless mapped
+    const widgetMap = mapping.widgets ?? {};
+    const widgetValues = [];
+    oldWidgets.forEach((value, index) => {
+        const target = Object.hasOwn(widgetMap, String(index)) ? widgetMap[String(index)] : index;
+        if (target === null || target === undefined) return;
+        widgetValues[Number(target)] = value;
+    });
+
+    // plan the links: [link id, new slot] per old slot; unplaceable links are disconnected first
+    const inputMoves = [];
+    (node.inputs ?? []).forEach((input, index) => {
+        if (input?.link === null || input?.link === undefined) return;
+        const target = packMapSlot(mapping.inputs, index, input.name, newNode.inputs);
+        if (target < 0 || inputMoves.some((move) => move.slot === target)) {
+            dropped.push({
+                kind: "input",
+                slot: index,
+                name: input.name,
+                link: input.link
+            });
+            node.disconnectInput(index, {
+                doProcessChange: false
+            });
+            return;
+        }
+        inputMoves.push({
+            link: input.link,
+            slot: target
+        });
+    });
+    const outputMoves = [];
+    (node.outputs ?? []).forEach((output, index) => {
+        if (!output?.links?.length) return;
+        const target = packMapSlot(mapping.outputs, index, output.name, newNode.outputs);
+        if (target < 0) {
+            for (const link of output.links) dropped.push({
+                kind: "output",
+                slot: index,
+                name: output.name,
+                link
+            });
+            node.disconnectOutput(index, false, {
+                doProcessChange: false
+            });
+            return;
+        }
+        outputMoves.push({
+            links: [...output.links],
+            slot: target
+        });
+    });
+
+    // detach the remaining links from the old node so removing it keeps them
+    (node.inputs ?? []).forEach((input) => {
+        if (input) input.link = null;
+    });
+    (node.outputs ?? []).forEach((output) => {
+        if (output) output.links = null;
+    });
+    const id = node.id;
+    graph.remove(node);
+
+    const oldSize = node.size ? [node.size[0], node.size[1]] : null;
+    newNode.id = id;
+    graph.add(newNode, true, {
+        doCalcSize: true
+    });
+    if (newNode.id !== id) throw new Error(`replaceNode: could not keep node id ${id}`);
+    // the node keeps the size it had, grown if the new type needs more room
+    if (oldSize && Number.isFinite(oldSize[0]) && Number.isFinite(oldSize[1])) {
+        newNode.size[0] = Math.max(oldSize[0], newNode.size[0]);
+        newNode.size[1] = Math.max(oldSize[1], newNode.size[1]);
+    }
+
+    for (const move of inputMoves) {
+        const link = graph.links[move.link];
+        if (!link) continue;
+        link.target_slot = move.slot;
+        newNode.inputs[move.slot].link = link.id;
+    }
+    for (const move of outputMoves) {
+        const output = newNode.outputs[move.slot];
+        output.links ??= [];
+        for (const linkId of move.links) {
+            const link = graph.links[linkId];
+            if (!link) continue;
+            link.origin_slot = move.slot;
+            output.links.push(link.id);
+        }
+    }
+
+    newNode.configure({
+        properties: newNode.properties,
+        ...(widgetValues.length ? {
+            widgets_values: widgetValues
+        } : {}),
+        ...(customTitle !== undefined ? {
+            title: customTitle
+        } : {}),
+    });
+    graph.updateExecutionOrder();
+    graph.setDirtyCanvas(true, true);
+    return {
+        node: newNode,
+        dropped
+    };
+}
+
+// helpers shared with LGraph (statics keep the bundles' export list to PackRegistry)
+PackRegistry.compareVersions = compareVersions;
+PackRegistry.satisfiesVersion = satisfiesVersion;
+PackRegistry.normalizeManifest = normalizePackManifest;
+PackRegistry.isMissingNodePlaceholder = isMissingNodePlaceholder;
+PackRegistry.storedNodeType = storedNodeType;
+PackRegistry.replaceNodeInGraph = replaceNodeInGraph;
+
+/**
+ * The execution-state protocol (Wave 4b, decision W4-4): one message shape for the in-page loop
+ * and the headless runner, keyed by node path (`node.getPath()`, "3:7:2" inside subgraphs).
+ *
+ * ```js
+ * { v: 1, kind: "status" | "progress" | "error" | "reset", path: "3:7" | null,
+ *   status: "queued" | "running" | "done" | "error" | "skipped", value?, max?, message?, time }
+ * ```
+ *
+ * - `status`: a node's state changed (sent once per change, not every step).
+ * - `progress`: `value` of `max` (a node reporting its own progress, e.g. a long job).
+ * - `error`: the node failed; `message` says why.
+ * - `reset`: clear the state of the node at `path`, or of every node when `path` is null.
+ *
+ * Messages carry paths, statuses and messages, never data values. The root graph emits each one
+ * as the event `execution-state`; `graph.applyExecutionState(message)` applies one received from
+ * elsewhere (the runner), so the editor draws the same overlays either way.
+ */
+class ExecutionState {
+
+    static VERSION = 1;
+    static KINDS = Object.freeze(["status", "progress", "error", "reset"]);
+    static STATUSES = Object.freeze(["queued", "running", "done", "error", "skipped"]);
+
+    /**
+     * Builds a message.
+     * @param {string} kind
+     * @param {string|null} path
+     * @param {{status?: string, value?: number, max?: number, message?: string, time?: number}} [fields]
+     * @returns {object}
+     */
+    static create(kind, path, fields = {}) {
+        if (!ExecutionState.KINDS.includes(kind)) throw new TypeError(`execution state: unknown kind ${kind}`);
+        const message = {
+            v: ExecutionState.VERSION,
+            kind,
+            path: path === undefined || path === null ? null : String(path)
+        };
+        const status = fields.status ?? (kind === "error" ? "error" : kind === "progress" ? "running" : undefined);
+        if (status !== undefined) {
+            if (!ExecutionState.STATUSES.includes(status)) throw new TypeError(`execution state: unknown status ${status}`);
+            message.status = status;
+        }
+        if (Number.isFinite(fields.value)) message.value = fields.value;
+        if (Number.isFinite(fields.max)) message.max = fields.max;
+        if (fields.message !== undefined && fields.message !== null) message.message = String(fields.message).slice(0, 2000);
+        message.time = Number.isFinite(fields.time) ? fields.time : Date.now();
+        return message;
+    }
+
+    /** true when `message` has the protocol's shape (a version this runtime reads) */
+    static isMessage(message) {
+        return !!message && typeof message === "object" && message.v === ExecutionState.VERSION &&
+            ExecutionState.KINDS.includes(message.kind) &&
+            (message.path === null || typeof message.path === "string");
+    }
+
+    /**
+     * Applies a message to a graph: sets or clears `node.execution_state` on the node at its path
+     * (resolved from the root graph), or on every node for a `reset` without a path.
+     * @returns {object|null} the node changed, the root graph for a full reset, or null
+     */
+    static apply(graph, message) {
+        if (!ExecutionState.isMessage(message)) return null;
+        const root = graph?.rootGraph ?? graph;
+        if (!root) return null;
+        if (message.kind === "reset" && message.path === null) {
+            ExecutionState.clear(root);
+            root.setDirtyCanvas?.(true, false);
+            return root;
+        }
+        const node = message.path === null ? null : root.resolvePath?.(message.path);
+        if (!node) return null;
+        ExecutionState.applyToNode(node, message);
+        return node;
+    }
+
+    /** Applies a message to a known node (its path is not resolved). */
+    static applyToNode(node, message) {
+        if (message.kind === "reset") {
+            delete node.execution_state;
+        } else {
+            const previous = node.execution_state ?? {};
+            const state = {
+                status: message.status ?? previous.status ?? "running",
+                time: message.time
+            };
+            if (message.kind === "progress") {
+                state.value = message.value;
+                state.max = message.max;
+            } else if (message.status === "running" && previous.max !== undefined) {
+                state.value = previous.value;
+                state.max = previous.max;
+            }
+            if (message.message !== undefined) state.message = message.message;
+            node.execution_state = state;
+        }
+        node.graph?.setDirtyCanvas?.(true, false);
+        return node;
+    }
+
+    /** removes `execution_state` from every node of a graph and its subgraphs */
+    static clear(graph, depth = 0) {
+        if (!graph || depth > (LiteGraph.subgraph_max_depth ?? 32)) return;
+        for (const node of graph._nodes ?? []) {
+            delete node.execution_state;
+            if (node.subgraph) ExecutionState.clear(node.subgraph, depth + 1);
+        }
+    }
+}
+
+/**
+ * Link drawing in three pieces (Wave 4c, idea H1):
+ * - `RenderLink`: what one drawn link segment is (ends, directions, the link, colour).
+ * - `LinkRouterRegistry` (`LiteGraph.linkRouters`): how a segment's path runs between its ends.
+ *   Built-in routers: "spline", "linear", "straight" (the classic `links_render_mode` values).
+ * - `LinkStyleRegistry` (`LiteGraph.linkStyles`): how a link looks right now. Resolvers return
+ *   `{visible, alpha, color, width, dash, label}` and compose in the order they are active.
+ *   Built-in: "spotlight", "dim-by-type", "hidden", "labelled".
+ *
+ * Design reference: the RenderLink / link renderer split in Comfy-Org/litegraph.js (MIT); this is
+ * an independent implementation.
+ */
+class RenderLink {
+    /**
+     * @param {object} options
+     * @param {number[]} options.a - start point (graph space)
+     * @param {number[]} options.b - end point
+     * @param {number} [options.startDir] - LiteGraph.RIGHT, LEFT, UP, DOWN, CENTER
+     * @param {number} [options.endDir]
+     * @param {object|null} [options.link] - the LLink drawn (null for a drag preview or a floating link)
+     * @param {string|null} [options.color]
+     * @param {string|number} [options.type] - the slot type
+     * @param {"link"|"segment"|"floating"|"drag"} [options.kind]
+     */
+    constructor({
+        a,
+        b,
+        startDir = LiteGraph.RIGHT,
+        endDir = LiteGraph.LEFT,
+        link = null,
+        color = null,
+        type,
+        kind = "link"
+    } = {}) {
+        this.a = a;
+        this.b = b;
+        this.startDir = startDir || LiteGraph.RIGHT;
+        this.endDir = endDir || LiteGraph.LEFT;
+        this.link = link;
+        this.color = color;
+        this.type = type ?? link?.type;
+        this.kind = kind;
+    }
+
+    get length() {
+        return Math.hypot(this.b[0] - this.a[0], this.b[1] - this.a[1]);
+    }
+}
+
+const linkDirUnit = (dir) => [
+    dir == LiteGraph.LEFT ? -1 : dir == LiteGraph.RIGHT ? 1 : 0,
+    dir == LiteGraph.UP ? -1 : dir == LiteGraph.DOWN ? 1 : 0,
+];
+
+/** point at fraction t (0..1) of the length of a polyline */
+function linkPointOnPolyline(points, t) {
+    const lengths = [];
+    let total = 0;
+    for (let i = 1; i < points.length; ++i) {
+        const len = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+        lengths.push(len);
+        total += len;
+    }
+    if (!total) return [points[0][0], points[0][1]];
+    let target = Math.min(Math.max(t, 0), 1) * total;
+    for (let i = 0; i < lengths.length; ++i) {
+        if (target <= lengths[i] || i == lengths.length - 1) {
+            const f = lengths[i] ? Math.min(target / lengths[i], 1) : 0;
+            const p = points[i];
+            const q = points[i + 1];
+            return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+        }
+        target -= lengths[i];
+    }
+    return [points[points.length - 1][0], points[points.length - 1][1]];
+}
+
+/** a router that draws a polyline (its corner points) */
+const linkPolylineRouter = (polyline) => ({
+    polyline,
+    path(ctx, rl, offsety = 0) {
+        const points = polyline(rl);
+        ctx.moveTo(points[0][0], points[0][1] + offsety);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1] + offsety);
+    },
+    point(rl, t) {
+        return linkPointOnPolyline(polyline(rl), t);
+    },
+});
+
+/** the built-in routers, as the classic render modes drew them */
+const LINK_BUILTIN_ROUTERS = {
+    spline: {
+        controls(rl) {
+            const dist = LiteGraph.distance(rl.a, rl.b);
+            const s = linkDirUnit(rl.startDir);
+            const e = linkDirUnit(rl.endDir);
+            return [
+                [rl.a[0] + s[0] * dist * 0.25, rl.a[1] + s[1] * dist * 0.25],
+                [rl.b[0] + e[0] * dist * 0.25, rl.b[1] + e[1] * dist * 0.25],
+            ];
+        },
+        path(ctx, rl, offsety = 0) {
+            const [p1, p2] = this.controls(rl);
+            ctx.moveTo(rl.a[0], rl.a[1] + offsety);
+            ctx.bezierCurveTo(p1[0], p1[1] + offsety, p2[0], p2[1] + offsety, rl.b[0], rl.b[1] + offsety);
+        },
+        point(rl, t) {
+            const [p1, p2] = this.controls(rl);
+            const p0 = rl.a;
+            const p3 = rl.b;
+            const c1 = (1 - t) * (1 - t) * (1 - t);
+            const c2 = 3 * ((1 - t) * (1 - t)) * t;
+            const c3 = 3 * (1 - t) * (t * t);
+            const c4 = t * t * t;
+            return [c1 * p0[0] + c2 * p1[0] + c3 * p2[0] + c4 * p3[0], c1 * p0[1] + c2 * p1[1] + c3 * p2[1] + c4 * p3[1]];
+        },
+    },
+    linear: linkPolylineRouter((rl) => {
+        const l = 15;
+        const s = linkDirUnit(rl.startDir);
+        const e = linkDirUnit(rl.endDir);
+        return [rl.a, [rl.a[0] + s[0] * l, rl.a[1] + s[1] * l],
+            [rl.b[0] + e[0] * l, rl.b[1] + e[1] * l], rl.b
+        ];
+    }),
+    straight: linkPolylineRouter((rl) => {
+        const a = rl.a;
+        const b = rl.b;
+        const start_x = a[0] + (rl.startDir == LiteGraph.RIGHT ? 10 : 0);
+        const start_y = a[1] + (rl.startDir == LiteGraph.RIGHT ? 0 : 10);
+        const end_x = b[0] - (rl.endDir == LiteGraph.LEFT ? 10 : 0);
+        const end_y = b[1] - (rl.endDir == LiteGraph.LEFT ? 0 : 10);
+        const mid_x = (start_x + end_x) * 0.5;
+        return [a, [start_x, start_y],
+            [mid_x, start_y],
+            [mid_x, end_y],
+            [end_x, end_y], b
+        ];
+    }),
+};
+
+/**
+ * Link routers by name (`LiteGraph.linkRouters`). A router is `{path(ctx, renderLink, offsety),
+ * point(renderLink, t)}`: `path` adds the segment to the current canvas path (moveTo first),
+ * `point` returns the point at fraction `t` (used for the link centre, arrows and flow dots).
+ * A canvas uses `canvas.link_router` (a name) or, when that is null, its `links_render_mode`.
+ */
+class LinkRouterRegistry {
+
+    /** links_render_mode → router name */
+    static MODE_NAMES = {
+        0: "straight",
+        1: "linear",
+        2: "spline"
+    };
+
+    constructor() {
+        /** @type {Map<string, object>} */
+        this._routers = new Map();
+        for (const [name, router] of Object.entries(LINK_BUILTIN_ROUTERS)) this._routers.set(name, router);
+    }
+
+    /** @returns {() => void} disposer (a replaced built-in comes back) */
+    register(name, router) {
+        if (typeof name !== "string" || !name) throw new TypeError("link router name must be a non-empty string");
+        if (typeof router?.path !== "function" || typeof router?.point !== "function") {
+            throw new TypeError(`link router ${name}: needs path(ctx, renderLink, offsety) and point(renderLink, t)`);
+        }
+        const previous = this._routers.get(name);
+        this._routers.set(name, router);
+        return () => {
+            if (this._routers.get(name) !== router) return;
+            if (previous) this._routers.set(name, previous);
+            else this._routers.delete(name);
+        };
+    }
+
+    get(name) {
+        return this._routers.get(name) ?? null;
+    }
+
+    list() {
+        return [...this._routers.keys()];
+    }
+
+    /** the router name for a links_render_mode value */
+    static nameForMode(mode) {
+        return LinkRouterRegistry.MODE_NAMES[mode] ?? null;
+    }
+
+    /** corner points of a polyline router (linear, straight), or null for curves */
+    polyline(name, rl) {
+        const router = this.get(name);
+        return typeof router?.polyline === "function" ? router.polyline(rl) : null;
+    }
+}
+
+/** the built-in style resolvers */
+const LINK_BUILTIN_STYLES = {
+    /** links touching the selected nodes stay bright and a little wider; the others fade */
+    spotlight(rl, ctx) {
+        const selected = ctx.selectedIds;
+        if (!selected?.size || !rl.link) return null;
+        const touches = selected.has(rl.link.origin_id) || selected.has(rl.link.target_id);
+        return touches ? {
+            width: (ctx.canvas?.connections_width ?? 3) + 1
+        } : {
+            alpha: 0.15
+        };
+    },
+    /** while a link is dragged (or `canvas.link_type_focus` is set), links of other types fade */
+    "dim-by-type"(rl, ctx) {
+        const focus = ctx.focusType;
+        if (focus === undefined || focus === null || focus === "" || focus === 0 || focus === "*") return null;
+        return LiteGraph.isValidConnection(rl.type, focus) ? null : {
+            alpha: 0.2
+        };
+    },
+    /** links with `link.hidden`, or of a type listed in `LiteGraph.Canvas.HiddenLinkTypes`, are not drawn */
+    hidden(rl, ctx) {
+        if (rl.link?.hidden) return {
+            visible: false
+        };
+        const types = ctx.hiddenTypes;
+        return types?.length && types.includes(String(rl.type)) ? {
+            visible: false
+        } : null;
+    },
+    /** the link's label (`link.label`) or its type, at its centre */
+    labelled(rl) {
+        if (!rl.link) return null;
+        const text = rl.link.label ?? rl.type;
+        return text === undefined || text === null || text === "" || text === 0 || text === -1 ? null : {
+            label: String(text)
+        };
+    },
+};
+
+/**
+ * Link style resolvers by name (`LiteGraph.linkStyles`). A resolver is
+ * `(renderLink, ctx) → {visible?, alpha?, color?, width?, dash?, label?} | null`; `ctx` has
+ * `canvas`, `selectedIds` (Set of selected node ids), `focusType` and `hiddenTypes`.
+ * Active resolvers come from `canvas.link_styles` or the setting `LiteGraph.Canvas.LinkStyles`
+ * and compose in that order: later ones override earlier fields, `alpha` multiplies, and
+ * `visible: false` wins.
+ */
+class LinkStyleRegistry {
+
+    constructor() {
+        /** @type {Map<string, Function>} */
+        this._resolvers = new Map(Object.entries(LINK_BUILTIN_STYLES));
+    }
+
+    /** @returns {() => void} disposer */
+    register(name, resolver) {
+        if (typeof name !== "string" || !name) throw new TypeError("link style name must be a non-empty string");
+        if (typeof resolver !== "function") throw new TypeError(`link style ${name}: resolver must be a function`);
+        const previous = this._resolvers.get(name);
+        this._resolvers.set(name, resolver);
+        return () => {
+            if (this._resolvers.get(name) !== resolver) return;
+            if (previous) this._resolvers.set(name, previous);
+            else this._resolvers.delete(name);
+        };
+    }
+
+    get(name) {
+        return this._resolvers.get(name) ?? null;
+    }
+
+    list() {
+        return [...this._resolvers.keys()];
+    }
+
+    /**
+     * Composes the active resolvers for one link.
+     * @param {RenderLink} rl
+     * @param {object} ctx
+     * @param {string[]} active - resolver names, in order
+     * @returns {{visible: boolean, alpha: number, color?: string, width?: number, dash?: number[], label?: string}|null}
+     *   null when no active resolver changed anything
+     */
+    resolve(rl, ctx, active) {
+        let style = null;
+        for (const name of active ?? []) {
+            const resolver = this._resolvers.get(name);
+            if (!resolver) continue;
+            let part;
+            try {
+                part = resolver(rl, ctx);
+            } catch (error) {
+                LiteGraph.log_warn?.("linkStyles", `resolver ${name} failed`, error);
+                continue;
+            }
+            if (!part) continue;
+            style ??= {
+                visible: true,
+                alpha: 1
+            };
+            if (part.visible === false) style.visible = false;
+            if (Number.isFinite(part.alpha)) style.alpha *= part.alpha;
+            for (const key of ["color", "width", "dash", "label"])
+                if (part[key] !== undefined) style[key] = part[key];
+        }
+        return style;
+    }
+}
+
+/**
+ * A minimap for a canvas (Wave 4c, ideas H1/H9): the nodes of the open graph, the visible area,
+ * and decoration layers drawn on top (selection and execution state by default).
+ *
+ * It redraws on events, never on a timer: `graph-changed` and `execution-state` of the open
+ * graph, and `viewport-changed`, `selection-changed`, `subgraph-opened` / `subgraph-closed` of
+ * the canvas; redraws are coalesced to one per animation frame. A click or drag on it centres
+ * the canvas on that point.
+ *
+ * ```js
+ * const minimap = canvas.showMinimap({ width: 220, height: 150 });
+ * minimap.addLayer("bookmarks", (ctx, map) => { ... map.toMap([x, y]) ... });
+ * canvas.hideMinimap();
+ * ```
+ */
+class MiniMap {
+
+    /** built-in layers, drawn in this order after the nodes */
+    static DEFAULT_LAYERS = ["selection", "execution"];
+
+    /**
+     * @param {object} canvas - an LGraphCanvas
+     * @param {{width?: number, height?: number, margin?: number, container?: HTMLElement, layers?: string[]}} [options]
+     */
+    constructor(canvas, {
+        width = 200,
+        height = 140,
+        margin = 10,
+        container,
+        layers = MiniMap.DEFAULT_LAYERS
+    } = {}) {
+        this.canvas = canvas;
+        this.width = width;
+        this.height = height;
+        this.padding = 20;
+        this.redraws = 0;
+        /** @type {Array<{name: string, draw: Function}>} */
+        this.layers = [];
+        this._abort = new AbortController();
+        this._unsubscribe = [];
+        this._frame = null;
+        this._graph = null;
+        this._transform = null;
+
+        const element = this.element = canvas.canvas?.ownerDocument?.createElement("canvas") ?? null;
+        if (element) {
+            element.className = "litegraph-minimap";
+            element.width = width;
+            element.height = height;
+            element.style.cssText = `position:absolute;right:${margin}px;bottom:${margin}px;width:${width}px;height:${height}px;` +
+                "z-index:4;border:1px solid #555;border-radius:4px;background:rgba(20,20,20,0.85);cursor:crosshair;touch-action:none";
+            (container ?? canvas.canvas?.parentNode)?.appendChild(element);
+            const signal = this._abort.signal;
+            let dragging = false;
+            const move = (e) => this.centerOnMapPoint(e.offsetX, e.offsetY);
+            element.addEventListener("pointerdown", (e) => {
+                dragging = true;
+                element.setPointerCapture?.(e.pointerId);
+                move(e);
+                e.preventDefault();
+                e.stopPropagation();
+            }, {
+                signal
+            });
+            element.addEventListener("pointermove", (e) => {
+                if (dragging) move(e);
+            }, {
+                signal
+            });
+            const end = () => {
+                dragging = false;
+            };
+            element.addEventListener("pointerup", end, {
+                signal
+            });
+            element.addEventListener("pointercancel", end, {
+                signal
+            });
+        }
+
+        for (const name of layers) {
+            const draw = MiniMap.LAYERS[name];
+            if (draw) this.addLayer(name, draw);
+        }
+        const events = canvas.events;
+        for (const type of ["viewport-changed", "selection-changed", "subgraph-opened", "subgraph-closed"]) {
+            this._unsubscribe.push(events.on(type, () => this.requestDraw()));
+        }
+        this._watchGraph();
+        this.draw();
+    }
+
+    /** follows the canvas's open graph (and its root, for execution state) */
+    _watchGraph() {
+        const graph = this.canvas.graph;
+        if (graph === this._graph) return;
+        this._graphUnsubscribe?.forEach((off) => off());
+        this._graph = graph;
+        this._graphUnsubscribe = [];
+        if (!graph) return;
+        this._graphUnsubscribe.push(graph.events.on("graph-changed", () => this.requestDraw()));
+        const root = graph.rootGraph ?? graph;
+        this._graphUnsubscribe.push(root.events.on("execution-state", () => this.requestDraw()));
+    }
+
+    /**
+     * Adds a decoration layer: `draw(ctx, minimap)` runs after the nodes on every redraw.
+     * @returns {() => void} disposer
+     */
+    addLayer(name, draw) {
+        if (typeof draw !== "function") throw new TypeError(`minimap layer ${name}: draw must be a function`);
+        const layer = {
+            name,
+            draw
+        };
+        this.layers.push(layer);
+        this.requestDraw();
+        return () => {
+            const index = this.layers.indexOf(layer);
+            if (index !== -1) this.layers.splice(index, 1);
+            this.requestDraw();
+        };
+    }
+
+    /** Redraws once on the next animation frame (or now without one). */
+    requestDraw() {
+        if (this._frame !== null) return;
+        const raf = this.canvas.canvas?.ownerDocument?.defaultView?.requestAnimationFrame;
+        if (typeof raf !== "function") {
+            this.draw();
+            return;
+        }
+        this._frame = raf(() => {
+            this._frame = null;
+            this.draw();
+        });
+    }
+
+    /** graph-space bounds of the nodes and the visible area: [x, y, w, h] */
+    computeBounds() {
+        let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+        const add = (x, y, w, h) => {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + w);
+            maxY = Math.max(maxY, y + h);
+        };
+        for (const node of this.canvas.graph?._nodes ?? []) {
+            add(node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT, node.size[0], node.size[1] + LiteGraph.NODE_TITLE_HEIGHT);
+        }
+        const area = this.canvas.visible_area ?? this.canvas.ds?.visible_area;
+        if (area && area[2] > 0 && area[3] > 0) add(area[0], area[1], area[2], area[3]);
+        if (!Number.isFinite(minX)) return [0, 0, 1, 1];
+        return [minX, minY, Math.max(1, maxX - minX), Math.max(1, maxY - minY)];
+    }
+
+    /** graph point → minimap pixel */
+    toMap(point) {
+        const t = this._transform ?? this._computeTransform();
+        return [(point[0] - t.x) * t.scale + t.ox, (point[1] - t.y) * t.scale + t.oy];
+    }
+
+    /** minimap pixel → graph point */
+    toGraph(x, y) {
+        const t = this._transform ?? this._computeTransform();
+        return [(x - t.ox) / t.scale + t.x, (y - t.oy) / t.scale + t.y];
+    }
+
+    /** a node's rectangle in minimap pixels: [x, y, w, h] */
+    nodeRect(node) {
+        const t = this._transform ?? this._computeTransform();
+        const [x, y] = this.toMap([node.pos[0], node.pos[1] - LiteGraph.NODE_TITLE_HEIGHT]);
+        return [x, y, Math.max(2, node.size[0] * t.scale), Math.max(2, (node.size[1] + LiteGraph.NODE_TITLE_HEIGHT) * t.scale)];
+    }
+
+    _computeTransform() {
+        const [x, y, w, h] = this.computeBounds();
+        const pad = this.padding;
+        const scale = Math.min((this.width - 2 * pad / 4) / w, (this.height - 2 * pad / 4) / h);
+        const ox = (this.width - w * scale) / 2;
+        const oy = (this.height - h * scale) / 2;
+        return (this._transform = {
+            x,
+            y,
+            scale,
+            ox,
+            oy
+        });
+    }
+
+    /** Centres the canvas on the graph point under a minimap pixel. */
+    centerOnMapPoint(x, y) {
+        const [gx, gy] = this.toGraph(x, y);
+        this.centerOn(gx, gy);
+    }
+
+    /** Centres the canvas on a graph point. */
+    centerOn(gx, gy) {
+        const ds = this.canvas.ds;
+        ds.computeVisibleArea?.(this.canvas.viewport); // the view may have moved since the last frame
+        const area = this.canvas.visible_area ?? ds.visible_area;
+        const cx = area[0] + area[2] / 2;
+        const cy = area[1] + area[3] / 2;
+        ds.offset[0] += cx - gx;
+        ds.offset[1] += cy - gy;
+        ds.computeVisibleArea?.(this.canvas.viewport);
+        this.canvas.setDirty(true, true);
+        this.requestDraw();
+    }
+
+    /** Draws the minimap now. */
+    draw() {
+        this._watchGraph();
+        this.redraws++;
+        this._transform = null;
+        const t = this._computeTransform();
+        const ctx = this.element?.getContext?.("2d");
+        if (!ctx) return;
+        ctx.clearRect(0, 0, this.width, this.height);
+        for (const node of this.canvas.graph?._nodes ?? []) {
+            const [x, y, w, h] = this.nodeRect(node);
+            ctx.fillStyle = node.bgcolor || node.constructor.bgcolor || LiteGraph.NODE_DEFAULT_BGCOLOR || "#353535";
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = node.color || node.constructor.color || LiteGraph.NODE_DEFAULT_COLOR || "#333";
+            ctx.fillRect(x, y, w, Math.max(1, LiteGraph.NODE_TITLE_HEIGHT * t.scale));
+        }
+        for (const layer of this.layers) {
+            try {
+                ctx.save();
+                layer.draw(ctx, this);
+            } catch (error) {
+                LiteGraph.log_warn?.("minimap", `layer ${layer.name} failed`, error);
+            } finally {
+                ctx.restore();
+            }
+        }
+        const area = this.canvas.visible_area ?? this.canvas.ds?.visible_area;
+        if (area) {
+            const [vx, vy] = this.toMap([area[0], area[1]]);
+            ctx.strokeStyle = "#DDD";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(vx + 0.5, vy + 0.5, area[2] * t.scale, area[3] * t.scale);
+        }
+    }
+
+    dispose() {
+        if (this._frame !== null) this.canvas.canvas?.ownerDocument?.defaultView?.cancelAnimationFrame?.(this._frame);
+        this._frame = null;
+        this._abort.abort();
+        this._unsubscribe.forEach((off) => off());
+        this._graphUnsubscribe?.forEach((off) => off());
+        this._unsubscribe = [];
+        this._graphUnsubscribe = [];
+        this.element?.remove();
+        this.element = null;
+    }
+}
+
+/** built-in decoration layers */
+MiniMap.LAYERS = {
+    /** selected nodes outlined */
+    selection(ctx, map) {
+        const selected = Object.values(map.canvas.selected_nodes ?? {});
+        if (!selected.length) return;
+        ctx.strokeStyle = "#FFF";
+        ctx.lineWidth = 1.5;
+        for (const node of selected) {
+            if (node.graph !== map.canvas.graph) continue;
+            const [x, y, w, h] = map.nodeRect(node);
+            ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+        }
+    },
+    /** execution state: running and failed nodes in their overlay colours */
+    execution(ctx, map) {
+        const colors = map.canvas.constructor?.EXECUTION_STATUS_COLORS ?? {};
+        for (const node of map.canvas.graph?._nodes ?? []) {
+            const status = node.execution_state?.status;
+            if (status !== "running" && status !== "error") continue;
+            const [x, y, w, h] = map.nodeRect(node);
+            ctx.fillStyle = colors[status] ?? (status === "error" ? "#E44" : "#FC3");
+            ctx.globalAlpha = 0.85;
+            ctx.fillRect(x, y, w, h);
+        }
+    },
+};
+
+/**
+ * Auto-layout (Wave 4d, decision W4-3): one adapter, several engines.
+ *
+ * `graph.autoLayout({engine, scope, direction, spacing})` builds a plain model of the nodes and
+ * links in scope, asks the engine for positions, and applies them as one undo step.
+ *
+ * Engines (`LiteGraph.layout`):
+ * - "dagre": `@dagrejs/dagre`, loaded on first use through the LibraryManager (key "dagre");
+ *   no hard dependency in the bundles.
+ * - "layered": a small built-in layered layout (longest path ranks), with no dependency.
+ * - "elk" or others: `LiteGraph.layout.register(name, engine)`; `LayoutRegistry.elkEngine(elk)`
+ *   adapts an elkjs instance.
+ *
+ * An engine is `{library?: string, layout(model, options, lib) → {positions: {id: [x, y]}} | Promise}`
+ * where positions are the top-left corners of the node boxes (title included).
+ */
+class LayoutRegistry {
+
+    constructor() {
+        /** @type {Map<string, object>} */
+        this._engines = new Map([
+            ["dagre", LayoutRegistry.dagreEngine],
+            ["layered", LayoutRegistry.layeredEngine],
+        ]);
+    }
+
+    /** @returns {() => void} disposer */
+    register(name, engine) {
+        if (typeof name !== "string" || !name) throw new TypeError("layout engine name must be a non-empty string");
+        if (typeof engine?.layout !== "function") throw new TypeError(`layout engine ${name}: needs layout(model, options, lib)`);
+        const previous = this._engines.get(name);
+        this._engines.set(name, engine);
+        return () => {
+            if (this._engines.get(name) !== engine) return;
+            if (previous) this._engines.set(name, previous);
+            else this._engines.delete(name);
+        };
+    }
+
+    get(name) {
+        return this._engines.get(name) ?? null;
+    }
+
+    list() {
+        return [...this._engines.keys()];
+    }
+
+    /**
+     * The model of a graph for an engine: node boxes (title included) and the links between the
+     * nodes in scope.
+     * @param {object} graph
+     * @param {object[]} nodes - the nodes to lay out
+     * @returns {{nodes: Array<{id: *, width: number, height: number, x: number, y: number}>,
+     *   edges: Array<{id: *, source: *, target: *, sourceSlot: number, targetSlot: number}>}}
+     */
+    static buildModel(graph, nodes) {
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        const ids = new Set(nodes.map((node) => node.id));
+        const model = {
+            nodes: nodes.map((node) => ({
+                id: node.id,
+                width: node.flags?.collapsed ? (node._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH || 80) : node.size[0],
+                height: node.flags?.collapsed ? title : node.size[1] + title,
+                x: node.pos[0],
+                y: node.pos[1] - title,
+            })),
+            edges: [],
+        };
+        for (const link of Object.values(graph.links ?? {})) {
+            if (!link || !ids.has(link.origin_id) || !ids.has(link.target_id) || link.origin_id === link.target_id) continue;
+            model.edges.push({
+                id: link.id,
+                source: link.origin_id,
+                target: link.target_id,
+                sourceSlot: link.origin_slot,
+                targetSlot: link.target_slot
+            });
+        }
+        return model;
+    }
+
+    /** Wraps an elkjs instance (`new ELK()`) as a layout engine. */
+    static elkEngine(elk) {
+        return {
+            async layout(model, options) {
+                const direction = {
+                    LR: "RIGHT",
+                    RL: "LEFT",
+                    TB: "DOWN",
+                    BT: "UP"
+                } [options.direction] ?? "RIGHT";
+                const result = await elk.layout({
+                    id: "root",
+                    layoutOptions: {
+                        "elk.algorithm": "layered",
+                        "elk.direction": direction,
+                        "elk.spacing.nodeNode": String(options.spacing.node),
+                        "elk.layered.spacing.nodeNodeBetweenLayers": String(options.spacing.rank),
+                    },
+                    children: model.nodes.map((n) => ({
+                        id: String(n.id),
+                        width: n.width,
+                        height: n.height
+                    })),
+                    edges: model.edges.map((e) => ({
+                        id: `e${e.id}`,
+                        sources: [String(e.source)],
+                        targets: [String(e.target)]
+                    })),
+                });
+                const byId = new Map(model.nodes.map((n) => [String(n.id), n.id]));
+                const positions = {};
+                for (const child of result.children ?? []) positions[byId.get(child.id)] = [child.x, child.y];
+                return {
+                    positions
+                };
+            },
+        };
+    }
+}
+
+/** dagre (graphlib) engine; `lib` is the dagre module or global */
+LayoutRegistry.dagreEngine = {
+    library: "dagre",
+    layout(model, options, lib) {
+        const dagre = lib?.layout ? lib : lib?.default;
+        if (!dagre?.layout || !dagre.graphlib?.Graph) throw new Error("layout dagre: the dagre library has no layout() / graphlib");
+        const g = new dagre.graphlib.Graph({
+            multigraph: true
+        });
+        g.setGraph({
+            rankdir: options.direction,
+            nodesep: options.spacing.node,
+            ranksep: options.spacing.rank,
+            marginx: 0,
+            marginy: 0
+        });
+        g.setDefaultEdgeLabel(() => ({}));
+        for (const node of model.nodes) g.setNode(String(node.id), {
+            width: node.width,
+            height: node.height
+        });
+        for (const edge of model.edges) g.setEdge(String(edge.source), String(edge.target), {}, String(edge.id));
+        dagre.layout(g);
+        const positions = {};
+        for (const node of model.nodes) {
+            const placed = g.node(String(node.id));
+            if (placed) positions[node.id] = [placed.x - node.width / 2, placed.y - node.height / 2];
+        }
+        return {
+            positions
+        };
+    },
+};
+
+/**
+ * A small layered layout without dependencies: ranks by longest path from the sources, nodes in
+ * a rank ordered by their current position, ranks side by side (LR) or stacked (TB).
+ */
+LayoutRegistry.layeredEngine = {
+    layout(model, options) {
+        const incoming = new Map(model.nodes.map((n) => [n.id, []]));
+        for (const edge of model.edges) incoming.get(edge.target)?.push(edge.source);
+        const rank = new Map();
+        const visiting = new Set();
+        const rankOf = (id) => {
+            if (rank.has(id)) return rank.get(id);
+            if (visiting.has(id)) return 0; // a cycle: break it here
+            visiting.add(id);
+            let r = 0;
+            for (const source of incoming.get(id) ?? []) r = Math.max(r, rankOf(source) + 1);
+            visiting.delete(id);
+            rank.set(id, r);
+            return r;
+        };
+        const ranks = [];
+        for (const node of model.nodes)(ranks[rankOf(node.id)] ??= []).push(node);
+        const horizontal = options.direction === "LR" || options.direction === "RL";
+        const positions = {};
+        let along = 0;
+        for (const nodes of ranks) {
+            if (!nodes) continue;
+            nodes.sort((a, b) => horizontal ? (a.y - b.y || a.x - b.x) : (a.x - b.x || a.y - b.y));
+            let across = 0;
+            let thickness = 0;
+            for (const node of nodes) {
+                positions[node.id] = horizontal ? [along, across] : [across, along];
+                across += (horizontal ? node.height : node.width) + options.spacing.node;
+                thickness = Math.max(thickness, horizontal ? node.width : node.height);
+            }
+            along += thickness + options.spacing.rank;
+        }
+        if (options.direction === "RL" || options.direction === "BT") {
+            const axis = options.direction === "RL" ? 0 : 1;
+            for (const node of model.nodes) {
+                positions[node.id][axis] = -positions[node.id][axis] - (axis === 0 ? node.width : node.height);
+            }
+        }
+        return {
+            positions
+        };
+    },
+};
+
+/**
+ * The node palette's data (Wave 4d, decision W4-7): node types grouped by pack and category,
+ * search, favourites and recently used types. The Editor draws it as a DOM panel; other hosts
+ * can draw their own from the same data.
+ *
+ * Favourites live in the setting `LiteGraph.Palette.Favorites`, recently used types in
+ * `LiteGraph.Palette.Recent`, so they persist with the other settings.
+ */
+class NodePalette {
+
+    static RECENT_LIMIT = 12;
+
+    /** previews do not build nodes of types that open devices or contexts */
+    static PREVIEW_SKIP_CAPABILITIES = ["audio", "webgl", "midi", "sys"];
+
+    constructor(host) {
+        this.host = host;
+        this._previews = new Map();
+    }
+
+    get _settings() {
+        return this.host?.settings ?? null;
+    }
+
+    _list(id) {
+        const value = this._settings?.has?.(id) ? this._settings.get(id) : [];
+        return Array.isArray(value) ? value.filter((type) => typeof type === "string") : [];
+    }
+
+    /** the definitions the palette offers: not hidden, supported here, deprecated only on request */
+    definitions({
+        includeDeprecated = false
+    } = {}) {
+        const host = this.host;
+        return (host.listNodeDefinitions?.({
+                includeDeprecated,
+                supportedOnly: true
+            }) ?? [])
+            .filter((def) => !def.hidden && !def.type.startsWith("graph/input") && !def.type.startsWith("graph/output"));
+    }
+
+    /**
+     * Definitions matching a query (through LiteGraph.nodeSearch) or every one, with a
+     * `favorite` flag, optionally limited to a pack, a category or the favourites.
+     * @param {{query?: string, pack?: string, category?: string, favoritesOnly?: boolean}} [options]
+     * @returns {Array<object>} definitions (frozen) wrapped as `{...def, favorite}`
+     */
+    list({
+        query = "",
+        pack,
+        category,
+        favoritesOnly = false
+    } = {}) {
+        const favorites = new Set(this.favorites());
+        let defs;
+        if (query && this.host.nodeSearch) {
+            const allowed = new Set(this.definitions().map((def) => def.type));
+            defs = this.host.nodeSearch.search(query).map((result) => this.host.getNodeDefinition(result.type)).filter((def) => def && allowed.has(def.type));
+        } else {
+            defs = this.definitions().sort((a, b) => a.category.localeCompare(b.category) || a.title.localeCompare(b.title));
+        }
+        return defs
+            .filter((def) => (pack === undefined || (def.pack?.id ?? "") === pack) &&
+                (category === undefined || def.category === category || def.category.startsWith(category + "/")) &&
+                (!favoritesOnly || favorites.has(def.type)))
+            .map((def) => ({
+                ...def,
+                favorite: favorites.has(def.type)
+            }));
+    }
+
+    /**
+     * Definitions grouped by pack, then by category.
+     * @returns {Array<{pack: {id: string, title: string, builtin: boolean}, categories: Array<{category: string, items: object[]}>}>}
+     */
+    groups(options = {}) {
+        const byPack = new Map();
+        for (const def of this.list(options)) {
+            const id = def.pack?.id ?? "";
+            if (!byPack.has(id)) {
+                const manifest = id ? this.host.packs?.get(id) : null;
+                byPack.set(id, {
+                    pack: {
+                        id,
+                        title: manifest?.title ?? (id || "Other"),
+                        builtin: !!def.pack?.builtin
+                    },
+                    categories: new Map()
+                });
+            }
+            const group = byPack.get(id);
+            const category = def.category || "";
+            if (!group.categories.has(category)) group.categories.set(category, []);
+            group.categories.get(category).push(def);
+        }
+        return [...byPack.values()]
+            .sort((a, b) => (a.pack.builtin === b.pack.builtin ? a.pack.title.localeCompare(b.pack.title) : a.pack.builtin ? 1 : -1))
+            .map((group) => ({
+                pack: group.pack,
+                categories: [...group.categories].map(([category, items]) => ({
+                    category,
+                    items
+                }))
+            }));
+    }
+
+    /** Preview a section/pack inventory without constructing or executing any nodes. */
+    starterPreview({
+        pack,
+        category
+    } = {}) {
+        return this.host.listNodeDefinitions({
+                category
+            }).filter((def) => !pack || def.pack?.id === pack)
+            .sort((a, b) => a.category.localeCompare(b.category) || a.type.localeCompare(b.type))
+            .map((def) => {
+                const sensitive = def.capabilities.filter((cap) => !["browser", "node"].includes(cap));
+                const reason = def.hidden || def.deprecated ? "Hidden or deprecated type" :
+                    ["graph/input", "graph/output"].includes(def.type) ? "Subgraph interface type" :
+                    !this.host.isNodeTypeSupported(def.type) ? "Unavailable in this host" :
+                    sensitive.length ? `Requires individual setup: ${sensitive.join(", ")}` : "";
+                return {
+                    type: def.type,
+                    title: def.title,
+                    category: def.category,
+                    pack: def.pack?.id ?? "",
+                    description: def.description,
+                    suggestedDescription: def.description ? "" : `Explore ${def.title} (${def.type}).`,
+                    usage: def.usage,
+                    reason
+                };
+            });
+    }
+
+    /** Append an organized, disconnected inventory in one undo step. Never starts the graph. */
+    insertStarter(canvas, options = {}) {
+        const graph = canvas?.graph;
+        if (!graph || canvas.read_only) throw new Error("An editable graph is required");
+        if (graph.status === this.host.LGraph.STATUS_RUNNING) throw new Error("Stop the graph before adding a starter workflow");
+        const entries = this.starterPreview(options);
+        const nodes = [],
+            skipped = entries.filter((entry) => entry.reason).map((entry) => ({
+                type: entry.type,
+                reason: entry.reason
+            }));
+        // Append below all existing content, preserving manual layouts and annotations.
+        let y = Math.max(80, ...graph._nodes.map((node) => node.pos[1] + node.size[1] + 120),
+            ...graph._groups.map((group) => group.pos[1] + group.size[1] + 120));
+        graph.transact("starterWorkflow", () => {
+            for (const category of new Set(entries.map((entry) => entry.category))) {
+                const section = [];
+                let x = 80,
+                    rowHeight = 0;
+                for (const entry of entries.filter((item) => item.category === category && !item.reason)) {
+                    let node;
+                    try {
+                        node = this.host.createNode(entry.type);
+                    } catch (error) {
+                        skipped.push({
+                            type: entry.type,
+                            reason: String(error?.message ?? error)
+                        });
+                        continue;
+                    }
+                    if (!node) {
+                        skipped.push({
+                            type: entry.type,
+                            reason: "Constructor failed"
+                        });
+                        continue;
+                    }
+                    node.pos = [x, y];
+                    graph.add(node);
+                    nodes.push(node);
+                    section.push(node);
+                    rowHeight = Math.max(rowHeight, node.size[1] + 70);
+                    x += Math.max(220, node.size[0] + 50);
+                    if (section.length % 3 === 0) {
+                        x = 80;
+                        y += rowHeight;
+                        rowHeight = 0;
+                    }
+                }
+                if (section.length) {
+                    const group = new this.host.LGraphGroup(category || "Nodes");
+                    group.resizeTo(section, 30);
+                    graph.add(group);
+                    y = Math.max(...section.map((node) => node.pos[1] + node.size[1])) + 140;
+                }
+            }
+        }, {
+            rollback: true
+        });
+        canvas.selectNodes?.(nodes);
+        canvas.setDirty?.(true, true);
+        return {
+            nodes,
+            skipped,
+            entries
+        };
+    }
+
+    /** @returns {string[]} favourite node types */
+    favorites() {
+        return this._list("LiteGraph.Palette.Favorites");
+    }
+
+    isFavorite(type) {
+        return this.favorites().includes(type);
+    }
+
+    /** Adds or removes a favourite; returns whether it is now a favourite. */
+    toggleFavorite(type, on = !this.isFavorite(type)) {
+        const list = this.favorites().filter((entry) => entry !== type);
+        if (on) list.push(type);
+        this._settings?.set("LiteGraph.Palette.Favorites", list);
+        return on;
+    }
+
+    /** @returns {string[]} recently used node types, newest first */
+    recent() {
+        return this._list("LiteGraph.Palette.Recent");
+    }
+
+    /** Records that a type was inserted (newest first, at most RECENT_LIMIT). */
+    recordUse(type) {
+        if (typeof type !== "string" || !type) return;
+        const list = [type, ...this.recent().filter((entry) => entry !== type)].slice(0, NodePalette.RECENT_LIMIT);
+        this._settings?.set("LiteGraph.Palette.Recent", list);
+    }
+
+    /**
+     * What a preview draws: title, icon, colours and slots, from the definition when it declares
+     * its slots, else from a node built for the purpose (never added to a graph).
+     * @returns {{type: string, title: string, icon: *, color: string|null, bgcolor: string|null,
+     *   inputs: Array<{name: string, type: *}>, outputs: Array<{name: string, type: *}>}|null}
+     */
+    preview(type) {
+        const def = this.host.getNodeDefinition?.(type);
+        if (!def) return null;
+        const slot = (s) => ({
+            name: s.label ?? s.name ?? "",
+            type: s.type
+        });
+        if (this._previews.has(type)) return this._previews.get(type);
+        let inputs = def.inputs?.map(slot) ?? null;
+        let outputs = def.outputs?.map(slot) ?? null;
+        let color = null;
+        let bgcolor = null;
+        const skip = (def.capabilities ?? []).some((capability) => NodePalette.PREVIEW_SKIP_CAPABILITIES.includes(capability));
+        if ((!inputs || !outputs) && !skip) {
+            try {
+                const node = this.host.createNode(type);
+                inputs ??= (node?.inputs ?? []).map(slot);
+                outputs ??= (node?.outputs ?? []).map(slot);
+                color = node?.color ?? node?.constructor?.color ?? null;
+                bgcolor = node?.bgcolor ?? node?.constructor?.bgcolor ?? null;
+            } catch {
+                inputs ??= [];
+                outputs ??= [];
+            }
+        }
+        const preview = {
+            type,
+            title: def.title,
+            icon: def.icon ?? null,
+            color,
+            bgcolor,
+            inputs: inputs ?? [],
+            outputs: outputs ?? []
+        };
+        this._previews.set(type, preview);
+        return preview;
+    }
+
+    /**
+     * Inserts a node of `type` at a graph position, selected, as one undo step, and records the use.
+     * @returns {object|null} the node
+     */
+    insert(canvas, type, pos) {
+        const graph = canvas?.graph;
+        if (!graph) return null;
+        let node = null;
+        graph.transact("paletteInsert", () => {
+            node = this.host.createNode(type);
+            if (!node) return;
+            node.pos = [Math.round(pos[0]), Math.round(pos[1])];
+            graph.add(node);
+        });
+        if (!node) return null;
+        this.recordUse(type);
+        canvas.selectNodes?.([node]);
+        canvas.setDirty?.(true, true);
+        return node;
+    }
+}
+
 // this needs to be called after all classes has been included, before registering nodes and creating canvas
 // will setup callback handlers and LiteGraph.CLASSES references ( eg. LitegGraph.LGraph, .. )
 LiteGraph.initialize();
-exports.LiteGraphClass = LiteGraphClass;
-exports.CallbackHandler = CallbackHandler;
+exports.ListenerList = ListenerList;
 exports.LGraphEvent = LGraphEvent;
 exports.LGraphEventTarget = LGraphEventTarget;
+exports.CallbackHandler = CallbackHandler;
+exports.LiteGraphClass = LiteGraphClass;
+exports.ExecutionEngine = ExecutionEngine;
 exports.CommandRegistry = CommandRegistry;
 exports.KeybindingRegistry = KeybindingRegistry;
 exports.SettingsRegistry = SettingsRegistry;
@@ -25313,7 +33336,20 @@ exports.SliderWidget = SliderWidget;
 exports.NumberWidget = NumberWidget;
 exports.ComboWidget = ComboWidget;
 exports.TextWidget = TextWidget;
+exports.ColorWidget = ColorWidget;
+exports.VectorWidget = VectorWidget;
+exports.ValueTypeRegistry = ValueTypeRegistry;
+exports.PanelBuilder = PanelBuilder;
+exports.PanelHost = PanelHost;
 exports.NodeSearch = NodeSearch;
+exports.PackRegistry = PackRegistry;
+exports.ExecutionState = ExecutionState;
+exports.RenderLink = RenderLink;
+exports.LinkRouterRegistry = LinkRouterRegistry;
+exports.LinkStyleRegistry = LinkStyleRegistry;
+exports.MiniMap = MiniMap;
+exports.LayoutRegistry = LayoutRegistry;
+exports.NodePalette = NodePalette;
 exports.getGlobalObject = getGlobalObject;
 exports.setGlobalVariable = setGlobalVariable;
 exports.getGlobalVariable = getGlobalVariable;
@@ -25321,8 +33357,12 @@ exports.isBrowser = isBrowser;
 exports.isNode = isNode;
 exports.isBun = isBun;
 exports.getRuntime = getRuntime;
+exports.installHooks = installHooks;
 exports.defaultWidgetTypes = defaultWidgetTypes;
 exports.widgetImplementation = widgetImplementation;
 exports.evaluateMathExpression = evaluateMathExpression;
+exports.defaultPanelEditors = defaultPanelEditors;
+exports.LEGACY_EXECUTION_FLAGS = LEGACY_EXECUTION_FLAGS;
 exports.LiteGraph = LiteGraph;
+exports.EVENT_DROP_REASONS = EVENT_DROP_REASONS;
 exports.SubgraphDefs = SubgraphDefs;

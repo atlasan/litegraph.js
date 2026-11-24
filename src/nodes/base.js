@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/basic" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/basic", version: LiteGraph.VERSION, title: "Basic", description: "Constants, variables, watches, arrays, JSON and console helpers, scripts: the everyday data nodes.", builtin: true });
+
 class Time {
 
     static title = "Time";
@@ -61,7 +65,7 @@ class ConstantNumber {
     }
 
     onExecute() {
-        this.setOutputData(0, parseFloat(this.properties["value"]));
+        this.setOutputData(0, parseFloat(this.isWidgetLinked(this.widget) ? this.getWidgetValue("value") : this.properties["value"]));
     }
 
     getTitle() {
@@ -77,7 +81,7 @@ class ConstantNumber {
 
     onDrawBackground() {
         // show the current value
-        this.outputs[0].label = LiteGraph.formatNumber(this.properties["value"],3);
+        this.outputs[0].label = LiteGraph.formatNumber(this.isWidgetLinked(this.widget) ? this.getWidgetValue("value") : this.properties["value"],3);
     }
 }
 LiteGraph.registerNodeType("basic/const", ConstantNumber);
@@ -85,19 +89,31 @@ LiteGraph.registerNodeType("basic/const", ConstantNumber);
 class ConstantBoolean {
 
     static title = "Const Boolean";
-    static desc = "Constant boolean";
+    static desc = "A true/false value. Edit the toggle or send an action to its optional toggle input.";
+    static usage = "Change value in the widget or properties. Add the optional toggle action input to invert it on each action; the bool output remains a boolean value.";
+    static search_aliases = ["toggle", "bool", "true", "false"];
+    static icon = "◉";
 
     constructor() {
         this.addOutput("bool", "boolean");
         this.addProperty("value", true);
-        this.widget = this.addWidget("toggle", "value", true, "value");
+        this.widget = this.addWidget("toggle", "value", true, "value", { on: "true", off: "false" });
         this.serialize_widgets = true;
         this.widgets_up = true;
-        this.size = [140, 30];
+        this.size = [160, 30];
     }
 
     onExecute() {
         this.setOutputData(0, this.properties["value"]);
+    }
+
+    onConfigure() {
+        // The saved property is authoritative when legacy widget values disagree.
+        this.widget.value = this.properties.value;
+    }
+
+    onDrawBackground() {
+        this.outputs[0].label = this.properties.value ? "true" : "false";
     }
 
     onGetInputs() {
@@ -271,16 +287,20 @@ class JSONParse {
     }
 
     parse() {
-        if (!this._str) return;
-
+        // read the text now: the action can come before this node ever executed (graph stopped)
+        const str = this.getInputData(1) ?? this._str;
+        if (str == null || str === "") return;
         try {
-            this._str = this.getInputData(1);
-            this._obj = JSON.parse(this._str);
+            this._str = str;
+            this._obj = JSON.parse(str);
             this.boxcolor = "#AEA";
-            this.triggerSlot(0);
         } catch (err) {
             this.boxcolor = "red";
+            return;
         }
+        // the object output is set before "done" fires, so the nodes it triggers read the new object
+        this.setOutputData(1, this._obj);
+        this.triggerSlot(0);
     }
 
     onExecute() {
@@ -681,15 +701,112 @@ LiteGraph.registerNodeType("basic/download", DownloadData);
 
 
 // Watch a value in the editor
+/**
+ * Watch: shows the value on its input. One node with three displays (property `display`):
+ * - "value": the value as the input's label (the classic watch);
+ * - "text": multiline text with font options (was `basic/watch_advanced`);
+ * - "tree": a JSON tree viewer (was `watch/value`, registered by watch.js as a display).
+ * The old types load as this one through automatic replacement mappings.
+ */
 class Watch {
 
     static title = "Watch";
     static desc = "Show value of input";
 
+    /** displays by name: {setup?(node), execute?(node), draw?(node, ctx, ...), mouseDown?(node, e, pos), menu?(node, canvas)} */
+    static displays = {
+        auto: {
+            setup(node) {
+                if (node.inputs[0]) node.inputs[0].label = "value";
+                // Give the new display room once; incoming data never changes the size.
+                node.size[0] = Math.max(node.size[0], 240);
+                node.size[1] = Math.max(node.size[1], 130);
+            },
+            execute(node) {
+                node.value = node.getInputData(0);
+                const link = node.graph?.links[node.inputs[0]?.link];
+                const declared = link?.type || "*";
+                const observed = node.value === null ? "null" : Array.isArray(node.value) ? "array" : typeof node.value;
+                const expected = String(declared).toLowerCase().split(",");
+                const known = ["number", "string", "boolean", "object", "array", "null", "undefined"];
+                const mismatch = expected.every((type) => known.includes(type)) && !expected.includes(observed);
+                const missing = node.inputs[0]?.link == null;
+                node.auto_status = missing ? "No input connected" : `${declared} → ${observed}${mismatch ? " · type mismatch" : ""}`;
+                node.auto_preview = missing ? "Connect a value to inspect it." : Watch.preview(node.value);
+            },
+            draw(node, ctx) {
+                if (node.flags?.collapsed) return;
+                ctx.save();
+                ctx.beginPath(); ctx.rect(0, 0, node.size[0], node.size[1]); ctx.clip();
+                ctx.font = "12px monospace";
+                ctx.textAlign = "left";
+                ctx.fillStyle = "#aabace";
+                ctx.fillText(node.auto_status ?? "Run the graph to inspect a value", 8, 40);
+                ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
+                const text = node.auto_preview ?? "";
+                // Wrap only the bounded preview; node size is a user choice, never data-driven.
+                const columns = Math.max(8, Math.floor((node.size[0] - 16) / 7.3));
+                const lines = text.match(new RegExp(`.{1,${columns}}`, "g")) ?? [];
+                for (let i = 0; i < Math.min(lines.length, 8); i++) ctx.fillText(lines[i], 8, 60 + i * 16);
+                ctx.restore();
+            },
+        },
+        value: {
+            draw(node) {
+                node.inputs[0].label = Watch.toString(node.value);
+            },
+        },
+        text: {
+            setup(node) {
+                if (node.inputs[0]) node.inputs[0].label = "";
+                for (const [name, value, type] of [["font_family", "Arial", "string"], ["font_size", 14, "number"], ["clip", false, "toggle"]]) {
+                    if (!(name in node.properties)) node.addProperty(name, value, type);
+                }
+                node.value_last = undefined;
+                node.contlines = { lines: [], lines_tot: 0 };
+                node.changed = true;
+                // the text display's menu and resize handlers call these through `this`
+                for (const method of ["showFull", "fullWidth", "fullHeight", "copyContent", "onResize", "onResizeEnd"]) {
+                    if (typeof node[method] !== "function") node[method] = WatchAdvanced.prototype[method];
+                }
+            },
+            execute(node) {
+                WatchAdvanced.prototype.onExecute.call(node);
+            },
+            draw(node, ctx) {
+                WatchAdvanced.prototype.onDrawBackground.call(node, ctx);
+            },
+            menu(node, canvas) {
+                return WatchAdvanced.prototype.getExtraMenuOptions.call(node, canvas);
+            },
+        },
+    };
+
     constructor() {
         this.size = [60, 30];
         this.addInput("value", 0, { label: "" });
+        this.addProperty("display", "value", "enum", { values: ["value", "auto", "text", "tree"] });
         this.value = null;
+    }
+
+    /** the display in use (an unknown name, e.g. "tree" without watch.js, falls back to "value") */
+    getDisplay() {
+        return Watch.displays[this.properties?.display] ?? Watch.displays.value;
+    }
+
+    onPropertyChanged(name, value) {
+        if (name === "display") {
+            this.getDisplay().setup?.(this);
+            this.setDirtyCanvas?.(true, true);
+        } else if (this.properties?.display === "text") {
+            this.changed = true;
+        } else if (name === "clip_area") {
+            this.clip_area = value;
+        }
+    }
+
+    onConfigure() {
+        this.getDisplay().setup?.(this);
     }
 
     onConnectionsChange(connection, slot, connected, link_info) {
@@ -697,11 +814,18 @@ class Watch {
         if (connection != LiteGraph.INPUT) {
             return;
         }
+        if (this.properties?.display === "text") {
+            this.changed = true;
+            return;
+        }
         this.value = this.getInputData(0,true); // force update
     }
 
     onExecute() {
-        if (this.inputs[0]) {
+        const display = this.getDisplay();
+        if (display.execute) {
+            display.execute(this);
+        } else if (this.inputs[0]) {
             this.value = this.getInputData(0);
         }
     }
@@ -711,6 +835,34 @@ class Watch {
             return this.inputs[0].label;
         }
         return this.title;
+    }
+
+    /** Bounded inspection of own data properties; getters and custom toString are never invoked. */
+    static preview(value) {
+        const seen = new WeakSet();
+        let budget = 32;
+        const visit = (item, depth) => {
+            if (--budget < 0) return "…";
+            if (item === null) return "null";
+            if (typeof item === "string") return JSON.stringify(item.slice(0, 100)) + (item.length > 100 ? "…" : "");
+            if (typeof item !== "object") return typeof item === "function" ? "[Function]" : String(item);
+            if (seen.has(item)) return "[Circular]";
+            if (depth >= 3) return "[…]";
+            seen.add(item);
+            try {
+                const array = Array.isArray(item);
+                const keys = Object.keys(item);
+                const parts = keys.slice(0, 8).map((key) => {
+                    const desc = Object.getOwnPropertyDescriptor(item, key);
+                    const text = desc && "value" in desc ? visit(desc.value, depth + 1) : "[Accessor]";
+                    return array ? text : `${key.slice(0, 40)}: ${text}`;
+                });
+                if (keys.length > 8) parts.push(`… +${keys.length - 8}`);
+                return (array ? "[" : "{") + parts.join(", ") + (array ? "]" : "}");
+            } catch { return "[Uninspectable]"; }
+            finally { seen.delete(item); }
+        };
+        return visit(value, 0).slice(0, 600);
     }
 
     static toString(o) {
@@ -734,9 +886,16 @@ class Watch {
         }
     }
 
-    onDrawBackground() {
-        // show the current value
-        this.inputs[0].label = WatchAdvanced.toString(this.value);
+    onDrawBackground(ctx, canvas, element, pos) {
+        this.getDisplay().draw?.(this, ctx, canvas, element, pos);
+    }
+
+    onMouseDown(e, pos, canvas) {
+        return this.getDisplay().mouseDown?.(this, e, pos, canvas);
+    }
+
+    getExtraMenuOptions(canvas) {
+        return this.getDisplay().menu?.(this, canvas) ?? [];
     }
 }
 LiteGraph.registerNodeType("basic/watch", Watch);
@@ -953,7 +1112,13 @@ class WatchAdvanced{
         }
     }
 }
-LiteGraph.registerNodeType("basic/watch_advanced", WatchAdvanced);
+// basic/watch_advanced is now basic/watch with display "text" (catalog cleanup, Wave 4e)
+LiteGraph.registerNodeReplacement({
+    old_type: "basic/watch_advanced", new_type: "basic/watch", auto: true,
+    properties: { font_family: "font_family", font_size: "font_size", clip: "clip" },
+    set: { properties: { display: "text" } },
+    reason: "one watch node: basic/watch with display \"text\"",
+});
 
 
 // in case one type doesnt match other type but you want to connect them anyway
@@ -1242,3 +1407,16 @@ class GenericCompare {
     };
 }
 LiteGraph.registerNodeType("basic/CompareValues", GenericCompare);
+
+// execution needs (Wave 6): pure readers run on request in the ancestors model
+LiteGraph.declareNodeExecution(["basic/array_length", "basic/array[]", "basic/table[][]", "basic/cast", "basic/CompareValues"], { pure: true });
+// declaration pass (flows track): constants and conversions are pure; alert only reacts to events
+LiteGraph.declareNodeExecution(["basic/const", "basic/boolean", "basic/string", "basic/data", "basic/array", "basic/length", "basic/not"], { pure: true });
+LiteGraph.declareNodeExecution(["basic/alert"], { default_mode: LiteGraph.ON_EVENT });
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// basic/time, basic/variable, basic/object, basic/script, basic/file.
+// Side effects or state, kept ALWAYS (a mode change would stop them): basic/set_array, basic/array_append,
+// basic/console, basic/download, basic/jsonparse, basic/data_store, basic/watch.
+
+LiteGraph.packs.close("litegraph/basic");

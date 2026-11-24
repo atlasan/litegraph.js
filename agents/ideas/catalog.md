@@ -1,6 +1,6 @@
 # Ideas catalog
 
-> **Updated** 2026-11-20 · **Kind** idea catalog · **Status** living
+> **Updated** 2026-11-23 · **Kind** idea catalog · **Status** living
 
 One row per idea. The [README](README.md#conventions) defines the IDs, fields and lifecycle, and [purposes.md](purposes.md) defines P1 to P10. Details are in each idea's area document.
 
@@ -28,6 +28,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | X-10 | Runner health and metrics endpoint (runs, step time, worker memory) | P8 | proto | S | — | seed | Fold into X-01 `/features` |
 | X-11 | Node property presets: named value sets per node type, stored as a setting | P10 | ext | S | — | seed | 2025 improvements ledger |
 | X-12 | Settings export, import and profiles on `LiteGraph.settings` | P10 | ext | S | — | seed | 2025 improvements ledger |
+| X-13 | Movable, dockable and configurable panels: floating and docked panels, stacks and tabs, saved layouts, built on `PanelHost` | P10 | core | M | ref | seed | Follow-up of the [panels and widgets plan](../plans/2026-11-22-panels-options-node-details.md); CFY-47 |
 
 ## Census of litegraph users (`USE`)
 
@@ -40,14 +41,14 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-03 | Streamed partial output into node bodies | P7 | widget | M | none | seed |
 | USE-04 | Publish a saved graph as an endpoint or MCP tool | P7 P8 | runtime | M | ref | sketched |
 | USE-05 | Editor / manager / runner application split | P8 | app | M | ref | seed |
-| USE-06 | Node reference generated from the registry, searchable by agents | P9 P10 | ext | S | ref | seed |
+| USE-06 | Node reference generated from the registry, searchable by agents (→ FLW-23) | P9 P10 | ext | S | ref | promoted |
 | USE-07 | Recent-nodes palette | P10 | ext | S | ref | seed |
 | USE-08 | Code-generation targets (LangGraph, JS, server steps) | P6 P7 P8 | io | L | adapt | seed |
 | USE-09 | Headless-Chromium smoke test of built bundles in the gate | P10 | runtime | S | none | seed |
 | USE-10 | Domain-object slot type and host-plugin embedding | P6 | core | M | none | seed |
 | USE-11 | MaterialX / OpenPBR import and view | P2 | io | L | ref | seed |
 | USE-12 | Compile to a shader with live preview, plus starter recipes | P2 P9 | io | L | adapt | seed |
-| USE-13 | Behaviour-tree execution mode | P3 P7 | runtime | L | none | seed |
+| USE-13 | Behaviour-tree execution mode (→ FLW-11) | P3 P7 | runtime | L | none | seed |
 | USE-14 | Per-node link policies and in-node warnings | P10 | core | S | adapt | seed |
 | USE-15 | Progressive palette unlock | P9 | ext | S | ref | seed |
 | USE-16 | Canvas as a projection of an external model, reconciled by diff | P4 P10 | core | L | ref | sketched |
@@ -68,7 +69,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-31 | Share a graph through a compressed URL | P9 | ext | S | adapt | seed |
 | USE-32 | Pub/sub nodes between users' graphs | P9 | node | M | adapt | seed |
 | USE-33 | Optimistic save conflicts (ETag / If-Match) | P10 | runtime | S | adapt | seed |
-| USE-34 | Per-node execution trace | P10 | runtime | M | adapt | seed |
+| USE-34 | Per-node execution trace (→ FLW-16; base: the dispatch tap, `LiteGraph.setDispatchTap`) | P10 | runtime | M | adapt | seed |
 | USE-35 | Runaway-node watchdog and deployment limits | P8 | runtime | M | adapt | seed |
 | USE-36 | Portable-format conformance fixtures for other runtimes | P10 | proto | M | adapt | seed |
 | USE-37 | Graph lint before run | P10 | ext | M | ref | seed |
@@ -76,7 +77,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-39 | Desktop host template (WebView, Tauri or Electron) | P10 | app | M | adapt | seed |
 | USE-40 | Type rejection at connect time, with conversions | P10 | core | M | adapt | seed |
 | USE-41 | Fields: lazily evaluated per-element values | P2 | core | XL | ref | seed |
-| USE-42 | Breakpoints with value inspection | P10 | runtime | L | ref | seed |
+| USE-42 | Breakpoints with value inspection (→ FLW-16) | P10 | runtime | L | ref | seed |
 | USE-43 | Pinned test data per node | P8 | ext | M | ref | seed |
 | USE-44 | Live viewer in every node | P2 P4 | widget | L | ref | seed |
 | USE-45 | Two-way visual and text editing | P9 P10 | io | XL | ref | seed |
@@ -211,7 +212,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | JS-01 | MCP tools as nodes | P7 | node | L | adapt | sketched |
 | JS-02 | Graph as MCP server | P7 P8 | runtime | M | adapt | sketched |
 | JS-03 | LLM chat and agent family | P7 | node | M | adapt | sketched |
-| JS-04 | Web Audio graph mode | P4 | runtime | L | — | seed |
+| JS-04 | Web Audio graph mode (→ FLW-12) | P4 | runtime | L | — | seed |
 | JS-05 | Tone.js family | P4 | node | M | adapt | seed |
 | JS-06 | Faust DSP node | P4 | node | M | ref | seed |
 | JS-07 | Elementary compile | P4 | io | L | adapt | seed |
@@ -272,6 +273,41 @@ These ideas recur across several areas, so each one also absorbs related area id
 | BUN-21 | Export to Actions-style YAML or an OS schedule | P8 | io | M | — | seed |
 | BUN-22 | BPMN XML import and export | P8 | io | XL | ref | seed |
 
+## Execution flows (`FLW`)
+
+From the [execution flows](landscape/execution-flows.md) area and the [event flows audit](../audits/2026-11-22-event-flows-audit.md). Unreal Engine is the main donor; most donors are design reference only.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity | Absorbs / links |
+|---|---|---|---|---|---|---|---|
+| FLW-01 | Call scopes: one hierarchical scope id (call → Sequence branch → loop iteration → function call) for the memo and the legacy dedupe ([card](cards/FLW-01-call-scopes-and-pure-semantics.md)) | P3 P2 P10 | core | M | ref | investigated | Audit findings 1, 3, 4; [research](../memories/research/2026-11-22-call-scopes-and-pure-nodes.md) |
+| FLW-02 | Volatile pure: `pure: "volatile"` runs once per scope, shared by its consumers; rand, time and state readers can be ON_REQUEST | P3 P2 | core | S | ref | investigated | FLW-01 card; Houdini time dependency |
+| FLW-03 | `refresh` action input on ON_REQUEST nodes: invalidate and re-run explicitly | P3 P10 | core | S | — | investigated | FLW-01 card |
+| FLW-04 | Property and widget version in the memo key | P10 | core | S | — | investigated | Audit finding 2; FLW-01 card |
+| FLW-05 | Lifecycle event nodes: `on_start`, `on_tick(dt, time)`, `on_stop`, `on_pause`/`on_resume` (KHR names as aliases) ([card](cards/FLW-05-lifecycle-and-custom-events.md)) | P3 P4 P9 | node | S | ref | sketched | Audit finding 6; 3D-01 |
+| FLW-06 | Custom events and dispatchers: `custom_event`, `call_event`, `dispatcher` (bind, unbind, unbind all, call), `bind_event`, an "Assign" helper | P3 P9 | node | M | ref | sketched | Audit finding 7; FLW-05 card; 3D-01 |
+| FLW-07 | Exec pins per document (`onTrigger`/`onExecuted`), set by the profile instead of a global flag | P3 P9 | core | S | — | promoted | Audit finding 8; FLW-08 |
+| FLW-08 | Graph profiles: model + mode defaults + UI + packs + palette per document (mixed, blueprint, dataflow, realtime, stepped, reactive) ([card](cards/FLW-08-graph-profiles.md)) | P10 P2 P3 P4 P9 | core | M | ref | sketched | X-12 (per document); decision 0002 |
+| FLW-09 | Hot and cold data inputs, plus a Trigger node for ordered fan-out | P4 P9 | core | M | adapt | seed | Pd (BSD-3) |
+| FLW-10 | Latent nodes: a resumable line (`setDelay`/`cancelDelay`, async actions with success and fail outputs) | P3 P8 | core | M | ref | seed | `events/delay`; KHR `flow/setDelay` |
+| FLW-11 | State-machine and behaviour-tree runners over the same node model | P3 P7 | runtime | L | ref | seed | USE-13; UE AnimGraph SM, Behavior Trees, Unity State Graph |
+| FLW-12 | Signal and control rates: a slot rate for audio and video streams, apart from control events | P4 P2 | core | L | ref | seed | JS-04; Pd `~`; Web Audio |
+| FLW-13 | Cook on demand: dirty propagation, cook only what an observed output needs, "needs cook" and "time dependent" badges | P2 P6 | core | L | ref | seed | Houdini, TouchDesigner; extends the Wave 6 memo |
+| FLW-14 | Loop pitfall lint: warn when a volatile source feeds a loop's count or collection | P9 | core | S | ref | seed | UE ForEach pitfall; FLW-01 card |
+| FLW-15 | Functions vs macros: `graph/function` (one exec in, no latent nodes) against an inlined macro subgraph (several exec pins, latent allowed) | P3 P9 | core | M | ref | seed | Wave 3 subgraphs |
+| FLW-16 | Flow debugger: exec breakpoints, step, pin watches, animated exec wires, cook counts and times | P10 P9 | ext | L | ref | seed | USE-34, USE-42 |
+| FLW-17 | Signature cache with a per-node fingerprint hook (NaN = always rerun) | P1 P6 | core | M | ref | seed | CFY-29; ComfyUI design, re-implemented |
+| FLW-18 | Lazy inputs: a node asks for an input only when it needs it | P1 P6 | core | M | ref | seed | ComfyUI, Blender lazy functions |
+| FLW-19 | Zones: paired frame nodes for loops, caches and per-frame state | P2 P3 | ext | L | ref | seed | Blender zones, vvvv regions |
+| FLW-20 | Completion and error side channel: Catch and Complete event nodes | P8 P5 | node | S | adapt | seed | Node-RED (Apache-2.0); `node-error` |
+| FLW-21 | Scheduled parameter automation: value + time ramps | P4 P2 | node | M | — | seed | Web Audio AudioParam |
+| FLW-22 | Examples library: a manifest with flow categories and profiles, a Demo menu built from it, a test that runs every example ([card](cards/FLW-22-node-reference-and-examples.md)) | P9 P10 | app | M | — | promoted | Audit finding 11; CFY-43; [plan](../plans/2026-11-22-flows-reference-examples.md) |
+| FLW-23 | Node reference per library, generated from `describeNodeType`, with pack descriptions and usage | P9 P10 | app | S | — | promoted | USE-06; audit finding 12; [plan](../plans/2026-11-22-flows-reference-examples.md) |
+| FLW-24 | Profile-aware palette and new-graph templates | P10 P9 | ext | S | — | seed | `src/palette.js`; pack `templates[]` |
+| FLW-25 | Node pin as mode and state indicator, with a quick menu (mode, bypass, mute, rename, run, info) | P10 P9 | ext | S | ref | promoted | Plan 2026-11-23 node pin track C; ComfyUI bypass and mute |
+| FLW-26 | Graph status chip: the execution model and run state on the canvas, click to switch | P10 P9 | ext | S | — | promoted | Plan 2026-11-23 node pin track C; FLW-08 profiles could show here |
+| FLW-27 | Native BYPASS mode (pass-through), as ComfyUI's mode 4 | P1 P10 | core | S | ref | promoted | Decision 0004 |
+| FLW-28 | Guided example workflows: one example guide per editor feature, extension and node pack, opened from the feature (menu, panel, pack info) and walking the user through it step by step (dynamic: highlight, wait for the action, go on) | P9 P10 | app | M | — | seed | User request 2026-11-23 (examples audit); FLW-22; HMD-02 and HMD-06 (explained examples, workflow generator); pack `templates[]`; copypaste and autoconnect are feature examples today |
+
 ## Repository tooling (`DEV`)
 
 From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md): tooling gaps that are not product features.
@@ -284,3 +320,48 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | DEV-04 | Source maps for `build/` bundles | P10 | runtime | S | — | seed |
 | DEV-05 | Release workflow: version alignment checklist, tag-triggered publish after `npm run check` | P10 | app | S | — | seed |
 | DEV-06 | Node and extension scaffolder (template, test stub, declaration entry) | P10 P9 | app | S | — | seed |
+
+## Launcher and command line (`LCH`)
+
+[landscape/launcher-cli.md](landscape/launcher-cli.md). From the user's findings of 2026-11-23.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| LCH-01 | Cross-OS launcher: `lg.sh` / `lg.bat` → one JS helper on Bun or Node; start, stop, restart, status, info, open, logs and a menu ([card](cards/LCH-01-cross-os-launcher.md)) | P10 P9 | app | M | — | promoted |
+| LCH-02 | Process state: pid and port records, HTTP health checks, a log per app, in a git-ignored state folder | P10 | app | S | — | promoted |
+| LCH-03 | Bun as an optional runtime for the apps (`--runtime`, `LG_RUNTIME`); npm scripts stay on Node | P10 P8 | runtime | S | — | promoted |
+| LCH-04 | `lg doctor`: runtimes, `node_modules`, free ports, build freshness, runner opt-ins in effect | P10 | app | S | — | seed |
+| LCH-05 | `lg logs <app>` (follow mode later) | P10 | app | S | — | promoted |
+| LCH-06 | The launcher as a single executable (`bun build --compile`) | P10 | app | S | — | seed |
+| LCH-07 | Launcher profiles: apps, ports and runner opt-ins per named profile | P10 P8 | app | S | — | seed |
+| LCH-08 | Shell completions (bash, zsh, fish, PowerShell) | P10 | app | S | — | seed |
+| LCH-09 | Watch mode in the launcher (`node --watch` / `bun --watch`) replacing nodemon | P10 | app | S | — | seed |
+
+## Groups, notes and reroutes (`GRP`)
+
+[landscape/groups-annotations.md](landscape/groups-annotations.md). From the user's findings of 2026-11-23; candidates C-1 and C-2 of the [launcher plan](../plans/2026-11-23-launcher-and-bun.md#candidates-for-later-plans-not-in-this-plan).
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| GRP-01 | Title-only group drag; a press in the body selects or pans (a setting) | P10 | core | S | ref | seed |
+| GRP-02 | Nested groups: containment tree, moving a group moves its child groups, depth drawing order | P10 | core | M | ref | seed |
+| GRP-03 | Group modes: bypass, mute or disable the contained nodes from the header (BYPASS is native since decision 0004) | P10 | core | S | ref | seed |
+| GRP-04 | Group styling: palette colour, title font and size, alignment, kind (frame, note, region) | P10 | core | S | — | seed |
+| GRP-05 | Groups as comments: multiline text or sanitized markdown body, a mode that captures no nodes | P10 P9 | ext | S | — | seed |
+| GRP-06 | Better drag and resize: handles on every edge and corner, snapping, fit to nodes, locked groups | P10 | core | M | ref | seed |
+| GRP-07 | Reroute audit: ComfyUI 0.4 and 1.0 round trips, legacy `Reroute` nodes, reroutes in subgraphs, tests | P10 | core | S | adapt | seed |
+| GRP-08 | Group actions: collapse, select contents, convert to subgraph, align contents | P10 | ext | M | ref | seed |
+
+## Human feedback: examples, nodes and authoring (`HMD`)
+
+[landscape/human-feedback-usability.md](landscape/human-feedback-usability.md). Direct human feedback of 2026-11-23; sketches for consideration, not accepted work.
+
+| ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
+|---|---|---|---|---|---|---|
+| HMD-01 | Broader example coverage across features, settings, common nodes, packs and execution models ([card](cards/HMD-01-example-coverage.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-02 | Examples that explain features, settings and nodes through concise interactive presentation ([card](cards/HMD-02-explained-examples.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | M | — | promoted |
+| HMD-03 | Everyday base-node upgrade, starting with boolean/toggle usability and consistent defaults ([card](cards/HMD-03-everyday-base-nodes.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | node | M | — | promoted |
+| HMD-04 | Adaptive watch displays for simple and structured values, type awareness and explicit validation ([card](cards/HMD-04-adaptive-watch.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P6 P9 P10 | node | L | — | promoted |
+| HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
+| HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | L | — | promoted |
+| HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |

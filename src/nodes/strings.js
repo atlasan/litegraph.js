@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/strings" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/strings", version: LiteGraph.VERSION, title: "Strings", description: "Text operations: compare, concatenate, split, convert and format strings.", builtin: true });
+
 function toString(a) {
     if (a && a.constructor === Object) {
         try {
@@ -137,3 +141,8 @@ class StringToTable {
     }
 }
 LiteGraph.registerNodeType("string/toTable", StringToTable);
+
+// execution needs (Wave 6): every string node is pure
+LiteGraph.declareNodeExecution(Object.keys(LiteGraph.registered_node_types).filter((type) => type.startsWith("string/")), { pure: true });
+
+LiteGraph.packs.close("litegraph/strings");

@@ -1,0 +1,571 @@
+{
+ "id": "6c6a32a7-6a90-4141-a1da-be1a8b3875c2",
+ "revision": 2,
+ "last_node_id": 6,
+ "last_link_id": 5,
+ "nodes": [
+  {
+   "id": 5,
+   "type": "events/counter",
+   "pos": [
+    620,
+    200
+   ],
+   "size": [
+    210,
+    102
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": "f806b922-12d7-4f97-9b21-fa73e98dc482"
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": [
+      "fb9f69b8-394f-48b5-869f-185ddb2b4e15"
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": "afc101fb-2ec2-4055-94ba-fdd443953212",
+   "type": "basic/watch",
+   "pos": [
+    620,
+    440
+   ],
+   "size": [
+    233,
+    52
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": "3c9f596f-5d01-46b8-956a-3e54c94d1f37",
+     "label": "null",
+     "slot_index": 0
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": "3525278f-5194-406a-a97a-bed767902f2c",
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": null,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": "e28c2a85-38ec-4d68-9051-3c9c3f81309c",
+   "type": "events/counter",
+   "pos": [
+    620,
+    540
+   ],
+   "size": [
+    210,
+    102
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": "eb52a0f2-4d27-4a2f-a3ec-43a9554a3db0"
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": [],
+     "slot_index": 0
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 3,
+   "type": "basic/time",
+   "pos": [
+    60,
+    260
+   ],
+   "size": [
+    140,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "in ms",
+     "type": "number",
+     "links": []
+    },
+    {
+     "name": "in sec",
+     "type": "number",
+     "links": [
+      "05557d71-62f2-40ac-9a73-475134f8c834"
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": "fb48bad2-b9a2-4950-a64e-33bb4c2d0145",
+   "type": "math/floor",
+   "pos": [
+    220,
+    260
+   ],
+   "size": [
+    83,
+    30
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "in",
+     "type": "number",
+     "link": "05557d71-62f2-40ac-9a73-475134f8c834"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": "number",
+     "links": [
+      "7d8072e1-94ad-465f-b832-f5285c6c5e8b"
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 6,
+   "type": "basic/watch",
+   "pos": [
+    620,
+    350
+   ],
+   "size": [
+    233,
+    52
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": "0e764828-350b-4ba2-82c7-423476a6e840",
+     "label": "null"
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": "fb9f69b8-394f-48b5-869f-185ddb2b4e15",
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [
+      "3525278f-5194-406a-a97a-bed767902f2c"
+     ],
+     "removable": true,
+     "nameLocked": true,
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   "type": "network/websocket",
+   "pos": [
+    360,
+    220
+   ],
+   "size": [
+    201,
+    90
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "message_data",
+     "type": -1,
+     "link": "0e5beee2-fc5a-4747-9878-8255f4ece249"
+    },
+    {
+     "name": "DATA_1",
+     "type": 0,
+     "link": "7d8072e1-94ad-465f-b832-f5285c6c5e8b",
+     "nameLocked": true,
+     "removable": true
+    },
+    {
+     "name": "EV_1",
+     "type": -1,
+     "link": "08529a98-f91d-4bd8-810a-4730cbe47a7e",
+     "nameLocked": true,
+     "removable": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "on_received",
+     "type": -1,
+     "links": [
+      "f806b922-12d7-4f97-9b21-fa73e98dc482"
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "data_rec",
+     "type": 0,
+     "links": [
+      "0e764828-350b-4ba2-82c7-423476a6e840"
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "DATA_1",
+     "type": 0,
+     "links": [
+      "3c9f596f-5d01-46b8-956a-3e54c94d1f37"
+     ],
+     "nameLocked": true,
+     "removable": true
+    },
+    {
+     "name": "EV_1",
+     "type": -1,
+     "links": [
+      "eb52a0f2-4d27-4a2f-a3ec-43a9554a3db0"
+     ],
+     "nameLocked": true,
+     "removable": true,
+     "slot_index": 3
+    }
+   ],
+   "properties": {
+    "url": "ws://127.0.0.1:8080",
+    "room": null,
+    "auto_send_input": true,
+    "only_send_changes": true,
+    "runOnServerToo": false,
+    "auto_reconnect": true,
+    "reconnectInterval": 3000
+   },
+   "boxcolor": "#000"
+  },
+  {
+   "id": "8b531dcc-31b0-4844-958b-ec1aaf991f4b",
+   "type": "basic/string",
+   "pos": [
+    160,
+    70
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "string",
+     "type": "string",
+     "links": [
+      "e89b0727-da69-4ab9-9bfa-81cb56483745"
+     ]
+    }
+   ],
+   "properties": {
+    "value": "data string"
+   }
+  },
+  {
+   "id": 4,
+   "type": "widget/button",
+   "pos": [
+    160,
+    150
+   ],
+   "size": [
+    140,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "message",
+     "type": "string",
+     "link": "e89b0727-da69-4ab9-9bfa-81cb56483745",
+     "removable": true,
+     "nameLocked": true,
+     "param_bind": true,
+     "slot_index": 0
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      "0e5beee2-fc5a-4747-9878-8255f4ece249"
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "DO",
+    "font_size": 30,
+    "message": "data string"
+   }
+  },
+  {
+   "id": "9718dc7c-c00e-4610-bc03-74ef383a3942",
+   "type": "widget/button",
+   "pos": [
+    160,
+    380
+   ],
+   "size": [
+    140,
+    50
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      "08529a98-f91d-4bd8-810a-4730cbe47a7e"
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "DO",
+    "font_size": 30,
+    "message": ""
+   }
+  }
+ ],
+ "links": [
+  [
+   "05557d71-62f2-40ac-9a73-475134f8c834",
+   3,
+   1,
+   "fb48bad2-b9a2-4950-a64e-33bb4c2d0145",
+   0,
+   "number"
+  ],
+  [
+   "fb9f69b8-394f-48b5-869f-185ddb2b4e15",
+   5,
+   0,
+   6,
+   1,
+   -1
+  ],
+  [
+   "0e5beee2-fc5a-4747-9878-8255f4ece249",
+   4,
+   0,
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   0,
+   -1
+  ],
+  [
+   "f806b922-12d7-4f97-9b21-fa73e98dc482",
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   0,
+   5,
+   0,
+   -1
+  ],
+  [
+   "7d8072e1-94ad-465f-b832-f5285c6c5e8b",
+   "fb48bad2-b9a2-4950-a64e-33bb4c2d0145",
+   0,
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   1,
+   "number"
+  ],
+  [
+   "0e764828-350b-4ba2-82c7-423476a6e840",
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   1,
+   6,
+   0,
+   0
+  ],
+  [
+   "08529a98-f91d-4bd8-810a-4730cbe47a7e",
+   "9718dc7c-c00e-4610-bc03-74ef383a3942",
+   0,
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   2,
+   -1
+  ],
+  [
+   "eb52a0f2-4d27-4a2f-a3ec-43a9554a3db0",
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   3,
+   "e28c2a85-38ec-4d68-9051-3c9c3f81309c",
+   0,
+   -1
+  ],
+  [
+   "3525278f-5194-406a-a97a-bed767902f2c",
+   6,
+   0,
+   "afc101fb-2ec2-4055-94ba-fdd443953212",
+   1,
+   -1
+  ],
+  [
+   "3c9f596f-5d01-46b8-956a-3e54c94d1f37",
+   "b147ed6e-e16a-4448-b9bc-1a0c695d47df",
+   2,
+   "afc101fb-2ec2-4055-94ba-fdd443953212",
+   0,
+   0
+  ],
+  [
+   "e89b0727-da69-4ab9-9bfa-81cb56483745",
+   "8b531dcc-31b0-4844-958b-ec1aaf991f4b",
+   0,
+   4,
+   0,
+   "string"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "WebSocket client: it connects to the server in its url property (ws://127.0.0.1:8080); without a server there it logs a connection error every few seconds. The buttons send messages, the Counters count the events received and the Watches show the data.",
+   "bounding": [
+    60,
+    -70,
+    740,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 6,
+  "lastLinkId": 5,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

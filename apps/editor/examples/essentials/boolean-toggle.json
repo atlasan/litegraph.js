@@ -1,0 +1,154 @@
+{
+  "id": "80c69b64-fe0a-4aee-bdc8-59e2436183d3",
+  "revision": 7,
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "basic/boolean",
+      "pos": [
+        350,
+        130
+      ],
+      "size": [
+        140,
+        32
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 5,
+      "inputs": [
+        {
+          "name": "toggle",
+          "type": -1,
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "bool",
+          "type": "boolean",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "value": true
+      },
+      "widgets_values": [
+        true
+      ]
+    },
+    {
+      "id": 2,
+      "type": "widget/button",
+      "pos": [
+        80,
+        130
+      ],
+      "size": [
+        120,
+        84
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": -1,
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "",
+          "type": "boolean",
+          "links": null
+        }
+      ],
+      "properties": {
+        "text": "Toggle",
+        "font_size": 18,
+        "message": ""
+      }
+    },
+    {
+      "id": 3,
+      "type": "basic/watch",
+      "pos": [
+        600,
+        130
+      ],
+      "size": [
+        300,
+        120
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": 0,
+          "link": 2,
+          "label": "value"
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "display": "auto"
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      1,
+      0,
+      -1
+    ],
+    [
+      2,
+      1,
+      0,
+      3,
+      0,
+      "boolean"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Boolean: value and toggle action",
+      "bounding": [
+        45,
+        31,
+        891,
+        254
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    }
+  ],
+  "config": {
+    "align_to_grid": true,
+    "links_ontop": false,
+    "execution": "ancestors"
+  },
+  "extra": {},
+  "version": 0.4,
+  "litegraph_version": "0.18.0-dev.2",
+  "litegraph_modes": 2,
+  "state": {
+    "lastNodeId": 3,
+    "lastLinkId": 2,
+    "lastGroupId": 1,
+    "lastRerouteId": 0
+  }
+}

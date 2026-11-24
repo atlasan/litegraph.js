@@ -1,7 +1,11 @@
 import { LiteGraph } from "../litegraph.js";
 import { LGraphTexture } from "./gltextures.js";
-import { GL } from "../../editor/js/libs/litegl.js";
-import { gl } from "../../editor/js/code.js";
+import { GL } from "../../vendor/litegl.js";
+// `gl` is the global WebGL context that litegl's GL.create sets (the bundles use it the same way)
+
+// built-in pack: node types registered below belong to "litegraph/glfx" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/glfx", version: LiteGraph.VERSION, title: "WebGL effects", description: "WebGL post effects on textures: lens, depth of field, bokeh, vignette and a generic effect.", builtin: true });
 
 // Works with Litegl.js to create WebGL nodes
 
@@ -803,3 +807,5 @@ LGraphTexture.guardRegisteredWebGLNodes();
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
 LiteGraph.declareCapabilities("fx/", ["browser", "webgl"]);
+
+LiteGraph.packs.close("litegraph/glfx");

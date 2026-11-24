@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>LiteGraph - event based</title>
+    <meta charset="UTF-8">
+    <link rel="icon" href="./favicon.svg"/>
+    <link rel="stylesheet" type="text/css" href="../../css/litegraph.css">
+    <link rel="stylesheet" type="text/css" href="../../css/litegraph-editor.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+	<div id="main"></div>
+
+	<!-- The same page as index.html with the event_based preset of js/defaults.js:
+	     scripts off, trigger slots added on action/event connections, undo history on. -->
+	<script type="text/javascript" src="../../vendor/sillyclient.js"></script> <!-- https://tamats.com/projects/sillyserver/src/ -->
+	<script type="text/javascript" src="../../vendor/gl-matrix-min.js"></script>
+	<script type="text/javascript" src="../../vendor/audiosynth.js"></script>
+	<script type="text/javascript" src="../../vendor/midi-parser.js"></script>
+
+	<script type="module" src="../../src/litegraph.js"></script>
+	<script type="module" src="../../src/litegraph-editor.js"></script>
+	<script type="module" src="js/defaults.js?preset=event_based"></script>
+
+	<script type="module" src="../../src/nodes/libraries.js"></script>
+
+	<script type="module" src="../../src/nodes/base.js"></script>
+	<script type="module" src="../../src/nodes/logic.js"></script>
+	<script type="module" src="../../src/nodes/events.js"></script>
+	<script type="module" src="../../src/nodes/math.js"></script>
+	<script type="module" src="../../src/nodes/math3d.js"></script>
+	<script type="module" src="../../src/nodes/strings.js"></script>
+	<script type="module" src="../../src/nodes/interface.js"></script>
+	<script type="module" src="../../src/nodes/geometry.js"></script>
+	<script type="module" src="../../src/nodes/graphics.js"></script>
+	<script type="module" src="../../src/nodes/input.js"></script>
+	<script type="module" src="../../src/nodes/midi.js"></script>
+	<script type="module" src="../../src/nodes/audio.js"></script>
+	<script type="module" src="../../src/nodes/network.js"></script>
+	<script type="module" src="../../src/nodes/objects.js"></script>
+	<script type="module" src="../../src/nodes/litegraph_nodes.js"></script>
+	<script type="module" src="../../src/nodes/html.js"></script>
+	<script type="module" src="../../src/nodes/others.js"></script>
+
+	<script type="module" src="js/demos.js"></script>
+	<script type="module" src="js/code.js"></script>
+</body>
+</html>

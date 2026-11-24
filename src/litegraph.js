@@ -7,7 +7,8 @@ import { Subgraph, GraphInput, GraphOutput, NodeFunction } from "./subgraph.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
+import { LGraphEventTarget, ListenerList } from "./eventtarget.js";
 import { getGlobalObject, setGlobalVariable, getGlobalVariable, isBrowser, isNode, isBun, getRuntime } from './global.js';
 import { LibraryManager } from "./librarymanager.js";
 import { CommandRegistry } from "./commands.js";
@@ -16,7 +17,15 @@ import { SettingsRegistry } from "./settings.js";
 import { ExtensionRegistry } from "./extensionregistry.js";
 import { MenuRegistry } from "./menus.js";
 import { BaseWidget, defaultWidgetTypes } from "./widgets.js";
+import { ValueTypeRegistry } from "./valuetypes.js";
+import { PanelBuilder, defaultPanelEditors } from "./panels.js";
 import { NodeSearch } from "./nodesearch.js";
+import { PackRegistry } from "./packs.js";
+import { ExecutionState } from "./executionstate.js";
+import { ExecutionEngine } from "./execution.js";
+import { LinkRouterRegistry, LinkStyleRegistry, RenderLink } from "./linkrender.js";
+import { LayoutRegistry } from "./layout.js";
+import { NodePalette } from "./palette.js";
 
 /**
  * @class LiteGraph
@@ -60,7 +69,7 @@ function createNodeBadgeRegistry() {
 
 export class LiteGraphClass {
 
-    VERSION = "0.10.10";
+    VERSION = "0.18.0-dev.2";
     /** numeric graph-document schema version written by LGraph.serialize (LiteGraph 0.4 layout, array links) */
     SERIALIZATION_VERSION = 0.4;
     /** size canvases for window.devicePixelRatio in LGraphCanvas.resize */
@@ -134,13 +143,16 @@ export class LiteGraphClass {
     EVENT = -1; // for outputs
     ACTION = -1; // for inputs
 
-    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "On Request"]; // helper
-    NODE_MODES_COLORS = ["#666","#422","#333","#224","#626"]; // use with node_box_coloured_by_mode
+    NODE_MODES = ["Always", "On Event", "Never", "On Trigger", "Bypass", "On Request"]; // names by mode number
+    NODE_MODES_COLORS = ["#666","#422","#333","#224","#535","#626"]; // use with node_box_coloured_by_mode
     ALWAYS = 0;
     ON_EVENT = 1;
     NEVER = 2;
     ON_TRIGGER = 3;
-    ON_REQUEST = 4; // used from event-based nodes, where ancestors are recursively executed on needed
+    BYPASS = 4; // passes inputs to outputs of a matching type and forwards events; 4 as in ComfyUI
+    ON_REQUEST = 5; // runs only when a consumer needs its data (pull); was 4 before mode numbering 2
+    /** the mode numbering this runtime writes as `litegraph_modes` (2: BYPASS = 4, ON_REQUEST = 5) */
+    MODES_VERSION = 2;
 
     UP = 1;
     DOWN = 2;
@@ -159,6 +171,7 @@ export class LiteGraphClass {
     AUTOHIDE_TITLE = 3;
     VERTICAL_LAYOUT = "vertical"; // arrange nodes vertically
 
+    showCanvasOptions = false; // the canvas menu offers "Options": graph info (execution model) and canvas switches
     // canvas flags the graph Options panel offers as on/off switches
     availableCanvasOptions = [
         "allow_addOutSlot_onExecuted", "free_resize", "highquality_render", "use_gradients",
@@ -176,7 +189,12 @@ export class LiteGraphClass {
     catch_exceptions = true;
     throw_errors = true;
     allow_scripts = false; // nodes should be check this value before executing unsafe code :: does not prevent anything in the main library, implement in nodes :: if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits
-    use_deferred_actions = true; // executes actions during the graph execution flow
+    // use_deferred_actions and the other legacy execution flags are accessors (LEGACY_EXECUTION_FLAGS below)
+    _legacy_flag_values = Object.fromEntries(Object.entries(LEGACY_EXECUTION_FLAGS).map(([name, flag]) => [name, flag.value]));
+    _legacy_flags_assigned = new Set(); // flags a project assigned: the default execution model resolves to "legacy"
+    _default_execution_model = "ancestors";
+    _default_execution_model_set = false;
+    _dispatch_depth = 0; // runtime: nesting of runStep and event entry points (node-error reporting)
     registered_node_types = {}; // nodetypes by string
     node_types_by_file_extension = {}; // used for dropping files in the canvas
     Nodes = {}; // node types by classname
@@ -222,7 +240,20 @@ export class LiteGraphClass {
     alt_drag_do_clone_nodes = false; // [true!] very handy, ALT click to clone and drag the new node
     alt_shift_drag_connect_clone_with_input = true; // [true!] very handy, when cloning, keep input connections with SHIFT
 
-    do_add_triggers_slots = false; // [true!] will create and connect event slots when using action/events connections, !WILL CHANGE node mode when using onTrigger (enable mode colors), onExecuted does not need this
+    /**
+     * Create the exec slots (`onTrigger`, `onExecuted`) when an event link is dropped on a node, and
+     * switch the target to ON_TRIGGER. Unassigned (the default), the setting LiteGraph.Node.ExecSlots
+     * and the document's execution model decide (ExecutionEngine.execSlotsFor: on under `ancestors`);
+     * an assigned value wins over the model.
+     */
+    get do_add_triggers_slots() { return this._do_add_triggers_slots ?? false; }
+    set do_add_triggers_slots(value) { this._do_add_triggers_slots = value === undefined ? undefined : !!value; }
+
+    /**
+     * The exec-slot layout for every node, a name (LiteGraph.execSlotLayouts) or a spec; when null
+     * (the default) the setting LiteGraph.Node.ExecSlotLayout decides ("rows" unless changed).
+     */
+    exec_slot_layout = null;
 
     allow_multi_output_for_events = true; // [false!] being events, it is strongly reccomended to use them sequentially, one by one
 
@@ -243,10 +274,6 @@ export class LiteGraphClass {
     actionHistory_enabled = false; // cntrlZ, cntrlY
     actionHistoryMaxSave = 300;
 
-    /* EXECUTING ACTIONS AFTER UPDATING VALUES - ANCESTORS */
-    refreshAncestorsOnTriggers = false; // [true!]
-    refreshAncestorsOnActions = false; // [true!]
-    ensureUniqueExecutionAndActionCall = false; // [true!] the new tecnique.. let's make it working best of
 
     // if true, all newly created nodes/links will use string UUIDs for their id fields instead of integers.
     // use this if you must have node IDs that are unique across all graphs and subgraphs.
@@ -262,11 +289,7 @@ export class LiteGraphClass {
     canRemoveSlots = false; // use removable = true in specific slot
     canRenameSlots = false; // use nameLocked = false in specific slot
 
-    ensureNodeSingleExecution = false; // OLD this will prevent nodes to be executed more than once for step (comparing graph.iteration)
-    ensureNodeSingleAction = false; // OLD this will prevent nodes to be executed more than once for action call!
-    preventAncestorRecalculation = false; // OLD(?) when calculating the ancestors, set a flag to prevent recalculate the subtree
 
-    allowMultiOutputForEvents = false; // being events, it is strongly reccomended to use them sequentually, one by one
 
     reprocess_slot_while_node_configure = false; // reprocess inputs and output node slots comparing by name, will fix index changes, works on dynamics
 
@@ -278,7 +301,6 @@ export class LiteGraphClass {
 
     log_methods = ['error', 'warn', 'info', 'log', 'debug'];
 
-    cb_handler = false;
     debug = true; // enable/disable logging :: in this.debug_level is stored the actual numeric value
     debug_level = 2; // set via this.logging_set_level
 
@@ -306,47 +328,77 @@ export class LiteGraphClass {
         this.ContextMenuClass = ContextMenu;
         this.ContextMenu = function(){ return new ContextMenu(...arguments); };
         this.CallbackHandler = CallbackHandler;
+        this.ExecutionState = ExecutionState;
+        this.ExecutionEngine = ExecutionEngine;
         this.LibraryManager ??= new LibraryManager();
 
         this.setupPlatform();
+        this.registerBuiltinLibraries();
 
         // base inclusion
         this.includeBasicNodes();
     }
 
+    /** Optional libraries the core uses on demand (loaded only when needed). */
+    registerBuiltinLibraries() {
+        const manager = this.LibraryManager;
+        if (!manager || manager.libraries_known?.dagre) return;
+        manager.registerLibrary({
+            key: "dagre",
+            version: "3.1.3",
+            globalObject: "dagre",
+            description: "Graph layout for the \"dagre\" auto-layout engine (graph.autoLayout)",
+            optional: true,
+            browser: { remote: ["https://cdn.jsdelivr.net/npm/@dagrejs/dagre@3.1.3/dist/dagre.min.js"] },
+            server: { npm: ["@dagrejs/dagre"] },
+        });
+    }
+
     includeBasicNodes(){
-        this.registerNodeType("graph/subgraph", Subgraph);
-        this.registerNodeType("graph/input", GraphInput);
-        this.registerNodeType("graph/output", GraphOutput);
-        this.registerNodeType("graph/function", NodeFunction);
+        this.packs.open({ id: "litegraph/core", version: this.VERSION, title: "Subgraphs", description: "Subgraphs and functions: the subgraph node, its graph inputs and outputs, and the function node that runs an inner graph per call.", builtin: true });
+        try {
+            this.registerNodeType("graph/subgraph", Subgraph);
+            this.registerNodeType("graph/input", GraphInput);
+            this.registerNodeType("graph/output", GraphOutput);
+            this.registerNodeType("graph/function", NodeFunction);
+        } finally {
+            this.packs.close("litegraph/core");
+        }
     }
 
-    callbackhandler_setup(){
-        if(this.cb_handler) return;
-        this.cb_handler = new CallbackHandler(this);
-        // register CallbackHandler methods on this // Should move as class standard class methods?
-        this.registerCallbackHandler = function(){ return this.cb_handler.registerCallbackHandler(...arguments); };
-        this.unregisterCallbackHandler = function(){ return this.cb_handler.unregisterCallbackHandler(...arguments); };
-        this.processCallbackHandlers = function(){ return this.cb_handler.processCallbackHandlers(...arguments); };
+    /**
+     * Typed library events: node-type-registered, node-type-replaced, node-type-unregistered,
+     * graph-created, canvas-created ("*" receives all). See LGraphEventTarget.
+     */
+    get events() {
+        return this._events ??= new LGraphEventTarget(this, (error, event) =>
+            this.log_error("litegraph", "event listener failed", event.type, error));
     }
 
-    registerCallbackHandler(){
-        this.callbackhandler_setup();
-        return this.cb_handler.registerCallbackHandler(...arguments);
+    /**
+     * Sets the process-wide dispatch tap, for tracing and profiling (e.g. a per-node execution
+     * trace: phase "hook", name "onExecute", owner the node). `fn({owner, name, phase, ms, error})`
+     * runs after every hook dispatch (phase "hook", error: what the chain threw) and every typed
+     * event dispatch (phase "event", error: the first listener error). Dispatches made inside the
+     * tap are not reported, and a throwing tap is only logged. null removes it.
+     * @param {Function|null} fn
+     * @returns {Function|null} the previous tap
+     */
+    setDispatchTap(fn) {
+        const previous = ListenerList.tap;
+        ListenerList.tap = typeof fn === "function" ? fn : null;
+        return previous;
     }
-    unregisterCallbackHandler(){
-        this.callbackhandler_setup();
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        this.callbackhandler_setup();
-        return this.cb_handler.processCallbackHandlers(...arguments);
+
+    /** dispatch only when someone listens (no allocation otherwise) */
+    _emit(type, detail) {
+        return this._events?.has(type) ? this._events.dispatch(type, detail) : null;
     }
 
     /**
      * Builds the metadata of a node type without creating a node.
      * Sources, in order: an optional `static def = {...}` on the class, then the classic static
-     * fields (`title`, `desc`/`description`, `search_aliases`, `capabilities`, `deprecated`,
+     * fields (`title`, `desc`/`description`, `usage`, `search_aliases`, `capabilities`, `deprecated`,
      * `experimental`, `skip_list`), then capability rules from {@link declareCapabilities}.
      * `def.inputs` / `def.outputs` describe the slots when the class declares them (otherwise null:
      * slots are only known after construction).
@@ -366,6 +418,8 @@ export class LiteGraphClass {
             type,
             title: own.display_name ?? own.title ?? base_class.title ?? type,
             description: own.description ?? base_class.desc ?? base_class.description ?? "",
+            // how to use the node: a short how-to for the node reference (docs/nodes) and tooltips
+            usage: own.usage ?? base_class.usage ?? "",
             category: own.category ?? base_class.category ?? "",
             search_aliases: Object.freeze([...list(own.search_aliases), ...list(base_class.search_aliases)]),
             capabilities: Object.freeze([...capabilities]),
@@ -373,14 +427,155 @@ export class LiteGraphClass {
             experimental: !!(own.experimental ?? base_class.experimental),
             hidden: !!(own.hidden ?? base_class.skip_list),
             source: own.source ?? base_class.source ?? null,
+            icon: own.icon ?? base_class.icon ?? null,
+            pack: this.packs?.packOf(type) ? Object.freeze(this.packs.packOf(type)) : null,
             inputs: slots(own.inputs),
             outputs: slots(own.outputs),
+            // execution needs (Wave 6): models, modes, emit, ticks, pure (see ExecutionEngine.normalizeDeclaration)
+            execution: ExecutionEngine.normalizeDeclaration(own.execution ?? base_class.execution),
         });
+    }
+
+    /**
+     * Declares the execution needs of registered node types without editing their classes
+     * (`static def.execution` is the in-class form). Recomputes their definitions.
+     * @param {string|string[]} types
+     * @param {object} execution - {models, modes, default_mode, emit, ticks, pure, loop, immediate_inputs}
+     */
+    declareNodeExecution(types, execution) {
+        for (const type of Array.isArray(types) ? types : [types]) {
+            const base_class = this.registered_node_types[type];
+            if (!base_class) continue;
+            base_class.execution = { ...(base_class.execution ?? {}), ...execution };
+            this.refreshNodeDefinition(type);
+        }
+    }
+
+    /** Display-only slot label. String icons are glyphs/emoji, not URLs or HTML. */
+    getSlotLabel(node, slot, canvasMode = "icon+text") {
+        const label = String(slot.label ?? slot.name ?? "");
+        const icon = typeof slot.label_icon === "string" ? slot.label_icon : "";
+        const mode = slot.label_mode ?? node.properties?.slot_label_mode ?? canvasMode;
+        if (!icon || mode === "text") return label;
+        return mode === "icon" ? icon : icon + (label ? " " + label : "");
+    }
+
+    /**
+     * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
+     * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`
+     * (null: classic), spec `{shape: "circle"|"square"|"diamond"|"triangle", fill, stroke, lineWidth,
+     * alpha, size, glow: {color, radius, alpha}, mark: "slash"|"bar"|"dot", markColor, redraw}`.
+     */
+    nodePinStyles = new Map();
+
+    /** @returns {() => void} disposer */
+    registerNodePinStyle(name, style) {
+        if (typeof name !== "string" || !name || name === "classic") throw new TypeError("node pin style: a name other than \"classic\" is required");
+        if (typeof style !== "function") throw new TypeError(`node pin style ${name}: a function is required`);
+        const previous = this.nodePinStyles.get(name);
+        this.nodePinStyles.set(name, style);
+        return () => {
+            if (this.nodePinStyles.get(name) !== style) return;
+            if (previous) this.nodePinStyles.set(name, previous);
+            else this.nodePinStyles.delete(name);
+        };
+    }
+
+    /**
+     * Named exec-slot layouts. A layout places the built-in `onTrigger` and `onExecuted` slots
+     * (LGraphNode.getExecSlotPos) instead of putting them in the slot rows:
+     * `{normal: {trigger, executed}, vertical: {trigger, executed}}`, each `{x, y, dx, dy, dir}`
+     * (vertical: nodes with `horizontal` slots, on top and bottom). "rows" is the classic look.
+     */
+    execSlotLayouts = new Map([
+        ["edges", Object.freeze({
+            // on the line between title and body, at both ends; arrows point the way the flow goes
+            normal: { trigger: { x: "left", y: "body", dir: 3 /* LEFT */ }, executed: { x: "right", y: "body", dir: 4 /* RIGHT */ } },
+            // above the pin, and at the bottom at the same offset
+            vertical: { trigger: { x: "pin", y: "top", dir: 1 /* UP */ }, executed: { x: "pin", y: "bottom", dir: 2 /* DOWN */ } },
+        })],
+    ]);
+
+    /**
+     * Registers a named exec-slot layout (see execSlotLayouts), for the setting LiteGraph.Node.ExecSlotLayout,
+     * `LiteGraph.exec_slot_layout`, `node.exec_slot_layout` or a node class's static `exec_slot_layout`.
+     * @returns {() => void} disposer
+     */
+    registerExecSlotLayout(name, spec) {
+        if (typeof name !== "string" || !name || name === "rows") throw new TypeError("exec slot layout: a name other than \"rows\" is required");
+        if (!spec || typeof spec !== "object") throw new TypeError(`exec slot layout ${name}: a spec object is required`);
+        const previous = this.execSlotLayouts.get(name);
+        this.execSlotLayouts.set(name, spec);
+        return () => {
+            if (this.execSlotLayouts.get(name) !== spec) return;
+            if (previous) this.execSlotLayouts.set(name, previous);
+            else this.execSlotLayouts.delete(name);
+        };
+    }
+
+    /** @returns {object|null} the layout spec for a name or spec; null for "rows", null or unknown names */
+    resolveExecSlotLayout(nameOrSpec) {
+        if (!nameOrSpec || nameOrSpec === "rows") return null;
+        if (typeof nameOrSpec === "object") return nameOrSpec;
+        return this.execSlotLayouts.get(nameOrSpec) ?? null;
+    }
+
+    /** the layout every node uses unless it has its own: `exec_slot_layout`, else the setting */
+    execSlotLayoutName() {
+        if (this.exec_slot_layout) return this.exec_slot_layout;
+        try {
+            return this.settings?.get("LiteGraph.Node.ExecSlotLayout") ?? "rows";
+        } catch {
+            return "rows";
+        }
+    }
+
+    /** @returns {number[]} the modes a node may use under its graph's execution model */
+    getValidNodeModes(node) {
+        return ExecutionEngine.validModes(node, ExecutionEngine.modelNameFor(node?.graph));
     }
 
     /** @returns {Readonly<object>|null} the metadata of a registered node type */
     getNodeDefinition(type) {
         return this.node_definitions[type] ?? null;
+    }
+
+    /** Recomputes the stored metadata of a registered type (after its pack or capabilities changed). */
+    refreshNodeDefinition(type) {
+        const base_class = this.registered_node_types[type];
+        if (base_class) this.node_definitions[type] = this.describeNodeType(type, base_class);
+    }
+
+    /**
+     * Registers how to replace a node type by another, as data (see PackRegistry.registerReplacement).
+     * @returns {() => void} disposer
+     */
+    registerNodeReplacement(mapping) {
+        this.setupPlatform();
+        return this.packs.registerReplacement(mapping);
+    }
+
+    /**
+     * Registers a named execution model (Wave 6): a set of rules a document can choose in its
+     * `config.execution` (see ExecutionEngine.registerModel).
+     */
+    registerExecutionModel(name, rules) {
+        return ExecutionEngine.registerModel(name, rules);
+    }
+
+    /** @returns {object|null} the rules of an execution model ("legacy" included) */
+    getExecutionModel(name) {
+        return ExecutionEngine.getModel(name);
+    }
+
+    /** @returns {object[]} every execution model, "legacy" first */
+    listExecutionModels() {
+        return ExecutionEngine.listModels();
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a node type */
+    getNodeReplacement(type) {
+        return this.packs?.getReplacement(type) ?? null;
     }
 
     /**
@@ -486,6 +681,67 @@ export class LiteGraphClass {
     }
 
     /**
+     * Registers a value type: how values of that type are edited on the canvas (widget) and in
+     * panels (editor), with default options, coercion, validation and help (see ValueTypeRegistry).
+     * @param {string} name
+     * @param {object} def
+     * @param {{replace?: boolean}} [options] - replace: allow replacing a registered type
+     * @returns {() => void} disposer (restores a replaced definition)
+     */
+    registerValueType(name, def, options) {
+        this.setupPlatform();
+        return this.valueTypes.register(name, def, options);
+    }
+
+    /** @returns {object|null} the resolved value type for a name or alias */
+    getValueType(name) {
+        this.setupPlatform();
+        return this.valueTypes.get(name);
+    }
+
+    /**
+     * Registers (or replaces) a panel editor: how a value is edited in side panels.
+     * `editor.create(ctx)` returns `{element, set(value), focus?(), destroy?()}`; ctx has
+     * {doc, name, value, options, info, type, readonly, row, label, panel, target, commit(v), preview(v)}.
+     * Value types name their editor (`editor`), and property info can name one (`editor` / `widget`).
+     * @param {string} name
+     * @param {{create: Function}} editor
+     * @returns {() => void} disposer (restores the previous editor)
+     */
+    registerPanelEditor(name, editor) {
+        this.setupPlatform();
+        if (typeof name !== "string" || !name) throw new TypeError("panel editor name must be a non-empty string");
+        if (!editor || typeof editor.create !== "function") throw new TypeError(`panel editor ${name}: needs create(ctx)`);
+        const previous = this.panel_editors[name];
+        this.panel_editors[name] = editor;
+        return () => {
+            if (this.panel_editors[name] !== editor) return;
+            if (previous) this.panel_editors[name] = previous; else delete this.panel_editors[name];
+        };
+    }
+
+    /**
+     * Adds a section to a side panel: `panel` "node" (node details) or "options" (graph options;
+     * `tab` "graph", "canvas", "settings" (default) or a new tab id with `tabTitle`).
+     * `render(section, ctx)` fills it: ctx = {panel, section, node?, graph, canvas, tab?}; use
+     * ctx.panel.addRow / addWidget / addNote, which add to this section.
+     * @param {{id: string, panel: "node"|"options", title?: string, tab?: string, tabTitle?: string,
+     *   order?: number, collapsed?: boolean, when?: Function, render: Function}} def
+     * @returns {() => void} disposer
+     */
+    registerPanelSection(def) {
+        this.setupPlatform();
+        if (!def || typeof def.id !== "string" || !def.id) throw new TypeError("panel section id must be a non-empty string");
+        if (def.panel !== "node" && def.panel !== "options") throw new TypeError(`panel section ${def.id}: panel must be "node" or "options"`);
+        if (typeof def.render !== "function") throw new TypeError(`panel section ${def.id}: needs render(section, ctx)`);
+        const entry = { ...def };
+        this.panel_sections.set(def.id, entry);
+        return () => {
+            if (this.panel_sections.get(def.id) === entry) this.panel_sections.delete(def.id);
+        };
+    }
+
+    /**
      * Registers (or replaces) the class implementing a canvas widget type.
      * @param {string} type - e.g. "slider", or a custom name used with node.addWidget(type, ...)
      * @param {typeof BaseWidget} widgetClass - a BaseWidget subclass with draw() and onPointer()
@@ -533,6 +789,18 @@ export class LiteGraphClass {
         this.settings ??= new SettingsRegistry();
         this.menus ??= new MenuRegistry(this.commands);
         this.widget_types ??= defaultWidgetTypes();
+        this.valueTypes ??= new ValueTypeRegistry();
+        this.panel_editors ??= { ...defaultPanelEditors(), ...PanelBuilder.extraEditors() };
+        this.panel_sections ??= new Map();
+        if (!this.settings.has("LiteGraph.Panel.Side")) {
+            // side panels (options, node details): where they dock, their width, remembered state
+            this.settings.define({ id: "LiteGraph.Panel.Side", name: "Side panels dock on the", type: "combo", options: ["left", "right"], default: "left", tooltip: "Where the options and node panels open. The ⇆ button in a panel switches it." });
+            this.settings.define({ id: "LiteGraph.Panel.Width", name: "Side panel width (px)", type: "number", default: null, hidden: true });
+            this.settings.define({ id: "LiteGraph.Panel.Collapsed", type: "json", name: "Collapsed panel sections", default: () => ({}), hidden: true });
+            this.settings.define({ id: "LiteGraph.Panel.FollowSelection", name: "The node panel follows the selection", default: false, tooltip: "Selecting another node shows it in the open node panel. The ⌖ button in the panel toggles it." });
+            this.settings.define({ id: "LiteGraph.Panel.PropertySort", name: "Node panel property order", type: "combo", options: ["declared", "az", "modified"], default: "declared", tooltip: "declared: as the node type lists them; az: alphabetical; modified: changed values first." });
+            this.settings.define({ id: "LiteGraph.Canvas.Defaults", type: "json", name: "Canvas option defaults", default: () => ({}), hidden: true, tooltip: "Written by \"Save canvas as defaults\" in the options panel; applied to new canvases." });
+        }
         if (!this.nodeSearch) {
             this.nodeSearch = new NodeSearch();
             // definition filters: deprecated nodes are hidden unless a setting shows them
@@ -547,13 +815,51 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Node.IdBadge", name: "Show node id badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
-            this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true, tooltip: "A dot at the right end of the title (a ring when the group's nodes are muted); a click mutes or unmutes them." });
+            this.settings.define({ id: "LiteGraph.Group.BodyDrag", name: "Dragging a group's empty body", type: "combo", options: ["pan", "move"], default: "pan", tooltip: "pan: moves the view; the title bar or Alt+drag moves the group. move: moves the group (legacy LiteGraph)." });
+            this.settings.define({ id: "LiteGraph.Group.TitleScale", name: "Keep group titles readable at every zoom", default: true, tooltip: "The title's on-screen size stays between the min and max px below. Off: the title scales with the canvas (legacy)." });
+            this.settings.define({ id: "LiteGraph.Group.TitleMinPx", name: "Smallest group title on screen (px)", type: "number", default: 12 });
+            this.settings.define({ id: "LiteGraph.Group.TitleMaxPx", name: "Largest group title on screen (px)", type: "number", default: 48 });
             this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
+            this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
+            this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });
+            this.settings.define({ id: "LiteGraph.Execution.AllowAnyMode", name: "Allow node modes their type declares invalid", default: false });
+            this.settings.define({ id: "LiteGraph.Node.PinStyle", name: "Node pin (title box) style", type: "combo", options: ["classic", "modes"], default: "classic", tooltip: "classic: as before. modes: shape and colour by node mode, with run state rings (needs the node_pin extension; otherwise classic)." });
+            this.settings.define({ id: "LiteGraph.Node.TitleQuickMenu", name: "Right-click on a node title opens the pin quick menu", default: false, tooltip: "The pin (title box) always opens it when an extension contributes items; \"More…\" opens the full node menu." });
+            this.settings.define({ id: "LiteGraph.Node.ExecSlots", name: "Create onTrigger / onExecuted slots when an event link is dropped on a node", type: "combo", options: ["auto", "on", "off"], default: "auto", tooltip: "auto: as the document's execution model says (on under ancestors), unless code assigned LiteGraph.do_add_triggers_slots." });
+            this.settings.define({ id: "LiteGraph.Node.ExecSlotLayout", name: "Where the onTrigger / onExecuted slots sit", type: "combo", options: ["rows", "edges"], default: "rows", tooltip: "rows: in the slot rows, as before. edges: on the line between title and body, at both ends (vertical nodes: above the pin and at the bottom)." });
+            this.settings.define({ id: "LiteGraph.Compat.UnmarkedMode4", name: "Mode 4 in documents without a LiteGraph version means", type: "combo", options: ["bypass", "on_request"], default: "bypass", tooltip: "bypass: as in ComfyUI and current LiteGraph. on_request: for files saved by LiteGraph builds older than 2026-11-18, where mode 4 was On Request (tools/migrate-modes.mjs rewrites such files)." });
+            this.settings.define({ id: "LiteGraph.Node.ExecutionBadge", name: "Show execution problems (graph.checkExecution) as node badges", default: false });
+            // execution problems (graph.checkExecution), refreshed at most twice a second per document
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.ExecutionBadge")) return null;
+                const root = node.graph?.rootGraph;
+                if (!root?.checkExecution) return null;
+                const now = Date.now();
+                if (!root._execution_issues || now - (root._execution_issues_time ?? 0) > 500) {
+                    root.checkExecution();
+                    root._execution_issues_time = now;
+                }
+                const issue = root._execution_issues.get(node);
+                return issue ? { text: "⚠ exec", title: issue.message, fgColor: "#FED", bgColor: "rgba(150,80,20,0.85)" } : null;
+            });
             this.nodeBadges.register((node) => {
                 if (!this.settings.get("LiteGraph.Node.LifecycleBadge")) return null;
                 const def = this.getNodeDefinition?.(node.type) ?? node.constructor ?? {};
                 if (def.deprecated) return { text: "deprecated", fgColor: "#FDD", bgColor: "rgba(140,40,40,0.8)" };
                 if (def.experimental) return { text: "experimental", fgColor: "#FFE", bgColor: "rgba(120,100,30,0.8)" };
+                return null;
+            });
+            // library state: a node waiting for its libraries, or whose libraries failed to load
+            this.settings.define({ id: "LiteGraph.Node.LibraryBadge", name: "Show library loading and error badges", default: true });
+            this.nodeBadges.register((node) => {
+                if (!this.settings.get("LiteGraph.Node.LibraryBadge")) return null;
+                if (!node.libraries?.length && !node.requiredLibraries?.length) return null;
+                if (node.initialization_state === "loading") return { text: "loading libraries", fgColor: "#DDE", bgColor: "rgba(40,60,110,0.85)" };
+                if (node.initialization_state === "error" && !node.wrong_environment) {
+                    const message = node.initialization_error?.message ?? String(node.initialization_error ?? "");
+                    return { text: "library error", title: message, fgColor: "#FDD", bgColor: "rgba(140,40,40,0.85)" };
+                }
                 return null;
             });
             this.nodeBadges.register((node) => this.settings.get("LiteGraph.Node.IdBadge") ? { text: `#${node.id}` } : null);
@@ -567,6 +873,33 @@ export class LiteGraphClass {
             });
         }
         this.extensions ??= new ExtensionRegistry(this);
+        this.layout ??= new LayoutRegistry();
+        this.palette ??= new NodePalette(this);
+        if (!this.settings.has("LiteGraph.Palette.Favorites")) {
+            this.settings.define({ id: "LiteGraph.Palette.Favorites", type: "json", name: "Favourite node types (palette)", default: () => [] });
+            this.settings.define({ id: "LiteGraph.Palette.Recent", type: "json", name: "Recently inserted node types (palette)", default: () => [] });
+        }
+        if (!this.settings.has("LiteGraph.Layout.Engine")) {
+            this.settings.define({ id: "LiteGraph.Layout.Engine", name: "Auto-layout engine (dagre, layered, or a registered one)", default: "dagre" });
+        }
+        this.linkRouters ??= new LinkRouterRegistry();
+        this.linkStyles ??= new LinkStyleRegistry();
+        this.RenderLink ??= RenderLink;
+        if (!this.settings.has("LiteGraph.Canvas.LinkStyles")) {
+            this.settings.define({ id: "LiteGraph.Canvas.LinkStyles", type: "json", name: "Active link styles, in order (spotlight, dim-by-type, hidden, labelled, or registered ones)", default: () => [] });
+            this.settings.define({ id: "LiteGraph.Canvas.HiddenLinkTypes", type: "json", name: "Slot types whose links the \"hidden\" link style does not draw", default: () => [] });
+            this.settings.define({ id: "LiteGraph.Canvas.Minimap", name: "Show a minimap on canvases (Editor)", default: false });
+        }
+        if (!this.settings.has("LiteGraph.Canvas.ExecutionOverlays")) {
+            this.settings.define({ id: "LiteGraph.Canvas.ExecutionOverlays", name: "Show node status, progress and errors on the canvas", default: true });
+        }
+        if (!this.packs) {
+            this.packs = new PackRegistry(this);
+            this.settings.define({ id: "LiteGraph.Packs.Stamp", name: "Stamp the pack and its version on nodes of non-builtin packs", default: true });
+            this.settings.define({ id: "LiteGraph.Packs.AutoReplace", name: "Apply automatic node replacements when loading", default: true });
+            this.settings.define({ id: "LiteGraph.Packs.AllowIncompatible", name: "Register packs whose litegraph requirement does not match", default: false });
+            this.settings.define({ id: "LiteGraph.Packs.Disabled", type: "json", name: "Packs whose setup does not run", default: () => [] });
+        }
     }
 
     // set logging debug_level
@@ -726,16 +1059,12 @@ export class LiteGraphClass {
         if (classname) {
             this.Nodes[classname] = base_class;
         }
+        this.packs?._onTypeRegistered(type);
         this.node_definitions[type] = this.describeNodeType(type, base_class);
 
-        this.processCallbackHandlers("onNodeTypeRegistered",{
-            def_cb: this.onNodeTypeRegistered
-        }, type, base_class);
-
+        CallbackHandler.fireHookThenEvent(this, "onNodeTypeRegistered", [type, base_class], this, "node-type-registered", { type, ctor: base_class, previous: prev ?? null });
         if (prev) {
-            this.processCallbackHandlers("onNodeTypeReplaced",{
-                def_cb: this.onNodeTypeReplaced
-            }, type, base_class, prev);
+            CallbackHandler.fireHookThenEvent(this, "onNodeTypeReplaced", [type, base_class, prev], this, "node-type-replaced", { type, ctor: base_class, previous: prev });
         }
 
         // warnings
@@ -780,10 +1109,12 @@ export class LiteGraphClass {
         }
         delete this.registered_node_types[base_class.type];
         delete this.node_definitions[base_class.type];
+        this.packs?._onTypeUnregistered(base_class.type);
         // Nodes is keyed by class name (base_class.constructor is always Function)
         if (base_class.name && this.Nodes[base_class.name] === base_class) {
             delete this.Nodes[base_class.name];
         }
+        this._emit("node-type-unregistered", { type: base_class.type, ctor: base_class });
     }
 
     /**
@@ -1024,7 +1355,12 @@ export class LiteGraphClass {
         node.size ??= node.computeSize();
         node.pos ??= LiteGraph.DEFAULT_POSITION.concat();
         node.mode ??= LiteGraph.ALWAYS;
+        // the constructor's mode: when still unchanged at graph.add, a declared type gets its model's default
+        node._constructed_mode = node.mode;
 
+        // provenance: nodes of non-builtin packs remember their pack (a loaded node keeps its stored stamp)
+        const stamp = this.packs?.stampFor(type);
+        if (stamp) Object.assign(node.properties, stamp);
 
         // extra options
         Object.assign(node, options);
@@ -1337,7 +1673,7 @@ export class LiteGraphClass {
      * @param {*} y 
      * @param {*} maxWidth 
      * @param {*} lineHeight 
-     * @returns 
+     * @returns {Object} `{lines, height}`: the lines drawn and the total height (`max`: the width of the last wrapped line)
      */
     canvasFillTextMultiline(context, text, x, y, maxWidth, lineHeight) {
         var words = (text+"").trim().split(' ');
@@ -1590,6 +1926,9 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
         });
 }
 
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LiteGraphClass);
+
 // if(typeof(root) == "undefined" || !root){
 //     var root = getGlobalObject();
 // }
@@ -1598,6 +1937,46 @@ if (typeof window != "undefined" && !window["requestAnimationFrame"]) {
 // export var setGlobalVariable = setGlobalVariable;
 // export var getGlobalVariable = getGlobalVariable;
 
+
+/**
+ * The legacy execution flags (Wave 6). Each is an accessor: assigning one notes it, and the default
+ * execution model of new graphs then resolves to "legacy" (see LiteGraph.default_execution_model).
+ * Reading and writing keeps working; they are deprecated and removed no earlier than 0.20.
+ */
+export const LEGACY_EXECUTION_FLAGS = Object.freeze({
+    use_deferred_actions: { value: true, replacement: 'the "step" execution model (graph.setExecutionModel("step"))' },
+    refreshAncestorsOnTriggers: { value: false, replacement: 'the "ancestors" execution model' },
+    refreshAncestorsOnActions: { value: false, replacement: 'the "ancestors" execution model' },
+    ensureUniqueExecutionAndActionCall: { value: false, replacement: 'the "ancestors" execution model (memo per frame and call)' },
+    ensureNodeSingleExecution: { value: false, replacement: 'the "strict" execution model' },
+    ensureNodeSingleAction: { value: false, replacement: 'the "strict" execution model' },
+    preventAncestorRecalculation: { value: false, replacement: 'the "ancestors" execution model (memo per frame and call)' },
+});
+for (const name of Object.keys(LEGACY_EXECUTION_FLAGS)) {
+    Object.defineProperty(LiteGraphClass.prototype, name, {
+        configurable: true,
+        enumerable: true,
+        get() { return this._legacy_flag_values[name]; },
+        set(value) {
+            this._legacy_flag_values[name] = value;
+            if (!this._legacy_flags_assigned.has(name)) {
+                this._legacy_flags_assigned.add(name);
+                // deprecated: said once per flag (removal no earlier than 0.20)
+                this.log_warn?.("deprecated", `LiteGraph.${name} is deprecated (removal no earlier than 0.20); use ${LEGACY_EXECUTION_FLAGS[name].replacement}. Assigning it makes new graphs run under the "legacy" execution model unless LiteGraph.default_execution_model is set.`);
+            }
+        },
+    });
+}
+Object.defineProperty(LiteGraphClass.prototype, "default_execution_model", {
+    configurable: true,
+    enumerable: true,
+    /** the model of new graphs ("ancestors"); "legacy" when a legacy flag was assigned and this was not */
+    get() { return this._default_execution_model_set ? this._default_execution_model : ExecutionEngine.resolveDefaultModel(); },
+    set(value) {
+        this._default_execution_model = value;
+        this._default_execution_model_set = true;
+    },
+});
 
 if(!getGlobalVariable("LiteGraph")){
     setGlobalVariable("LiteGraph", new LiteGraphClass());

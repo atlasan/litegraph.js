@@ -8,11 +8,12 @@ import { LiteGraph } from "../litegraph.js";
  * ComfyUI-shaped documents. Node types unknown to this runtime become hidden placeholder types
  * that keep every stored field. Importing has no global effect until it is called.
  *
- * Mode 4 means different things: LiteGraph ON_REQUEST vs ComfyUI BYPASS. The mapping is explicit:
- * - import: Comfy BYPASS (4) -> LiteGraph NEVER (2); the node ids are remembered in
- *   graph.extra.comfy_bypassed so export restores 4 while the node is still NEVER.
- * - export: LiteGraph ON_REQUEST (4) -> Comfy ALWAYS (0) plus a `litegraph_mode: 4` marker
- *   that import restores.
+ * Modes 0 to 4 mean the same in both (4 is BYPASS since mode numbering 2). LiteGraph's ON_REQUEST (5)
+ * has no ComfyUI equivalent:
+ * - export: ON_REQUEST -> Comfy ALWAYS (0) plus a `litegraph_mode: 5` marker that import restores;
+ * - import: a `litegraph_mode: 4` marker (written by builds before numbering 2) means ON_REQUEST.
+ * Earlier imports turned BYPASS into NEVER and listed the nodes in `extra.comfy_bypassed`;
+ * LGraph.migrateModes turns those back into BYPASS, and export still writes 4 for a listed NEVER node.
  *
  * Designed after ComfyUI's documented workflow schema; no ComfyUI code is included.
  */
@@ -99,20 +100,17 @@ export const ComfyInterop = {
                     placeholderTypes.push(node.type);
                 }
                 if (typeof node.litegraph_mode === "number") {
-                    node.mode = node.litegraph_mode; // round-tripped LiteGraph mode (e.g. ON_REQUEST)
+                    // round-tripped LiteGraph mode; 4 was ON_REQUEST before mode numbering 2
+                    node.mode = node.litegraph_mode === 4 ? LiteGraph.ON_REQUEST : node.litegraph_mode;
                     delete node.litegraph_mode;
                 } else if (node.mode === ComfyInterop.COMFY_MODE.BYPASS) {
-                    node.mode = LiteGraph.NEVER;
-                    bypassedHere.push(node.id);
+                    bypassedHere.push(node.id); // BYPASS is native: the mode is kept as it is
                 }
             }
             return bypassedHere;
         };
         const bypassed = importNodes(data);
-        for (const definition of definitions) {
-            const inner = importNodes(definition);
-            if (inner.length) definition.extra = { ...(definition.extra ?? {}), comfy_bypassed: inner };
-        }
+        for (const definition of definitions) importNodes(definition);
         // version 1 keeps a link's reroute parent on the link; LLink does not model it, so keep it
         // as a 0.4-style link extension that export converts back
         if (data.version === 1 && Array.isArray(data.links)) {
@@ -122,9 +120,8 @@ export const ComfyInterop = {
                 data.extra = { ...(data.extra ?? {}), linkExtensions: extensions };
             }
         }
-        if (bypassed.length) {
-            data.extra = { ...(data.extra ?? {}), comfy_bypassed: bypassed };
-        }
+        // the modes above are in the current numbering (an unmarked document would follow LiteGraph.Compat.UnmarkedMode4)
+        data.litegraph_modes = LiteGraph.MODES_VERSION;
         const error = graph.configure(data);
         return { error: !!error, placeholderTypes, bypassed };
     },
@@ -160,6 +157,7 @@ export const ComfyInterop = {
         // subgraphs as ComfyUI definitions: instances reference definitions.subgraphs
         const data = LiteGraph.cloneObject(graph.serialize({ format: "definitions" }));
         delete data.litegraph_version; // marks documents written by this runtime (see isComfyWorkflow)
+        delete data.litegraph_modes; // ComfyUI numbers modes 0 to 4 the same way
         const extra = data.extra = { ...(data.extra ?? {}) };
         // modes of the root and of every definition
         const exportNodes = (holder, holderExtra) => {

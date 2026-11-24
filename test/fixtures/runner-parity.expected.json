@@ -1,0 +1,5 @@
+{
+  "note": "Wave 6 runner parity: DataStore values (by node title) after a Timer fires Once into FOR (3 iterations) and WHILE (count < 3). Checked in-process by test/execution-models.test.js and in a runner worker by tools/tests/runner.test.mjs.",
+  "runner-parity-ancestors.json": { "model": "ancestors", "FOR result": 3, "WHILE result": 3 },
+  "runner-parity-legacy.json": { "model": "legacy", "FOR result": 3, "WHILE result": 0 }
+}

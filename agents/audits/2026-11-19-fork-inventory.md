@@ -9,8 +9,8 @@ Read-only when it was written. Several items have since been fixed; see the **Si
 | Item | At `01cb4ea` | Since |
 |---|---|---|
 | B1 slot menu `_slot` | done | |
-| B2 `buildFromNodes` stub | open | open (Wave 2) |
-| B3 orphan subgraph on "Convert to subgraph" | open | open (Wave 2) |
+| B2 `buildFromNodes` stub | open | **fixed, Wave 2a** (`8436ba6`) |
+| B3 orphan subgraph on "Convert to subgraph" | open | **fixed, Wave 2a** (`8436ba6`) |
 | B4 nested clone with uuids | done | |
 | B5 `param_bind` `outputData` | done | |
 | B6 CallbackHandler semantics | open | **fixed, Wave 0** |
@@ -30,7 +30,7 @@ Read-only when it was written. Several items have since been fixed; see the **Si
 | Ph3.2 transactions on every edit path | partial | **mostly done, Wave 1** (keyboard, rename, search insert, widget gesture, group drag) |
 | Ph4.1 commands/contributions | open | **done, Wave 1** |
 | Comfy C0–C3 | done | |
-| Comfy C4 (subgraph format) | proposed | open |
+| Comfy C4 (subgraph format) | proposed | **decided**: [ADR 0001](../memories/decisions/0001-subgraph-document-format.md) option B, accepted 2026-11-20 (Wave 3) |
 
 **Bugs found by this audit:**
 - `getTopGraph()` threw before any subgraph was opened. Fixed in Wave 0.
@@ -66,7 +66,7 @@ Read-only when it was written. Several items have since been fixed; see the **Si
 
 ## 3. Unify / join
 
-1. **One event pipe.** `CallbackHandler` (167 call sites), `LGraphEventTarget` and the legacy `on*` callbacks should become one prioritised, vetoable pipe that also emits typed events. B6 is fixed and the extension registry is built on CallbackHandler (Wave 1); merging the systems is open.
+1. **One event pipe.** `CallbackHandler` (167 call sites), `LGraphEventTarget` and the legacy `on*` callbacks should become one prioritised, vetoable pipe that also emits typed events. B6 is fixed and the extension registry is built on CallbackHandler (Wave 1); merging the systems is open. **Since:** done in Wave 7 (`88d44aa`, one listener core; [decision 0003](../memories/decisions/0003-event-pipe.md)).
 2. **One change path.** `beforeChange`/`afterChange`, `onGraphChanged` and transactions should converge. `before`/`after` cannot simply map onto transactions: the pointer paths open and close them asymmetrically. See the roadmap.
 3. **One gesture owner.** `CanvasPointer`, the canvas pointer flags and DragAndScale's listeners should become one `CanvasPointer`.
 4. **Link-drag logic.** Move it into `LinkConnector`, with one connect-in-transaction helper.
@@ -83,14 +83,14 @@ Read-only when it was written. Several items have since been fixed; see the **Si
 ## 4. Expand (close to done)
 
 - **Transactions.** Mostly done in Wave 1.
-- **Typed events.** Add `node-property-changed`, `link-connected/removed`, `selection-changed`, `widget-changed`, `execution-step` and `node-error`.
-- **Reroutes.** Drag from a reroute, delete from its menu, floating reroutes, multi-select.
-- **Subgraphs.** Finish `buildFromNodes`, add unpack, then decide C4.
+- **Typed events.** Add `node-property-changed`, `link-connected/removed`, `selection-changed`, `widget-changed`, `execution-step` and `node-error`. **Since:** done in Wave 1.
+- **Reroutes.** Drag from a reroute, delete from its menu, floating reroutes, multi-select. **Since:** done in Wave 2b.
+- **Subgraphs.** Finish `buildFromNodes`, add unpack, then decide C4. **Since:** done in Wave 2a (`8436ba6`) and Wave 3 (ADR 0001).
 - **ComfyInterop.** Wire it into the editor's open/save and the runner's `configure`.
 - **LibraryManager.** Show library state in the node UI.
 - **Capability metadata.** Done in Wave 1.
 - **Extensions.** Done in Wave 1.
-- **Runner.** An execution status stream.
+- **Runner.** An execution status stream. **Since:** done in Wave 4b (execution-state protocol) and 6d (runner overlay).
 
 ## 5. Top risks (at `01cb4ea`)
 

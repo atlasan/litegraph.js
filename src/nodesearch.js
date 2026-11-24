@@ -65,7 +65,12 @@ export class NodeSearch {
         return query;
     }
 
-    /** slot types of a registered type, from its definition or the slot-type registry */
+    /**
+     * Slot types of a registered type: from its definition, else from the slot-type registry, else from
+     * a probe instance (`new Class()`, cached per class) for types that declare no slots and were never
+     * created (outputs reach the registry only with `auto_load_slot_types`). A constructor that throws
+     * leaves the type without slot types.
+     */
     static _slotTypes(def, input) {
         const declared = input ? def.inputs : def.outputs;
         if (declared) return declared.map((slot) => String(slot.type ?? "").toLowerCase());
@@ -74,7 +79,27 @@ export class NodeSearch {
         for (const [slotType, entry] of Object.entries(registry ?? {})) {
             if (entry?.nodes?.includes?.(def.type)) types.push(String(slotType).toLowerCase());
         }
-        return types;
+        if (types.length) return types;
+        const probed = NodeSearch._probeSlots(def.type);
+        return probed ? (input ? probed.inputs : probed.outputs) : types;
+    }
+
+    /** the slot types of one instance of a type, cached per class; null when it cannot be built */
+    static _probeSlots(type) {
+        const Class = LiteGraph.registered_node_types?.[type];
+        if (typeof Class !== "function") return null;
+        NodeSearch._probes ??= new WeakMap();
+        if (NodeSearch._probes.has(Class)) return NodeSearch._probes.get(Class);
+        let probed = null;
+        try {
+            const node = new Class();
+            const list = (slots) => (slots ?? []).flatMap((slot) => String(slot?.type ?? "").toLowerCase().split(","));
+            probed = { inputs: list(node.inputs), outputs: list(node.outputs) };
+        } catch {
+            probed = null;
+        }
+        NodeSearch._probes.set(Class, probed);
+        return probed;
     }
 
     /** true when a definition passes the query's i:/o:/c:/s: filters */

@@ -1,0 +1,103 @@
+{
+  "id": "bf22a2f9-66db-4f99-8866-841469eebf70",
+  "revision": 5,
+  "last_node_id": 2,
+  "last_link_id": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "basic/data",
+      "pos": [
+        90,
+        130
+      ],
+      "size": [
+        300,
+        70
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 5,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "object",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "value": "{\"name\":\"Sample\",\"enabled\":true,\"readings\":[3,5,8]}"
+      },
+      "boxcolor": "#AEA"
+    },
+    {
+      "id": 2,
+      "type": "basic/watch",
+      "pos": [
+        470,
+        130
+      ],
+      "size": [
+        350,
+        180
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": 0,
+          "link": 1,
+          "label": "value"
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "display": "auto"
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "object"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Watch: structured values",
+      "bounding": [
+        55,
+        31,
+        801,
+        314
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    }
+  ],
+  "config": {
+    "align_to_grid": true,
+    "links_ontop": false,
+    "execution": "ancestors"
+  },
+  "extra": {},
+  "version": 0.4,
+  "litegraph_version": "0.18.0-dev.2",
+  "litegraph_modes": 2,
+  "state": {
+    "lastNodeId": 2,
+    "lastLinkId": 1,
+    "lastGroupId": 1,
+    "lastRerouteId": 0
+  }
+}

@@ -24,6 +24,9 @@ export interface INodeSlot {
     name: string;
     type: SlotType;
     label?: string;
+    /** Optional display-only glyph or emoji; never interpreted as a URL or markup. */
+    label_icon?: string;
+    label_mode?: "text" | "icon+text" | "icon";
     dir?:
         | typeof LiteGraph.UP
         | typeof LiteGraph.RIGHT
@@ -34,6 +37,39 @@ export interface INodeSlot {
     shape?: SlotShape;
     locked?: boolean;
     nameLocked?: boolean;
+    /** a built-in exec slot (addOnTriggerInput / addOnExecutedOutput) */
+    exec?: 'trigger' | 'executed';
+}
+
+/** how a node pin is drawn (LGraphCanvas.drawNodePin) */
+export interface NodePinSpec {
+    shape?: 'circle' | 'square' | 'diamond' | 'triangle';
+    fill?: string | null;
+    stroke?: string | null;
+    lineWidth?: number;
+    alpha?: number;
+    size?: number;
+    glow?: { color: string; radius?: number; alpha?: number };
+    mark?: 'slash' | 'bar' | 'dot' | null;
+    markColor?: string;
+    /** keep redrawing (an animation such as a fading glow) */
+    redraw?: boolean;
+}
+/** a node pin style: the spec for a node, or null for the classic look */
+export type NodePinStyle = (node: LGraphNode, canvas: LGraphCanvas, info: { shape: number | string | undefined }) => NodePinSpec | null;
+
+/** where an exec slot sits: anchors plus offsets (canvas units or "N%"), and the side links attach */
+export interface ExecSlotPlacement {
+    x?: 'left' | 'center' | 'right' | 'pin' | number;
+    y?: 'top' | 'title' | 'body' | 'middle' | 'bottom' | number;
+    dx?: number | string;
+    dy?: number | string;
+    dir?: number;
+}
+/** an exec-slot layout; `vertical` applies to nodes with `horizontal` slots (top and bottom) */
+export interface ExecSlotLayout {
+    normal?: { trigger?: ExecSlotPlacement; executed?: ExecSlotPlacement };
+    vertical?: { trigger?: ExecSlotPlacement; executed?: ExecSlotPlacement };
 }
 
 export interface INodeInputSlot extends INodeSlot {
@@ -146,8 +182,10 @@ export type ContextMenuEventListener = (
     node: LGraphNode
 ) => boolean | void;
 
-export interface LiteGraphAPI extends CallbackHost {
+export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     VERSION: string;
+    /** library events: node types registered, replaced or unregistered; graphs and canvases created */
+    readonly events: LGraphEventTarget<LiteGraphEventMap, LiteGraphAPI>;
     /** numeric graph-document schema version written by LGraph.serialize */
     SERIALIZATION_VERSION: number;
 
@@ -202,7 +240,12 @@ export interface LiteGraphAPI extends CallbackHost {
     ON_EVENT: 1;
     NEVER: 2;
     ON_TRIGGER: 3;
-    ON_REQUEST: 4;
+    /** passes inputs to outputs of a matching type and forwards events (4 as in ComfyUI) */
+    BYPASS: 4;
+    /** runs only when a consumer needs its data; was 4 before mode numbering 2 */
+    ON_REQUEST: 5;
+    /** the mode numbering written as `litegraph_modes` (2: BYPASS = 4, ON_REQUEST = 5) */
+    MODES_VERSION: number;
 
     UP: 1;
     DOWN: 2;
@@ -346,6 +389,12 @@ export interface LiteGraphAPI extends CallbackHost {
     menus: MenuRegistry;
     /** widget type name -> class (see registerWidgetType) */
     widget_types: Record<string, typeof BaseWidget>;
+    /** value types: how a value of each type is edited on the canvas (widget) and in panels (editor) */
+    valueTypes: ValueTypeRegistry;
+    /** panel editor name -> editor (see registerPanelEditor) */
+    panel_editors: Record<string, PanelEditor>;
+    /** sections added to side panels (see registerPanelSection) */
+    panel_sections: Map<string, PanelSectionDefinition>;
     /** node search: parsing, ranking and definition filters */
     nodeSearch: NodeSearch;
     /** node badges drawn in title bars; providers return badges for a node (settings LiteGraph.Node.IdBadge, LiteGraph.Node.SourceBadge) */
@@ -366,12 +415,28 @@ export interface LiteGraphAPI extends CallbackHost {
     /** a link dragged over a node body highlights, and a drop connects, the slot it would use (default true) */
     snap_link_to_slot: boolean;
     registerWidgetType(type: string, widgetClass: typeof BaseWidget): void;
+    /** registers a value type (widget, editor, options, coercion, help); returns a disposer that restores a replaced one */
+    registerValueType(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void;
+    /** the resolved value type for a name or alias (case-insensitive), or null */
+    getValueType(name: string): Readonly<ResolvedValueType> | null;
+    /** registers (or replaces) a panel editor; returns a disposer that restores the previous one */
+    registerPanelEditor(name: string, editor: PanelEditor): () => void;
+    /** adds a section to the node panel or the options panel; returns a disposer */
+    registerPanelSection(def: PanelSectionDefinition): () => void;
     registerExtension(def: ExtensionDefinition): () => void;
     setupPlatform(): void;
     persistPlatformState(storage?: SettingsStorage): void;
     node_definitions: Record<string, Readonly<NodeDefinition>>;
     describeNodeType(type: string, base: Function): Readonly<NodeDefinition>;
+    getSlotLabel(node: LGraphNode, slot: INodeSlot, canvasMode?: "text" | "icon+text" | "icon"): string;
     getNodeDefinition(type: string): Readonly<NodeDefinition> | null;
+    /** recomputes the stored metadata of a registered type */
+    refreshNodeDefinition(type: string): void;
+    /** node packs: manifests, attribution of node types, provenance, replacement mappings */
+    packs: PackRegistry;
+    /** registers how to replace a node type by another, as data; returns a disposer */
+    registerNodeReplacement(mapping: NodeReplacementMapping): () => void;
+    getNodeReplacement(type: string): Readonly<NodeReplacementMapping> | null;
     listNodeDefinitions(filter?: { category?: string; capability?: string; includeDeprecated?: boolean; includeHidden?: boolean; supportedOnly?: boolean }): Readonly<NodeDefinition>[];
     declareCapabilities(selector: string | string[] | ((type: string) => boolean), capabilities: string[]): void;
     getRuntimeCapabilities(): Set<string>;
@@ -385,14 +450,84 @@ export interface LiteGraphAPI extends CallbackHost {
     GraphInput: typeof GraphInput;
     GraphOutput: typeof GraphOutput;
     CallbackHandler: typeof CallbackHandler;
+    /**
+     * Sets the process-wide dispatch tap (null removes it): called after every hook dispatch and
+     * typed event dispatch. Dispatches made inside the tap are not reported. Returns the previous tap.
+     */
+    setDispatchTap(tap: DispatchTap | null): DispatchTap | null;
+    ExecutionState: typeof ExecutionState;
+    RenderLink: typeof RenderLink;
+    /** link routers by name: "spline", "linear", "straight", and registered ones */
+    linkRouters: LinkRouterRegistry;
+    /** link style resolvers by name: "spotlight", "dim-by-type", "hidden", "labelled", and registered ones */
+    linkStyles: LinkStyleRegistry;
+    /** auto-layout engines: "dagre" (loaded on demand), "layered", and registered ones */
+    layout: LayoutRegistry;
+    /** the node palette's data: groups, search, favourites, recent */
+    palette: NodePalette;
+    /** registers the optional libraries the core loads on demand (dagre) */
+    registerBuiltinLibraries(): void;
     use_uuids: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "step" execution model (graph.setExecutionModel("step")); removal no earlier than 0.20
+     */
     use_deferred_actions: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "strict" execution model; removal no earlier than 0.20
+     */
     ensureNodeSingleExecution: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "strict" execution model; removal no earlier than 0.20
+     */
     ensureNodeSingleAction: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model (memo per frame and call); removal no earlier than 0.20
+     */
     ensureUniqueExecutionAndActionCall: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model; removal no earlier than 0.20
+     */
     refreshAncestorsOnActions: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model; removal no earlier than 0.20
+     */
     refreshAncestorsOnTriggers: boolean;
+    /**
+     * Legacy execution flag, read by the "legacy" model; assigning it makes new graphs default to "legacy".
+     * @deprecated use the "ancestors" execution model (memo per frame and call); removal no earlier than 0.20
+     */
     preventAncestorRecalculation: boolean;
+    /** the canvas menu offers "Options" (graph info: the execution model; canvas switches) */
+    showCanvasOptions: boolean;
+    /** the execution model of new graphs: "ancestors", or "legacy" once a legacy flag was assigned (unless this was set) */
+    default_execution_model: string;
+    /** the execution engine and model registry (Wave 6) */
+    ExecutionEngine: typeof ExecutionEngine;
+    registerExecutionModel(name: string, rules?: ExecutionModelRules): ExecutionModel;
+    getExecutionModel(name: string): ExecutionModel | null;
+    /** create exec slots when an event link is dropped on a node; unassigned, the setting and the model decide (ExecutionEngine.execSlotsFor) */
+    do_add_triggers_slots: boolean;
+    /** the exec-slot layout of every node (a name or a spec); null: the setting LiteGraph.Node.ExecSlotLayout */
+    exec_slot_layout: string | ExecSlotLayout | null;
+    /** named exec-slot layouts ("edges" built in; "rows" is the classic look) */
+    execSlotLayouts: Map<string, ExecSlotLayout>;
+    registerExecSlotLayout(name: string, spec: ExecSlotLayout): () => void;
+    /** node pin (title box) styles for the setting LiteGraph.Node.PinStyle; "classic" is built in */
+    nodePinStyles: Map<string, NodePinStyle>;
+    registerNodePinStyle(name: string, style: NodePinStyle): () => void;
+    resolveExecSlotLayout(nameOrSpec: string | ExecSlotLayout | null | undefined): ExecSlotLayout | null;
+    execSlotLayoutName(): string | ExecSlotLayout;
+    /** declares the execution needs of registered types (in-class form: static def.execution) */
+    declareNodeExecution(types: string | string[], execution: NodeExecutionDeclaration): void;
+    /** the modes a node may use under its graph's model */
+    getValidNodeModes(node: LGraphNode): number[];
+    listExecutionModels(): ExecutionModel[];
     properties_allow_input_binding: boolean;
     properties_allow_output_binding: boolean;
     formatNumber(value: number | string, precision?: number): string;
@@ -423,6 +558,8 @@ export type serializedLGraph<
     version: number;
     /** library version that wrote the document */
     litegraph_version?: string;
+    /** mode numbering of the document (2: BYPASS = 4, ON_REQUEST = 5); absent before numbering 2 */
+    litegraph_modes?: number;
     /** fields from other editors are preserved verbatim */
     [foreignField: string]: unknown;
 };
@@ -443,6 +580,12 @@ export declare class LGraph {
 
     /** fresh id counters */
     static createState(): LGraphState;
+    /**
+     * Brings a document's node modes to the current numbering, in place (configure calls it):
+     * `litegraph_version` without `litegraph_modes` means the old numbering (4 was ON_REQUEST);
+     * an unmarked document keeps 4 as BYPASS unless `unmarked` (or LiteGraph.Compat.UnmarkedMode4) is "on_request".
+     */
+    static migrateModes(data: object, options?: { unmarked?: 'bypass' | 'on_request' }): { numbering: 'current' | 'old' | 'unmarked'; changed: number };
     /** document identity (uuid) */
     id: string;
     /** number of saved changes to the document */
@@ -525,7 +668,13 @@ export declare class LGraph {
     whenReady(): Promise<this>;
     hasPendingInitialization(): boolean;
     /** Stops the execution loop of the graph */
-    stop(): void;
+    /** dropQueued: clear actions queued for deferred delivery (here and in inner graphs) */
+    stop(options?: { dropQueued?: boolean }): void;
+    /** the execution model this graph runs under, resolved from the root's config.execution; assigning it is `setExecutionModel(name)` (one undo step; an unknown name throws) */
+    executionModel: string;
+    getExecutionRules(): ExecutionModel;
+    /** sets the root's config.execution in one undo step; throws for an unknown model */
+    setExecutionModel(name: string): boolean;
     /** Await asynchronous cleanup returned by stop/removal callbacks. */
     whenIdle(): Promise<this>;
     stopAsync(): Promise<this>;
@@ -706,6 +855,29 @@ export declare class LGraph {
     insertBlueprint(json: object, options?: { pos?: ArrayLike<number> }): Subgraph;
     /** the node at a path from the root graph ("3:7:2"), or null */
     resolvePath(path: string): LGraphNode | null;
+    /** changed since loaded or marked saved */
+    readonly isModified: boolean;
+    markSaved(): void;
+    markModified(): void;
+    /** sets a node's execution state and emits execution-state on the root graph when someone listens */
+    reportExecutionState(node: LGraphNode | null, kind: ExecutionStateKind, fields?: { status?: ExecutionStatus; value?: number; max?: number; message?: string }): ExecutionStateMessage;
+    /** applies a received execution-state message (e.g. from the runner) */
+    applyExecutionState(message: ExecutionStateMessage): LGraphNode | LGraph | null;
+    /** arranges nodes with a layout engine, one undo step; nodes: only these (a selection) */
+    autoLayout(options?: { engine?: string; nodes?: LGraphNode[]; direction?: 'LR' | 'RL' | 'TB' | 'BT'; spacing?: { node?: number; rank?: number } }): Promise<{ engine: string; moved: number }>;
+    /** missing node types, one entry per type (deep: include subgraphs, default true) */
+    getMissingNodes(options?: { deep?: boolean }): MissingNodeReport[];
+    /** diagnostics against the execution model and the node declarations (see LiteGraph.Node.ExecutionBadge) */
+    checkExecution(): ExecutionReport;
+    /** sets the declared default modes of the current model on every node (one undo step); returns how many changed */
+    applyExecutionModelModes(): number;
+    /** replaces a node (one undo step); mapping: a mapping, a type name, or the registered mapping */
+    replaceNode(node: LGraphNode, mapping?: NodeReplacementMapping | string): { node: LGraphNode; dropped: DroppedLink[] };
+    /** replaces every matching node with a usable replacement (default: missing-type placeholders), one undo step per graph */
+    replaceNodes(options?: { filter?: (node: LGraphNode) => boolean; deep?: boolean }): {
+        replaced: { id: GraphId; path: string; from: string; to: string; dropped: DroppedLink[] }[];
+        skipped: { id: GraphId; path: string; type: string; reason: string }[];
+    };
     /** subgraph and function nodes, at any depth, that use a definition */
     findSubgraphInstances(id: string): Subgraph[];
     /** true while this graph or a graph containing it is being configured */
@@ -774,6 +946,8 @@ export declare class LGraphNode {
     static title: string;
     static type: null | string;
     static widgets_up: boolean;
+    /** Whether a declared runtime matches the current one; "node" also matches Bun. */
+    static runtimeMatches(declared: string | undefined, runtime?: string): boolean;
     constructor(title?: string);
 
     title: string;
@@ -819,6 +993,7 @@ export declare class LGraphNode {
         | typeof LiteGraph.ON_TRIGGER
         | typeof LiteGraph.NEVER
         | typeof LiteGraph.ALWAYS
+        | typeof LiteGraph.BYPASS
         | typeof LiteGraph.ON_REQUEST;
 
     /** If set to true widgets do not start after the slots */
@@ -845,6 +1020,18 @@ export declare class LGraphNode {
     /** get the title string */
     /** node ids from the root graph joined by ":" (e.g. "3:7:2" inside subgraphs) */
     getPath(): string;
+    /** runtime execution state (not saved), set by runStep, reportProgress, setExecutionStatus or applyExecutionState */
+    execution_state?: NodeExecutionState;
+    /** LiteGraph.getTime() when the node last executed or ran an action (the pin's recent-run state) */
+    last_run_time?: number;
+    /** why the last changeMode was refused (it names LiteGraph.Execution.AllowAnyMode), or null */
+    mode_refusal?: string | null;
+    /** a short glyph or a loaded image drawn before the title (else the definition's icon) */
+    icon?: string | CanvasImageSource | null;
+    /** reports progress (value of max) through the execution-state protocol */
+    reportProgress(value: number, max?: number, message?: string): ExecutionStateMessage | null;
+    /** sets the execution status; null clears it */
+    setExecutionStatus(status: ExecutionStatus | null, message?: string): ExecutionStateMessage | null;
     getTitle(): string;
     /** sets the value of a property */
     setProperty(name: string, value: any): void;
@@ -1012,6 +1199,16 @@ export declare class LGraphNode {
     addCustomWidget<T extends IWidget>(customWidget: T): T;
     /** true for an input attached to a widget (`input.widget = {name}`) */
     static isWidgetInputSlot(slot: unknown): boolean;
+    /** "trigger" (onTrigger) or "executed" (onExecuted) for a built-in exec slot, else null */
+    static isExecSlot(slot: unknown): 'trigger' | 'executed' | null;
+    /** this node's exec-slot layout name or spec; overrides LiteGraph.exec_slot_layout and the setting */
+    exec_slot_layout?: string | ExecSlotLayout;
+    getExecSlotLayout(): ExecSlotLayout | null;
+    getExecSlotPlacement(is_input: boolean, slot: INodeSlot | undefined): ExecSlotPlacement | null;
+    /** an exec slot's position relative to the node, or null when it sits in the slot rows */
+    getExecSlotPos(is_input: boolean, slot_number: number, out?: number[]): number[] | null;
+    /** the side links attach to a slot (an exec placement's dir, the slot's dir, or the default) */
+    getSlotDir(is_input: boolean, slot_number: number): number;
     getWidgetFromSlot(slot: INodeInputSlot): IWidget | null;
     getSlotFromWidget(widget: IWidget): INodeInputSlot | null;
     isWidgetLinked(widget: IWidget): boolean;
@@ -1266,7 +1463,8 @@ export declare class LGraphGroup {
     resizeTo(items: Array<LGraphNode | LGraphGroup | Reroute>, padding?: number): boolean;
     fitToContents(padding?: number): boolean;
     /** sets the execution mode of every node inside; returns the nodes changed */
-    setNodesMode(mode: number): LGraphNode[];
+    /** nodes whose type refuses the mode keep theirs and are listed in the result's (non-enumerable) skipped */
+    setNodesMode(mode: number): LGraphNode[] & { readonly skipped: LGraphNode[] };
 }
 
 /** An event delivered by LGraphEventTarget. */
@@ -1280,20 +1478,35 @@ export declare class LGraphEvent<TDetail = unknown, TTarget = unknown> {
     preventDefault(): void;
 }
 
-/** Typed event hub; listener errors are reported, never thrown to the dispatcher. */
+export interface ListenerOptions { once?: boolean; signal?: AbortSignal; /** higher runs first (default 0) */ priority?: number }
+
+/** Typed event hub; listener errors are reported, never thrown to the dispatcher. "*" receives every event. */
 export declare class LGraphEventTarget<TMap = Record<string, unknown>, TOwner = unknown> {
     constructor(owner?: TOwner, onError?: (error: unknown, event: LGraphEvent) => void);
-    on<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
-    once<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: { signal?: AbortSignal }): () => void;
-    off<K extends keyof TMap & string>(type: K, listener: (event: LGraphEvent<TMap[K], TOwner>) => void): void;
-    has(type: keyof TMap & string): boolean;
+    on<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: ListenerOptions): () => void;
+    on(type: "*", listener: (this: TOwner, event: LGraphEvent<TMap[keyof TMap], TOwner>) => void, options?: ListenerOptions): () => void;
+    once<K extends keyof TMap & string>(type: K, listener: (this: TOwner, event: LGraphEvent<TMap[K], TOwner>) => void, options?: Omit<ListenerOptions, "once">): () => void;
+    once(type: "*", listener: (this: TOwner, event: LGraphEvent<TMap[keyof TMap], TOwner>) => void, options?: Omit<ListenerOptions, "once">): () => void;
+    off<K extends keyof TMap & string>(type: K | "*", listener: (event: LGraphEvent<TMap[K], TOwner>) => void): void;
+    has(type: (keyof TMap & string) | "*"): boolean;
     dispatch<K extends keyof TMap & string>(type: K, detail: TMap[K], options?: { cancelable?: boolean }): LGraphEvent<TMap[K], TOwner>;
 }
 
 export interface LGraphEventMap {
     /** before a document loads; mutate detail.data to migrate it, preventDefault() to cancel */
     configuring: { data: Record<string, unknown>; keep_old: boolean };
-    configured: { data: Record<string, unknown>; error: boolean };
+    /** replaced: nodes changed by automatic replacement mappings while loading */
+    configured: { data: Record<string, unknown>; error: boolean; replaced: { id: GraphId; from: string; to: string; dropped: DroppedLink[] }[] };
+    /** a document with missing node types loaded (root graph; only when someone listens) */
+    /** reason: "load", or "history" / "rollback" when undo, redo or a failed transaction reloads the graph */
+    "missing-nodes": { report: MissingNodeReport[]; reason: 'load' | 'history' | 'rollback' };
+    "node-replaced": { node: LGraphNode; from: string; to: string; dropped: DroppedLink[] };
+    /** one per recorded change (per transaction); from a subgraph also on the root graph with kind "subgraph"; kind "configure" after a load */
+    "graph-changed": { kind: GraphChangeKind; kinds: GraphChangeKind[]; action: string; revision: number; graph: LGraph; reason?: 'load' | 'history' | 'rollback' };
+    /** isModified changed */
+    "modified-changed": { modified: boolean };
+    /** a node's execution state changed (root graph); remote: applied from a received message */
+    "execution-state": { message: ExecutionStateMessage; node: LGraphNode | null; remote?: boolean };
     "node-added": { node: LGraphNode };
     "node-removed": { node: LGraphNode };
     /** a saved change (one per transaction) */
@@ -1309,10 +1522,27 @@ export interface LGraphEventMap {
     /** execution stopped on an error */
     /** node: the innermost failing node (also inside subgraphs); path: its LGraphNode.getPath() */
     "node-error": { error: unknown; node: LGraphNode | null; path: string | null };
+    /** an event or execution was refused (root graph; only when someone listens); setting names what lifts a limit */
+    "event-dropped": { node: LGraphNode | null; path: string | null; reason: EventDropReason; setting?: string; message: string };
+    /** setExecutionModel changed the document's model (root graph) */
+    "execution-model-changed": { model: string };
+    /** execution diagnostics after the root graph loads (only when someone listens) */
+    "execution-check": { report: ExecutionReport; reason: 'load' | 'history' | 'rollback' };
     /** a subgraph definition changed by a commit; linked instances were refreshed (root graph) */
     "subgraph-definition-changed": { id: string; node: LGraphNode; revision: number };
     /** an instance got its own definition: inserted content differed under the same id, or make unique (root graph) */
     "subgraph-forked": { node: LGraphNode; from: string; to: string; reason: string };
+    "group-added": { group: LGraphGroup };
+    "group-removed": { group: LGraphGroup };
+}
+
+/** Events of LiteGraph.events (the library). */
+export interface LiteGraphEventMap {
+    "node-type-registered": { type: string; ctor: Function; previous: Function | null };
+    "node-type-replaced": { type: string; ctor: Function; previous: Function };
+    "node-type-unregistered": { type: string; ctor: Function };
+    "graph-created": { graph: LGraph };
+    "canvas-created": { canvas: LGraphCanvas };
 }
 
 export interface LGraphCanvasEventMap {
@@ -1323,8 +1553,15 @@ export interface LGraphCanvasEventMap {
     };
     "subgraph-opened": { graph: LGraph; parent: LGraph | null };
     "subgraph-closed": { graph: LGraph; subgraph: LGraph; node: LGraphNode | null };
-    "selection-changed": { nodes: LGraphNode[]; items?: Array<LGraphNode | LGraphGroup | Reroute> };
+    "selection-changed": { nodes: LGraphNode[]; items: Array<LGraphNode | LGraphGroup | Reroute> };
     disposed: { canvas: LGraphCanvas };
+    /** the view moved or zoomed (checked once per drawn frame) */
+    "viewport-changed": { offset: [number, number]; scale: number; visible_area: number[] };
+    /** a dropped blueprint file could not be inserted */
+    "blueprint-error": { error: unknown; file: unknown };
+    /** re-emitted from the canvas LinkConnector */
+    "link-drag-start": LinkDragDetail & { canvas: LGraphCanvas };
+    "link-drag-end": LinkDragDetail & { canvas: LGraphCanvas };
 }
 
 /** A point links are routed through; chains via parentId towards the origin. */
@@ -1441,6 +1678,8 @@ export declare class DragAndScale {
     element: HTMLElement | null;
     visible_area: Vector4;
     bindEvents(element: HTMLElement): void;
+    /** removes the listeners bindEvents added (LGraphCanvas never binds them) */
+    unbindEvents(): void;
     computeVisibleArea(): void;
     onMouse(e: MouseEvent): void;
     toCanvasContext(ctx: CanvasRenderingContext2D): void;
@@ -1461,6 +1700,23 @@ export declare class DragAndScale {
  * @param options { skip_rendering, autoresize }
  */
 export declare class LGraphCanvas {
+    slot_label_mode: "text" | "icon+text" | "icon";
+    /** a short notice over the canvas (execution refusals); logs without a DOM */
+    showExecutionNotice(message: string, ms?: number): HTMLElement | null;
+    /** writes a widget value as a canvas edit does (value type coercion, onWidgetChanged, bound property, history, widget-changed, callback); true when it changed */
+    applyWidgetValue(node: LGraphNode, widget: IWidget, value: any, context?: { old_value?: any; pos?: Vector2; event?: Event }): boolean;
+    /** loose equality; arrays and objects compare by content */
+    static sameValue(a: any, b: any): boolean;
+    /** label, tooltip, category, type and default of each canvas option (options panel, Canvas tab) */
+    static optionInfo: Record<string, CanvasOptionInfo>;
+    /** opens the node panel as a double click does (the onShowNodePanel callback may handle it); true when the built-in panel opened */
+    openNodePanel(node: LGraphNode): boolean;
+    /** creates a side panel (see PanelBuilder) */
+    createPanel(title: string, options?: PanelOptions): PanelElement;
+    /** the open node panel, if any */
+    node_panel: PanelElement | null;
+    /** the open options panel, if any */
+    options_panel: PanelElement | null;
     static node_colors: Record<
         string,
         {
@@ -1474,6 +1730,9 @@ export declare class LGraphCanvas {
     static search_limit: number;
     /** resolve a shape constant or shape name to a shape constant */
     static resolveShape(shape: number | string | undefined, fallback: number): number;
+    /** the unit vector an arrow slot points along (into the node for inputs) */
+    static slotFlow(is_input: boolean, dir?: number): [number, number];
+    static pathSlotArrow(ctx: CanvasRenderingContext2D, pos: ArrayLike<number>, flow: [number, number]): void;
     /** clamp a number to a widget's optional min/max */
     static clampWidgetNumber(value: number, options?: { min?: number; max?: number }): number;
     /** backing-store pixels per CSS pixel */
@@ -1668,6 +1927,8 @@ export declare class LGraphCanvas {
     openSubgraph(graph: LGraph): void;
     /** closes a subgraph contained inside a node */
     closeSubgraph(): void;
+    /** inserts a blueprint file (a definition or a document) as a copy; opens a file input unless a File is given */
+    pickBlueprintFile(pos?: ArrayLike<number>, file?: Blob | { text(): Promise<string> } | null): Promise<LGraphNode | null>;
     /** leaves open subgraphs until `level` is shown (0: the root graph); each one left commits its edits */
     closeSubgraphTo(level: number): void;
     /** the path of open subgraphs, root first */
@@ -1714,6 +1975,17 @@ export declare class LGraphCanvas {
 
     /** returns true if a position (in graph space) is on top of a node little corner box */
     isOverNodeBox(node: LGraphNode, canvasX: number, canvasY: number): boolean;
+    /** true on a node's pin (the title box; a click there collapses the node) */
+    isOverNodePin(node: LGraphNode, canvasX: number, canvasY: number): boolean;
+    /** today's pin look: the execution status, boxcolor or mode colour, a circle or square */
+    classicNodePinStyle(node: LGraphNode, shape?: number | string): NodePinSpec;
+    /** the pin look from the style named by LiteGraph.Node.PinStyle, or classic */
+    resolveNodePinStyle(node: LGraphNode, shape?: number | string): NodePinSpec;
+    drawNodePin(ctx: CanvasRenderingContext2D, node: LGraphNode, title_height: number, shape?: number | string, low_quality?: boolean): void;
+    /** the "node-pin" menu items, then "More…" (the full node menu) */
+    getNodePinMenuOptions(node: LGraphNode): MenuItem[];
+    /** true when a right-click opens the pin quick menu (the pin, or the title with LiteGraph.Node.TitleQuickMenu) */
+    isNodePinMenuEvent(node: LGraphNode | null, event: { canvasX: number; canvasY: number }): boolean;
     /** returns true if a position (in graph space) is on top of a node input slot */
     isOverNodeInput(
         node: LGraphNode,
@@ -1809,15 +2081,17 @@ export declare class LGraphCanvas {
      * @param numSublines number of sublines (useful to represent vec3 or rgb)
      **/
     renderLink(
+        ctx: CanvasRenderingContext2D,
         a: Vector2,
         b: Vector2,
-        link: object,
-        skipBorder: boolean,
-        flow: boolean,
-        color?: string,
+        link: LLink | null,
+        skipBorder?: boolean,
+        flow?: boolean | number,
+        color?: string | null,
         startDir?: number,
         endDir?: number,
-        numSublines?: number
+        numSublines?: number,
+        options?: { style?: LinkStyle | null; source?: LLink | null }
     ): void;
 
     computeConnectionPoint(
@@ -1826,7 +2100,20 @@ export declare class LGraphCanvas {
         t: number,
         startDir?: number,
         endDir?: number
-    ): void;
+    ): [number, number];
+    /** link router name (LiteGraph.linkRouters); null: from links_render_mode */
+    link_router: string | null;
+    /** active link style names; null: the setting LiteGraph.Canvas.LinkStyles */
+    link_styles: string[] | null;
+    /** a slot type whose links stay bright with the "dim-by-type" style */
+    link_type_focus: string | number | null;
+    getLinkRouter(): LinkRouter | null;
+    getActiveLinkStyles(): string[];
+    resolveLinkStyle(renderLink: RenderLink): LinkStyle | null;
+    minimap?: MiniMap | null;
+    showMinimap(options?: MiniMapOptions): MiniMap | null;
+    hideMinimap(): void;
+    toggleMinimap(options?: MiniMapOptions): boolean;
 
     drawExecutionOrder(ctx: CanvasRenderingContext2D): void;
     /** draws the widgets stored inside a node */
@@ -1861,6 +2148,13 @@ export declare class LGraphCanvas {
     /** badge and title-button rectangles in node space (right-aligned, buttons outermost) */
     getNodeTitleDecorations(node: LGraphNode, ctx?: CanvasRenderingContext2D | null): { buttons: Array<{ button: NodeTitleButton; rect: number[] }>; badges: Array<{ badge: NodeBadge; rect: number[] }>; font: string };
     drawNodeTitleDecorations(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number): void;
+    static EXECUTION_STATUS_COLORS: Record<ExecutionStatus, string>;
+    /** drag data type for a node type dropped on the canvas (inserted through LiteGraph.palette) */
+    static NODE_DRAG_MIME: string;
+    executionOverlaysEnabled(): boolean;
+    getNodeIcon(node: LGraphNode): string | CanvasImageSource | null;
+    drawNodeTitleText(node: LGraphNode, ctx: CanvasRenderingContext2D, title_height: number, selected: boolean): void;
+    drawNodeExecutionOverlay(node: LGraphNode, ctx: CanvasRenderingContext2D, size: ArrayLike<number>, title_height: number, shape: number, low_quality: boolean): void;
     getNodeTitleButtonAt(node: LGraphNode, x: number, y: number): NodeTitleButton | null;
     clickNodeTitleButton(node: LGraphNode, button: NodeTitleButton, e: any): void;
     /** the group's header toggle rectangle [x, y, w, h] (setting LiteGraph.Group.HeaderToggle), or null */
@@ -1900,7 +2194,8 @@ export declare class LGraphCanvas {
     /** Called by `getCanvasMenuOptions`, append to default options */
     getExtraMenuOptions?(): ContextMenuItem[];
     /** Called when mouse right click */
-    processContextMenu(node: LGraphNode, event: Event): void;
+    /** `full`: the node menu even on the pin */
+    processContextMenu(node: LGraphNode, event: Event, options?: { full?: boolean }): void;
 }
 
 export declare class ContextMenu {
@@ -1938,19 +2233,242 @@ export interface CallbackInfo {
     data: CallbackOptions;
     results_chain: any[];
 }
-export interface CallbackOptions { priority?: number; is_default?: boolean; call_once?: boolean; }
-export interface CallbackHost {
+export interface CallbackOptions {
+    /** higher runs first; the default (legacy onX) callback runs between >= 0 and < 0 */
+    priority?: number;
+    /** skipped when another handler prevents the default */
+    is_default?: boolean;
+    /** unregister after the first call (alias: once) */
+    call_once?: boolean;
+    once?: boolean;
+    /** unregister on abort */
+    signal?: AbortSignal;
+}
+/** A handler result: a plain value, or this object. */
+export interface CallbackResult { return_value?: any; result_priority?: number; prevent_default?: boolean; stop_replication?: boolean }
+/**
+ * Hook names and the arguments their handlers receive after `info`, per host (the legacy `onX`
+ * receives the same arguments without `info`). Generated from the dispatch sites and kept in sync
+ * by `tools/check-types.mjs`: every name dispatched in src/ must be declared in one of these maps.
+ * Names not listed still compile through the `string` overloads.
+ */
+export interface LiteGraphHooks {
+    onNodeTypeRegistered: [type: string, ctor: Function];
+    onNodeTypeReplaced: [type: string, ctor: Function, previous: Function];
+    on_lgraph_construct: [graph: LGraph];
+    on_lgraphnode_construct: [node: LGraphNode];
+    on_lgraphcanvas_construct: [canvas: LGraphCanvas];
+}
+export interface LGraphHooks {
+    // lifecycle and history
+    onConfigure: [data: serializedLGraph];
+    onSerialize: [data: serializedLGraph];
+    on_change: [graph: LGraph];
+    onBeforeChange: [graph: LGraph, info?: any];
+    onAfterChange: [graph: LGraph, info?: any];
+    // execution
+    onPlayEvent: [];
+    onStopEvent: [];
+    onBeforeStep: [];
+    onExecuteStep: [];
+    onAfterStep: [];
+    onAfterExecute: [];
+    onTrigger: [action: string, param: any, options?: ExecutionOptions];
+    onNodeTrace: [node: LGraphNode, message: any];
+    // nodes and links
+    onNodeAdded: [node: LGraphNode];
+    onNodeRemoved: [node: LGraphNode];
+    onConnectionChange: [node: LGraphNode];
+    onNodeConnectionChange: [type: number, node: LGraphNode, slot: number, other: LGraphNode | null, otherSlot: number | null];
+    // graph inputs and outputs
+    onInputAdded: [name: string, type: string];
+    onInputRemoved: [name: string];
+    onInputRenamed: [oldName: string, name: string];
+    onInputTypeChanged: [name: string, type: string];
+    onOutputAdded: [name: string, type: string];
+    onOutputRemoved: [name: string];
+    onOutputRenamed: [oldName: string, name: string];
+    onOutputTypeChanged: [name: string, type: string];
+    onInputsOutputsChange: [];
+    // menus
+    onGetNodeMenuOptions: [options: ContextMenuItem[], node: LGraphNode];
+}
+export interface LGraphNodeHooks {
+    // lifecycle
+    onNodeCreated: [];
+    onPostConstruct: [];
+    onAdded: [graph: LGraph];
+    onRemoved: [graph?: LGraph];
+    onConfigure: [data: SerializedLGraphNode];
+    onSerialize: [data: SerializedLGraphNode];
+    onResize: [size: Vector2];
+    onBounding: [area: Float32Array | Vector4];
+    onPropertyChanged: [name: string, value: any, previous?: any];
+    onGetPropertyInfo: [name: string];
+    // execution (graph.sendEventToAllNodes dispatches onStart, onStop and other names to every node)
+    onStart: [];
+    onStop: [];
+    onExecute: [param?: any, options?: ExecutionOptions];
+    onAction: [action: string, param: any, options?: ExecutionOptions, slot?: number];
+    onAfterExecuteNode: [param?: any, options?: ExecutionOptions];
+    onAfterActionedNode: [param?: any, options?: ExecutionOptions];
+    // slots and links
+    onInputAdded: [input: INodeInputSlot];
+    onInputRemoved: [slot: number, input?: INodeInputSlot];
+    onOutputAdded: [output: INodeOutputSlot];
+    onOutputRemoved: [slot: number];
+    onBeforeConnectInput: [slot: number];
+    onConnectInput: [slot: number, type: string | number, output: INodeOutputSlot, origin: LGraphNode, originSlot: number];
+    onConnectOutput: [slot: number, type: string | number, input: INodeInputSlot, target: LGraphNode, targetSlot: number];
+    onConnectionsChange: [type: number, slot: number, connected: boolean, link: LLink | null, slotInfo: INodeInputSlot | INodeOutputSlot];
+    onGetInputs: [];
+    onGetOutputs: [];
+    onNodeInputAdd: [value: any];
+    onNodeOutputAdd: [value: any];
+    // pointer, keys and drop
+    onMouseDown: [event: MouseEvent, pos: Vector2, canvas: LGraphCanvas];
+    onMouseUp: [event: MouseEvent, pos: Vector2, canvas?: LGraphCanvas];
+    onMouseMove: [event: MouseEvent, pos: Vector2, canvas: LGraphCanvas];
+    onMouseEnter: [event: MouseEvent];
+    onMouseLeave: [event: MouseEvent];
+    onDblClick: [event: MouseEvent, pos: Vector2, canvas: LGraphCanvas];
+    onDrag: [offset: Vector2];
+    onMoved: [node?: LGraphNode, selected?: Record<string, LGraphNode>];
+    onSelected: [];
+    onDeselected: [];
+    onInputClick: [slot: number, event: MouseEvent];
+    onInputDblClick: [slot: number, event: MouseEvent];
+    onOutputClick: [slot: number, event: MouseEvent];
+    onOutputDblClick: [slot: number, event: MouseEvent];
+    onKeyDown: [event: KeyboardEvent];
+    onKeyUp: [event: KeyboardEvent];
+    onDropItem: [event: DragEvent];
+    onDropFile: [file: File];
+    onDropData: [data: string | ArrayBuffer | null, filename: string, file: File];
+    onWidgetChanged: [name: string, value: any, previous: any, widget: IWidget];
+    onTitleButtonClick: [button: any, canvas: LGraphCanvas, event: MouseEvent];
+    // node panel
+    onAddPropertyToPanel: [name: string, panel: any, value: any, info: any, update: (name: string, value: any) => void];
+    onShowCustomPanelInfo: [panel: any];
+    // drawing
+    onDrawBackground: [ctx: CanvasRenderingContext2D, canvas: LGraphCanvas, element: HTMLCanvasElement, mouse: Vector2];
+    onDrawForeground: [ctx: CanvasRenderingContext2D, canvas: LGraphCanvas, element: HTMLCanvasElement];
+    onDrawCollapsed: [ctx: CanvasRenderingContext2D, canvas: LGraphCanvas];
+    onDrawTitle: [ctx: CanvasRenderingContext2D];
+    onDrawTitleBar: [ctx: CanvasRenderingContext2D, titleHeight: number, size: Vector2, scale: number, color: string];
+    onDrawTitleBox: [ctx: CanvasRenderingContext2D, titleHeight: number, size: Vector2, scale: number];
+    onDrawTitleText: [ctx: CanvasRenderingContext2D, titleHeight: number, size: Vector2, scale: number, font: string, selected: boolean];
+    // menus
+    getMenuOptions: [canvas: LGraphCanvas];
+    getExtraMenuOptions: [canvas: LGraphCanvas, options: ContextMenuItem[]];
+    getSlotMenuOptions: [slot: { input?: INodeInputSlot; output?: INodeOutputSlot; slot: number }];
+    onMenuNodeInputs: [entries: ContextMenuItem[]];
+    onMenuNodeOutputs: [entries: ContextMenuItem[]];
+}
+export interface LGraphCanvasHooks {
+    // lifecycle
+    onClear: [];
+    onOpenSubgraph: [graph: LGraph, previous: LGraph];
+    onCloseSubgraph: [graph: LGraph, previous: LGraph, node: LGraphNode | undefined];
+    onShowNodePanel: [node: LGraphNode];
+    onSearchBoxSelection: [type: string, event: Event, canvas: LGraphCanvas];
+    // drawing
+    onRender: [element: HTMLCanvasElement, ctx: CanvasRenderingContext2D];
+    onRenderBackground: [element: HTMLCanvasElement, ctx: CanvasRenderingContext2D];
+    onDrawBackground: [ctx: CanvasRenderingContext2D, visibleArea: Float32Array];
+    onDrawForeground: [ctx: CanvasRenderingContext2D, visibleRect: Float32Array | Vector4];
+    onDrawOverlay: [ctx: CanvasRenderingContext2D];
+    onDrawLinkTooltip: [ctx: CanvasRenderingContext2D, link: LLink | null, canvas?: LGraphCanvas];
+    // input
+    onMouse: [event: MouseEvent];
+    onMouseDown: [event: MouseEvent];
+    onKeyDown: [event: KeyboardEvent];
+    onDropItem: [event: DragEvent];
+    // selection and moves
+    onNodeSelected: [node: LGraphNode];
+    onNodeDeselected: [node: LGraphNode];
+    onSelectionChange: [selected: Record<string, LGraphNode>];
+    onNodeMoved: [node: LGraphNode, selected: Record<string, LGraphNode>];
+    onNodeDblClicked: [node: LGraphNode];
+    onGroupMoving: [group: LGraphGroup, dx: number, dy: number];
+    onGroupMoved: [group: LGraphGroup];
+    onGroupResized: [group: LGraphGroup];
+    // menus
+    getMenuOptions: [];
+    getExtraMenuOptions: [canvas: LGraphCanvas, options: ContextMenuItem[]];
+}
+export interface LGraphGroupHooks {
+    onMoved: [];
+}
+/** the handler arguments of hook K in map H (after info) */
+export type HookArgs<H, K extends keyof H> = H[K] extends any[] ? H[K] : any[];
+/** The hook API of a host; H maps its hook names to their arguments (unknown names use the string overloads). */
+export interface CallbackHost<H = {}> {
+    registerCallbackHandler<K extends keyof H & string>(name: K, callback: (info: CallbackInfo, ...args: HookArgs<H, K>) => any, options?: CallbackOptions): number | false;
     registerCallbackHandler(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): number | false;
     unregisterCallbackHandler(name: string, id: number): boolean;
+    /** runs the handlers and the default callback (def_cb, the legacy onX); synchronous; rethrows the first handler error after the chain */
     processCallbackHandlers(name: string, options?: { def_cb?: Function | false; on_result?: (result: any) => void }, ...args: any[]): any;
+    hasCallbackHandlers(name: string): boolean;
+    /** the handler registry, created on first read */
+    cb_handler: CallbackHandler;
+    /** registers a handler and returns its disposer */
+    onHook<K extends keyof H & string>(name: K, callback: (info: CallbackInfo, ...args: HookArgs<H, K>) => any, options?: CallbackOptions): () => boolean;
+    onHook(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => boolean;
 }
 export declare class CallbackHandler {
     constructor(owner: object);
     debug: boolean;
+    ob_ref: object;
+    /** the value a hook settled on: return_value of an object result, otherwise the result itself */
+    static valueOf(result: any): any;
+    /** true for value, plain or as {return_value: value} */
+    static is(result: any, value: any): boolean;
+    /** true for true, or an object result with a truthy return_value */
+    static handled(result: any): boolean;
+    /** menu and slot-list hooks: return_value when it is an object (null included), with arrays also an array result; otherwise fallback */
+    static objectOf<T = any>(result: any, fallback?: T, arrays?: boolean): any;
+    /**
+     * Fires a point that has both faces: the hook chain (the legacy owner[name] as default), then the
+     * typed event on emitter. With veto, a hook result equal to it skips the event. A detail function
+     * is called after the hook; null skips the event. Returns the hook result.
+     */
+    static fireHookThenEvent(owner: CallbackHost<any>, name: string, args: any[], emitter: { _emit?(type: string, detail: any, options?: any): any } | null | undefined,
+        type: string, detail: object | (() => object | null), options?: { veto?: any; emit?: { recorded?: boolean; cancelable?: boolean } }): any;
 }
-export interface CallbackHandler extends CallbackHost {}
-export interface LGraph extends CallbackHost {}
-export interface LGraphNode extends CallbackHost {
+export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
+    /** per hook name */
+    callbacks_handlers: Record<string, ListenerList>;
+}
+/** One dispatch, as the dispatch tap sees it. */
+export interface DispatchRecord {
+    /** the hook host, or the event target's owner (LiteGraph, a graph, a canvas) */
+    owner: object;
+    /** the hook name or the event type */
+    name: string;
+    phase: "hook" | "event";
+    /** duration of the whole dispatch, handlers and legacy onX included */
+    ms: number;
+    /** hooks: what the chain threw; events: the first listener error; otherwise null */
+    error: unknown;
+}
+export type DispatchTap = (record: DispatchRecord) => void;
+/** The listener core shared by hooks and typed events: ordered by priority, copy-on-write. */
+export declare class ListenerList {
+    /** the process-wide dispatch tap; set it with LiteGraph.setDispatchTap */
+    static tap: DispatchTap | null;
+    /** never mutated; replaced on every change */
+    readonly handlers: ReadonlyArray<{ id: number; priority: number; callback: Function; data: Record<string, any> }>;
+    last_id: number;
+    readonly size: number;
+    add(callback: Function, data?: { priority?: number; signal?: AbortSignal; [key: string]: any }): number;
+    remove(id: number): boolean;
+    find(callback: Function): { id: number; priority: number; callback: Function; data: Record<string, any> } | undefined;
+}
+/** Gives a class the hook API (registerCallbackHandler, unregisterCallbackHandler, processCallbackHandlers, hasCallbackHandlers, onHook). */
+export declare function installHooks<T extends Function>(Class: T): T;
+export interface LGraph extends CallbackHost<LGraphHooks> {}
+export interface LGraphNode extends CallbackHost<LGraphNodeHooks> {
     doExecute(param?: any, options?: ExecutionOptions): void;
     execute(param?: any, options?: ExecutionOptions): void;
     actionDo(action: string, param?: any, options?: ExecutionOptions, action_slot?: number): void;
@@ -1959,8 +2477,8 @@ export interface LGraphNode extends CallbackHost {
     loadLibraries(keys?: string[]): Promise<void>;
     loadRequiredLibraries(): Promise<void>;
 }
-export interface LGraphCanvas extends CallbackHost {}
-export interface LGraphGroup extends CallbackHost {}
+export interface LGraphCanvas extends CallbackHost<LGraphCanvasHooks> {}
+export interface LGraphGroup extends CallbackHost<LGraphGroupHooks> {}
 
 export interface LibraryRegistration {
     key: string;
@@ -2041,7 +2559,10 @@ export declare class Subgraph extends LGraphNode {
     /** stored instance fields this runtime does not model (written back) */
     kept_fields: Record<string, unknown>;
 }
-export declare class GraphInput extends LGraphNode {}
+export declare class GraphInput extends LGraphNode {
+    /** replaces the value widget by the widget of a value type, keeping the value when it converts */
+    setValueWidgetType(type: string): IWidget;
+}
 export declare class GraphOutput extends LGraphNode {}
 /** calls a subgraph definition: call -> inputs in, one run, outputs out -> done */
 export declare class NodeFunction extends Subgraph {
@@ -2165,10 +2686,16 @@ export interface ExtensionContext {
     keybindings: { add(binding: KeybindingDefinition): () => void };
     settings: { define(def: SettingDefinition): () => void; get(id: string): any; set(id: string, value: any): boolean };
     on(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
-    onTarget(target: CallbackHost, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
+    onTarget(target: CallbackHost<any>, name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => void;
     onCanvas(fn: (canvas: LGraphCanvas, ctx: ExtensionCanvasContext) => void | (() => void)): void;
     menus: { register(location: MenuLocation, provider: MenuProvider): () => void };
-    onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: { once?: boolean; signal?: AbortSignal }): () => void;
+    /** side panel sections and editors, removed on dispose */
+    panels: { registerSection(section: PanelSectionDefinition): () => void; registerEditor(name: string, editor: PanelEditor): () => void };
+    /** value types, removed on dispose */
+    valueTypes: { register(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void };
+    onEvent(target: { events: LGraphEventTarget<any, any> }, type: string, listener: (event: LGraphEvent<any, any>) => void, options?: ListenerOptions): () => void;
+    /** hook names (onX, on_x, getXMenuOptions) register a hook handler; other names a typed listener */
+    listen(target: CallbackHost<any> | { events: LGraphEventTarget<any, any> }, name: string, listener: (...args: any[]) => any, options?: CallbackOptions & ListenerOptions): () => void;
     addDisposer(dispose: () => void): () => void;
 }
 export interface ExtensionDefinition {
@@ -2207,6 +2734,8 @@ export interface NodeDefinition {
     type: string;
     title: string;
     description: string;
+    /** how to use the node (def.usage or a static usage); "" when not given */
+    usage: string;
     category: string;
     search_aliases: readonly string[];
     /** what the type needs from its runtime: "browser", "node", "webgl", "audio", "midi", "dom", "network", "sys", or custom */
@@ -2215,11 +2744,317 @@ export interface NodeDefinition {
     experimental: boolean;
     hidden: boolean;
     source: string | null;
+    /** a short glyph or an image drawn before the title */
+    icon: string | CanvasImageSource | null;
+    /** the installed pack that owns the type (see LiteGraph.packs) */
+    pack: Readonly<{ id: string; version: string; builtin: boolean }> | null;
     inputs: readonly Readonly<NodeSlotDefinition>[] | null;
     outputs: readonly Readonly<NodeSlotDefinition>[] | null;
+    /** execution needs from static def.execution (or LiteGraph.declareNodeExecution); null when undeclared */
+    execution: Readonly<NodeExecutionDeclaration> | null;
+}
+/** What a node type needs from the execution model (Wave 6). Undeclared types are valid everywhere and start ALWAYS. */
+export interface NodeExecutionDeclaration {
+    /** per model: false = not valid there; or its default mode and valid modes */
+    models?: Record<string, false | { default_mode?: number; modes?: readonly number[] }>;
+    /** modes that are valid in every model (NEVER is always allowed) */
+    modes?: readonly number[];
+    /** the mode new nodes get outside legacy */
+    default_mode?: number;
+    /** "immediate": its events are delivered now, with a refresh, in every model but legacy (loops, Sequence) */
+    emit?: 'immediate';
+    /** needs the step loop (Timer, Delay): never re-run by a pull */
+    ticks?: boolean;
+    /** safe to re-run: ON_REQUEST by default under "ancestors" */
+    pure?: boolean;
+    /** a loop: checkExecution reports it without a body */
+    loop?: boolean;
+    /** action inputs delivered immediately even under deferred models ("break") */
+    immediate_inputs?: readonly string[];
+}
+export interface ExecutionIssue { node: LGraphNode; path: string | null; code: 'invalid-model' | 'invalid-mode' | 'ticks-not-stepped' | 'on-request-emitter' | 'loop-without-body' | 'pure-always'; message: string }
+export interface ExecutionReport { model: string; issues: ExecutionIssue[] }
+
+/** A pack manifest: plain data, never code (see LiteGraph.packs). */
+export interface PackManifest {
+    id: string;
+    version: string;
+    title?: string;
+    description?: string;
+    /** true for the node families shipped with litegraph (never stamped, always compatible) */
+    builtin?: boolean;
+    /** e.g. { litegraph: ">=0.10.0" } */
+    requires?: { litegraph?: string; [name: string]: string | undefined };
+    nodes?: string[];
+    extensions?: string[];
+    libraries?: string[];
+    templates?: unknown[];
+    locales?: unknown[];
+    docs?: string;
+    repository?: string;
+    license?: string;
+    [key: string]: unknown;
+}
+export type PackState = 'active' | 'disabled' | 'incompatible' | 'indexed';
+/** A pack template, in the shape of the editor's examples manifest (apps/editor/examples/index.json). */
+export interface PackTemplate {
+    pack: string;
+    id: string;
+    title: string;
+    description: string;
+    /** e.g. "flows/dataflow", "subgraphs", "ui"; "packs" when not given */
+    category: string;
+    profile: string | null;
+    flow: string | null;
+    tags: readonly string[];
+    packs: readonly string[];
+    level: string | null;
+    /** relative, http or https */
+    url: string | null;
+    /** an inline graph */
+    data: object | null;
+}
+export interface NodeReplacementMapping {
+    old_type: string;
+    new_type: string;
+    /** old slot (name or index) → new slot (name or index), or null to drop; unlisted slots keep their name */
+    inputs?: Record<string, string | number | null>;
+    outputs?: Record<string, string | number | null>;
+    /** old property → new property, or null to drop */
+    properties?: Record<string, string | null>;
+    /** old widget index → new widget index, or null to drop; unlisted values keep their position */
+    widgets?: Record<string, number | null>;
+    /** fixed values written on the new node */
+    set?: { properties?: Record<string, unknown> };
+    /** replace while loading, without asking (setting LiteGraph.Packs.AutoReplace) */
+    auto?: boolean;
+    reason?: string;
+}
+export interface DroppedLink { kind: 'input' | 'output'; slot: number; name: string; link: GraphId }
+export interface MissingNodeReport {
+    type: string;
+    count: number;
+    /** the type is registered now (the node can be rebuilt) */
+    available: boolean;
+    nodes: { id: GraphId; path: string }[];
+    pack: { id: string; version: string | null; source: 'stamp' | 'index' | 'comfy'; installed?: boolean } | null;
+    replacement: { type: string; auto: boolean; available: boolean; reason?: string } | null;
+}
+export declare class PackRegistry {
+    constructor(host: object);
+    static compareVersions(a: string, b: string): number;
+    static satisfiesVersion(version: string, range: string): boolean;
+    static normalizeManifest(manifest: PackManifest): Readonly<PackManifest>;
+    static isMissingNodePlaceholder(node: LGraphNode): boolean;
+    static storedNodeType(node: LGraphNode): string;
+    static replaceNodeInGraph(graph: LGraph, node: LGraphNode, mapping: NodeReplacementMapping): { node: LGraphNode; dropped: DroppedLink[] };
+    /** registers a pack; node types registered by setup belong to it; refused when incompatible unless LiteGraph.Packs.AllowIncompatible */
+    register(manifest: PackManifest, setup?: (ctx: { manifest: Readonly<PackManifest>; registerNodeType: (type: string, cls: Function) => void }) => unknown): () => void;
+    /** attributes registrations to a pack until close (built-in node files) */
+    open(manifest: PackManifest): Readonly<PackManifest>;
+    close(id?: string): void;
+    unregister(id: string): boolean;
+    /** known packs that are not installed (metadata only) */
+    index(manifests: PackManifest | PackManifest[]): () => void;
+    get(id: string): Readonly<PackManifest> | null;
+    list(): Readonly<PackManifest>[];
+    packOf(type: string): { id: string; version: string; builtin: boolean } | null;
+    typesOf(id: string): string[];
+    findPackForType(type: string): { id: string; version: string; installed: boolean; state?: PackState } | null;
+    describe(): (PackManifest & { state: PackState; types: string[]; error?: string })[];
+    /** the templates (example graphs) of the active packs, from their manifests' templates[] */
+    listTemplates(): readonly Readonly<PackTemplate>[];
+    stampFor(type: string): { pack: string; pack_ver: string } | null;
+    registerReplacement(mapping: NodeReplacementMapping): () => void;
+    getReplacement(type: string): Readonly<NodeReplacementMapping> | null;
+    listReplacements(): Readonly<NodeReplacementMapping>[];
 }
 
-export type MenuLocation = 'canvas' | 'node';
+export type GraphChangeKind = 'node-added' | 'node-removed' | 'link' | 'property' | 'widget' | 'layout' | 'group' | 'reroute' | 'subgraph' | 'node-replaced' | 'configure' | 'other';
+export type ExecutionStateKind = 'status' | 'progress' | 'error' | 'reset';
+export type ExecutionStatus = 'queued' | 'running' | 'done' | 'error' | 'skipped';
+/** One execution-state message (protocol v1), shared by the in-page loop and the runner. */
+export interface ExecutionStateMessage {
+    v: 1;
+    kind: ExecutionStateKind;
+    /** the node's path ("3:7" inside a subgraph); null with "reset" means every node */
+    path: string | null;
+    status?: ExecutionStatus;
+    value?: number;
+    max?: number;
+    message?: string;
+    time: number;
+}
+export interface NodeExecutionState { status: ExecutionStatus; time: number; value?: number; max?: number; message?: string }
+export declare class ExecutionState {
+    static VERSION: 1;
+    static KINDS: readonly ExecutionStateKind[];
+    static STATUSES: readonly ExecutionStatus[];
+    static create(kind: ExecutionStateKind, path: string | null, fields?: { status?: ExecutionStatus; value?: number; max?: number; message?: string; time?: number }): ExecutionStateMessage;
+    static isMessage(message: unknown): message is ExecutionStateMessage;
+    static apply(graph: LGraph, message: ExecutionStateMessage): LGraphNode | LGraph | null;
+    static applyToNode(node: LGraphNode, message: ExecutionStateMessage): LGraphNode;
+    static clear(graph: LGraph): void;
+}
+
+export type EventDropReason = 'reentry' | 'refreshing' | 'no-handler' | 'mode' | 'stopped-queue' | 'max-passes' | 'max-depth' | 'cycle' | 'once-per-frame';
+export interface ExecutionModelRules {
+    /** "immediate": actions run when sent; "deferred": actions to nodes that execute wait for their turn */
+    delivery?: 'deferred' | 'immediate';
+    /** "ancestors": pull ON_REQUEST data ancestors before actions, triggers and (frame_pull) ALWAYS nodes */
+    refresh?: 'none' | 'ancestors';
+    frame_pull?: boolean;
+    /** each node executes at most once per frame */
+    once_per_frame?: boolean;
+    /** the mode new nodes of undeclared types get */
+    default_mode?: number;
+    /** dropping an event link on a node creates its exec slots (on for "ancestors") */
+    exec_slots?: boolean;
+    title?: string;
+    description?: string;
+}
+export interface ExecutionModel extends Required<Pick<ExecutionModelRules, 'delivery' | 'refresh' | 'frame_pull' | 'once_per_frame' | 'default_mode'>> {
+    name: string;
+    legacy: boolean;
+    title?: string;
+    description?: string;
+}
+/** Execution models and the engine (Wave 6); see the guide's Execution section. */
+export declare class ExecutionEngine {
+    static models: Map<string, ExecutionModel>;
+    static LEGACY: { name: 'legacy'; legacy: true; title: string };
+    static registerModel(name: string, rules?: ExecutionModelRules): ExecutionModel;
+    static getModel(name: string): ExecutionModel | { name: 'legacy'; legacy: true; title: string } | null;
+    static listModels(): Array<ExecutionModel | { name: 'legacy'; legacy: true; title: string }>;
+    static resolveDefaultModel(): string;
+    static modelNameFor(graph: LGraph): string;
+    static rulesFor(graph: LGraph): ExecutionModel | { name: 'legacy'; legacy: true; title: string };
+    /** pulls a node's ON_REQUEST data ancestors (memo per frame and call, link data versions) */
+    static pull(node: LGraphNode): void;
+    static ensureFresh(node: LGraphNode): void;
+    /** what a BYPASS node does instead of its code: data outputs take their mapped input; with events, events go on to the event outputs */
+    static passThrough(node: LGraphNode, run?: { events?: boolean; param?: unknown; options?: object }): void;
+    /** the input a bypassed node passes to a data output (same index first, then the first fitting type), or -1 */
+    static bypassSource(node: LGraphNode, outputIndex: number): number;
+    /** true for NEVER and BYPASS (the node's own code does not run) */
+    static isInactiveMode(mode: number): boolean;
+    static isEventType(type: unknown): boolean;
+    /** whether dropping an event link creates exec slots: setting LiteGraph.Node.ExecSlots, an assigned do_add_triggers_slots, then the model */
+    static execSlotsFor(graph: LGraph | null | undefined): boolean;
+    static drop(node: LGraphNode | null, reason: EventDropReason, extra?: { setting?: string; message?: string }): false;
+    static readonly maxEventDepth: number;
+    static readonly maxEventPasses: number;
+}
+export declare const EVENT_DROP_REASONS: readonly EventDropReason[];
+/** the legacy execution flags with their defaults and replacements (deprecated; removed no earlier than 0.20) */
+export declare const LEGACY_EXECUTION_FLAGS: Readonly<Record<'use_deferred_actions' | 'refreshAncestorsOnTriggers' | 'refreshAncestorsOnActions' | 'ensureUniqueExecutionAndActionCall' | 'ensureNodeSingleExecution' | 'ensureNodeSingleAction' | 'preventAncestorRecalculation', { value: boolean; replacement: string }>>;
+
+/** One drawn link segment (see LiteGraph.linkRouters, LiteGraph.linkStyles). */
+export declare class RenderLink {
+    constructor(options: { a: ArrayLike<number>; b: ArrayLike<number>; startDir?: number; endDir?: number; link?: LLink | null; color?: string | null; type?: string | number; kind?: 'link' | 'segment' | 'floating' | 'drag' });
+    a: ArrayLike<number>;
+    b: ArrayLike<number>;
+    startDir: number;
+    endDir: number;
+    link: LLink | null;
+    color: string | null;
+    type: string | number | undefined;
+    kind: 'link' | 'segment' | 'floating' | 'drag';
+    readonly length: number;
+}
+export interface LinkRouter {
+    /** adds the segment to the current path (moveTo first) */
+    path(ctx: CanvasRenderingContext2D, renderLink: RenderLink, offsety?: number): void;
+    /** the point at fraction t of the segment */
+    point(renderLink: RenderLink, t: number): [number, number];
+    /** corner points, for polyline routers */
+    polyline?(renderLink: RenderLink): ArrayLike<number>[];
+}
+export declare class LinkRouterRegistry {
+    static MODE_NAMES: Record<number, string>;
+    static nameForMode(mode: number): string | null;
+    register(name: string, router: LinkRouter): () => void;
+    get(name: string): LinkRouter | null;
+    list(): string[];
+    polyline(name: string, renderLink: RenderLink): ArrayLike<number>[] | null;
+}
+export interface LinkStyle { visible?: boolean; alpha?: number; color?: string; width?: number; dash?: number[]; label?: string }
+export interface LinkStyleContext { canvas: LGraphCanvas; selectedIds: Set<GraphId>; focusType: string | number | null; hiddenTypes: string[] }
+export type LinkStyleResolver = (renderLink: RenderLink, ctx: LinkStyleContext) => LinkStyle | null | undefined;
+export declare class LinkStyleRegistry {
+    register(name: string, resolver: LinkStyleResolver): () => void;
+    get(name: string): LinkStyleResolver | null;
+    list(): string[];
+    resolve(renderLink: RenderLink, ctx: LinkStyleContext, active: string[]): (LinkStyle & { visible: boolean; alpha: number }) | null;
+}
+export interface MiniMapOptions { width?: number; height?: number; margin?: number; container?: HTMLElement; layers?: string[] }
+export type MiniMapLayer = (ctx: CanvasRenderingContext2D, minimap: MiniMap) => void;
+/** A minimap of a canvas's open graph with decoration layers; redraws on events only. */
+export declare class MiniMap {
+    static DEFAULT_LAYERS: string[];
+    static LAYERS: Record<string, MiniMapLayer>;
+    constructor(canvas: LGraphCanvas, options?: MiniMapOptions);
+    canvas: LGraphCanvas;
+    element: HTMLCanvasElement | null;
+    width: number;
+    height: number;
+    redraws: number;
+    layers: { name: string; draw: MiniMapLayer }[];
+    addLayer(name: string, draw: MiniMapLayer): () => void;
+    requestDraw(): void;
+    draw(): void;
+    computeBounds(): [number, number, number, number];
+    toMap(point: ArrayLike<number>): [number, number];
+    toGraph(x: number, y: number): [number, number];
+    nodeRect(node: LGraphNode): [number, number, number, number];
+    centerOnMapPoint(x: number, y: number): void;
+    centerOn(x: number, y: number): void;
+    dispose(): void;
+}
+
+export interface LayoutModel {
+    nodes: { id: GraphId; width: number; height: number; x: number; y: number }[];
+    edges: { id: GraphId; source: GraphId; target: GraphId; sourceSlot: number; targetSlot: number }[];
+}
+export interface LayoutOptions { direction: 'LR' | 'RL' | 'TB' | 'BT'; spacing: { node: number; rank: number } }
+export interface LayoutEngine {
+    /** a LibraryManager key loaded before layout runs; its global is passed as `lib` */
+    library?: string;
+    /** top-left corners (title included) by node id */
+    layout(model: LayoutModel, options: LayoutOptions, lib: any): { positions: Record<string, [number, number]> } | Promise<{ positions: Record<string, [number, number]> }>;
+}
+export declare class LayoutRegistry {
+    static dagreEngine: LayoutEngine;
+    static layeredEngine: LayoutEngine;
+    static buildModel(graph: LGraph, nodes: LGraphNode[]): LayoutModel;
+    /** adapts an elkjs instance */
+    static elkEngine(elk: { layout(graph: object): Promise<any> }): LayoutEngine;
+    register(name: string, engine: LayoutEngine): () => void;
+    get(name: string): LayoutEngine | null;
+    list(): string[];
+}
+export interface NodePalettePreview { type: string; title: string; icon: unknown; color: string | null; bgcolor: string | null; inputs: { name: string; type: unknown }[]; outputs: { name: string; type: unknown }[] }
+export interface StarterEntry { type: string; title: string; category: string; pack: string; description: string; suggestedDescription: string; usage: string; reason: string }
+export declare class NodePalette {
+    static RECENT_LIMIT: number;
+    static PREVIEW_SKIP_CAPABILITIES: string[];
+    constructor(host: object);
+    starterPreview(options?: { pack?: string; category?: string }): StarterEntry[];
+    insertStarter(canvas: LGraphCanvas, options?: { pack?: string; category?: string }): { nodes: LGraphNode[]; skipped: { type: string; reason: string }[]; entries: StarterEntry[] };
+    definitions(options?: { includeDeprecated?: boolean }): Readonly<NodeDefinition>[];
+    list(options?: { query?: string; pack?: string; category?: string; favoritesOnly?: boolean }): (NodeDefinition & { favorite: boolean })[];
+    groups(options?: { query?: string; pack?: string; category?: string; favoritesOnly?: boolean }): { pack: { id: string; title: string; builtin: boolean }; categories: { category: string; items: (NodeDefinition & { favorite: boolean })[] }[] }[];
+    favorites(): string[];
+    isFavorite(type: string): boolean;
+    toggleFavorite(type: string, on?: boolean): boolean;
+    recent(): string[];
+    recordUse(type: string): void;
+    preview(type: string): NodePalettePreview | null;
+    /** inserts a node at a graph position, selected, one undo step */
+    insert(canvas: LGraphCanvas, type: string, pos: ArrayLike<number>): LGraphNode | null;
+}
+
+export type MenuLocation = 'canvas' | 'node' | 'node-pin';
 /** A ContextMenu item, `{command: id}` (runs a registered command), or null for a separator. */
 export type MenuItem = { command: string; content?: string; [key: string]: any } | { content: string; callback?: (...args: any[]) => any; [key: string]: any } | null;
 export type MenuProvider = (ctx: CommandContext & { node?: LGraphNode }) => MenuItem[] | null | undefined;
@@ -2229,6 +3064,8 @@ export declare class MenuRegistry {
     commands: CommandRegistry;
     register(location: MenuLocation, provider: MenuProvider): () => void;
     collect(location: MenuLocation, ctx?: object): MenuItem[];
+    /** true when a provider is registered for the location */
+    has(location: MenuLocation): boolean;
     contribute<T extends any[]>(location: MenuLocation, ctx: object, options: T): T;
 }
 
@@ -2275,6 +3112,198 @@ export declare class ComboWidget extends BaseWidget {
     resolveValues(node: LGraphNode): any[] | Record<string, any>;
 }
 export declare class TextWidget extends BaseWidget<string> {}
+/** A colour value: a swatch (click: the browser colour picker, alpha kept) and its text (click the label to type it). */
+export declare class ColorWidget extends BaseWidget<string> {
+    static lastPicker: HTMLInputElement | null;
+}
+/** A vector of numbers (options.size, from vec2/vec3/vec4): one draggable field per component. */
+export declare class VectorWidget extends BaseWidget<number[], { size?: number; min?: number; max?: number; step?: number; precision?: number; round?: number }> {
+    static size(widget: IWidget): number;
+    static layout(widget: IWidget, ctx: CanvasRenderingContext2D | null, widget_width: number, env: { margin: number; show_label: boolean }): { size: number; start: number; cell: number };
+}
+
+/** Context given to PanelEditor.create. */
+export interface PanelEditorContext {
+    doc: Document;
+    name: string;
+    value: any;
+    /** the value type's options merged with the property info */
+    options: Record<string, any>;
+    info: Record<string, any>;
+    /** resolved value type name */
+    type: string | null;
+    valueType: Readonly<ResolvedValueType> | null;
+    readonly: boolean;
+    row: HTMLElement;
+    /** the label element (number editors scrub on it) */
+    label: HTMLElement;
+    panel: PanelElement;
+    target: any;
+    /** final value: coerced, validated, applied as one undo step */
+    commit(value: any): boolean;
+    /** live value while dragging */
+    preview(value: any): boolean;
+    describe(text: string): void;
+}
+/** A panel editor (see LiteGraph.registerPanelEditor). */
+export interface PanelEditor {
+    create(ctx: PanelEditorContext): { element: HTMLElement; set(value: any): void; focus?(): void; destroy?(): void; onRowClick?(): void };
+}
+/** A section added to a side panel (see LiteGraph.registerPanelSection). */
+export interface PanelSectionDefinition {
+    id: string;
+    panel: "node" | "options";
+    title?: string;
+    /** options panel: "graph", "canvas", "settings" (default) or a new tab id */
+    tab?: string;
+    tabTitle?: string;
+    order?: number;
+    collapsed?: boolean;
+    when?(target: any, ctx: object): boolean;
+    render(section: HTMLDetailsElement, ctx: { panel: PanelElement; section: HTMLDetailsElement; node?: LGraphNode; graph?: LGraph; canvas?: LGraphCanvas; tab?: string }): void;
+}
+export interface CanvasOptionInfo {
+    label?: string;
+    tooltip?: string;
+    description?: string;
+    examples?: string[];
+    category?: "Rendering" | "Links" | "Interaction" | "Advanced" | string;
+    type?: string;
+    default?: any;
+    /** shown even when not listed in LiteGraph.availableCanvasOptions */
+    always?: boolean;
+    /** "index": the canvas stores the index of the chosen value (links_render_mode) */
+    store?: "index";
+    values?: any[] | (() => any[]);
+    [key: string]: any;
+}
+export interface PanelOptions {
+    closable?: boolean;
+    window?: Window;
+    width?: number | string;
+    height?: number | string;
+    onOpen?(): void;
+    onClose?(): void;
+    /** remembers collapsed sections under this id */
+    id?: string;
+}
+/** A row spec for PanelElement.addRow. */
+export interface PanelRowSpec {
+    name: string;
+    value: any;
+    /** property info: type, widget, editor, label, tooltip, description, examples, min, max, step, precision, unit, values, readonly, placeholder, default_value, ... */
+    info?: Record<string, any>;
+    label?: string;
+    commit?(value: any): void | false;
+    preview?(value: any): void;
+    defaultValue?: any;
+    keywords?: string[];
+    target?: any;
+    readonly?: boolean;
+}
+/** The element createPanel returns: the former panel API plus sections, tabs, a toolbar and typed rows. */
+export interface PanelElement extends HTMLDivElement {
+    header: HTMLElement;
+    title_element: HTMLElement;
+    actions: HTMLElement;
+    toolbar: HTMLElement;
+    tabbar: HTMLElement;
+    content: HTMLElement;
+    alt_content: HTMLElement;
+    footer: HTMLElement;
+    node?: LGraphNode;
+    panel_id: string;
+    filter_state: { query: string; modified: boolean; sort: string };
+    close(): void;
+    clear(): void;
+    addDisposer(fn: () => void): void;
+    toggleAltContent(force?: boolean): void;
+    toggleFooterVisibility(force?: boolean): void;
+    addHTML(code: string, classname?: string, on_footer?: boolean): HTMLDivElement;
+    addNote(text: string, classname?: string): HTMLDivElement;
+    addButton(name: string, callback: (e: Event) => void, options?: any): HTMLButtonElement;
+    addSeparator(): HTMLDivElement;
+    addWidget(type: string, name: string, value: any, options?: Record<string, any>, callback?: (name: string, value: any, options: Record<string, any>) => void): HTMLElement;
+    addRow(spec: PanelRowSpec): HTMLElement & { value: any; setValue(value: any): void };
+    addSection(title: string, options?: { id?: string; collapsed?: boolean; description?: string; className?: string }): HTMLDetailsElement & { body: HTMLElement };
+    endSection(): void;
+    addTabs(tabs: { id: string; title: string }[], active?: string): void;
+    showTab(id: string): void;
+    useTab(id: string | null): void;
+    addToolbar(options?: { placeholder?: string; sorts?: { id: string; label: string }[]; sort?: string; modified?: boolean; onSort?(mode: string): void }): HTMLInputElement;
+    setAllSections(open: boolean): void;
+    applyFilter(): number;
+    applySort(): void;
+    refresh?(): void;
+    [key: string]: any;
+}
+/** Builds side panels (see LGraphCanvas.createPanel). */
+export declare class PanelBuilder {
+    static create(title: string, options?: PanelOptions & { canvas?: LGraphCanvas }): PanelElement;
+    static highlight(el: HTMLElement | null, query: string): void;
+    /** builds the graph options panel of a canvas */
+    static showGraphOptions(canvas: LGraphCanvas): PanelElement;
+    /** builds the node details panel */
+    static showNode(canvas: LGraphCanvas, node: LGraphNode): PanelElement;
+    static extraEditors(): Record<string, PanelEditor>;
+}
+/** Places panels: docking side and width (settings LiteGraph.Panel.Side / Width), resize handle. */
+export declare class PanelHost {
+    static place(panel: PanelElement, parent: HTMLElement | null, options?: { side?: "left" | "right"; width?: number }): PanelElement;
+    static setSide(panel: PanelElement, side: "left" | "right"): void;
+}
+/** The built-in panel editors. */
+export declare function defaultPanelEditors(): Record<string, PanelEditor>;
+
+/** A value type definition (see LiteGraph.registerValueType). Every field is optional. */
+export interface ValueTypeDefinition {
+    /** a type whose fields are inherited; options are merged, the base's first */
+    base?: string;
+    aliases?: string[];
+    label?: string;
+    description?: string;
+    examples?: string[];
+    /** canvas widget type (LiteGraph.widget_types) */
+    widget?: string;
+    /** panel editor (LiteGraph.panel_editors) */
+    editor?: string;
+    /** default widget and editor options; a property's own info wins */
+    options?: Record<string, any>;
+    default?: any;
+    coerce?(value: any, options: Record<string, any>): any;
+    /** null, or why the value is refused */
+    validate?(value: any, options: Record<string, any>): string | null;
+    format?(value: any, options: Record<string, any>): string;
+    parse?(text: string, options: Record<string, any>): any;
+    [key: string]: any;
+}
+export interface ResolvedValueType extends ValueTypeDefinition {
+    name: string;
+    aliases: string[];
+    /** names of the base chain, nearest first */
+    bases: string[];
+    options: Readonly<Record<string, any>>;
+}
+/** Value types: one type -> canvas widget, panel editor, options, coercion, validation and help. */
+export declare class ValueTypeRegistry {
+    constructor();
+    register(name: string, def: ValueTypeDefinition, options?: { replace?: boolean }): () => void;
+    has(name: string): boolean;
+    get(name: string): Readonly<ResolvedValueType> | null;
+    list(): Readonly<ResolvedValueType>[];
+    defaultValue(name: string, options?: Record<string, any>): any;
+    coerce(name: string, value: any, options?: Record<string, any>): any;
+    validate(name: string, value: any, options?: Record<string, any>): string | null;
+    format(name: string, value: any, options?: Record<string, any>): string;
+    parse(name: string, text: string, options?: Record<string, any>): any;
+    /** the panel editor for a property: info.editor, info.widget, info.type, then the JS type of the value; else "readonly" */
+    resolveEditor(info: Record<string, any> | null | undefined, value?: any, editors?: Record<string, any>): { editor: string; type: string | null; options: Record<string, any>; valueType: Readonly<ResolvedValueType> | null };
+    /** the canvas widget class for a type: a registered widget type wins, then the value type's widget */
+    resolveWidgetClass(type: string, widgetTypes?: Record<string, typeof BaseWidget>): { cls: typeof BaseWidget; options: Record<string, any>; valueType: Readonly<ResolvedValueType> | null } | null;
+    static formatAny(value: any): string;
+    static clampNumber(value: number, options?: { min?: number; max?: number }): number;
+    static builtins(): Record<string, ValueTypeDefinition>;
+}
 export declare function defaultWidgetTypes(): Record<string, typeof BaseWidget>;
 /** The object whose draw/onPointer applies to a widget (its class, or its type's class for plain objects), or null. */
 export declare function widgetImplementation(widget: IWidget | null | undefined, types?: Record<string, typeof BaseWidget>): BaseWidget | null;

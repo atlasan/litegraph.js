@@ -1,0 +1,4 @@
+# Windows batch files need CRLF; the POSIX launcher needs LF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+lg.sh text eol=lf

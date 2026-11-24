@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>LiteGraph - DEBUG</title>
+    <link rel="stylesheet" type="text/css" href="../../css/litegraph.css">
+    <link rel="stylesheet" type="text/css" href="../../css/litegraph-editor.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    
+</head>
+<body>
+	<div id="main"></div>
+
+ 	<!-- <script type="text/javascript" src="https://unpkg.com/codeflask/build/codeflask.min.js"></script> -->
+	<script type="text/javascript" src="../../vendor/gl-matrix-min.js"></script>
+    <script type="text/javascript" src="../../vendor/audiosynth.js"></script>
+    <script type="text/javascript" src="../../vendor/midi-parser.js"></script>
+
+    <script type="module" src="../../src/litegraph.js"></script>
+    <script type="module" src="../../src/litegraph-editor.js"></script>
+    <script type="module" src="js/defaults.js?preset=debug"></script>
+	<script type="module" src="js/code.js"></script>
+
+	<script type="module" src="../../src/nodes/libraries.js"></script>
+
+    <script type="module" src="../../src/nodes/base.js"></script>
+    <script type="module" src="../../src/nodes/logic.js"></script>
+    <script type="module" src="../../src/nodes/events.js"></script>
+    <script type="module" src="../../src/nodes/math.js"></script>
+    <script type="module" src="../../src/nodes/math3d.js"></script>
+    <script type="module" src="../../src/nodes/strings.js"></script>
+    <script type="module" src="../../src/nodes/interface.js"></script>
+    <script type="module" src="../../src/nodes/geometry.js"></script>
+    <script type="module" src="../../src/nodes/graphics.js"></script>
+    <script type="module" src="../../src/nodes/input.js"></script>
+    <script type="module" src="../../src/nodes/midi.js"></script>
+    <script type="module" src="../../src/nodes/audio.js"></script>
+    <script type="module" src="../../src/nodes/network.js"></script>
+    <script type="module" src="../../src/nodes/objects.js"></script>
+    <script type="module" src="../../src/nodes/watch.js"></script>
+	
+	<script type="module" src="../../src/nodes/html.js"></script>
+	<link rel="stylesheet" type="text/css" href="../../src/nodes/html.css">
+
+	<script type="module" src="../../src/nodes/device.js"></script>
+
+	<script type="module" src="../../src/nodes/litegraph_nodes.js"></script>
+	
+	<script type="module" src="../../src/nodes/libraries/osc.js"></script>
+	<script type="module" src="../../src/nodes/libraries/socketio.js"></script>
+	<script type="module" src="../../src/nodes/libraries/udp.js"></script>
+	<script type="module" src="../../src/nodes/threejs.js"></script>
+	
+	<script type="module" src="../../src/nodes/nodejs_only/nodejs_network.js"></script>
+	<script type="module" src="../../src/nodes/nodejs_only/nodejs_sys.js"></script>	
+
+	<script type="module" src="../../src/nodes/others.js"></script>
+
+    <script type="module" src="js/demos.js"></script>
+
+	<script type="module" src="../../src/extensions/renamer.js"></script>
+	<script type="module" src="../../src/extensions/autoconnect.js"></script>
+	<script type="module" src="../../src/extensions/keyboard_helper.js"></script>
+	<script type="module" src="../../src/extensions/quick_connect.js"></script>
+	<script type="module" src="../../src/extensions/subgraph_tools.js"></script>
+
+	<script type="module">
+		import { LiteGraph } from "../../src/litegraph.js";
+
+		window.addEventListener("load", (event) => {
+
+			/**
+			 * TESTING CallbackHandlers
+			 * 
+			 * register a callback, can specify priority (higher executed before, lower executed after, default is 0 executed after default [default is original direct assignment on event name eg. node.onGetInputs] )
+			 * final return is the last callback (lower piority) than returned something
+			 * can return and object where specify the result priority (overriding only if grater than the last result priority, default is 0)
+			 *
+			 */
+
+			// enable only if debugging CallbackHandler itself
+			// LiteGraph.cb_handler.debug = true;
+
+			var cbh1 = LiteGraph.registerCallbackHandler("onNodeTypeRegistered", function(){
+				console.info("**CB1**",...arguments);
+				return {	return_value: "ResCB1"
+							,result_priority: 1
+							// ,stop_replication: false
+					};
+			},{priority: 1});
+			var cbh2 = LiteGraph.registerCallbackHandler("onNodeTypeRegistered", function(){
+				console.info("**CB2**",...arguments);
+				return {	return_value: "ResCB2"
+							,result_priority: 2
+					};
+			},{priority: 9}); // higher priority test
+			var cbh3 = LiteGraph.registerCallbackHandler("onNodeTypeRegistered", function(){
+				console.info("**CB3**",...arguments);
+				return {	return_value: "ResCB3"
+							,result_priority: 3
+							// ,prevent_default: true // !!!
+							// ,stop_replication: false
+					};
+			},{priority: 3});
+			var cbh4 = LiteGraph.registerCallbackHandler("onNodeTypeRegistered", function(){
+				console.info("**CB4**",...arguments);
+				return {	return_value: "ResCB4"
+							// ,result_priority: 0
+							// ,prevent_default: false
+							// ,stop_replication: false
+					};
+			},{priority: -1});
+
+			// set classic callback
+			LiteGraph.onNodeTypeRegistered = function(){
+				// eventually never called if some set prevent_default to false
+				console.info("**CB_standard**",...arguments);
+			}
+
+			console.info("Callbacks registered",cbh1,cbh2,cbh3);
+			
+			// trigger event
+			// testing
+			class TestRegister {
+				static title = "Test Callbacks";
+				constructor() {
+					this.addInput("in 1","number");
+				}
+				onNodeCreated = function(){
+					console.info("** NODE CB_standard **",...arguments);
+				}
+			}
+			LiteGraph.registerNodeType("features/test_callbacks", TestRegister);
+
+			// remove handler
+			// unregister
+			if(LiteGraph.unregisterCallbackHandler("onNodeTypeRegistered", cbh1)){
+				console.info("Callback 1 unregistered");
+			}else{
+				// should not pass here
+				console.warn("FAILED Callback 1 unregister");
+			}
+			if(LiteGraph.unregisterCallbackHandler("onNodeTypeRegistered", cbh2)){
+				console.info("Callback 2 unregistered");
+			}else{
+				// should not pass here
+				console.warn("FAILED Callback 2 unregister");
+			}
+			// leave callback 3
+
+			// // testing 2
+			// function TestRegister2() {
+			// 	this.addInput("in 1","number");
+			// }
+			// TestRegister2.title = "Test Callbacks";
+			// LiteGraph.registerNodeType("features/test_callbacks2", TestRegister2);
+
+
+			// CANVAS Callbacks
+			graphcanvas.registerCallbackHandler("onDropItem",function(){
+				console.info("*** CUSTOM onDropItem handler ***",...arguments);
+			});
+
+
+
+			// TEST DEBUG :: OFFSET AND SIZING OF CANVAS
+			// const domMain = document.querySelector("#main");
+			// console.info("-- init --","#main",domMain);
+			// domMain.style.width = "600px";
+			// domMain.style.height = "400px";
+			// domMain.style.float = "right";
+			// domMain.style.marginTop = "200px";
+			// graphcanvas.resize();
+
+		});
+
+	</script>
+
+	<script>
+		// POPULATE GRAPH
+		function populateGraphWithGroupedNodes(graph, library = "", gridSize = [180, 180], maxCols = 9, margins = { x: 30, y: 30, groupPadding: 60 }) {
+			if (!graph) {
+				console.error("populateGraphWithGroupedNodes: No graph provided.");
+				return;
+			}
+
+			const libraryPrefix = library ? library + "/" : ""; // Filter only if a library is specified
+			const nodesByCategory = {};
+
+			// Step 1: Group nodes by category (supporting hierarchical categories)
+			Object.keys(LiteGraph.registered_node_types)
+				.filter((key) => (libraryPrefix ? key.startsWith(libraryPrefix) : true))
+				.forEach((key) => {
+					const parts = key.split("/");
+					let category = parts.slice(0, -1).join("/") || "General"; // Extract full category path
+
+					if (!nodesByCategory[category]) nodesByCategory[category] = [];
+					nodesByCategory[category].push(LiteGraph.registered_node_types[key]);
+				});
+
+			if (Object.keys(nodesByCategory).length === 0) {
+				console.warn(`No nodes found for library: ${library}`);
+				return;
+			}
+
+			let x = 0, y = 0;
+			const [gridX, gridY] = gridSize;
+			const titleHeight = LiteGraph.NODE_TITLE_HEIGHT;
+
+			// Step 2: Iterate over each category
+			Object.entries(nodesByCategory).forEach(([category, nodes]) => {
+				let categoryX = x, categoryY = y;
+				let maxWidth = 0, maxHeight = 0;
+
+				// Create a group node for this category
+				const group = new LiteGraph.LGraphGroup(category);
+				graph.add(group);
+
+				let start_x = x, start_y = y;
+
+				nodes.forEach((nodeType, index) => {
+					const newNode = LiteGraph.createNode(nodeType.type);
+					if (!newNode) return console.warn(`Failed to create node: ${nodeType.type}`);
+
+					newNode.pos = [x, y];
+					graph.add(newNode);
+
+					// Compute actual node size (including title height)
+					const nodeSize = newNode.computeSize();
+					const fullHeight = nodeSize[1] + titleHeight; // Adjust height for title
+					maxWidth = Math.max((x - start_x) + nodeSize[0], maxWidth);
+					maxHeight = Math.max((y - start_y) + fullHeight, maxHeight);
+
+					// Move to next position, filling organically
+					x += nodeSize[0] + margins.x; // Add margin
+					if ((index + 1) % maxCols === 0) {
+						x = categoryX;
+						y += fullHeight + margins.y; // Adjust spacing with title height
+					}
+				});
+
+				// Set group size & position to enclose its nodes
+				group.pos = [categoryX - margins.x / 2, categoryY - margins.y * 2 - titleHeight];
+				group.size = [maxWidth + margins.x / 2 + margins.groupPadding, maxHeight + margins.y / 2 + margins.groupPadding + titleHeight];
+
+				// Move down for the next category
+				x = 0;
+				y += maxHeight + margins.y + margins.y / 2 + margins.groupPadding + titleHeight;
+			});
+
+			console.log(`Added nodes from library '${library}', grouped into ${Object.keys(nodesByCategory).length} categories`);
+		}
+
+	</script>
+
+	<!--  htmlConsole use to debug on mobile, include and set editorUseHtmlConsole in defaults.js -->
+	<!-- enable console style, html, js enabling/disabling this comment here->  -->
+		
+	    <link rel="stylesheet" href="../../external/console.css">
+	    <style>
+	    	.invisible{ display: none; }
+	    	.console__row{
+	    		margin: 1px;
+				padding: 2px;
+			}
+			.console-container{
+				min-width: 200px;
+				background: rgba(255,255,255,0.1);
+				position: fixed;
+				top: 38px;
+				left: 0;
+				overflow: auto;
+				height: calc(100%-38px);
+			}
+			.console-container.small{
+				max-width: 30%;
+			}
+			.graphcanvas{
+				/*WONT WORK touch-action: manipulation;*/
+				/*touch-action: none;*/
+				touch-action: pinch-zoom;
+			}
+	    </style>
+		
+		<div id="console-container" class="litegraph-editor console-container small invisible">
+			<div class="console-tools" style="position: absolute; top: 0; right:0; z-index:2;">
+				<button class='btn' id='btn_console_close'>close</button>
+				<button class='btn' id='btn_console_clear'>clear</button>
+			</div>
+		</div>
+		
+		<script type="module" src="../../external/console.js"></script>
+		<script type="module" src="js/web_console.js"></script>
+	<!--  -->
+
+</body>
+</html>

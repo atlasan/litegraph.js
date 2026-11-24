@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/events" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/events", version: LiteGraph.VERSION, title: "Events", description: "Execution flow: triggers, sequences, timers, delays, counters, gates and filters that pass events between nodes.", builtin: true });
+
 // Show value inside the debug console
 class LogEvent {
 
@@ -23,6 +27,8 @@ class TriggerEvent {
 
     static title = "TriggerEvent";
     static desc = "Triggers event if input evaluates to true";
+    // an event emitter cannot be ON_REQUEST: triggers are dropped while data is pulled (A4)
+    static def = { execution: { modes: [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.NEVER] } };
 
     constructor() {
         this.size = [60, 30];
@@ -59,6 +65,11 @@ class EvSequence {
 
     static title = "Sequence";
     static desc = "Triggers a sequence of events when an event arrives";
+    // its outputs fire now, in slot order, in every model (B4)
+    static def = {
+        execution: { emit: "immediate" },
+        usage: "Connect one event to an input; its outputs fire one after the other, top to bottom, before the next node runs.",
+    };
     // @ BUG: fails to construct Node
 
     constructor() {
@@ -83,18 +94,11 @@ class EvSequence {
 
     onAction(action, param, options) {
         if (this.outputs) {
-            options = options || {};
+            // each output gets its own call id on a copy: the caller's options are not changed (B4)
+            const base = options?.action_call ?? this.id + "_" + (action ? action : "action");
             for (var i = 0; i < this.outputs.length; ++i) {
-                // console.debug(this.title, "step", i);
-                // needs more info about this...
-                if (options.action_call)
-                    // CREATE A NEW ID FOR THE ACTION
-                    options.action_call = options.action_call + "_seq_" + i + "_" + Math.floor(Math.random() * 9999);
-                else
-                    options.action_call =
-                        this.id + "_" + (action ? action : "action") +
-                        "_seq_" + i + "_" + Math.floor(Math.random() * 9999);
-                this.triggerSlot(i, param, null, options);
+                const call = { ...options, action_call: base + "_seq_" + i + "_" + Math.floor(Math.random() * 9999) };
+                this.triggerSlot(i, param, null, call);
             }
         }
     }
@@ -145,9 +149,9 @@ class WaitAll {
         for (var i = 0; i < this.ready.length; ++i)
             if (!this.ready[i])
                 return;
-        // pass
+        // pass, with the payload of the completing event (B15)
         this.reset();
-        this.triggerSlot(0);
+        this.triggerSlot(0, param, null, options);
     }
 
     reset() {
@@ -213,10 +217,10 @@ class Stepper {
         this.setOutputData(0, this.properties.index);
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (action == "reset") this.properties.index = 0;
         else if (action == "step") {
-            this.triggerSlot(this.properties.index + 1, param);
+            this.triggerSlot(this.properties.index + 1, param, null, options);
             var n = this.outputs ? this.outputs.length - 1 : 0;
             this.properties.index = (this.properties.index + 1) % n;
         }
@@ -374,6 +378,11 @@ class DelayEvent {
 
     static title = "Delay";
     static desc = "Delays one event";
+    // counts time in the step loop: ALWAYS only (B7)
+    static def = {
+        execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] },
+        usage: "Send an event to the input; on_time fires time_in_ms later, while the graph is running.",
+    };
 
     constructor() {
         this.size = [60, 30];
@@ -430,6 +439,10 @@ class TimerEvent {
 
     static title = "Timer";
     static desc = "Sends an event every N milliseconds";
+    static def = {
+        execution: { ticks: true, modes: [LiteGraph.ALWAYS, LiteGraph.NEVER] },
+        usage: "Start the graph; on_tick fires every interval milliseconds. A start point for event flows.",
+    };
 
     constructor() {
         this.addProperty("interval", 1000);
@@ -517,8 +530,8 @@ class SemaphoreEvent {
         this.boxcolor = this._ready ? "#9F9" : "#FA5";
     }
 
-    onAction(action) {
-        if (action == "go") this.triggerSlot(this._ready ? 0 : 1);
+    onAction(action, param, options) {
+        if (action == "go") this.triggerSlot(this._ready ? 0 : 1, param, null, options);
         else if (action == "green") this._ready = true;
         else if (action == "red") this._ready = false;
     }
@@ -543,10 +556,10 @@ class OnceEvent {
         });
     }
 
-    onAction(action, param) {
+    onAction(action, param, options) {
         if (action == "in" && !this._once) {
             this._once = true;
-            this.triggerSlot(0, param);
+            this.triggerSlot(0, param, null, options);
         } else if (action == "reset") this._once = false;
     }
 }
@@ -576,7 +589,8 @@ class DataStore {
     }
 
     onAction() {
-        this.properties.data = this._last_value;
+        // the value on the input when the event arrives, not the one of the previous step (B15)
+        this.properties.data = this.isInputConnected(0) ? this.getInputData(0) : this._last_value;
     }
 
     onSerialize(o) {
@@ -624,6 +638,9 @@ class EventSwitch {
     onExecute() {
         // var sel = this.getInputData("in");
         const sel = String(this.getInputOrProperty("in"));
+        // fires when the selection changes, not on every step (B14)
+        if (sel === this._last_selection) return;
+        this._last_selection = sel;
         let found = false;
         for(let iS in this.outputs){
             let outSlot = this.outputs[iS];
@@ -631,14 +648,12 @@ class EventSwitch {
                 this.selected = outSlot.name; //iS;
                 found = true;
                 this.triggerSlot(outSlot.name); //iS);
-                console.debug("SWITCH FoundAndTrigger", sel, outSlot.name);
                 break;
             }
         }
         if(!found){
             this.selected = 0;
             this.triggerSlot("default");
-            console.debug("SWITCH NotFound", sel);
         }
     }
 
@@ -649,3 +664,10 @@ class EventSwitch {
     }
 }
 LiteGraph.registerNodeType("events/switch", EventSwitch);
+
+// declaration pass (flows track): nodes that only react to events (no onExecute)
+LiteGraph.declareNodeExecution(["events/once", "events/waitAll", "events/filter", "events/log"], { default_mode: LiteGraph.ON_EVENT });
+// Kept ALWAYS: counter, semaphore, stepper, switch and branch read data or count steps in onExecute,
+// and basic/data_store mirrors its value there; ON_EVENT would stop that.
+
+LiteGraph.packs.close("litegraph/events");

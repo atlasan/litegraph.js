@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: packs.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: packs.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { LiteGraph } from "./litegraph.js";
+
+/**
+ * Node packs: a manifest (plain JSON) that names a group of node types, extensions and libraries,
+ * with a version and the litegraph range it needs. Manifests are data: nothing here fetches or
+ * evaluates code. A pack's code is whatever the page or the runner already imported; while it
+ * runs inside `register(manifest, setup)` (or between `open` and `close`), every node type it
+ * registers belongs to the pack.
+ *
+ * ```js
+ * LiteGraph.packs.register({ id: "acme-audio", version: "1.2.0", requires: { litegraph: ">=0.10" } }, () => {
+ *     LiteGraph.registerNodeType("acme/filter", Filter);
+ * });
+ * LiteGraph.getNodeDefinition("acme/filter").pack; // {id: "acme-audio", version: "1.2.0"}
+ * ```
+ *
+ * Settings: `LiteGraph.Packs.Stamp`, `LiteGraph.Packs.AutoReplace`,
+ * `LiteGraph.Packs.AllowIncompatible`, `LiteGraph.Packs.Disabled`.
+ *
+ * Design references (no code copied): ComfyUI-Manager's pack metadata and node-provenance
+ * fields, and the ComfyUI frontend's node replacement mappings.
+ */
+
+const PACK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._@/-]*$/;
+
+/** Splits "1.2.3-beta.1" into numeric parts and a pre-release tag. */
+function packParseVersion(version) {
+    const match = /^v?(\d+)(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(String(version ?? "").trim());
+    if (!match) return null;
+    const part = (value) => (value === undefined || /^[xX*]$/.test(value)) ? null : Number(value);
+    return { parts: [Number(match[1]), part(match[2]), part(match[3])], pre: match[4] ?? null };
+}
+
+/**
+ * Compares two versions: negative, 0 or positive. A pre-release sorts before its release.
+ * @returns {number|NaN} NaN when either is not a version
+ */
+function compareVersions(a, b) {
+    const left = packParseVersion(a);
+    const right = packParseVersion(b);
+    if (!left || !right) return NaN;
+    for (let i = 0; i &lt; 3; i++) {
+        const d = (left.parts[i] ?? 0) - (right.parts[i] ?? 0);
+        if (d) return d;
+    }
+    if (left.pre === right.pre) return 0;
+    if (left.pre === null) return 1;
+    if (right.pre === null) return -1;
+    return left.pre &lt; right.pre ? -1 : 1;
+}
+
+/** Turns one comparator ("^1.2", "~1.2.3", ">=1", "1.x", "*") into [op, version] pairs. */
+function packExpandComparator(text) {
+    const match = /^(\^|~|>=|&lt;=|>|&lt;|=)?\s*(.+)$/.exec(text);
+    if (!match) return null;
+    const op = match[1] ?? "";
+    if (/^[xX*]$/.test(match[2])) return [];
+    const version = packParseVersion(match[2]);
+    if (!version) return null;
+    const [major, minor, patch] = version.parts;
+    const at = (...parts) => parts.map((p) => p ?? 0).join(".") + (version.pre &amp;&amp; parts.length === 3 ? `-${version.pre}` : "");
+    if (op === "^") {
+        const upper = major > 0 || minor === null ? [major + 1, 0, 0] : (minor > 0 || patch === null ? [0, minor + 1, 0] : [0, 0, patch + 1]);
+        return [[">=", at(major, minor, patch)], ["&lt;", `${upper.join(".")}-0`]];
+    }
+    if (op === "~") {
+        const upper = minor === null ? [major + 1, 0, 0] : [major, minor + 1, 0];
+        return [[">=", at(major, minor, patch)], ["&lt;", `${upper.join(".")}-0`]];
+    }
+    if ((op === "" || op === "=") &amp;&amp; (minor === null || patch === null)) {
+        // a partial version is a range: "1.2" means >=1.2.0 &lt;1.3.0-0
+        const upper = minor === null ? [major + 1, 0, 0] : [major, minor + 1, 0];
+        return [[">=", at(major, minor, patch)], ["&lt;", `${upper.join(".")}-0`]];
+    }
+    return [[op || "=", at(major, minor, patch)]];
+}
+
+/**
+ * True when `version` satisfies `range`. Supports `*`, exact and partial versions (`1.2`, `1.x`),
+ * `>=` `>` `&lt;=` `&lt;` `=`, `^`, `~`, space-separated comparators (all must hold) and `||`.
+ * @param {string} version
+ * @param {string} range
+ * @returns {boolean}
+ */
+function satisfiesVersion(version, range) {
+    if (range === undefined || range === null || String(range).trim() === "") return true;
+    if (!packParseVersion(version)) return false;
+    return String(range).split("||").some((alternative) => {
+        const comparators = alternative.trim().replace(/(>=|&lt;=|>|&lt;|=|\^|~)\s+/g, "$1").split(/\s+/).filter(Boolean);
+        if (!comparators.length) return true;
+        return comparators.every((text) => {
+            const expanded = packExpandComparator(text);
+            if (!expanded) return false;
+            return expanded.every(([op, bound]) => {
+                const d = compareVersions(version, bound);
+                switch (op) {
+                    case ">=": return d >= 0;
+                    case ">": return d > 0;
+                    case "&lt;=": return d &lt;= 0;
+                    case "&lt;": return d &lt; 0;
+                    default: return d === 0;
+                }
+            });
+        });
+    });
+}
+
+const packStringList = (value) => Array.isArray(value) ? value.filter((v) => typeof v === "string" &amp;&amp; v) : [];
+
+/**
+ * Checks a manifest and returns a frozen, normalized copy.
+ * @throws {TypeError} when `id` or `version` is missing or malformed
+ */
+function normalizePackManifest(manifest) {
+    if (!manifest || typeof manifest !== "object") throw new TypeError("pack manifest must be an object");
+    if (typeof manifest.id !== "string" || !PACK_ID_PATTERN.test(manifest.id)) throw new TypeError(`pack manifest: invalid id ${JSON.stringify(manifest.id)}`);
+    if (typeof manifest.version !== "string" || !packParseVersion(manifest.version)) {
+        throw new TypeError(`pack ${manifest.id}: invalid version ${JSON.stringify(manifest.version)}`);
+    }
+    const requires = (manifest.requires &amp;&amp; typeof manifest.requires === "object") ? { ...manifest.requires } : {};
+    return Object.freeze({
+        ...manifest,
+        id: manifest.id,
+        version: manifest.version,
+        title: typeof manifest.title === "string" ? manifest.title : manifest.id,
+        description: typeof manifest.description === "string" ? manifest.description : "",
+        builtin: manifest.builtin === true,
+        requires: Object.freeze(requires),
+        nodes: Object.freeze(packStringList(manifest.nodes)),
+        extensions: Object.freeze(packStringList(manifest.extensions)),
+        libraries: Object.freeze(packStringList(manifest.libraries)),
+        templates: Object.freeze(Array.isArray(manifest.templates) ? [...manifest.templates] : []),
+        locales: Object.freeze(Array.isArray(manifest.locales) ? [...manifest.locales] : []),
+    });
+}
+
+/**
+ * The pack registry (`LiteGraph.packs`).
+ */
+export class PackRegistry {
+
+    /** @param {object} host - the LiteGraph instance */
+    constructor(host) {
+        this.host = host;
+        /** @type {Map&lt;string, {manifest: object, state: string, types: Set&lt;string>, error?: string}>} */
+        this._packs = new Map();
+        /** @type {Map&lt;string, string>} node type → pack id (installed packs) */
+        this._typeToPack = new Map();
+        /** @type {Map&lt;string, object>} known, not installed packs (metadata only) */
+        this._indexed = new Map();
+        /** @type {string[]} packs whose registrations are being attributed (innermost last) */
+        this._open = [];
+        /** @type {Map&lt;string, object>} old type → replacement mapping */
+        this._replacements = new Map();
+    }
+
+    _setting(id, fallback) {
+        const settings = this.host?.settings;
+        return settings?.has?.(id) ? settings.get(id) : fallback;
+    }
+
+    /** Refusal for a pack whose `requires.litegraph` does not match this runtime. */
+    _checkCompatible(manifest) {
+        const range = manifest.requires?.litegraph;
+        const version = this.host?.VERSION;
+        if (!range || satisfiesVersion(version, range)) return null;
+        return `pack ${manifest.id}@${manifest.version} requires litegraph ${range}, this is ${version}`;
+    }
+
+    /**
+     * Starts attributing node registrations to a pack (built-in node files use this; most code
+     * should use {@link register}). Pair it with {@link close}.
+     * @param {object} manifest
+     * @returns {object} the normalized manifest
+     */
+    open(manifest) {
+        const normalized = this._add(manifest);
+        this._open.push(normalized.id);
+        return normalized;
+    }
+
+    /** Stops attributing registrations to the pack opened last (or to `id`). */
+    close(id) {
+        const index = id === undefined ? this._open.length - 1 : this._open.lastIndexOf(id);
+        if (index >= 0) this._open.splice(index, 1);
+    }
+
+    /**
+     * Registers a pack. `setup(ctx)` runs at once (unless the pack is disabled); node types it
+     * registers belong to the pack, as do types listed in `manifest.nodes`.
+     * Refused (throws) when `requires.litegraph` does not match, unless the setting
+     * `LiteGraph.Packs.AllowIncompatible` is on.
+     * @param {object} manifest
+     * @param {(ctx: {manifest: object, registerNodeType: Function}) => *} [setup]
+     * @returns {() => void} disposer: unregisters the pack's node types and forgets the pack
+     */
+    register(manifest, setup) {
+        const normalized = this._add(manifest);
+        const entry = this._packs.get(normalized.id);
+        if (entry.state === "active" &amp;&amp; typeof setup === "function") {
+            this._open.push(normalized.id);
+            try {
+                setup({ manifest: normalized, registerNodeType: (type, cls) => this.host.registerNodeType(type, cls) });
+            } finally {
+                this.close(normalized.id);
+            }
+        }
+        return () => this.unregister(normalized.id);
+    }
+
+    _add(manifest) {
+        const normalized = normalizePackManifest(manifest);
+        const previous = this._packs.get(normalized.id);
+        if (previous) {
+            // a newer registration of the same pack replaces the manifest and keeps its types
+            if (previous.manifest.version !== normalized.version) {
+                LiteGraph.log_debug?.("packs", "replacing", normalized.id, previous.manifest.version, "->", normalized.version);
+            }
+        }
+        const refusal = normalized.builtin ? null : this._checkCompatible(normalized);
+        if (refusal &amp;&amp; !this._setting("LiteGraph.Packs.AllowIncompatible", false)) {
+            throw new Error(`${refusal}. Set LiteGraph.Packs.AllowIncompatible to register it anyway.`);
+        }
+        const disabled = !normalized.builtin &amp;&amp; (this._setting("LiteGraph.Packs.Disabled", []) ?? []).includes(normalized.id);
+        const entry = {
+            manifest: normalized,
+            state: disabled ? "disabled" : (refusal ? "incompatible" : "active"),
+            types: previous?.types ?? new Set(),
+            ...(refusal ? { error: refusal } : {}),
+        };
+        this._packs.set(normalized.id, entry);
+        for (const type of normalized.nodes) {
+            if (this.host?.registered_node_types?.[type]) this._attribute(type, normalized.id);
+        }
+        return normalized;
+    }
+
+    /** Forgets a pack and unregisters the node types it owns. */
+    unregister(id) {
+        const entry = this._packs.get(id);
+        if (!entry) return false;
+        for (const type of [...entry.types]) {
+            if (this._typeToPack.get(type) === id &amp;&amp; this.host?.registered_node_types?.[type]) {
+                this.host.unregisterNodeType(type);
+            }
+            this._typeToPack.delete(type);
+        }
+        this._packs.delete(id);
+        return true;
+    }
+
+    /** Called by registerNodeType: attributes the type to the open pack, or to a pack listing it. */
+    _onTypeRegistered(type) {
+        const open = this._open[this._open.length - 1];
+        if (open) return this._attribute(type, open, false);
+        for (const [id, entry] of this._packs) {
+            if (entry.manifest.nodes.includes(type)) return this._attribute(type, id, false);
+        }
+        return null;
+    }
+
+    /** Called by unregisterNodeType. */
+    _onTypeUnregistered(type) {
+        const id = this._typeToPack.get(type);
+        if (id) this._packs.get(id)?.types.delete(type);
+        this._typeToPack.delete(type);
+    }
+
+    _attribute(type, id, refresh = true) {
+        const previous = this._typeToPack.get(type);
+        if (previous &amp;&amp; previous !== id) this._packs.get(previous)?.types.delete(type);
+        this._typeToPack.set(type, id);
+        this._packs.get(id)?.types.add(type);
+        if (refresh) this.host?.refreshNodeDefinition?.(type);
+        return id;
+    }
+
+    /**
+     * Adds known packs that are not installed (metadata only, nothing runs), so a missing type
+     * can name the pack that provides it.
+     * @param {object|object[]} manifests
+     * @returns {() => void} disposer
+     */
+    index(manifests) {
+        const ids = [];
+        for (const manifest of Array.isArray(manifests) ? manifests : [manifests]) {
+            const normalized = normalizePackManifest(manifest);
+            this._indexed.set(normalized.id, normalized);
+            ids.push(normalized.id);
+        }
+        return () => ids.forEach((id) => this._indexed.delete(id));
+    }
+
+    /** @returns {object|null} the manifest of an installed pack */
+    get(id) {
+        return this._packs.get(id)?.manifest ?? null;
+    }
+
+    /** @returns {object[]} manifests of installed packs, in registration order */
+    list() {
+        return [...this._packs.values()].map((entry) => entry.manifest);
+    }
+
+    /** @returns {{id: string, version: string, builtin: boolean}|null} the installed pack owning a type */
+    packOf(type) {
+        const id = this._typeToPack.get(type);
+        const manifest = id ? this._packs.get(id)?.manifest : null;
+        return manifest ? { id: manifest.id, version: manifest.version, builtin: manifest.builtin } : null;
+    }
+
+    /** @returns {string[]} the node types an installed pack owns */
+    typesOf(id) {
+        return [...(this._packs.get(id)?.types ?? [])];
+    }
+
+    /**
+     * Finds the pack that provides a type: an installed pack first (also a disabled one that
+     * lists the type), then the index.
+     * @returns {{id: string, version: string, installed: boolean, state?: string}|null}
+     */
+    findPackForType(type) {
+        const owner = this._typeToPack.get(type);
+        if (owner) {
+            const entry = this._packs.get(owner);
+            return { id: owner, version: entry.manifest.version, installed: true, state: entry.state };
+        }
+        for (const [id, entry] of this._packs) {
+            if (entry.manifest.nodes.includes(type)) return { id, version: entry.manifest.version, installed: true, state: entry.state };
+        }
+        for (const [id, manifest] of this._indexed) {
+            if (manifest.nodes.includes(type)) return { id, version: manifest.version, installed: false };
+        }
+        return null;
+    }
+
+    /**
+     * Every known pack as plain data: installed ones with their state ("active", "disabled",
+     * "incompatible") and node types, then indexed ones (state "indexed").
+     */
+    describe() {
+        const installed = [...this._packs.values()].map((entry) => ({
+            ...entry.manifest,
+            state: entry.state,
+            types: [...entry.types].sort(),
+            ...(entry.error ? { error: entry.error } : {}),
+        }));
+        const indexed = [...this._indexed.values()]
+            .filter((manifest) => !this._packs.has(manifest.id))
+            .map((manifest) => ({ ...manifest, state: "indexed", types: [...manifest.nodes] }));
+        return [...installed, ...indexed];
+    }
+
+    /**
+     * The templates (example graphs) of the active packs, from each manifest's `templates[]`, in the
+     * shape of the editor's examples manifest: `{pack, id, title, description, category, profile,
+     * flow, tags, packs, level, url, data}`. An entry needs a string `id` and either a `url`
+     * (relative, http or https) or an inline `data` graph; other entries are skipped.
+     * @returns {ReadonlyArray&lt;Readonly&lt;object>>}
+     */
+    listTemplates() {
+        const text = (value, fallback = null) => (typeof value === "string" &amp;&amp; value ? value : fallback);
+        const out = [];
+        for (const entry of this._packs.values()) {
+            if (entry.state !== "active") continue;
+            const id = entry.manifest.id;
+            for (const t of entry.manifest.templates) {
+                if (!t || typeof t !== "object" || !text(t.id)) continue;
+                const url = text(t.url);
+                const safeUrl = url &amp;&amp; (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^https?:/i.test(url)) ? url : null;
+                const data = t.data &amp;&amp; typeof t.data === "object" ? t.data : null;
+                if (!safeUrl &amp;&amp; !data) continue;
+                out.push(Object.freeze({
+                    pack: id,
+                    id: t.id,
+                    title: text(t.title, t.id),
+                    description: text(t.description, ""),
+                    category: text(t.category, "packs"),
+                    profile: text(t.profile),
+                    flow: text(t.flow),
+                    tags: Object.freeze(packStringList(t.tags)),
+                    packs: Object.freeze(packStringList(t.packs).length ? packStringList(t.packs) : [id]),
+                    level: text(t.level),
+                    url: safeUrl,
+                    data,
+                }));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Provenance to stamp on a new node of `type`: `{pack, pack_ver}` for non-builtin packs when
+     * the setting `LiteGraph.Packs.Stamp` is on, otherwise null.
+     */
+    stampFor(type) {
+        if (!this._setting("LiteGraph.Packs.Stamp", true)) return null;
+        const pack = this.packOf(type);
+        return pack &amp;&amp; !pack.builtin ? { pack: pack.id, pack_ver: pack.version } : null;
+    }
+
+    // ---- replacement mappings ------------------------------------------------------------
+
+    /**
+     * Registers how to replace a node type by another, as data.
+     * @param {{old_type: string, new_type: string, inputs?: object, outputs?: object,
+     *   properties?: object, widgets?: object, set?: {properties?: object}, auto?: boolean,
+     *   reason?: string}} mapping
+     *   - inputs / outputs: old slot (name or index) → new slot (name or index), or null to drop.
+     *     Unlisted slots keep their name.
+     *   - properties: old name → new name, or null to drop. Unlisted properties keep their name
+     *     when the new type has them.
+     *   - widgets: old widget index → new widget index, or null to drop. Unlisted values keep
+     *     their position.
+     *   - set.properties: values written on the new node after the mapping.
+     *   - auto: replace on load, without asking (setting `LiteGraph.Packs.AutoReplace`).
+     * @returns {() => void} disposer
+     */
+    registerReplacement(mapping) {
+        if (!mapping || typeof mapping !== "object") throw new TypeError("node replacement must be an object");
+        const { old_type, new_type } = mapping;
+        if (typeof old_type !== "string" || !old_type) throw new TypeError("node replacement: old_type must be a non-empty string");
+        if (typeof new_type !== "string" || !new_type) throw new TypeError(`node replacement ${old_type}: new_type must be a non-empty string`);
+        for (const key of ["inputs", "outputs", "properties", "widgets", "set"]) {
+            if (mapping[key] !== undefined &amp;&amp; (mapping[key] === null || typeof mapping[key] !== "object" || Array.isArray(mapping[key]))) {
+                throw new TypeError(`node replacement ${old_type}: ${key} must be an object`);
+            }
+        }
+        const normalized = Object.freeze({ ...LiteGraph.cloneObject(mapping), auto: mapping.auto === true });
+        this._replacements.set(old_type, normalized);
+        return () => {
+            if (this._replacements.get(old_type) === normalized) this._replacements.delete(old_type);
+        };
+    }
+
+    /** @returns {object|null} the replacement mapping registered for a type */
+    getReplacement(type) {
+        return this._replacements.get(type) ?? null;
+    }
+
+    /** @returns {object[]} every registered replacement mapping */
+    listReplacements() {
+        return [...this._replacements.values()];
+    }
+}
+
+// ---- node replacement on a graph -----------------------------------------------------------
+
+/** true for a placeholder made by configure for a type that was not registered */
+function isMissingNodePlaceholder(node) {
+    return !!(node &amp;&amp; node.has_errors &amp;&amp; node.last_serialization &amp;&amp; node.constructor === LiteGraph.LGraphNode);
+}
+
+/** The stored type of a node (a placeholder keeps the missing type in last_serialization). */
+function storedNodeType(node) {
+    return isMissingNodePlaceholder(node) ? node.last_serialization.type : node.type;
+}
+
+function packResolveSlot(slots, key) {
+    if (key === null || key === undefined) return -1;
+    if (typeof key === "number" || /^\d+$/.test(String(key))) {
+        const index = Number(key);
+        return index &lt; (slots?.length ?? 0) ? index : -1;
+    }
+    return slots?.findIndex((slot) => slot?.name === key) ?? -1;
+}
+
+/** Target index on the new node for old slot `index` (named `name`), per a mapping. */
+function packMapSlot(map, index, name, newSlots) {
+    if (map) {
+        if (Object.hasOwn(map, name)) return packResolveSlot(newSlots, map[name]);
+        if (Object.hasOwn(map, String(index))) return packResolveSlot(newSlots, map[String(index)]);
+    }
+    return packResolveSlot(newSlots, name);
+}
+
+/**
+ * Replaces `node` in its graph by a node of `mapping.new_type`, keeping its id, position, title,
+ * colours, mode and flags, and moving its links (with their ids and reroutes) onto the mapped
+ * slots. Links on slots the mapping cannot place are removed and listed in the result.
+ * The caller wraps this in a transaction.
+ * @returns {{node: object, dropped: Array&lt;{kind: "input"|"output", slot: number, name: string, link: *}>}}
+ */
+function replaceNodeInGraph(graph, node, mapping) {
+    const newNode = LiteGraph.createNode(mapping.new_type);
+    if (!newNode) throw new Error(`replaceNode: node type ${mapping.new_type} is not registered`);
+    const placeholder = isMissingNodePlaceholder(node);
+    const stored = placeholder ? node.last_serialization : null;
+    const dropped = [];
+
+    // what to keep from the old node
+    const customTitle = placeholder ? stored.title : (node.title !== node.constructor.title ? node.title : undefined);
+    const oldProperties = { ...(placeholder ? (stored.properties ?? {}) : {}), ...(node.properties ?? {}) };
+    const oldWidgets = placeholder
+        ? (Array.isArray(stored.widgets_values) ? stored.widgets_values : [])
+        : (node.widgets ?? []).map((w) => w?.value);
+
+    newNode.pos = [node.pos[0], node.pos[1]];
+    if (customTitle !== undefined) newNode.title = customTitle;
+    for (const key of ["color", "bgcolor", "boxcolor"]) if (node[key]) newNode[key] = node[key];
+    newNode.mode = node.mode ?? newNode.mode;
+    if (node.flags) newNode.flags = { ...newNode.flags, ...LiteGraph.cloneObject(node.flags) };
+
+    // properties: same name unless mapped; the new node's own provenance stamp wins
+    const propertyMap = mapping.properties ?? {};
+    for (const [key, value] of Object.entries(oldProperties)) {
+        if (key === "pack" || key === "pack_ver") continue;
+        const target = Object.hasOwn(propertyMap, key) ? propertyMap[key] : (key in (newNode.properties ?? {}) ? key : null);
+        if (target === null || target === undefined) continue;
+        newNode.properties[target] = LiteGraph.cloneObject(value);
+    }
+    Object.assign(newNode.properties, LiteGraph.cloneObject(mapping.set?.properties ?? {}));
+
+    // widgets: same position unless mapped
+    const widgetMap = mapping.widgets ?? {};
+    const widgetValues = [];
+    oldWidgets.forEach((value, index) => {
+        const target = Object.hasOwn(widgetMap, String(index)) ? widgetMap[String(index)] : index;
+        if (target === null || target === undefined) return;
+        widgetValues[Number(target)] = value;
+    });
+
+    // plan the links: [link id, new slot] per old slot; unplaceable links are disconnected first
+    const inputMoves = [];
+    (node.inputs ?? []).forEach((input, index) => {
+        if (input?.link === null || input?.link === undefined) return;
+        const target = packMapSlot(mapping.inputs, index, input.name, newNode.inputs);
+        if (target &lt; 0 || inputMoves.some((move) => move.slot === target)) {
+            dropped.push({ kind: "input", slot: index, name: input.name, link: input.link });
+            node.disconnectInput(index, { doProcessChange: false });
+            return;
+        }
+        inputMoves.push({ link: input.link, slot: target });
+    });
+    const outputMoves = [];
+    (node.outputs ?? []).forEach((output, index) => {
+        if (!output?.links?.length) return;
+        const target = packMapSlot(mapping.outputs, index, output.name, newNode.outputs);
+        if (target &lt; 0) {
+            for (const link of output.links) dropped.push({ kind: "output", slot: index, name: output.name, link });
+            node.disconnectOutput(index, false, { doProcessChange: false });
+            return;
+        }
+        outputMoves.push({ links: [...output.links], slot: target });
+    });
+
+    // detach the remaining links from the old node so removing it keeps them
+    (node.inputs ?? []).forEach((input) => { if (input) input.link = null; });
+    (node.outputs ?? []).forEach((output) => { if (output) output.links = null; });
+    const id = node.id;
+    graph.remove(node);
+
+    const oldSize = node.size ? [node.size[0], node.size[1]] : null;
+    newNode.id = id;
+    graph.add(newNode, true, { doCalcSize: true });
+    if (newNode.id !== id) throw new Error(`replaceNode: could not keep node id ${id}`);
+    // the node keeps the size it had, grown if the new type needs more room
+    if (oldSize &amp;&amp; Number.isFinite(oldSize[0]) &amp;&amp; Number.isFinite(oldSize[1])) {
+        newNode.size[0] = Math.max(oldSize[0], newNode.size[0]);
+        newNode.size[1] = Math.max(oldSize[1], newNode.size[1]);
+    }
+
+    for (const move of inputMoves) {
+        const link = graph.links[move.link];
+        if (!link) continue;
+        link.target_slot = move.slot;
+        newNode.inputs[move.slot].link = link.id;
+    }
+    for (const move of outputMoves) {
+        const output = newNode.outputs[move.slot];
+        output.links ??= [];
+        for (const linkId of move.links) {
+            const link = graph.links[linkId];
+            if (!link) continue;
+            link.origin_slot = move.slot;
+            output.links.push(link.id);
+        }
+    }
+
+    newNode.configure({
+        properties: newNode.properties,
+        ...(widgetValues.length ? { widgets_values: widgetValues } : {}),
+        ...(customTitle !== undefined ? { title: customTitle } : {}),
+    });
+    graph.updateExecutionOrder();
+    graph.setDirtyCanvas(true, true);
+    return { node: newNode, dropped };
+}
+
+// helpers shared with LGraph (statics keep the bundles' export list to PackRegistry)
+PackRegistry.compareVersions = compareVersions;
+PackRegistry.satisfiesVersion = satisfiesVersion;
+PackRegistry.normalizeManifest = normalizePackManifest;
+PackRegistry.isMissingNodePlaceholder = isMissingNodePlaceholder;
+PackRegistry.storedNodeType = storedNodeType;
+PackRegistry.replaceNodeInGraph = replaceNodeInGraph;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

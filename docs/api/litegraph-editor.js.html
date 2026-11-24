@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: litegraph-editor.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: litegraph-editor.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { LGraphCanvas } from "./lgraphcanvas.js";
+import { LGraph } from "./lgraph.js";
+import { LiteGraph } from "./litegraph.js";
+
+// Creates an interface to access extra features from a graph (like play, stop, live, etc)
+export class Editor {
+
+    constructor(container_id, options = {}) {
+
+        const root = this.root = document.createElement("div");
+        root.className = "litegraph litegraph-editor";
+        root.innerHTML = `
+        &lt;div class="header">
+            &lt;div class="tools tools-left">&lt;/div>
+            &lt;div class="tools tools-right">&lt;/div>
+        &lt;/div>
+        &lt;div class="content">
+            &lt;div class="editor-area">
+                &lt;canvas class="graphcanvas" width="1000" height="500" tabindex="10">&lt;/canvas>
+            &lt;/div>
+        &lt;/div>
+        &lt;div class="footer">
+            &lt;div class="tools tools-left">&lt;/div>
+            &lt;div class="tools tools-right">&lt;/div>
+        &lt;/div>`;
+
+        this.tools = root.querySelector(".tools");
+        this.content = root.querySelector(".content");
+        this.footer = root.querySelector(".footer");
+
+        // keep settings and user key bindings across reloads (embedders may opt out)
+        if (!options.skip_persistence) LiteGraph.persistPlatformState?.();
+        // the Editor shows execution problems as badges by default (a stored choice wins)
+        const badgeSetting = LiteGraph.settings?.getDefinition("LiteGraph.Node.ExecutionBadge");
+        if (badgeSetting) badgeSetting.default = true;
+
+        const canvas = this.canvas = root.querySelector(".graphcanvas");
+        const graph = this.graph = new LGraph();
+        const graphcanvas = this.graphcanvas = new LGraphCanvas(canvas, graph);
+
+        graphcanvas.background_image = "imgs/grid.png";
+        graph.onAfterExecute = () => {
+            graphcanvas.draw(true);
+        };
+
+        graphcanvas.onDropItem = this.onDropItem.bind(this);
+
+        // a loaded document with missing node types: show what is missing and what can replace it
+        graph.events.on("missing-nodes", (event) => {
+            if (event.detail.reason !== "load") return; // not again on undo or redo
+            const id = "litegraph.nodes.showMissing";
+            if (LiteGraph.settings?.get("LiteGraph.Nodes.ShowMissingOnLoad") === false || !LiteGraph.commands?.get(id)) return;
+            LiteGraph.commands.execute(id, LiteGraph.commands.contextFor(graphcanvas));
+        });
+
+        // add stuff
+        // this.addToolsButton("loadsession_button","Load","imgs/icon-load.png", this.onLoadButton.bind(this), ".tools-left" );
+        // this.addToolsButton("savesession_button","Save","imgs/icon-save.png", this.onSaveButton.bind(this), ".tools-left" );
+        this.addLoadCounter();
+        this.addToolsButton(
+            "playnode_button",
+            "Play",
+            "imgs/icon-play.png",
+            this.onPlayButton.bind(this),
+            ".tools-right",
+        );
+        this.addToolsButton(
+            "playstepnode_button",
+            "Step",
+            "imgs/icon-playstep.png",
+            this.onPlayStepButton.bind(this),
+            ".tools-right",
+        );
+
+        if (!options.skip_livemode) {
+            this.addToolsButton(
+                "livemode_button",
+                "Live",
+                "imgs/icon-record.png",
+                this.onLiveButton.bind(this),
+                ".tools-right",
+            );
+        }
+        if (!options.skip_maximize) {
+            this.addToolsButton(
+                "maximize_button",
+                "",
+                "imgs/icon-maximize.png",
+                this.onFullscreenButton.bind(this),
+                ".tools-right",
+            );
+        }
+        if (options.miniwindow) {
+            this.addMiniWindow(300, 200);
+        }
+
+        // append to DOM
+        const parent = document.getElementById(container_id);
+        if (parent) {
+            parent?.appendChild(root);
+        } else {
+            throw new Error("Editor has no parentElement to bind to");
+        }
+
+        graph.onPlayEvent = () => {
+            const button = this.root.querySelector("#playnode_button");
+            button.innerHTML = `&lt;img src="imgs/icon-stop.png"/> Stop`;
+        };
+
+        graph.onStopEvent = () => {
+            const button = this.root.querySelector("#playnode_button");
+            button.innerHTML = `&lt;img src="imgs/icon-play.png"/> Play`;
+        };
+
+        // node palette (setting LiteGraph.Editor.Palette remembers whether it is open)
+        if (!options.skip_palette) this.setupPalette();
+
+        // modified marker and draft autosave (settings LiteGraph.Editor.Autosave / AutosaveDelay)
+        this.setupModifiedMarker();
+        if (!options.skip_autosave) this.setupAutosave(options.draft_storage);
+
+        graphcanvas.resize();
+    }
+
+    /** Adds the "Nodes" button and opens the palette if it was open last time. */
+    setupPalette() {
+        // in the Editor the node panel follows the selection unless the user turned it off (decision P3)
+        const follow = LiteGraph.settings?.getDefinition?.("LiteGraph.Panel.FollowSelection");
+        if (follow) follow.default = true;
+        const settings = LiteGraph.settings;
+        if (settings &amp;&amp; !settings.has("LiteGraph.Editor.Palette")) {
+            settings.define({ id: "LiteGraph.Editor.Palette", name: "Show the node palette in the Editor", default: false });
+        }
+        this.addToolsButton("palette_button", "Nodes", "imgs/icon-gear.png", () => this.togglePalette(), ".tools-left");
+        if (settings?.get("LiteGraph.Editor.Palette")) this.togglePalette(true);
+    }
+
+    /** Opens or closes the node palette; returns whether it is open. */
+    togglePalette(open = !this.palette_panel) {
+        if (!open) {
+            this.palette_panel?.dispose();
+            this.palette_panel = null;
+        } else if (!this.palette_panel) {
+            this.palette_panel = new NodePalettePanel(this.graphcanvas, this.content);
+        }
+        LiteGraph.settings?.set("LiteGraph.Editor.Palette", !!this.palette_panel);
+        return !!this.palette_panel;
+    }
+
+    /** Shows "• modified" in the header and prefixes the page title while the document is modified. */
+    setupModifiedMarker() {
+        const marker = this.modified_marker = document.createElement("span");
+        marker.className = "modified-marker";
+        marker.title = "Modified since it was loaded or saved";
+        marker.style.cssText = "position:absolute;right:8px;bottom:4px;z-index:5;font:12px Arial;color:#fc6;pointer-events:none;display:none";
+        marker.textContent = "• modified";
+        this.root.querySelector(".content")?.appendChild(marker);
+        const baseTitle = typeof document !== "undefined" ? document.title.replace(/^• /, "") : "";
+        this.graph.events.on("modified-changed", (event) => {
+            marker.style.display = event.detail.modified ? "" : "none";
+            if (typeof document !== "undefined") document.title = (event.detail.modified ? "• " : "") + baseTitle;
+        });
+    }
+
+    /**
+     * Keeps a draft of the modified document and, when one is left from an earlier session,
+     * offers to restore it (never restores silently).
+     */
+    setupAutosave(storage) {
+        const settings = LiteGraph.settings;
+        if (settings &amp;&amp; !settings.has("LiteGraph.Editor.Autosave")) {
+            settings.define({ id: "LiteGraph.Editor.Autosave", name: "Keep a draft of the modified document and offer it after a reload", default: true });
+            settings.define({ id: "LiteGraph.Editor.AutosaveDelay", name: "Draft autosave delay (ms)", default: 2000 });
+        }
+        if (settings &amp;&amp; settings.get("LiteGraph.Editor.Autosave") === false) return;
+        this.autosave = new DraftAutosave(this.graph, { storage, delay: settings?.get("LiteGraph.Editor.AutosaveDelay") ?? 2000 });
+        const draft = this.autosave.load();
+        this.autosave.start();
+        if (draft) this.offerDraftRestore(draft);
+    }
+
+    /** A small bar with Restore / Discard for a draft left from an earlier session. */
+    offerDraftRestore(draft) {
+        const bar = this.draft_bar = document.createElement("div");
+        bar.className = "draft-restore";
+        bar.style.cssText = "position:absolute;top:44px;left:50%;transform:translateX(-50%);z-index:10;background:#333;color:#ddd;border:1px solid #666;border-radius:4px;padding:6px 10px;font:13px Arial;white-space:nowrap;display:flex;align-items:center;gap:6px";
+        const when = new Date(draft.time).toLocaleString();
+        const count = Array.isArray(draft.doc?.nodes) ? draft.doc.nodes.length : 0;
+        bar.innerHTML = `&lt;span>Unsaved draft from ${when} (${count} node${count === 1 ? "" : "s"}).&lt;/span> `;
+        const button = (label, onClick) => {
+            const element = document.createElement("button");
+            element.className = "btn";
+            element.textContent = label;
+            element.addEventListener("click", () => { onClick(); bar.remove(); this.draft_bar = null; });
+            bar.appendChild(element);
+            return element;
+        };
+        button("Restore", () => this.restoreDraft(draft));
+        button("Discard", () => this.autosave?.clear());
+        this.root.appendChild(bar);
+        return bar;
+    }
+
+    /** Loads a draft into the graph; the document stays modified until it is saved. */
+    restoreDraft(draft) {
+        this.graph.configure(draft.doc);
+        this.graph.markModified();
+        this.autosave?.save(true);
+    }
+
+    addLoadCounter() {
+        const meter = document.createElement("div");
+        meter.className = "headerpanel loadmeter toolbar-widget";
+        meter.innerHTML = `
+            &lt;div class="cpuload">
+                &lt;strong>CPU&lt;/strong> 
+                &lt;div class="bgload">
+                    &lt;div class="fgload">&lt;/div>
+                &lt;/div>
+            &lt;/div>
+            &lt;div class="gpuload">
+                &lt;strong>GFX&lt;/strong> 
+                &lt;div class="bgload">
+                    &lt;div class="fgload">&lt;/div>
+                &lt;/div>
+            &lt;/div>`;
+
+        this.root.querySelector(".header .tools-left").appendChild(meter);
+        var self = this;
+
+        setInterval(() => {
+            meter.querySelector(".cpuload .fgload").style.width =
+                `${2 * self.graph.execution_time * 90}px`;
+            if (self.graph.status == LGraph.STATUS_RUNNING) {
+                meter.querySelector(".gpuload .fgload").style.width =
+                    `${self.graphcanvas.render_time * 10 * 90}px`;
+            } else {
+                meter.querySelector(".gpuload .fgload").style.width = `${4}px`;
+            }
+        }, 200);
+    }
+
+    addToolsButton(id, name, icon_url, callback, container = ".tools") {
+        const button = this.createButton(name, icon_url, callback);
+        button.id = id;
+        this.root.querySelector(container).appendChild(button);
+    }
+
+    createButton(name, icon_url, callback) {
+        const button = document.createElement("button");
+        if (icon_url) {
+            button.innerHTML = `&lt;img src="${icon_url}"/> `;
+        }
+        button.classList.add("btn");
+        button.innerHTML += name;
+        if(callback)
+            button.addEventListener("click", callback );
+        return button;
+    }
+
+    onLoadButton() {
+        var panel = this.graphcanvas.createPanel("Load session",{closable: true});
+
+        // @TODO
+
+        this.root.appendChild(panel);
+    }
+
+    onSaveButton() {}
+
+    onPlayButton() {
+        var graph = this.graph;
+        if (graph.status == LGraph.STATUS_STOPPED) {
+            graph.start();
+        } else {
+            graph.stop();
+        }
+    }
+
+    onPlayStepButton() {
+        var graph = this.graph;
+        graph.runStep(1);
+        this.graphcanvas.draw(true, true);
+    }
+
+    onLiveButton() {
+        var is_live_mode = !this.graphcanvas.live_mode;
+        this.graphcanvas.switchLiveMode(true);
+        this.graphcanvas.draw();
+        var button = this.root.querySelector("#livemode_button");
+        button.innerHTML = !is_live_mode
+            ? `&lt;img src="imgs/icon-record.png"/> Live`
+            : `&lt;img src="imgs/icon-gear.png"/> Edit`;
+    }
+
+    onDropItem(e) {
+        var that = this;
+        if(!e.dataTransfer){
+            LiteGraph.log_warn("LGEditor","onDropItem","no dataTransfer on event",e,this);
+            return;
+        }
+        LiteGraph.log_info("LGEditor","onDropItem","processing dataTransfer",e.dataTransfer);
+        for(var i = 0; i &lt; e.dataTransfer.files.length; ++i) {
+            var file = e.dataTransfer.files[i];
+            var ext = LGraphCanvas.getFileExtension(file.name);
+            var reader = new FileReader();
+            if(ext == "json") {
+                reader.onload = (event) => {
+                    var data = JSON.parse( event.target.result );
+                    that.graph.configure(data);
+                };
+                reader.readAsText(file);
+            }
+        }
+    }
+
+    goFullscreen() {
+        if (this.root.requestFullscreen) {
+            this.root.requestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+        } else if (this.root.mozRequestFullscreen) {
+            this.root.requestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+        } else if (this.root.webkitRequestFullscreen) {
+            this.root.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+        } else {
+            throw new Error("Fullscreen not supported");
+        }
+
+        var self = this;
+        setTimeout(() => {
+            self.graphcanvas.resize();
+        }, 100);
+    }
+
+    onFullscreenButton() {
+        if(this.isFullscreen()) {
+            this.exitFullscreen();
+        } else {
+            this.goFullscreen();
+        }
+    }
+
+    addMiniWindow(w, h) {
+        var miniwindow = document.createElement("div");
+        miniwindow.className = "litegraph miniwindow";
+        miniwindow.innerHTML =
+            `&lt;canvas class="graphcanvas" width="${w}" height="${h}" tabindex="10">&lt;/canvas>`;
+        var canvas = miniwindow.querySelector("canvas");
+        var that = this;
+
+        var graphcanvas = new LGraphCanvas( canvas, this.graph );
+        graphcanvas.show_info = false;
+        graphcanvas.background_image = "imgs/grid.png";
+        graphcanvas.scale = 0.25;
+        graphcanvas.allow_dragnodes = false;
+        graphcanvas.allow_interaction = false;
+        graphcanvas.render_shadows = false;
+        graphcanvas.max_zoom = 0.25;
+        this.miniwindow_graphcanvas = graphcanvas;
+        graphcanvas.onClear = () => {
+            graphcanvas.scale = 0.25;
+            graphcanvas.allow_dragnodes = false;
+            graphcanvas.allow_interaction = false;
+        };
+        graphcanvas.onRenderBackground = function(canvas, ctx) {
+            ctx.strokeStyle = "#567";
+            var tl = that.graphcanvas.convertOffsetToCanvas([0, 0]);
+            var br = that.graphcanvas.convertOffsetToCanvas([
+                that.graphcanvas.cssWidth,
+                that.graphcanvas.cssHeight,
+            ]);
+            tl = this.convertCanvasToOffset(tl);
+            br = this.convertCanvasToOffset(br);
+            ctx.lineWidth = 1;
+            ctx.strokeRect(
+                Math.floor(tl[0]) + 0.5,
+                Math.floor(tl[1]) + 0.5,
+                Math.floor(br[0] - tl[0]),
+                Math.floor(br[1] - tl[1]),
+            );
+        };
+
+        miniwindow.style.position = "absolute";
+        miniwindow.style.top = "4px";
+        miniwindow.style.right = "4px";
+
+        var close_button = document.createElement("div");
+        close_button.className = "corner-button";
+        close_button.innerHTML = "&amp;#10060;";
+        close_button.addEventListener("click", (_event) => {
+            graphcanvas.dispose(); // stops its render loop and unbinds its listeners
+            miniwindow.parentNode.removeChild(miniwindow);
+        });
+        miniwindow.appendChild(close_button);
+
+        this.root.querySelector(".content").appendChild(miniwindow);
+    }
+
+    // removeMultiView() {
+    //     if (this.graphcanvas2) {
+    //         this.graphcanvas2.setGraph(null, true);
+    //         this.graphcanvas2.viewport = null;
+    //         this.graphcanvas2 = null;
+
+    //         this.graphcanvas.viewport = [0,0,this.graphcanvas.cssWidth,this.graphcanvas.cssHeight];
+    //         this.graphcanvas.resize();
+    //     }
+    // }
+
+    toggleMultiview() {
+        var canvas = this.canvas;
+        let graphcanvas;
+
+        // toggle test
+        if (this.graphcanvas2) {
+            // both canvases share one element: dispose the second (render loop + listeners),
+            // then hand the element back to the main canvas
+            this.graphcanvas2.dispose();
+            this.graphcanvas2 = null;
+            canvas.data = this.graphcanvas;
+
+            // this.graphcanvas.unbindEvents();
+            // this.graphcanvas.setGraph(null, false);
+            // this.graphcanvas.viewport = null;
+            // this.graphcanvas = null;
+            // graphcanvas = new LGraphCanvas( canvas, this.graph );
+            // graphcanvas.background_image = "imgs/grid.png";
+            // this.graphcanvas = graphcanvas;
+            // window.graphcanvas = this.graphcanvas;
+
+            this.graphcanvas.viewport = [0,0,this.graphcanvas.cssWidth,this.graphcanvas.cssHeight];
+            this.graphcanvas.setDirty(true,true);
+
+            return;
+        }
+
+        this.graphcanvas.ctx.fillStyle = "black";
+        const cssW = this.graphcanvas.cssWidth, cssH = this.graphcanvas.cssHeight;
+        this.graphcanvas.ctx.fillRect(0,0,canvas.width,canvas.height); // backing-store pixels, identity transform
+        this.graphcanvas.viewport = [0,0,cssW*0.5-2,cssH];
+        // this.graphcanvas.resize();
+        this.graphcanvas.setDirty(true,true);
+
+        graphcanvas = new LGraphCanvas( canvas, this.graph );
+        graphcanvas.background_image = "imgs/grid.png";
+        this.graphcanvas2 = graphcanvas;
+        this.graphcanvas2.viewport = [cssW*0.5,0,cssW*0.5,cssH];
+        // this.graphcanvas2.resize();
+        this.graphcanvas2.setDirty(true,true);
+    }
+
+    isFullscreen() {
+        return(
+            document.fullscreenElement ||
+            document.mozRequestFullscreen ||
+            document.webkitRequestFullscreen ||
+            false
+        );
+    }
+
+    exitFullscreen() {
+        if(document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.mozCancelFullscreen) {
+            document.mozCancelFullscreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+}
+
+/**
+ * Draft autosave for an editor document: after each recorded change (debounced) the modified
+ * document is written to a storage (default `localStorage`, key "litegraph.editor.draft");
+ * marking the document saved removes the draft.
+ */
+export class DraftAutosave {
+
+    static KEY = "litegraph.editor.draft";
+
+    /**
+     * @param {object} graph
+     * @param {{storage?: {getItem: Function, setItem: Function, removeItem: Function}, key?: string, delay?: number}} [options]
+     */
+    constructor(graph, { storage, key = DraftAutosave.KEY, delay = 2000 } = {}) {
+        this.graph = graph;
+        this.key = key;
+        this.delay = delay;
+        this.storage = storage ?? DraftAutosave.defaultStorage();
+        this._timer = null;
+        this._disposers = [];
+    }
+
+    /** localStorage when it is usable, else null (no drafts) */
+    static defaultStorage() {
+        try {
+            return typeof localStorage !== "undefined" ? localStorage : null;
+        } catch {
+            return null;
+        }
+    }
+
+    start() {
+        const events = this.graph.events;
+        this._disposers.push(events.on("graph-changed", (event) => {
+            if (event.detail.kind !== "configure") this.schedule();
+        }));
+        this._disposers.push(events.on("modified-changed", (event) => {
+            if (!event.detail.modified) this.clear();
+        }));
+        return this;
+    }
+
+    schedule() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = setTimeout(() => { this._timer = null; this.save(); }, this.delay);
+    }
+
+    /** Writes the draft now (only a modified document unless `force`). @returns {boolean} */
+    save(force = false) {
+        if (!this.storage || (!force &amp;&amp; !this.graph.isModified)) return false;
+        try {
+            this.storage.setItem(this.key, JSON.stringify({ time: Date.now(), id: this.graph.id, revision: this.graph.revision, doc: this.graph.serialize() }));
+            return true;
+        } catch (error) {
+            LiteGraph.log_warn?.("editor", "draft autosave failed", error);
+            return false;
+        }
+    }
+
+    /** @returns {{time: number, id: string, revision: number, doc: object}|null} the stored draft */
+    load() {
+        try {
+            const draft = JSON.parse(this.storage?.getItem(this.key) ?? "null");
+            return draft &amp;&amp; typeof draft === "object" &amp;&amp; draft.doc &amp;&amp; Array.isArray(draft.doc.nodes) ? draft : null;
+        } catch {
+            return null;
+        }
+    }
+
+    clear() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = null;
+        try { this.storage?.removeItem(this.key); } catch { /* storage unavailable */ }
+    }
+
+    dispose() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = null;
+        this._disposers.splice(0).forEach((dispose) => dispose?.());
+    }
+}
+
+/**
+ * The Editor's node palette: a DOM panel over the left side of the canvas, built from
+ * LiteGraph.palette. Types are grouped by pack and category; a search box filters them; the star
+ * marks favourites (setting LiteGraph.Palette.Favorites); "Recent" lists the last inserted types.
+ * Drag an entry onto the canvas (or double-click it) to insert it; hover shows a preview.
+ */
+export class NodePalettePanel {
+
+    constructor(graphcanvas, container) {
+        this.graphcanvas = graphcanvas;
+        this.query = "";
+        this.favoritesOnly = false;
+        this._abort = new AbortController();
+        const signal = this._abort.signal;
+        const root = this.root = document.createElement("div");
+        root.className = "litegraph-palette";
+        root.style.cssText = "position:absolute;left:0;top:0;bottom:0;width:240px;z-index:6;display:flex;flex-direction:column;background:rgba(28,28,28,0.96);border-right:1px solid #444;font:12px Arial;color:#ccc";
+        root.innerHTML = `&lt;div style="display:flex;gap:4px;padding:6px;border-bottom:1px solid #444">
+                &lt;input class="palette-search" type="search" placeholder="Search nodes" style="flex:1;min-width:0;background:#111;color:#ddd;border:1px solid #555;border-radius:3px;padding:3px 5px">
+                &lt;button class="palette-favorites btn" title="Favourites only" style="padding:0 6px">☆&lt;/button>
+            &lt;/div>
+            &lt;div class="palette-list" style="flex:1;overflow:auto;padding:4px 0">&lt;/div>`;
+        this.list = root.querySelector(".palette-list");
+        const search = root.querySelector(".palette-search");
+        search.addEventListener("input", () => { this.query = search.value.trim(); this.render(); }, { signal });
+        const favButton = root.querySelector(".palette-favorites");
+        favButton.addEventListener("click", () => {
+            this.favoritesOnly = !this.favoritesOnly;
+            favButton.textContent = this.favoritesOnly ? "★" : "☆";
+            this.render();
+        }, { signal });
+        // keys typed in the panel belong to it, not to the canvas shortcuts
+        root.addEventListener("keydown", (e) => e.stopPropagation(), { signal });
+        const preview = this.preview = document.createElement("canvas");
+        preview.className = "palette-preview";
+        preview.width = 180;
+        preview.height = 100;
+        preview.style.cssText = "position:absolute;left:246px;display:none;z-index:7;border:1px solid #555;border-radius:4px;background:#222;pointer-events:none";
+        container.appendChild(root);
+        container.appendChild(preview);
+        this.render();
+    }
+
+    render() {
+        const palette = LiteGraph.palette;
+        this.list.innerHTML = "";
+        if (!palette) return;
+        const section = (title) => {
+            const header = document.createElement("div");
+            header.textContent = title;
+            header.style.cssText = "padding:6px 8px 2px;color:#8ab;font-weight:bold;text-transform:uppercase;font-size:10px";
+            this.list.appendChild(header);
+        };
+        if (!this.query &amp;&amp; !this.favoritesOnly) {
+            const recent = palette.recent().map((type) => LiteGraph.getNodeDefinition(type)).filter(Boolean);
+            if (recent.length) {
+                section("Recent");
+                for (const def of recent) this.list.appendChild(this.item({ ...def, favorite: palette.isFavorite(def.type) }));
+            }
+        }
+        const groups = palette.groups({ query: this.query, favoritesOnly: this.favoritesOnly });
+        for (const group of groups) {
+            section(group.pack.title);
+            for (const { category, items } of group.categories) {
+                const label = document.createElement("div");
+                label.textContent = category || "(no category)";
+                label.style.cssText = "padding:3px 10px 1px;color:#888";
+                this.list.appendChild(label);
+                for (const def of items) this.list.appendChild(this.item(def));
+            }
+        }
+        if (!groups.length) {
+            const empty = document.createElement("div");
+            empty.textContent = this.favoritesOnly ? "No favourites yet: star a node." : "No node matches.";
+            empty.style.cssText = "padding:8px;color:#888";
+            this.list.appendChild(empty);
+        }
+    }
+
+    /** one draggable entry */
+    item(def) {
+        const signal = this._abort.signal;
+        const element = document.createElement("div");
+        element.className = "palette-item";
+        element.draggable = true;
+        element.dataset.type = def.type;
+        element.title = def.description ? `${def.type}: ${def.description}` : def.type;
+        element.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 8px 2px 18px;cursor:grab;white-space:nowrap";
+        const star = document.createElement("span");
+        star.className = "palette-star";
+        star.textContent = def.favorite ? "★" : "☆";
+        star.style.cssText = `cursor:pointer;color:${def.favorite ? "#fc6" : "#666"}`;
+        const label = document.createElement("span");
+        label.textContent = (typeof def.icon === "string" &amp;&amp; def.icon ? def.icon + " " : "") + def.title;
+        label.style.cssText = "overflow:hidden;text-overflow:ellipsis";
+        element.append(star, label);
+        star.addEventListener("click", (e) => {
+            e.stopPropagation();
+            LiteGraph.palette.toggleFavorite(def.type);
+            this.render();
+        }, { signal });
+        element.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData(this.graphcanvas.constructor.NODE_DRAG_MIME ?? "application/x-litegraph-node-type", def.type);
+            e.dataTransfer.setData("text/plain", def.type);
+            e.dataTransfer.effectAllowed = "copy";
+            this.preview.style.display = "none";
+        }, { signal });
+        element.addEventListener("dblclick", () => {
+            const area = this.graphcanvas.visible_area;
+            LiteGraph.palette.insert(this.graphcanvas, def.type, [area[0] + area[2] / 2, area[1] + area[3] / 2]);
+            this.render();
+        }, { signal });
+        element.addEventListener("mouseenter", () => this.showPreview(def.type, element), { signal });
+        element.addEventListener("mouseleave", () => { this.preview.style.display = "none"; }, { signal });
+        return element;
+    }
+
+    /** draws a small node from the palette's preview data next to the entry */
+    showPreview(type, anchor) {
+        const data = LiteGraph.palette.preview(type);
+        const canvas = this.preview;
+        const ctx = canvas.getContext?.("2d");
+        if (!data || !ctx) return;
+        const rows = Math.max(data.inputs.length, data.outputs.length, 1);
+        const titleHeight = 20;
+        canvas.height = Math.min(220, titleHeight + 12 + rows * 16);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = data.bgcolor || LiteGraph.NODE_DEFAULT_BGCOLOR || "#353535";
+        ctx.fillRect(6, 6, canvas.width - 12, canvas.height - 12);
+        ctx.fillStyle = data.color || LiteGraph.NODE_DEFAULT_COLOR || "#333";
+        ctx.fillRect(6, 6, canvas.width - 12, titleHeight);
+        ctx.font = "12px Arial";
+        ctx.fillStyle = "#ddd";
+        ctx.textAlign = "left";
+        ctx.fillText(((typeof data.icon === "string" &amp;&amp; data.icon) ? data.icon + " " : "") + data.title, 14, 20);
+        ctx.font = "11px Arial";
+        data.inputs.slice(0, rows).forEach((slot, i) => {
+            const y = 6 + titleHeight + 14 + i * 16;
+            ctx.fillStyle = "#7c7";
+            ctx.beginPath(); ctx.arc(14, y - 4, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#bbb";
+            ctx.fillText(String(slot.name), 22, y);
+        });
+        ctx.textAlign = "right";
+        data.outputs.slice(0, rows).forEach((slot, i) => {
+            const y = 6 + titleHeight + 14 + i * 16;
+            ctx.fillStyle = "#7c7";
+            ctx.beginPath(); ctx.arc(canvas.width - 14, y - 4, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#bbb";
+            ctx.fillText(String(slot.name), canvas.width - 22, y);
+        });
+        const top = anchor.offsetTop - this.list.scrollTop; // offsetTop is relative to the panel (positioned)
+        canvas.style.top = `${Math.max(0, top)}px`;
+        canvas.style.display = "";
+    }
+
+    dispose() {
+        this._abort.abort();
+        this.root.remove();
+        this.preview.remove();
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BaseWidget.html">BaseWidget</a></li><li><a href="CallbackHandler.html">CallbackHandler</a></li><li><a href="CanvasPointer.html">CanvasPointer</a></li><li><a href="ColorWidget.html">ColorWidget</a></li><li><a href="CommandRegistry.html">CommandRegistry</a></li><li><a href="ContextMenu_ContextMenu.html">ContextMenu</a></li><li><a href="DraftAutosave.html">DraftAutosave</a></li><li><a href="DragAndScale.html">DragAndScale</a></li><li><a href="ExecutionState.html">ExecutionState</a></li><li><a href="ExtensionRegistry.html">ExtensionRegistry</a></li><li><a href="KeybindingRegistry.html">KeybindingRegistry</a></li><li><a href="LGraph.html">LGraph</a></li><li><a href="LGraphCanvas.html">LGraphCanvas</a></li><li><a href="LGraphEventTarget_LGraphEventTarget.html">LGraphEventTarget</a></li><li><a href="LGraphGroup_LGraphGroup.html">LGraphGroup</a></li><li><a href="LGraphNode.html">LGraphNode</a></li><li><a href="LLink.html">LLink</a></li><li><a href="LayoutRegistry.html">LayoutRegistry</a></li><li><a href="LinkConnector.html">LinkConnector</a></li><li><a href="LinkRouterRegistry.html">LinkRouterRegistry</a></li><li><a href="LinkStyleRegistry.html">LinkStyleRegistry</a></li><li><a href="ListenerList.html">ListenerList</a></li><li><a href="LiteGraph.html">LiteGraph</a></li><li><a href="MenuRegistry.html">MenuRegistry</a></li><li><a href="MiniMap.html">MiniMap</a></li><li><a href="NodeFunction.html">NodeFunction</a></li><li><a href="NodeJsSysHelper.html">NodeJsSysHelper</a></li><li><a href="NodePalette.html">NodePalette</a></li><li><a href="NodePalettePanel.html">NodePalettePanel</a></li><li><a href="NodeSearch.html">NodeSearch</a></li><li><a href="PackRegistry.html">PackRegistry</a></li><li><a href="PanelBuilder.html">PanelBuilder</a></li><li><a href="PanelHost.html">PanelHost</a></li><li><a href="RenderLink.html">RenderLink</a></li><li><a href="Reroute.html">Reroute</a></li><li><a href="SettingsRegistry.html">SettingsRegistry</a></li><li><a href="SysUtil_InfoNode.html">SysUtil_InfoNode</a></li><li><a href="SysUtil_ProcessListNode.html">SysUtil_ProcessListNode</a></li><li><a href="ValueTypeRegistry.html">ValueTypeRegistry</a></li><li><a href="VectorWidget.html">VectorWidget</a></li><li><a href="Watch.html">Watch</a></li></ul><h3>Global</h3><ul><li><a href="global.html#ACTIONS">ACTIONS</a></li><li><a href="global.html#BUILTIN_WIDGET_CLASSES">BUILTIN_WIDGET_CLASSES</a></li><li><a href="global.html#COMPUTED">COMPUTED</a></li><li><a href="global.html#ComfyInterop">ComfyInterop</a></li><li><a href="global.html#EVENT_DROP_REASONS">EVENT_DROP_REASONS</a></li><li><a href="global.html#IO_INPUT_BASE">IO_INPUT_BASE</a></li><li><a href="global.html#IO_INPUT_NODE">IO_INPUT_NODE</a></li><li><a href="global.html#LEGACY_EXECUTION_FLAGS">LEGACY_EXECUTION_FLAGS</a></li><li><a href="global.html#LEGACY_WIDGET_TYPES">LEGACY_WIDGET_TYPES</a></li><li><a href="global.html#LINK_BUILTIN_ROUTERS">LINK_BUILTIN_ROUTERS</a></li><li><a href="global.html#LINK_BUILTIN_STYLES">LINK_BUILTIN_STYLES</a></li><li><a href="global.html#LOOP_EXECUTION">LOOP_EXECUTION</a></li><li><a href="global.html#PACK_ID_PATTERN">PACK_ID_PATTERN</a></li><li><a href="global.html#REPLACED_TYPES">REPLACED_TYPES</a></li><li><a href="global.html#VIEW_STYLE_COMMANDS">VIEW_STYLE_COMMANDS</a></li><li><a href="global.html#actionDo">actionDo</a></li><li><a href="global.html#actionHistoryBack">actionHistoryBack</a></li><li><a href="global.html#actionHistoryForward">actionHistoryForward</a></li><li><a href="global.html#actionHistoryLoad">actionHistoryLoad</a></li><li><a href="global.html#add">add</a></li><li><a href="global.html#addActionWidget">addActionWidget</a></li><li><a href="global.html#addConnection">addConnection</a></li><li><a href="global.html#addGlobalInput">addGlobalInput</a></li><li><a href="global.html#addNodeMethod">addNodeMethod</a></li><li><a href="global.html#addOutput">addOutput</a></li><li><a href="global.html#addProperty">addProperty</a></li><li><a href="global.html#addWidget">addWidget</a></li><li><a href="global.html#adjustMouseEvent">adjustMouseEvent</a></li><li><a href="global.html#arrange">arrange</a></li><li><a href="global.html#attachCanvas">attachCanvas</a></li><li><a href="global.html#autoConnectNodes">autoConnectNodes</a></li><li><a href="global.html#autoSize">autoSize</a></li><li><a href="global.html#bindEvents">bindEvents</a></li><li><a href="global.html#bringToFront">bringToFront</a></li><li><a href="global.html#buildNodeClassFromObject">buildNodeClassFromObject</a></li><li><a href="global.html#canonical">canonical</a></li><li><a href="global.html#centerOnNode">centerOnNode</a></li><li><a href="global.html#chainNodes">chainNodes</a></li><li><a href="global.html#change">change</a></li><li><a href="global.html#changeInputType">changeInputType</a></li><li><a href="global.html#changeOutputType">changeOutputType</a></li><li><a href="global.html#checkNodeTypes">checkNodeTypes</a></li><li><a href="global.html#clear">clear</a></li><li><a href="global.html#clearTriggeredSlot">clearTriggeredSlot</a></li><li><a href="global.html#clearTriggeredSlots">clearTriggeredSlots</a></li><li><a href="global.html#closeSubgraph">closeSubgraph</a></li><li><a href="global.html#collapse">collapse</a></li><li><a href="global.html#collect">collect</a></li><li><a href="global.html#collectDefinitions">collectDefinitions</a></li><li><a href="global.html#compareVersions">compareVersions</a></li><li><a href="global.html#computeSize">computeSize</a></li><li><a href="global.html#computeVisibleNodes">computeVisibleNodes</a></li><li><a href="global.html#configApply">configApply</a></li><li><a href="global.html#configure">configure</a></li><li><a href="global.html#connect">connect</a></li><li><a href="global.html#connectByType">connectByType</a></li><li><a href="global.html#connectByTypeOutput">connectByTypeOutput</a></li><li><a href="global.html#convertCanvasToOffset">convertCanvasToOffset</a></li><li><a href="global.html#convertOffsetToCanvas">convertOffsetToCanvas</a></li><li><a href="global.html#createNode">createNode</a></li><li><a href="global.html#createNodeBadgeRegistry">createNodeBadgeRegistry</a></li><li><a href="global.html#defaultPanelEditors">defaultPanelEditors</a></li><li><a href="global.html#defaultWidgetTypes">defaultWidgetTypes</a></li><li><a href="global.html#definitionOf">definitionOf</a></li><li><a href="global.html#deleteSelectedNodes">deleteSelectedNodes</a></li><li><a href="global.html#deselectAllNodes">deselectAllNodes</a></li><li><a href="global.html#deselectNode">deselectNode</a></li><li><a href="global.html#detachCanvas">detachCanvas</a></li><li><a href="global.html#directDefinitionIds">directDefinitionIds</a></li><li><a href="global.html#disconnectOutput">disconnectOutput</a></li><li><a href="global.html#dispose">dispose</a></li><li><a href="global.html#doExecute">doExecute</a></li><li><a href="global.html#draw">draw</a></li><li><a href="global.html#drawArrowsAndLabel">drawArrowsAndLabel</a></li><li><a href="global.html#drawBackCanvas">drawBackCanvas</a></li><li><a href="global.html#drawConnections">drawConnections</a></li><li><a href="global.html#drawFrontCanvas">drawFrontCanvas</a></li><li><a href="global.html#drawGroups">drawGroups</a></li><li><a href="global.html#drawNode">drawNode</a></li><li><a href="global.html#drawNodeShape">drawNodeShape</a></li><li><a href="global.html#drawNodeWidgets">drawNodeWidgets</a></li><li><a href="global.html#drawReroutes">drawReroutes</a></li><li><a href="global.html#drawSubgraphPanel">drawSubgraphPanel</a></li><li><a href="global.html#drawWidgetLabel">drawWidgetLabel</a></li><li><a href="global.html#enableWebGL">enableWebGL</a></li><li><a href="global.html#escapeHtml">escapeHtml</a></li><li><a href="global.html#evaluateMathExpression">evaluateMathExpression</a></li><li><a href="global.html#eventBeside">eventBeside</a></li><li><a href="global.html#executePendingActions">executePendingActions</a></li><li><a href="global.html#fetchFile">fetchFile</a></li><li><a href="global.html#findCycles">findCycles</a></li><li><a href="global.html#findInputSlot">findInputSlot</a></li><li><a href="global.html#findInputSlotFree">findInputSlotFree</a></li><li><a href="global.html#findNodeByTitle">findNodeByTitle</a></li><li><a href="global.html#findNodesByClass">findNodesByClass</a></li><li><a href="global.html#findNodesByTitle">findNodesByTitle</a></li><li><a href="global.html#findNodesByType">findNodesByType</a></li><li><a href="global.html#findOutputSlot">findOutputSlot</a></li><li><a href="global.html#findOutputSlotFree">findOutputSlotFree</a></li><li><a href="global.html#findSlotByType">findSlotByType</a></li><li><a href="global.html#findWidget">findWidget</a></li><li><a href="global.html#get">get</a></li><li><a href="global.html#getAncestors">getAncestors</a></li><li><a href="global.html#getBounding">getBounding</a></li><li><a href="global.html#getCanvasWindow">getCanvasWindow</a></li><li><a href="global.html#getConnectionPos">getConnectionPos</a></li><li><a href="global.html#getCurrentGraph">getCurrentGraph</a></li><li><a href="global.html#getElapsedTime">getElapsedTime</a></li><li><a href="global.html#getFixedTime">getFixedTime</a></li><li><a href="global.html#getGroupOnPos">getGroupOnPos</a></li><li><a href="global.html#getInputData">getInputData</a></li><li><a href="global.html#getInputDataByName">getInputDataByName</a></li><li><a href="global.html#getInputDataType">getInputDataType</a></li><li><a href="global.html#getInputInfo">getInputInfo</a></li><li><a href="global.html#getInputLink">getInputLink</a></li><li><a href="global.html#getInputNode">getInputNode</a></li><li><a href="global.html#getInputOrProperty">getInputOrProperty</a></li><li><a href="global.html#getNodeById">getNodeById</a></li><li><a href="global.html#getNodeOnPos">getNodeOnPos</a></li><li><a href="global.html#getNodeType">getNodeType</a></li><li><a href="global.html#getNodeTypesCategories">getNodeTypesCategories</a></li><li><a href="global.html#getOutputData">getOutputData</a></li><li><a href="global.html#getOutputInfo">getOutputInfo</a></li><li><a href="global.html#getOutputNodes">getOutputNodes</a></li><li><a href="global.html#getPropertyInfo">getPropertyInfo</a></li><li><a href="global.html#getSlotInPosition">getSlotInPosition</a></li><li><a href="global.html#getTime">getTime</a></li><li><a href="global.html#getTitle">getTitle</a></li><li><a href="global.html#getTopGraph">getTopGraph</a></li><li><a href="global.html#hasSelection">hasSelection</a></li><li><a href="global.html#inlineNode">inlineNode</a></li><li><a href="global.html#installHooks">installHooks</a></li><li><a href="global.html#interfaceSlot">interfaceSlot</a></li><li><a href="global.html#isAnyOutputConnected">isAnyOutputConnected</a></li><li><a href="global.html#isInputConnected">isInputConnected</a></li><li><a href="global.html#isInstanceData">isInstanceData</a></li><li><a href="global.html#isLinkStyleActive">isLinkStyleActive</a></li><li><a href="global.html#isLive">isLive</a></li><li><a href="global.html#isMissingNodePlaceholder">isMissingNodePlaceholder</a></li><li><a href="global.html#isOutputConnected">isOutputConnected</a></li><li><a href="global.html#isOverNodeBox">isOverNodeBox</a></li><li><a href="global.html#isOverNodeInput">isOverNodeInput</a></li><li><a href="global.html#isOverNodeOuput">isOverNodeOuput</a></li><li><a href="global.html#isPointInside">isPointInside</a></li><li><a href="global.html#isValidConnection">isValidConnection</a></li><li><a href="global.html#jsTypeOf">jsTypeOf</a></li><li><a href="global.html#keptBounds">keptBounds</a></li><li><a href="global.html#linkArray">linkArray</a></li><li><a href="global.html#linkObject">linkObject</a></li><li><a href="global.html#linkPointOnPolyline">linkPointOnPolyline</a></li><li><a href="global.html#linkPolylineRouter">linkPolylineRouter</a></li><li><a href="global.html#loopCompleted">loopCompleted</a></li><li><a href="global.html#materialize">materialize</a></li><li><a href="global.html#moveSelection">moveSelection</a></li><li><a href="global.html#nodeEmpower_htmlElement">nodeEmpower_htmlElement</a></li><li><a href="global.html#normalizeDefinition">normalizeDefinition</a></li><li><a href="global.html#normalizePackManifest">normalizePackManifest</a></li><li><a href="global.html#onGraphChanged">onGraphChanged</a></li><li><a href="global.html#onGraphSaved">onGraphSaved</a></li><li><a href="global.html#openSubgraph">openSubgraph</a></li><li><a href="global.html#orderIO">orderIO</a></li><li><a href="global.html#packExpandComparator">packExpandComparator</a></li><li><a href="global.html#packMapSlot">packMapSlot</a></li><li><a href="global.html#packParseVersion">packParseVersion</a></li><li><a href="global.html#panelBindText">panelBindText</a></li><li><a href="global.html#panelCanvasOptionKeys">panelCanvasOptionKeys</a></li><li><a href="global.html#panelEl">panelEl</a></li><li><a href="global.html#panelHumanize">panelHumanize</a></li><li><a href="global.html#panelNodeColorEditor">panelNodeColorEditor</a></li><li><a href="global.html#panelNodeSignature">panelNodeSignature</a></li><li><a href="global.html#panelRenderContributions">panelRenderContributions</a></li><li><a href="global.html#panelScrub">panelScrub</a></li><li><a href="global.html#panelValueText">panelValueText</a></li><li><a href="global.html#pin">pin</a></li><li><a href="global.html#processDrop">processDrop</a></li><li><a href="global.html#processKey">processKey</a></li><li><a href="global.html#processMouseMove">processMouseMove</a></li><li><a href="global.html#processMouseUp">processMouseUp</a></li><li><a href="global.html#processMouseWheel">processMouseWheel</a></li><li><a href="global.html#processNodeWidgets">processNodeWidgets</a></li><li><a href="global.html#processPointerCancel">processPointerCancel</a></li><li><a href="global.html#referenceOf">referenceOf</a></li><li><a href="global.html#register">register</a></li><li><a href="global.html#registerExtension_autoconnect">registerExtension_autoconnect</a></li><li><a href="global.html#registerExtension_keyhelper">registerExtension_keyhelper</a></li><li><a href="global.html#registerExtension_nodePacks">registerExtension_nodePacks</a></li><li><a href="global.html#registerExtension_quickConnect">registerExtension_quickConnect</a></li><li><a href="global.html#registerExtension_renamer">registerExtension_renamer</a></li><li><a href="global.html#registerExtension_subgraphTools">registerExtension_subgraphTools</a></li><li><a href="global.html#registerExtension_viewTools">registerExtension_viewTools</a></li><li><a href="global.html#registerNodeType">registerNodeType</a></li><li><a href="global.html#registerSearchboxExtra">registerSearchboxExtra</a></li><li><a href="global.html#registerSlotType">registerSlotType</a></li><li><a href="global.html#remove">remove</a></li><li><a href="global.html#removeInput">removeInput</a></li><li><a href="global.html#removeLink">removeLink</a></li><li><a href="global.html#removeOutput">removeOutput</a></li><li><a href="global.html#removeUnusedDefinitions">removeUnusedDefinitions</a></li><li><a href="global.html#renameInput">renameInput</a></li><li><a href="global.html#renameOutput">renameOutput</a></li><li><a href="global.html#renamerExtension">renamerExtension</a></li><li><a href="global.html#renderInfo">renderInfo</a></li><li><a href="global.html#renderLink">renderLink</a></li><li><a href="global.html#renderLinkPath">renderLinkPath</a></li><li><a href="global.html#replaceNodeInGraph">replaceNodeInGraph</a></li><li><a href="global.html#resize">resize</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runStep">runStep</a></li><li><a href="global.html#runtimeType">runtimeType</a></li><li><a href="global.html#satisfiesVersion">satisfiesVersion</a></li><li><a href="global.html#selectNode">selectNode</a></li><li><a href="global.html#selectNodes">selectNodes</a></li><li><a href="global.html#selectionChanged">selectionChanged</a></li><li><a href="global.html#sendEventToAllNodes">sendEventToAllNodes</a></li><li><a href="global.html#sendToBack">sendToBack</a></li><li><a href="global.html#serialize">serialize</a></li><li><a href="global.html#setCanvas">setCanvas</a></li><li><a href="global.html#setDirty">setDirty</a></li><li><a href="global.html#setGlobalInputData">setGlobalInputData</a></li><li><a href="global.html#setGraph">setGraph</a></li><li><a href="global.html#setOutputData">setOutputData</a></li><li><a href="global.html#setOutputDataType">setOutputDataType</a></li><li><a href="global.html#setProperty">setProperty</a></li><li><a href="global.html#setSize">setSize</a></li><li><a href="global.html#setZoom">setZoom</a></li><li><a href="global.html#showMissingNodesPanel">showMissingNodesPanel</a></li><li><a href="global.html#siblingOf">siblingOf</a></li><li><a href="global.html#single">single</a></li><li><a href="global.html#startRendering">startRendering</a></li><li><a href="global.html#stopexecution">stop execution</a></li><li><a href="global.html#stopRendering">stopRendering</a></li><li><a href="global.html#storedNodeType">storedNodeType</a></li><li><a href="global.html#stripMeta">stripMeta</a></li><li><a href="global.html#structuredCloneValue">structuredCloneValue</a></li><li><a href="global.html#subgraphAppendReroutes">subgraphAppendReroutes</a></li><li><a href="global.html#subgraphDropUnusedReroutes">subgraphDropUnusedReroutes</a></li><li><a href="global.html#switchLiveMode">switchLiveMode</a></li><li><a href="global.html#targetNode">targetNode</a></li><li><a href="global.html#toDefinitions">toDefinitions</a></li><li><a href="global.html#toInline">toInline</a></li><li><a href="global.html#toString">toString</a></li><li><a href="global.html#toggleActionWidget">toggleActionWidget</a></li><li><a href="global.html#toggleLinkStyle">toggleLinkStyle</a></li><li><a href="global.html#trigger">trigger</a></li><li><a href="global.html#triggerSlot">triggerSlot</a></li><li><a href="global.html#unbindEvents">unbindEvents</a></li><li><a href="global.html#unregisterNodeType">unregisterNodeType</a></li><li><a href="global.html#unusedDefinitionIds">unusedDefinitionIds</a></li><li><a href="global.html#updateBackground">updateBackground</a></li><li><a href="global.html#updateExecutionOrder">updateExecutionOrder</a></li><li><a href="global.html#usableReplacement">usableReplacement</a></li><li><a href="global.html#widgetImplementation">widgetImplementation</a></li><li><a href="global.html#wrapFunctionAsNode">wrapFunctionAsNode</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Mon Nov 23 2026 17:17:33 GMT+0100 (Central European Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/others" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/others", version: LiteGraph.VERSION, title: "Others", description: "Default node suggestions per slot type for the search box (registers no node types).", builtin: true });
+
 /* in types :: run in console :: var s=""; LiteGraph.slot_types_in.forEach(function(el){s+=el+"\n";}); console.log?.(s); */
 
 if (typeof LiteGraph.slot_types_default_in == "undefined")
@@ -83,3 +87,5 @@ LiteGraph.slot_types_default_out["image"] = ["graphics/frame","graphics/drawImag
 // LiteGraph.slot_types_default_out["mat4"] = "geometry/transform";
 LiteGraph.slot_types_default_out["quat"] = ["math3d/rotate_vec3","math3d/rotation"];
 LiteGraph.slot_types_default_out["table"] = "string/toTable";
+
+LiteGraph.packs.close("litegraph/others");

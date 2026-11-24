@@ -1,0 +1,1074 @@
+{
+  "format": "litegraph-examples",
+  "version": 1,
+  "categories": [
+    {
+      "id": "basics",
+      "title": "Basics"
+    },
+    {
+      "id": "flows/blueprint",
+      "title": "Flows: event scripting"
+    },
+    {
+      "id": "flows/dataflow",
+      "title": "Flows: dataflow"
+    },
+    {
+      "id": "flows/realtime",
+      "title": "Flows: realtime"
+    },
+    {
+      "id": "flows/stepped",
+      "title": "Flows: stepped"
+    },
+    {
+      "id": "flows/reactive",
+      "title": "Flows: reactive"
+    },
+    {
+      "id": "flows/mixed",
+      "title": "Flows: mixed"
+    },
+    {
+      "id": "subgraphs",
+      "title": "Subgraphs and functions"
+    },
+    {
+      "id": "ui",
+      "title": "Editor and widgets"
+    },
+    {
+      "id": "audio",
+      "title": "Audio and MIDI"
+    },
+    {
+      "id": "graphics",
+      "title": "Graphics"
+    },
+    {
+      "id": "network",
+      "title": "Network"
+    },
+    {
+      "id": "3d",
+      "title": "3D"
+    },
+    {
+      "id": "packs",
+      "title": "From packs"
+    },
+    {
+      "id": "wip",
+      "title": "Work in progress",
+      "hidden": true
+    }
+  ],
+  "examples": [
+    {
+      "id": "widgets-watch",
+      "file": "basics/widgets_watch.json",
+      "title": "Widgets to Watch",
+      "description": "Knob, slider, number, toggle, combo and text nodes, each into a Watch, and the slider into a progress bar.",
+      "category": "basics",
+      "profile": "dataflow",
+      "flow": "dataflow",
+      "tags": [
+        "widgets",
+        "watch",
+        "ui"
+      ],
+      "packs": [
+        "interface",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "button-counter",
+      "file": "basics/button_counter.json",
+      "title": "Button, counter and watch",
+      "description": "Buttons add, remove and reset a Counter; each change triggers a Watch that pulls Count × Factor. No Play needed.",
+      "category": "basics",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "events",
+        "button",
+        "counter",
+        "watch"
+      ],
+      "packs": [
+        "interface",
+        "events",
+        "math",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "sequence-branch",
+      "file": "basics/sequence_branch.json",
+      "title": "Sequence and branch",
+      "description": "A button fires a Sequence: count the clicks, branch on a toggle into a true or false counter, then log to the console.",
+      "category": "basics",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "events",
+        "sequence",
+        "branch"
+      ],
+      "packs": [
+        "interface",
+        "events",
+        "logic",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "for-loop",
+      "file": "basics/for_loop.json",
+      "title": "FOR loop",
+      "description": "Run fires the loop body once per index from From to From + Count - 1: a Sequence counts, shows and logs each index; \"completed\" shows the rounds.",
+      "category": "basics",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "loops",
+        "for",
+        "events"
+      ],
+      "packs": [
+        "interface",
+        "logic",
+        "events",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "while-console",
+      "file": "conditionals/while_console_test.JSON",
+      "title": "WHILE loop",
+      "description": "Run adds one to a Counter while it is below the limit; the condition is pulled fresh each round, and \"completed\" shows the rounds in a Watch.",
+      "category": "basics",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "loops",
+        "while",
+        "events"
+      ],
+      "packs": [
+        "interface",
+        "logic",
+        "events",
+        "math",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "strings",
+      "file": "basics/strings.json",
+      "title": "Strings",
+      "description": "Join two texts, then upper case, split at a comma and look for a word; each result in a Watch.",
+      "category": "basics",
+      "profile": "dataflow",
+      "flow": "dataflow",
+      "tags": [
+        "strings",
+        "text"
+      ],
+      "packs": [
+        "strings",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "objects-json",
+      "file": "basics/objects_json.json",
+      "title": "Objects and JSON",
+      "description": "Parse a JSON text, read a property, list the keys and set a property on a copy; Parse updates the Watches.",
+      "category": "basics",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "objects",
+        "json"
+      ],
+      "packs": [
+        "basic",
+        "objects",
+        "events",
+        "interface"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "check-frame-value",
+      "file": "ancestors/check_frame_value.JSON",
+      "title": "Event chain reads fresh values",
+      "description": "A Sequence sets a variable, a Branch reads it, then it is reset: under \"ancestors\" the Branch pulls the fresh value, so every click counts as true.",
+      "category": "flows/blueprint",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "events",
+        "sequence",
+        "ancestors"
+      ],
+      "packs": [
+        "events",
+        "basic",
+        "logic",
+        "interface"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "random-console",
+      "file": "tests/randomConsole.JSON",
+      "title": "Timer, random and branch",
+      "description": "Every second the Timer asks a Branch whether Rand is above a threshold; on true a Sequence logs the value, shows it in a Watch and counts the hit. Watch and log see the value that was compared.",
+      "category": "flows/blueprint",
+      "profile": "blueprint",
+      "flow": "blueprint",
+      "tags": [
+        "timer",
+        "random",
+        "branch",
+        "sequence"
+      ],
+      "packs": [
+        "math",
+        "interface",
+        "events",
+        "logic",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "values-math",
+      "file": "basics/values_math.json",
+      "title": "Numbers and math",
+      "description": "Two Number widgets into +, ×, ^ and sin, each shown in a Watch; the pure math nodes run only when a Watch asks for them.",
+      "category": "flows/dataflow",
+      "profile": "dataflow",
+      "flow": "dataflow",
+      "tags": [
+        "math",
+        "numbers",
+        "watch"
+      ],
+      "packs": [
+        "interface",
+        "math",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "realtime-wave",
+      "file": "flows/realtime_wave.json",
+      "title": "Realtime wave",
+      "description": "Every frame: time × speed into sin, shown in a plot, a progress bar and a Watch. Play runs it, Step advances one frame.",
+      "category": "flows/realtime",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "realtime",
+        "time",
+        "plot"
+      ],
+      "packs": [
+        "basic",
+        "interface",
+        "math",
+        "graphics"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "stepped-accumulate",
+      "file": "flows/stepped_accumulate.json",
+      "title": "Stepped accumulate",
+      "description": "The \"strict\" model: every node runs at most once per frame, so each Step adds the increment exactly once and the result after N steps is always the same.",
+      "category": "flows/stepped",
+      "profile": "stepped",
+      "flow": "stepped",
+      "tags": [
+        "strict",
+        "step",
+        "deterministic"
+      ],
+      "packs": [
+        "interface",
+        "math",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "reactive-form",
+      "file": "flows/reactive_form.json",
+      "title": "Reactive form",
+      "description": "The \"event\" model: nothing runs per frame; a combo and a toggle fire change events that update the Watches at once.",
+      "category": "flows/reactive",
+      "profile": "reactive",
+      "flow": "reactive",
+      "tags": [
+        "event",
+        "reactive",
+        "widgets"
+      ],
+      "packs": [
+        "interface",
+        "events",
+        "basic"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "lg-docs",
+      "file": "doc/LG_docs.JSON",
+      "title": "What is LiteGraph",
+      "description": "Notes about the library around a first graph: a button that counts and two numbers added into a Watch.",
+      "category": "flows/mixed",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "intro",
+        "widgets"
+      ],
+      "packs": [
+        "math",
+        "interface",
+        "basic",
+        "events"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "node-execution-modes",
+      "file": "node_execution_modes.JSON",
+      "title": "Node execution modes",
+      "description": "One box per node mode (Always, On Event, On Trigger, On Request, Never, Bypass), each with a counter of its own executions, and a note on the execution models.",
+      "category": "flows/mixed",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "modes",
+        "execution",
+        "bypass"
+      ],
+      "packs": [
+        "interface",
+        "events",
+        "basic",
+        "math"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "subgraph",
+      "file": "subgraph.json",
+      "title": "Subgraph",
+      "description": "A subgraph node with data and event inputs and outputs: time passes through it to a Watch, a timer event to a Counter.",
+      "category": "subgraphs",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "subgraphs"
+      ],
+      "packs": [
+        "basic",
+        "events",
+        "core",
+        "math"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "check-subgraph",
+      "file": "ancestors/check_subgraph.JSON",
+      "title": "Events across subgraph boundaries",
+      "description": "A button sends an event into a subgraph function, which forwards it and its data to nodes outside; Watches and a Counter show what came out.",
+      "category": "subgraphs",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "subgraphs",
+        "events",
+        "ancestors"
+      ],
+      "packs": [
+        "interface",
+        "math",
+        "events",
+        "basic",
+        "core",
+        "logic"
+      ],
+      "level": "advanced"
+    },
+    {
+      "id": "function-replication",
+      "file": "functions/function_replication.JSON",
+      "title": "Function nodes",
+      "description": "Several function nodes call one subgraph definition; \"call\" runs one and its Watch shows the result.",
+      "category": "subgraphs",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "functions",
+        "definitions"
+      ],
+      "packs": [
+        "interface",
+        "basic",
+        "core",
+        "math"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "features",
+      "file": "features.json",
+      "title": "Node features",
+      "description": "The demo nodes: slot shapes and colours, a custom shape, flat slots, a knob, a gamepad reader and every canvas widget type.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "widgets",
+        "slots",
+        "shapes"
+      ],
+      "packs": [
+        "math",
+        "input",
+        "events",
+        "interface"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "benchmark",
+      "file": "benchmark.json",
+      "title": "Benchmark",
+      "description": "Four copies of the node features demo, timers, a plot and a subgraph: press Play and watch the frame rate.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "benchmark",
+        "performance"
+      ],
+      "packs": [
+        "input",
+        "math",
+        "events",
+        "interface",
+        "graphics",
+        "core",
+        "basic"
+      ],
+      "level": "advanced"
+    },
+    {
+      "id": "copypaste",
+      "file": "copypaste.json",
+      "title": "Copy and paste",
+      "description": "Copy and paste that keeps links: Ctrl+C / Ctrl+Shift+V, Alt-drag to clone, Alt+Shift-drag to clone with the input links, on nodes with many slots.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "clipboard",
+        "editing"
+      ],
+      "packs": [
+        "interface"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "autoconnect",
+      "file": "features/extension_autoconnect.JSON",
+      "title": "Autoconnect extension",
+      "description": "The autoconnect extension (editor_build.html): press \"a\" on selected nodes, click a target, and matching slots are linked.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "extensions",
+        "autoconnect"
+      ],
+      "packs": [],
+      "level": "basic"
+    },
+    {
+      "id": "html-nodes",
+      "file": "html_nodes_simple.JSON",
+      "title": "HTML nodes",
+      "description": "Each button runs one part: create and append a div, set the content of #main, give it a CSS background, remove elements by id or class.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "html",
+        "dom"
+      ],
+      "packs": [
+        "basic",
+        "html",
+        "strings",
+        "interface"
+      ],
+      "level": "intermediate"
+    },
+    {
+      "id": "audio",
+      "file": "audio.json",
+      "title": "Audio",
+      "description": "A Web Audio graph: a source with Play and Stop, a filter and gain on knobs, an analyser feeding a spectrum view, a level and Watches.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "audio",
+        "synth"
+      ],
+      "packs": [
+        "interface",
+        "basic",
+        "audio"
+      ],
+      "level": "intermediate",
+      "needs": [
+        "audio"
+      ]
+    },
+    {
+      "id": "audio-delay",
+      "file": "audio_delay.json",
+      "title": "Audio delay",
+      "description": "A source mixed dry and through a delay line; knobs set the delay time and the two gains.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "audio",
+        "delay"
+      ],
+      "packs": [
+        "interface",
+        "audio"
+      ],
+      "level": "basic",
+      "needs": [
+        "audio"
+      ]
+    },
+    {
+      "id": "audio-reverb",
+      "file": "audio_reverb.json",
+      "title": "Audio reverb",
+      "description": "A source mixed dry and through a convolver reverb; knobs set the two gains.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "audio",
+        "reverb"
+      ],
+      "packs": [
+        "interface",
+        "audio"
+      ],
+      "level": "basic",
+      "needs": [
+        "audio"
+      ]
+    },
+    {
+      "id": "midi-generation",
+      "file": "midi_generation.json",
+      "title": "MIDI generation",
+      "description": "Timers and math pick notes of a scale and send them to a keyboard view and a MIDI output; a plot shows the notes.",
+      "category": "audio",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "midi",
+        "generative"
+      ],
+      "packs": [
+        "midi",
+        "basic",
+        "events",
+        "logic",
+        "math",
+        "graphics",
+        "interface"
+      ],
+      "level": "advanced",
+      "needs": [
+        "midi"
+      ]
+    },
+    {
+      "id": "image-fade",
+      "file": "graphics/image_fade.JSON",
+      "title": "Image fade",
+      "description": "Time and a sine fade between two images; a Frame node shows the result.",
+      "category": "graphics",
+      "profile": "realtime",
+      "flow": "realtime",
+      "tags": [
+        "images",
+        "canvas"
+      ],
+      "packs": [
+        "graphics",
+        "interface",
+        "math",
+        "basic",
+        "events"
+      ],
+      "level": "basic"
+    },
+    {
+      "id": "websocket-client",
+      "file": "websocket/client.JSON",
+      "title": "WebSocket client",
+      "description": "Sends and receives values through a WebSocket server at ws://127.0.0.1:8080; counters and Watches show what arrives.",
+      "category": "network",
+      "profile": "reactive",
+      "flow": "reactive",
+      "tags": [
+        "websocket"
+      ],
+      "packs": [
+        "events",
+        "basic",
+        "math",
+        "network",
+        "interface"
+      ],
+      "level": "intermediate",
+      "needs": [
+        "network"
+      ]
+    },
+    {
+      "id": "cdn-libraries",
+      "file": "cdn_libraries/test_load.JSON",
+      "title": "Load a library from a CDN",
+      "description": "Searches cdnjs and loads a JavaScript library from it; counters show \"ready\" and \"error\".",
+      "category": "network",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "libraries",
+        "cdn"
+      ],
+      "packs": [
+        "events",
+        "libraries",
+        "basic",
+        "html",
+        "interface"
+      ],
+      "level": "intermediate",
+      "needs": [
+        "network"
+      ]
+    },
+    {
+      "id": "three-moving-cube",
+      "file": "three/threeJsMovingCube.JSON",
+      "title": "three.js moving cube",
+      "description": "A rotating cube with three.js nodes (threejs.js is in no bundle).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "3d",
+        "threejs"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "all-nodes",
+      "file": "wip_testing/allNodes_250219.JSON",
+      "title": "All nodes (2025-02-19)",
+      "description": "One node of every type, including old names.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "catalog"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-array",
+      "file": "wip_testing/testing_array.JSON",
+      "title": "Arrays",
+      "description": "Array nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "arrays"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-cdn",
+      "file": "wip_testing/testingCdn.JSON",
+      "title": "CDN libraries",
+      "description": "CDN library nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "libraries"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-jquery",
+      "file": "wip_testing/testing_jQuery.JSON",
+      "title": "jQuery nodes",
+      "description": "Old jQuery nodes (mapped to html/*).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "html"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-lib-three",
+      "file": "wip_testing/testingLibThree.JSON",
+      "title": "three.js library",
+      "description": "Loads three.js as a library.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "libraries",
+        "3d"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-objects-adv",
+      "file": "wip_testing/testingObjectsAdv.JSON",
+      "title": "Objects (advanced)",
+      "description": "Object nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "objects"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-objects",
+      "file": "wip_testing/testing_objects.JSON",
+      "title": "Objects",
+      "description": "Object nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "objects"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-osc-client-server",
+      "file": "wip_testing/testing_oscClientServer.JSON",
+      "title": "OSC client and server",
+      "description": "OSC nodes under test (old names).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "osc",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-osc-nodes",
+      "file": "wip_testing/testingOscNodes.JSON",
+      "title": "OSC nodes",
+      "description": "OSC nodes under test (old names).",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "osc",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-socketio",
+      "file": "wip_testing/testing_socketIO.JSON",
+      "title": "Socket.IO",
+      "description": "Socket.IO nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "socketio",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-subgraph-function",
+      "file": "wip_testing/testing_subgraph_as_function.JSON",
+      "title": "Subgraph as function",
+      "description": "A subgraph used as a function, under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "subgraphs",
+        "functions"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-subgraph",
+      "file": "wip_testing/testingSubgraph.JSON",
+      "title": "Subgraph",
+      "description": "Subgraph nodes under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "subgraphs"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "testing-websocket-client",
+      "file": "wip_testing/testing_websocket_client.JSON",
+      "title": "WebSocket client",
+      "description": "WebSocket client under test.",
+      "category": "wip",
+      "profile": null,
+      "flow": null,
+      "tags": [
+        "websocket",
+        "network"
+      ],
+      "packs": [],
+      "level": "advanced"
+    },
+    {
+      "id": "essentials-boolean-toggle",
+      "file": "essentials/boolean-toggle.json",
+      "title": "Boolean: value and toggle action",
+      "description": "A boolean stays a value; a button action inverts it.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "boolean-toggle"
+      ],
+      "packs": [
+        "basic",
+        "interface"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step to see the initial true value.",
+          "Change the boolean widget, or click the Toggle button.",
+          "Open node details to inspect the saved value."
+        ],
+        "expected": "The Watch value changes between true and false. Each button action inverts the stored boolean.",
+        "settings": [
+          "Const Boolean → value",
+          "Optional input: toggle"
+        ]
+      }
+    },
+    {
+      "id": "essentials-structured-watch",
+      "file": "essentials/structured-watch.json",
+      "title": "Watch: structured values",
+      "description": "Inspect an object using a bounded automatic preview.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "structured-watch"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step.",
+          "Edit the JSON text on Const Data.",
+          "Switch Watch display between auto, value and tree to compare."
+        ],
+        "expected": "Auto reports object → object and shows keys, values and the array without changing the input data.",
+        "settings": [
+          "Watch → display: auto",
+          "Watch → display: tree requires the watch pack"
+        ]
+      }
+    },
+    {
+      "id": "essentials-text-watch",
+      "file": "essentials/text-watch.json",
+      "title": "Watch: multiline text",
+      "description": "Use a readable text display for strings with line breaks.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "text-watch"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step.",
+          "Edit the string value, retaining or adding line breaks.",
+          "Change Watch font size in node details."
+        ],
+        "expected": "Watch displays three lines of text; font settings affect its presentation.",
+        "settings": [
+          "Watch → display: text",
+          "Watch → font_size",
+          "Watch → clip"
+        ]
+      }
+    },
+    {
+      "id": "essentials-widget-input",
+      "file": "essentials/widget-input.json",
+      "title": "Widget input: linked value",
+      "description": "A number link supplies a widget row while preserving its local fallback.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "widget-input"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step: the linked number reads 7.",
+          "Try the linked widget; it is disabled while connected.",
+          "Disconnect its input and Step: the local value 2 is used."
+        ],
+        "expected": "Watch reads 7 while connected, then 2 after disconnection. Linking does not overwrite the saved local value.",
+        "settings": [
+          "Number → value widget input",
+          "Disconnect Links on the input socket"
+        ]
+      }
+    },
+    {
+      "id": "essentials-bypass",
+      "file": "essentials/bypass.json",
+      "title": "Bypass: pass a value through",
+      "description": "Compare a calculation with its bypassed version.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "bypass"
+      ],
+      "packs": [
+        "basic",
+        "math"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Press Play or Step.",
+          "The ABS node starts in BYPASS mode.",
+          "Change its mode to Always in the node menu and Step again."
+        ],
+        "expected": "Watch reads -3 in BYPASS, then 3 when ABS executes normally.",
+        "settings": [
+          "ABS → Mode: Bypass or Always",
+          "Ctrl+B toggles bypass in the built editor"
+        ]
+      }
+    },
+    {
+      "id": "essentials-slot-icons",
+      "file": "essentials/slot-icons.json",
+      "title": "Slot icons: readable and compact",
+      "description": "Optional glyph labels decorate slots without renaming them.",
+      "category": "ui",
+      "profile": "mixed",
+      "flow": "mixed",
+      "tags": [
+        "essentials",
+        "slot-icons"
+      ],
+      "packs": [
+        "basic"
+      ],
+      "level": "basic",
+      "guide": {
+        "steps": [
+          "Compare the icon+text and icon-only labels on the two Watch inputs.",
+          "Right-click the compact socket to see its original name and type.",
+          "Open Options → Canvas → Nodes → Slot labels to try a canvas default; explicit slot overrides win."
+        ],
+        "expected": "The slots keep their original names and number types after saving and reloading. Watch reads 42.",
+        "settings": [
+          "Canvas → Slot labels",
+          "Slot label_mode overrides the node and canvas"
+        ]
+      }
+    }
+  ]
+}

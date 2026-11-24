@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/input" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/input", version: LiteGraph.VERSION, title: "Input devices", description: "Input devices read every step (the gamepad).", builtin: true });
+
 class GamepadInput {
 
     static title = "Gamepad";
@@ -376,3 +380,9 @@ GamepadInput.UP = 4;
 GamepadInput.DOWN = 8;
 
 LiteGraph.registerNodeType("input/gamepad", GamepadInput);
+
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// input/gamepad.
+
+LiteGraph.packs.close("litegraph/input");

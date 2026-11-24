@@ -1,10 +1,13 @@
 import { LiteGraph } from "./litegraph.js";
-import { CallbackHandler } from "./callbackhandler.js";
+import { CallbackHandler, installHooks } from "./callbackhandler.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LLink } from "./llink.js";
 import { Reroute } from "./reroute.js";
 import { LGraphEventTarget } from "./eventtarget.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
+import { PackRegistry } from "./packs.js";
+import { ExecutionState } from "./executionstate.js";
+import { ExecutionEngine } from "./execution.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -22,7 +25,7 @@ export class LGraph {
     static STATUS_RUNNING = 2;
 
     /** top-level document fields modelled by this runtime; any other loaded field is preserved verbatim on serialize */
-    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version"];
+    static serialized_fields = ["id", "revision", "state", "last_node_id", "last_link_id", "links", "config", "extra", "version", "litegraph_version", "litegraph_modes"];
 
     /** fresh id counters; last_node_id/last_link_id are accessors over these */
     static createState() {
@@ -41,7 +44,140 @@ export class LGraph {
 
     /** dispatch only when someone listens (no allocation otherwise) */
     _emit(type, detail, options) {
+        let recorded = false;
+        if (options && "recorded" in options) {
+            recorded = !!options.recorded;
+            const { recorded: _ignored, ...rest } = options;
+            options = Object.keys(rest).length ? rest : undefined;
+        }
+        const kind = recorded ? null : LGraph.CHANGE_KINDS[type];
+        if (kind) {
+            (this._pendingChangeKinds ??= new Set()).add(kind);
+            // a change no history entry records (e.g. node.connect from code) is reported once, after the current task step
+            if (!this._transaction && !this.isConfiguring) this._scheduleChangeFlush();
+        }
         return this._events?.has(type) ? this._events.dispatch(type, detail, options) : null;
+    }
+
+    /** typed events that say what kind of change the next `graph-changed` reports */
+    static CHANGE_KINDS = Object.freeze({
+        "node-added": "node-added",
+        "node-removed": "node-removed",
+        "link-connected": "link",
+        "link-removed": "link",
+        "node-property-changed": "property",
+        "widget-changed": "widget",
+        "reroute-added": "reroute",
+        "reroute-removed": "reroute",
+        "node-replaced": "node-replaced",
+        "subgraph-definition-changed": "subgraph",
+        "subgraph-forked": "subgraph",
+    });
+
+    /** the kind of a change named only by its history action (moves, groups, ...) */
+    static _kindOfAction(action) {
+        const name = String(action ?? "").toLowerCase();
+        if (/group/.test(name)) return "group";
+        if (/reroute/.test(name)) return "reroute";
+        if (/subgraph|definition|component/.test(name)) return "subgraph";
+        if (/move|resize|align|arrange|layout|pos|size|collapse|pin/.test(name)) return "layout";
+        if (/link|connect/.test(name)) return "link";
+        if (/propert/.test(name)) return "property";
+        if (/widget/.test(name)) return "widget";
+        if (/add|paste|insert|clone/.test(name)) return "node-added";
+        if (/remove|delete/.test(name)) return "node-removed";
+        return "other";
+    }
+
+    /**
+     * Reports one recorded change (one per transaction) as `graph-changed {kind, kinds, action,
+     * revision, graph}` on this graph and, from a subgraph, on the root graph too, then updates
+     * the modified state.
+     */
+    /** notes the kind of a change about to be recorded (so the event after it is not reported again) */
+    _markChange(kind) {
+        (this._pendingChangeKinds ??= new Set()).add(kind);
+    }
+
+    _scheduleChangeFlush() {
+        if (this._changeFlushQueued) return;
+        this._changeFlushQueued = true;
+        queueMicrotask(() => {
+            this._changeFlushQueued = false;
+            if (!this._pendingChangeKinds?.size || this._transaction || this.isConfiguring) return;
+            this._reportChange(null, { untracked: true });
+        });
+    }
+
+    _reportChange(action, { untracked = false } = {}) {
+        const kinds = this._pendingChangeKinds?.size ? [...this._pendingChangeKinds] : [LGraph._kindOfAction(action)];
+        this._pendingChangeKinds = null;
+        if (untracked) (this.rootGraph ?? this)._modifiedExtra = true;
+        const detail = { kind: kinds[0], kinds, action: action ?? "", revision: this.revision, graph: this };
+        this._emit("graph-changed", detail);
+        const root = this.rootGraph;
+        if (root && root !== this) {
+            root._emit("graph-changed", { ...detail, kind: "subgraph", kinds: ["subgraph", ...kinds.filter((k) => k !== "subgraph")] });
+            root._modifiedExtra = true;
+            root._updateModified();
+        } else {
+            this._updateModified();
+        }
+    }
+
+    /** true when the document changed since it was loaded or last marked saved (markSaved) */
+    get isModified() {
+        return (this._savedRevision ?? 0) !== this.revision || !!this._modifiedExtra;
+    }
+
+    /** Marks the current state as saved: isModified becomes false (emits modified-changed). */
+    markSaved() {
+        this._savedRevision = this.revision;
+        this._modifiedExtra = false;
+        this._updateModified();
+    }
+
+    /** Marks the document as modified without a recorded change (e.g. a restored draft). */
+    markModified() {
+        this._modifiedExtra = true;
+        this._updateModified();
+    }
+
+    _updateModified() {
+        const modified = this.isModified;
+        if (modified === !!this._lastModified) return;
+        this._lastModified = modified;
+        this._emit("modified-changed", { modified });
+    }
+
+    // ---- execution state (protocol: ExecutionState) ---------------------------------------
+
+    /**
+     * Sets a node's execution state and, when someone listens on the root graph, emits it as
+     * `execution-state {message, node}`.
+     * @param {object} node - a node of this graph
+     * @param {string} kind - "status", "progress", "error" or "reset"
+     * @param {object} [fields] - status, value, max, message
+     */
+    reportExecutionState(node, kind, fields = {}) {
+        const root = this.rootGraph ?? this;
+        const listening = !!root._events?.has("execution-state");
+        const message = ExecutionState.create(kind, listening ? (node?.getPath?.() ?? null) : null, fields);
+        if (node) ExecutionState.applyToNode(node, message);
+        else if (kind === "reset") ExecutionState.clear(root);
+        if (listening) root._emit("execution-state", { message, node: node ?? null });
+        return message;
+    }
+
+    /**
+     * Applies an execution-state message received from elsewhere (the runner): the node at its
+     * path gets the state, and the root graph emits `execution-state {message, node, remote: true}`.
+     * @returns {object|null} the node changed (the root graph for a full reset), or null
+     */
+    applyExecutionState(message) {
+        const target = ExecutionState.apply(this, message);
+        if (target) (this.rootGraph ?? this)._emit("execution-state", { message, node: target === (this.rootGraph ?? this) ? null : target, remote: true });
+        return target;
     }
 
     get last_node_id() { return this.state.lastNodeId; }
@@ -71,31 +207,13 @@ export class LGraph {
         /** number of saved changes to this document */
         this.revision = 0;
 
-        this.callbackhandler_setup();
-
         this.clear();
 
         if (o) {
             this.configure(o);
         }
         
-        LiteGraph.processCallbackHandlers("on_lgraph_construct",{
-            def_cb: LiteGraph.on_lgraph_construct
-        }, this);
-    }
-
-    callbackhandler_setup(){
-        this.cb_handler = new CallbackHandler(this);
-    }
-
-    registerCallbackHandler(){
-        return this.cb_handler.registerCallbackHandler(...arguments);
-    }
-    unregisterCallbackHandler(){
-        return this.cb_handler.unregisterCallbackHandler(...arguments);
-    }
-    processCallbackHandlers(){
-        return this.cb_handler.processCallbackHandlers(...arguments);
+        CallbackHandler.fireHookThenEvent(LiteGraph, "on_lgraph_construct", [this], LiteGraph, "graph-created", { graph: this });
     }
 
     /**
@@ -166,6 +284,8 @@ export class LGraph {
         // custom data
         this.config = {};
         this.configApplyDefaults();
+        // a new document runs under the default model; a loaded one under its config.execution (absent: legacy)
+        this._execution_from_document = false;
 
         this.vars = {};
         this.extra = {}; // to store custom data
@@ -355,7 +475,8 @@ export class LGraph {
             this.processCallbackHandlers("onPlayEvent",{
                 def_cb: this.onPlayEvent
             });
-            this.sendEventToAllNodes("onStart");
+            // every node that can run gets onStart, not only ALWAYS nodes (B10)
+            this.sendEventToAllNodes("onStart", undefined, [LiteGraph.ALWAYS, LiteGraph.ON_EVENT, LiteGraph.ON_TRIGGER, LiteGraph.ON_REQUEST]);
         } catch (error) {
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph start cleanup failed", cleanupError); }
             throw error;
@@ -364,6 +485,8 @@ export class LGraph {
 
         this.starttime = LiteGraph.getTime();
         this.last_update_time = this.starttime;
+        this._shareTiming();
+        if (!this._subgraph_node) this.reportExecutionState(null, "reset");
 
         const onAnimationFrame = () => {
             if (this.execution_timer_id !== -1) {
@@ -396,11 +519,46 @@ export class LGraph {
     }
 
     /**
+     * Reports a node error: `node-error {error, node, path}` on this graph and an `error` execution
+     * state on the failing node. The innermost failing node travels with the error (`error.node`,
+     * set by doExecute and actionDo), so outer graphs report it with its path. Used by `runStep`
+     * and by event entry points outside a step.
+     */
+    _reportNodeError(error) {
+        const failing = typeof error?.node?.getPath === "function" ? error.node : null;
+        this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
+        if (failing?.graph && failing.execution_state?.status !== "error") {
+            failing.graph.reportExecutionState(failing, "error", { message: error?.message ?? String(error) });
+        }
+    }
+
+    /** clears queued (deferred) actions here and in inner graphs */
+    _dropQueuedActions() {
+        for (const node of this._nodes) {
+            if (node._waiting_actions?.length) node._waiting_actions = [];
+            node._stopped_queue_reported = false;
+            if (node.subgraph && node.subgraph !== this) node.subgraph._dropQueuedActions();
+        }
+    }
+
+    /** gives the inner graphs of subgraph and function nodes this graph's clock origin (B13) */
+    _shareTiming() {
+        for (const node of this._nodes) {
+            const inner = node.subgraph;
+            if (!inner || inner === this) continue;
+            inner.starttime = this.starttime;
+            inner.last_update_time = this.last_update_time;
+            inner._shareTiming();
+        }
+    }
+
+    /**
      * Stops the execution loop of the graph
      * @method stop execution
      */
-    stop() {
+    stop(options = {}) {
         this._pending_start = null;
+        if (options?.dropQueued) this._dropQueuedActions();
         if (this.status == LGraph.STATUS_STOPPED) {
             return;
         }
@@ -478,24 +636,44 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        // an inner graph keeps its parent's clock origin (B13)
+        const parent = this._subgraph_node?.graph;
+        if (parent && this.starttime !== parent.starttime) {
+            this.starttime = parent.starttime;
+            this.last_update_time = Math.max(this.last_update_time, parent.last_update_time);
+        }
         const start = LiteGraph.getTime();
         this.globaltime = 0.001 * (start - this.starttime);
+        const rules = ExecutionEngine.rulesFor(this);
+        const wasStepping = this._stepping;
+        const outerCall = ExecutionEngine._call;
+        this._stepping = true;
         const resetExecutionState = () => {
             this.nodes_executing = [];
             this.nodes_actioning = [];
             this.node_ancestorsCalculated = [];
             this.nodes_executedAction = [];
         };
+        LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         try {
             for (let step = 0; step < num; step++) {
+                this._frame = (this._frame ?? 0) + 1;
+                if (!rules.legacy && !outerCall) ExecutionEngine._call = `frame_${ExecutionEngine._callCount++}`;
                 // Changes made during one cycle take effect in the following cycle.
                 const nodes = this._nodes_executable ?? this._nodes;
                 const count = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
                 for (let index = 0; index < count; index++) {
                     const node = nodes[index];
                     if (node.graph !== this) continue;
-                    if (LiteGraph.use_deferred_actions) node.executePendingActions();
-                    if (node.mode === LiteGraph.ALWAYS) node.doExecute?.();
+                    if (rules.legacy ? LiteGraph.use_deferred_actions : (rules.delivery === "deferred" || node._waiting_actions?.length)) node.executePendingActions();
+                    // a BYPASS node takes the turn too, so the values it passes on stay current
+                    if ((node.mode === LiteGraph.ALWAYS || node.mode === LiteGraph.BYPASS) && node.doExecute) {
+                        if (rules.frame_pull) ExecutionEngine.pull(node);
+                        this._step_node = node; // its own turn: runStep reports it below
+                        try { node.doExecute(); } finally { this._step_node = null; }
+                        // one message per change, not one per step
+                        if (node.execution_state?.status !== "done") this.reportExecutionState(node, "status", { status: "done" });
+                    }
                 }
                 this.fixedtime += this.fixedtime_lapse;
                 this.processCallbackHandlers("onExecuteStep", { def_cb: this.onExecuteStep });
@@ -507,13 +685,14 @@ export class LGraph {
             this.errors_in_execution = false;
         } catch (error) {
             this.errors_in_execution = true;
-            // the innermost failing node travels with the error (doExecute), so outer graphs report it and its path
-            const failing = typeof error?.node?.getPath === "function" ? error.node : null;
-            this._emit("node-error", { error, node: failing, path: failing?.getPath() ?? null });
+            this._reportNodeError(error);
             try { this.stop(); } catch (cleanupError) { LiteGraph.log_error("Graph error cleanup failed", cleanupError); }
             if (do_not_catch_errors || LiteGraph.throw_errors) throw error;
             LiteGraph.log_warn("lgraph", "Error during execution", error);
         } finally {
+            LiteGraph._dispatch_depth--;
+            this._stepping = wasStepping;
+            ExecutionEngine._call = outerCall;
             const now = LiteGraph.getTime();
             this.execution_time = 0.001 * Math.max(1, now - start);
             this.globaltime += this.execution_time;
@@ -857,7 +1036,8 @@ export class LGraph {
         const args = params === undefined ? [] : Array.isArray(params) ? params : [params];
         const errors = [];
         for (const node of nodes) {
-            if (node.graph !== this || (mode != null && node.mode !== mode)) continue;
+            if (node.graph !== this) continue;
+            if (Array.isArray(mode) ? !mode.includes(node.mode) : (mode != null && node.mode !== mode)) continue;
             try {
                 if (node instanceof LiteGraph.Subgraph && eventname !== "onExecute") {
                     try { node.sendEventToAllNodes(eventname, params, mode); }
@@ -932,11 +1112,21 @@ export class LGraph {
             this.change();
             node.graph = this;
             this.onGraphChanged({action: "groupAdd", doSave: opts.doProcessChange});
+            this._emit("group-added", { group: node });
             return;
         }
 
         // Directly constructed registered nodes need the same setup as createNode.
         node.post_constructor?.();
+
+        // a new node of a declared type gets its execution model's default mode (a loaded node keeps its own)
+        if (node._constructed_mode !== undefined) {
+            if (!this.isConfiguring && node.mode === node._constructed_mode) {
+                const mode = ExecutionEngine.declaredDefaultMode(node, ExecutionEngine.rulesFor(this));
+                if (mode != null) node.mode = mode;
+            }
+            delete node._constructed_mode;
+        }
 
         // nodes
         if (node.id != -1 && this._nodes_by_id[node.id] != null) {
@@ -995,8 +1185,9 @@ export class LGraph {
             node.autoSize(!node.hasDefaultSize?.());
         }
         // record after the node is in the graph, so the history snapshot contains it
+        if (opts.doProcessChange) this._markChange("node-added");
         this.onGraphChanged({action: "nodeAdd", doSave: opts.doProcessChange});
-        this._emit("node-added", { node });
+        this._emit("node-added", { node }, { recorded: opts.doProcessChange });
         this.setDirtyCanvas(true);
         this.change();
 
@@ -1017,6 +1208,7 @@ export class LGraph {
             }
             node.graph = null;
             this.onGraphChanged({action: "groupRemove"});
+            this._emit("group-removed", { group: node });
             this.setDirtyCanvas(true, true);
             this.change();
             return;
@@ -1089,8 +1281,9 @@ export class LGraph {
             this.updateExecutionOrder();
             cleanup(() => this.processCallbackHandlers("onNodeRemoved", { def_cb: this.onNodeRemoved }, node));
 
+            this._markChange("node-removed");
             cleanup(() => this.onGraphChanged({action: "nodeRemove"}));
-            cleanup(() => this._emit("node-removed", { node }));
+            cleanup(() => this._emit("node-removed", { node }, { recorded: true }));
 
             // close panels
             cleanup(() => this.sendActionToCanvas("checkPanels"));
@@ -1518,15 +1711,21 @@ export class LGraph {
     }
 
     /**
-     * Triggers the 'onTrigger' method on nodes with a specific title by passing a value to them.
-     * // TODO check this, investigate, _last_trigger_time ? who calls triggerInput ? who calls onTrigger ?
+     * Fires a trigger on the nodes with this title, as an event reaching their `onTrigger` input would:
+     * each runs through the execution engine (`doExecute(value)`: model rules, execution state, a
+     * `node-error` on failure). A NEVER node is skipped with an `event-dropped` (`mode`). A node that
+     * defines its own `onTrigger(value)` method gets that call instead, inside the same event entry.
      * @param {string} name - The title of the nodes to trigger.
-     * @param {any} value - The value to pass to the 'onTrigger' method of the nodes.
+     * @param {any} value - The value passed to the nodes (`param` of `onExecute`).
      */
     triggerInput(name, value) {
-        var nodes = this.findNodesByTitle(name);
-        for (var i = 0; i < nodes.length; ++i) {
-            nodes[i].onTrigger(value);
+        for (const node of this.findNodesByTitle(name)) {
+            if (node.mode === LiteGraph.NEVER) {
+                ExecutionEngine.drop(node, "mode", { message: `${node.type} ${node.id}: the node is NEVER; the trigger is not delivered` });
+                continue;
+            }
+            if (typeof node.onTrigger === "function") node._dispatchEvent(() => node.onTrigger(value));
+            else if (node.onExecute) node.doExecute(value, { action_call: `${node.id}_trigg_${LiteGraph.uuidv4()}` });
         }
     }
 
@@ -1580,6 +1779,7 @@ export class LGraph {
         }
         if (--transaction.depth > 0) return false;
         this._transaction = null;
+        if (!transaction.changed && this._pendingChangeKinds?.size) this._scheduleChangeFlush();
         if (transaction.changed) {
             this.onGraphChanged({ action: transaction.label, doSave: true });
         }
@@ -1608,7 +1808,12 @@ export class LGraph {
             if (snapshot) {
                 this._transaction = null;
                 const history = this.history;
-                this.configure(snapshot);
+                this._configureReason = "rollback";
+                try {
+                    this.configure(snapshot);
+                } finally {
+                    this._configureReason = null;
+                }
                 this.history = history;
             }
             throw error;
@@ -1709,6 +1914,242 @@ export class LGraph {
             node.disconnectInput(link.target_slot); /* , optsIn */
             this.afterChange();
         }
+    }
+
+    /**
+     * Arranges nodes with a layout engine (LiteGraph.layout), as one undo step. With `nodes` only
+     * those move (a selection), anchored at their current top-left corner; otherwise every node
+     * moves, anchored at the graph's current top-left. Pinned nodes stay. Reroutes on the links
+     * between moved nodes follow them, and groups whose nodes all moved are fitted around them.
+     * @param {{engine?: string, nodes?: object[], direction?: "LR"|"RL"|"TB"|"BT",
+     *   spacing?: {node?: number, rank?: number}}} [options]
+     *   engine: default the setting `LiteGraph.Layout.Engine` ("dagre")
+     * @returns {Promise<{engine: string, moved: number}>}
+     */
+    async autoLayout({ engine, nodes, direction = "LR", spacing = {} } = {}) {
+        const settings = LiteGraph.settings;
+        const name = engine ?? (settings?.has?.("LiteGraph.Layout.Engine") ? settings.get("LiteGraph.Layout.Engine") : null) ?? "dagre";
+        const impl = LiteGraph.layout?.get(name);
+        if (!impl) throw new Error(`autoLayout: unknown layout engine ${name} (registered: ${LiteGraph.layout?.list().join(", ")})`);
+        const targets = (nodes ?? this._nodes).filter((node) => node?.graph === this && !node.flags?.pinned);
+        if (!targets.length) return { engine: name, moved: 0 };
+        let lib = null;
+        if (impl.library) {
+            try {
+                lib = await LiteGraph.LibraryManager.waitForLib(impl.library);
+            } catch (error) {
+                throw new Error(`autoLayout: the ${impl.library} library could not be loaded (${error?.message ?? error}); install it (npm install @dagrejs/dagre) or use the engine "layered", which needs nothing`, { cause: error });
+            }
+        }
+        const model = LiteGraph.layout.constructor.buildModel(this, targets);
+        const options = { direction, spacing: { node: spacing.node ?? 40, rank: spacing.rank ?? 80 } };
+        const { positions } = await impl.layout(model, options, lib);
+        // keep the arranged block where it was: align its top-left corner with the old one
+        let oldX = Infinity, oldY = Infinity, newX = Infinity, newY = Infinity;
+        for (const box of model.nodes) {
+            const p = positions?.[box.id];
+            if (!p) continue;
+            oldX = Math.min(oldX, box.x); oldY = Math.min(oldY, box.y);
+            newX = Math.min(newX, p[0]); newY = Math.min(newY, p[1]);
+        }
+        if (!Number.isFinite(newX)) return { engine: name, moved: 0 };
+        const dx = oldX - newX;
+        const dy = oldY - newY;
+        const title = LiteGraph.NODE_TITLE_HEIGHT;
+        // groups wholly made of moved nodes are fitted afterwards
+        const moving = new Set(targets.filter((node) => positions[node.id]));
+        const groups = this._groups.filter((group) => {
+            group.recomputeInsideNodes?.();
+            const inside = group._nodes ?? [];
+            return inside.length && inside.every((node) => moving.has(node));
+        });
+        let moved = 0;
+        this.transact("autoLayout", () => {
+            const shift = new Map();
+            for (const node of moving) {
+                const p = positions[node.id];
+                const x = Math.round(p[0] + dx);
+                const y = Math.round(p[1] + dy + title);
+                shift.set(node.id, [x - node.pos[0], y - node.pos[1]]);
+                node.pos[0] = x;
+                node.pos[1] = y;
+                moved++;
+            }
+            const rerouted = new Set();
+            for (const link of Object.values(this.links ?? {})) {
+                if (!link || link.parentId === undefined || !shift.has(link.origin_id) || !shift.has(link.target_id)) continue;
+                const a = shift.get(link.origin_id), b = shift.get(link.target_id);
+                for (const reroute of this.getRerouteChain?.(link) ?? []) {
+                    if (rerouted.has(reroute.id)) continue;
+                    rerouted.add(reroute.id);
+                    reroute.pos[0] = Math.round(reroute.pos[0] + (a[0] + b[0]) / 2);
+                    reroute.pos[1] = Math.round(reroute.pos[1] + (a[1] + b[1]) / 2);
+                }
+            }
+            for (const group of groups) group.fitToContents?.();
+            this._markChange("layout");
+            this.onGraphChanged({ action: "autoLayout" });
+        });
+        this.setDirtyCanvas(true, true);
+        return { engine: name, moved };
+    }
+
+    /**
+     * Missing node types in this graph (and, with `deep`, in its subgraphs): one entry per type,
+     * with where the type comes from (the node's stored pack stamp, the pack index, or ComfyUI's
+     * `cnr_id` / `aux_id`) and a registered replacement.
+     * @param {{deep?: boolean}} [options] - deep (default true): include subgraphs
+     * @returns {Array<{type: string, count: number, available: boolean, nodes: Array<{id: *, path: string}>,
+     *   pack: {id: string, version: string|null, source: "stamp"|"index"|"comfy", installed?: boolean}|null,
+     *   replacement: {type: string, auto: boolean, available: boolean, reason?: string}|null}>}
+     */
+    getMissingNodes({ deep = true } = {}) {
+        const byType = new Map();
+        const visit = (graph) => {
+            for (const node of graph._nodes) {
+                if (PackRegistry.isMissingNodePlaceholder(node)) {
+                    const stored = node.last_serialization;
+                    let entry = byType.get(stored.type);
+                    if (!entry) {
+                        const mapping = LiteGraph.getNodeReplacement?.(stored.type);
+                        entry = {
+                            type: stored.type,
+                            count: 0,
+                            available: !!LiteGraph.registered_node_types[stored.type],
+                            nodes: [],
+                            pack: LGraph._packHint(stored),
+                            replacement: mapping ? {
+                                type: mapping.new_type,
+                                auto: mapping.auto,
+                                available: !!LiteGraph.registered_node_types[mapping.new_type],
+                                ...(mapping.reason ? { reason: mapping.reason } : {}),
+                            } : null,
+                        };
+                        byType.set(stored.type, entry);
+                    }
+                    entry.count++;
+                    entry.nodes.push({ id: node.id, path: node.getPath?.() ?? String(node.id) });
+                }
+                if (deep && node.subgraph) visit(node.subgraph);
+            }
+        };
+        visit(this);
+        return [...byType.values()];
+    }
+
+    /** where a stored node says its type comes from */
+    static _packHint(stored) {
+        const properties = stored?.properties ?? {};
+        if (typeof properties.pack === "string" && properties.pack) {
+            return { id: properties.pack, version: properties.pack_ver ?? null, source: "stamp" };
+        }
+        const known = LiteGraph.packs?.findPackForType(stored?.type);
+        if (known) return { id: known.id, version: known.version, source: "index", installed: known.installed };
+        const comfy = properties.cnr_id || properties.aux_id;
+        if (typeof comfy === "string" && comfy) return { id: comfy, version: properties.ver ?? null, source: "comfy" };
+        return null;
+    }
+
+    /** The mapping replaceNode would use for a node, or null. */
+    _replacementFor(node) {
+        const type = PackRegistry.storedNodeType(node);
+        const mapping = LiteGraph.getNodeReplacement?.(type);
+        if (mapping) return mapping;
+        // a placeholder whose type has been registered since loading is rebuilt as that type
+        if (PackRegistry.isMissingNodePlaceholder(node) && LiteGraph.registered_node_types[type]) return { old_type: type, new_type: type };
+        return null;
+    }
+
+    /**
+     * Replaces a node by a node of another type, as one undo step: id, position, title, colours,
+     * mode and the mapped links, properties and widget values are kept. Links on slots the
+     * mapping cannot place are removed and listed in `dropped`.
+     * @param {object} node - a node of this graph (a missing-type placeholder or a live node)
+     * @param {object|string} [mapping] - a mapping (see LiteGraph.registerNodeReplacement), a type
+     *   name, or nothing for the registered mapping of the node's type
+     * @returns {{node: object, dropped: Array<{kind: string, slot: number, name: string, link: *}>}}
+     */
+    replaceNode(node, mapping) {
+        if (!node || node.graph !== this) throw new Error("replaceNode: the node is not in this graph");
+        const type = PackRegistry.storedNodeType(node);
+        const resolved = typeof mapping === "string" ? { old_type: type, new_type: mapping } : (mapping ?? this._replacementFor(node));
+        if (!resolved) throw new Error(`replaceNode: no replacement is registered for ${type}`);
+        if (!LiteGraph.registered_node_types[resolved.new_type]) throw new Error(`replaceNode: node type ${resolved.new_type} is not registered`);
+        return this.transact(`Replace ${type}`, () => {
+            const result = PackRegistry.replaceNodeInGraph(this, node, resolved);
+            this._emit("node-replaced", { node: result.node, from: type, to: resolved.new_type, dropped: result.dropped });
+            return result;
+        }, { rollback: true });
+    }
+
+    /**
+     * Replaces every node that has a usable replacement, as one undo step per graph: by default
+     * the missing-type placeholders whose replacement type (or own type) is registered.
+     * @param {{filter?: (node: object) => boolean, deep?: boolean}} [options]
+     *   filter: which nodes to replace (default: missing-type placeholders);
+     *   deep (default true): also inside subgraphs (each inner graph records its own step)
+     * @returns {{replaced: Array<{id: *, path: string, from: string, to: string, dropped: object[]}>,
+     *   skipped: Array<{id: *, path: string, type: string, reason: string}>}}
+     */
+    replaceNodes({ filter = PackRegistry.isMissingNodePlaceholder, deep = true } = {}) {
+        const replaced = [];
+        const skipped = [];
+        const candidates = this._nodes.filter((node) => filter(node));
+        const plans = [];
+        for (const node of candidates) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = this._replacementFor(node);
+            const path = node.getPath?.() ?? String(node.id);
+            if (!mapping) skipped.push({ id: node.id, path, type, reason: "no replacement registered" });
+            else if (!LiteGraph.registered_node_types[mapping.new_type]) skipped.push({ id: node.id, path, type, reason: `${mapping.new_type} is not registered` });
+            else plans.push({ node, type, mapping, path });
+        }
+        if (plans.length) {
+            this.transact("Replace nodes", () => {
+                for (const plan of plans) {
+                    const result = PackRegistry.replaceNodeInGraph(this, plan.node, plan.mapping);
+                    replaced.push({ id: result.node.id, path: plan.path, from: plan.type, to: plan.mapping.new_type, dropped: result.dropped });
+                }
+            }, { rollback: true });
+        }
+        if (deep) {
+            for (const node of this._nodes) {
+                if (!node.subgraph) continue;
+                const inner = node.subgraph.replaceNodes({ filter, deep });
+                replaced.push(...inner.replaced);
+                skipped.push(...inner.skipped);
+            }
+        }
+        return { replaced, skipped };
+    }
+
+    /** Applies `auto` replacement mappings while configuring (no undo step, no revision change). */
+    _applyAutoReplacements() {
+        const replaced = [];
+        const settings = LiteGraph.settings;
+        if (settings?.has?.("LiteGraph.Packs.AutoReplace") && !settings.get("LiteGraph.Packs.AutoReplace")) return replaced;
+        const plans = [];
+        for (const node of this._nodes) {
+            const type = PackRegistry.storedNodeType(node);
+            const mapping = LiteGraph.getNodeReplacement?.(type);
+            if (mapping?.auto && LiteGraph.registered_node_types[mapping.new_type]) plans.push({ node, type, mapping });
+        }
+        if (!plans.length) return replaced;
+        const outer = this._transaction;
+        if (!outer) this._transaction = { depth: 1, label: "configure", changed: false };
+        try {
+            for (const { node, type, mapping } of plans) {
+                try {
+                    const result = PackRegistry.replaceNodeInGraph(this, node, mapping);
+                    replaced.push({ id: result.node.id, from: type, to: mapping.new_type, dropped: result.dropped });
+                } catch (error) {
+                    LiteGraph.log_warn("lgraph", "configure", "automatic replacement failed", type, error);
+                }
+            }
+        } finally {
+            if (!outer) this._transaction = null;
+        }
+        return replaced;
     }
 
     /**
@@ -1834,8 +2275,9 @@ export class LGraph {
         const reroute = new Reroute(++this.state.lastRerouteId, pos, link?.parentId);
         this.reroutes.set(reroute.id, reroute);
         if (link) link.parentId = reroute.id;
+        this._markChange("reroute");
         this.onGraphChanged({action: "rerouteAdd"});
-        this._emit("reroute-added", { reroute, link: link ?? null });
+        this._emit("reroute-added", { reroute, link: link ?? null }, { recorded: true });
         this.setDirtyCanvas(true, true);
         return reroute;
     }
@@ -1864,8 +2306,9 @@ export class LGraph {
             else floating.parentId = reroute.parentId;
         }
         this.reroutes.delete(id);
+        this._markChange("reroute");
         this.onGraphChanged({action: "rerouteRemove"});
-        this._emit("reroute-removed", { reroute });
+        this._emit("reroute-removed", { reroute }, { recorded: true });
         this.setDirtyCanvas(true, true);
         return true;
     }
@@ -2085,10 +2528,11 @@ export class LGraph {
             nodes: nodesInfo,
             links: links,
             groups: groupsInfo,
-            config: this.config,
+            config: this._serializeConfig(),
             extra: this._serializeExtra(),
             version: LiteGraph.SERIALIZATION_VERSION, // numeric schema version
             litegraph_version: LiteGraph.VERSION, // library that wrote the document
+            litegraph_modes: LiteGraph.MODES_VERSION, // mode numbering (2: BYPASS = 4, ON_REQUEST = 5)
             state: { ...this.state }, // all id counters (nodes, links, groups, reroutes)
         });
         if (this.floating_links?.size || this._floating_links_field) {
@@ -2102,6 +2546,78 @@ export class LGraph {
         LiteGraph.log_verbose("lgraph","serialize",data);
 
         return data;
+    }
+
+    /** config as saved: a new root document records the model it runs under */
+    _serializeConfig() {
+        // a copy: history snapshots must not share the live config object
+        if (this._subgraph_node || this._execution_from_document || this.config?.execution) return { ...this.config };
+        return { ...this.config, execution: ExecutionEngine.resolveDefaultModel() };
+    }
+
+    // ---- execution model (Wave 6) -----------------------------------------------------------
+
+    /** the name of the execution model this graph runs under (resolved from the root's config) */
+    get executionModel() {
+        return ExecutionEngine.modelNameFor(this);
+    }
+
+    /** the same as `setExecutionModel(name)`: one undo step; an unknown name throws */
+    set executionModel(name) {
+        this.setExecutionModel(name);
+    }
+
+    /** the rules of this graph's execution model */
+    getExecutionRules() {
+        return ExecutionEngine.rulesFor(this);
+    }
+
+    /**
+     * Sets the document's execution model (on the root graph's `config.execution`) as one undo step.
+     * @param {string} name - a registered model ("ancestors", "step", "strict", "event", "legacy", ...)
+     * @returns {boolean} true when it changed
+     */
+    setExecutionModel(name) {
+        const root = this.rootGraph;
+        if (!ExecutionEngine.getModel(name)) throw new Error(`unknown execution model "${name}"; known: ${ExecutionEngine.listModels().map((m) => m.name).join(", ")}`);
+        if (root.config.execution === name) return false;
+        root.transact("executionModel", () => {
+            root.config = { ...root.config, execution: name };
+            root.onGraphChanged({ action: "executionModel" });
+        });
+        root._emit("execution-model-changed", { model: name });
+        return true;
+    }
+
+    /**
+     * Checks the document against its execution model and the node declarations: invalid model or
+     * mode, a `ticks` node that is not stepped, an ON_REQUEST event emitter, a loop without a body.
+     * @returns {{model: string, issues: Array<{node: object, path: string|null, code: string, message: string}>}}
+     */
+    checkExecution() {
+        const report = ExecutionEngine.check(this);
+        const root = this.rootGraph;
+        // badges read the last report (LiteGraph.Node.ExecutionBadge)
+        root._execution_issues = new Map(report.issues.map((issue) => [issue.node, issue]));
+        return report;
+    }
+
+    /**
+     * Applies the model's default modes to the nodes of declared types (one undo step).
+     * @returns {number} the nodes changed
+     */
+    applyExecutionModelModes() {
+        const root = this.rootGraph;
+        const changes = ExecutionEngine.modelModes(root);
+        if (!changes.length) return 0;
+        root.transact("executionModelModes", () => {
+            for (const { node, mode } of changes) node.mode = mode;
+            // a changed node inside a subgraph instance edits that instance: its definition is
+            // synced from it when the document is saved (registerSubgraphDefinitions)
+            for (const inner of new Set(changes.map(({ node }) => node.graph).filter((g) => g && g !== root))) inner.revision++;
+            root.onGraphChanged({ action: "executionModelModes" });
+        });
+        return changes.length;
     }
 
     /** the outermost graph: subgraph instances' inner graphs lead up through their nodes */
@@ -2305,6 +2821,53 @@ export class LGraph {
         }
     }
 
+    /**
+     * Brings a document's node modes to the current numbering (BYPASS = 4, ON_REQUEST = 5), in place:
+     * the root, nested subgraphs and subgraph definitions. Which numbering a document uses:
+     * - `litegraph_modes` 2 or more: current, nothing to do;
+     * - `litegraph_version` without `litegraph_modes`: written by this library before the change,
+     *   where 4 was ON_REQUEST: 4 becomes 5;
+     * - neither (ComfyUI, upstream litegraph, other editors): 4 is BYPASS, as written, unless the
+     *   setting `LiteGraph.Compat.UnmarkedMode4` (or `options.unmarked`) is "on_request".
+     * In an old document, nodes listed in `extra.comfy_bypassed` (ComfyUI imports kept BYPASS as
+     * NEVER) become BYPASS and the list is removed. The document is then marked with the current
+     * `litegraph_modes`.
+     * @param {object} data - a graph document
+     * @param {{unmarked?: "bypass"|"on_request"}} [options]
+     * @returns {{numbering: "current"|"old"|"unmarked", changed: number}}
+     */
+    static migrateModes(data, options = {}) {
+        if (!data || typeof data !== "object") return { numbering: "current", changed: 0 };
+        let numbering = "current";
+        if (!(Number(data.litegraph_modes) >= 2)) numbering = data.litegraph_version ? "old" : "unmarked";
+        let unmarked = options.unmarked;
+        if (numbering === "unmarked" && !unmarked) {
+            try { unmarked = LiteGraph.settings?.get("LiteGraph.Compat.UnmarkedMode4"); } catch { unmarked = undefined; }
+        }
+        const renumber = numbering === "old" || (numbering === "unmarked" && unmarked === "on_request");
+        let changed = 0;
+        if (renumber) {
+            const seen = new Set();
+            const visit = (graph) => {
+                if (!graph || typeof graph !== "object" || seen.has(graph)) return;
+                seen.add(graph);
+                const bypassed = new Set(Array.isArray(graph.extra?.comfy_bypassed) ? graph.extra.comfy_bypassed : []);
+                if (bypassed.size) delete graph.extra.comfy_bypassed;
+                for (const node of Array.isArray(graph.nodes) ? graph.nodes : []) {
+                    if (!node || typeof node !== "object") continue;
+                    if (node.mode === 4) { node.mode = 5; changed++; }
+                    else if (node.mode === 2 && bypassed.has(node.id)) { node.mode = 4; changed++; }
+                    visit(node.subgraph);
+                }
+                for (const definition of graph.definitions?.subgraphs ?? []) visit(definition);
+            };
+            visit(data);
+            if (changed) LiteGraph.log_info?.("lgraph", "migrateModes", `${changed} node(s) in mode 4 (On Request in the old numbering) now use mode 5`);
+        }
+        data.litegraph_modes = LiteGraph.MODES_VERSION;
+        return { numbering, changed };
+    }
+
     /** true while this graph, or a graph containing it, is being configured (loading) */
     get isConfiguring() {
         for (let graph = this; graph; graph = graph._subgraph_node?.graph) {
@@ -2325,6 +2888,9 @@ export class LGraph {
         if (!keep_old) {
             this.clear();
         }
+
+        // mode numbering: documents from before numbering 2 (ON_REQUEST was 4) are renumbered once, here
+        if (!this._subgraph_node) LGraph.migrateModes(data);
 
         // subgraph definitions: instances that reference one get their inner graph; the root keeps the registry
         let subgraphErrors = [];
@@ -2372,6 +2938,7 @@ export class LGraph {
             }
             this[i] = data[i]; // TODO should probably use LiteGraph.cloneObject
         }
+        if (!keep_old) this._execution_from_document = true; // a document without config.execution runs as "legacy"
 
         var error = false;
 
@@ -2380,9 +2947,12 @@ export class LGraph {
         if (nodes) {
             for (let i = 0, l = nodes.length; i < l; ++i) {
                 var n_info = nodes[i]; // stored info
-                var node = LiteGraph.createNode(n_info.type, n_info.title);
+                // a renamed type (an automatic replacement) loads as a placeholder and is replaced below, quietly
+                const renamed = !LiteGraph.registered_node_types[n_info.type] && LiteGraph.getNodeReplacement?.(n_info.type)?.auto && LiteGraph.settings?.get("LiteGraph.Packs.AutoReplace") !== false;
+                var node = renamed ? null : LiteGraph.createNode(n_info.type, n_info.title);
                 if (!node) {
-                    LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
+                    if (renamed) LiteGraph.log_debug("lgraph", "configure", "renamed node type", n_info.type, "->", renamed && LiteGraph.getNodeReplacement(n_info.type).new_type);
+                    else LiteGraph.log_warn("lgraph", "configure", "Node not found or has errors", n_info.type, n_info);
 
                     // in case of error we create a replacement node to avoid losing info
                     node = new LiteGraph.LGraphNode();
@@ -2400,8 +2970,15 @@ export class LGraph {
             nodes.forEach((n_info) => {
                 const node = this.getNodeById(n_info.id);
                 node?.configure(n_info);
+                // a placeholder shows its missing type (serialize keeps the stored title)
+                if (node?.has_errors && node.last_serialization === n_info && !n_info.title) node.title = n_info.type;
             });
         }
+
+        // replacement mappings marked auto (renamed types): applied while loading, without an undo step
+        const replaced = this._applyAutoReplacements();
+        // a replaced placeholder is no longer an error
+        if (replaced.length) error = this._nodes.some((node) => PackRegistry.isMissingNodePlaceholder(node));
 
         // id counters: documents without (or with stale) last_*_id must not reuse ids
         this.state = {
@@ -2441,7 +3018,24 @@ export class LGraph {
             LiteGraph.log_debug("lgraph", "configure", "skip onGraphChanged when configure passing version too!"); // atlasan DEBUG REMOVE
         }
         this.setDirtyCanvas(true, true);
-        this._emit("configured", { data, error });
+        this._emit("configured", { data, error, replaced });
+        this._pendingChangeKinds = null;
+        if (!this._subgraph_node) {
+            // a loaded document is saved as it is; undo and rollbacks compare with the saved revision
+            if (!this._configureReason) this._savedRevision = this.revision;
+            this._modifiedExtra = false;
+            this._emit("graph-changed", { kind: "configure", kinds: ["configure"], action: "configure", revision: this.revision, graph: this, reason: this._configureReason ?? "load" });
+            this._updateModified();
+        }
+        if (!this._subgraph_node && this._events?.has("missing-nodes")) {
+            const report = this.getMissingNodes();
+            if (report.length) this._emit("missing-nodes", { report, reason: this._configureReason ?? "load" });
+        }
+        // execution diagnostics of the loaded document (only when someone listens)
+        if (!this._subgraph_node && this._events?.has("execution-check")) {
+            const report = this.checkExecution();
+            this._emit("execution-check", { report, reason: this._configureReason ?? "load" });
+        }
         return error;
     }
 
@@ -2534,6 +3128,7 @@ export class LGraph {
         if (opts.doSave) {
             this.revision++; // a saved (user-level) change to the document
             this._emit("changed", { action: opts.action, revision: this.revision });
+            this._reportChange(opts.action);
         }
 
         if(opts.action) {
@@ -2656,7 +3251,12 @@ export class LGraph {
 
         if(obH.actionHistory[opts.iVersion] && obH.actionHistory[opts.iVersion].graphSave) {
             var tmpHistory = JSON.stringify(this.history);
-            this.configure( obH.actionHistory[opts.iVersion].graphSave );
+            this._configureReason = "history";
+            try {
+                this.configure( obH.actionHistory[opts.iVersion].graphSave );
+            } finally {
+                this._configureReason = null;
+            }
             this.history = JSON.parse(tmpHistory);
             LiteGraph.log_debug("history loaded: "+opts.iVersion,obH.actionHistory[opts.iVersion].actionName); // debug history
             this.onGraphLoaded({ iVersion: opts.iVersion });
@@ -2726,3 +3326,6 @@ export class LGraph {
 
     }
 }
+
+// the hook API (registerCallbackHandler, processCallbackHandlers, onHook, ...)
+installHooks(LGraph);

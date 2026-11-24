@@ -38,7 +38,7 @@ test('network library registrations expose usable constructors without connectin
 test('process-info node initializes os before exposing its output', async () => {
     const graph = new LGraph();
     try {
-        const node = LiteGraph.createNode('server/process/NodeProcessInfo');
+        const node = LiteGraph.createNode('sys/processInfo');
         assert.ok(node, 'process-info must construct');
         graph.add(node); await graph.whenReady(); graph.runStep(1, true);
         const info = node.getOutputData(0);
@@ -82,7 +82,7 @@ test('Node-only process and service nodes reject a browser runtime before depend
     globalThis.window = {}; globalThis.document = {};
     manager.loadLibrary = async () => { loads++; };
     try {
-        for (const type of ['server/process/NodeProcessInfo','sys/serviceManager','sys/serviceList']) {
+        for (const type of ['sys/processInfo','sys/serviceManager','sys/serviceList']) {
             const node = LiteGraph.createNode(type);
             assert.ok(node);
             await assert.rejects(node.ready, /cannot run in browser/);

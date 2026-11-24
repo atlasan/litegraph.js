@@ -1,0 +1,600 @@
+{
+ "id": "44f9a6d5-0fc3-4b43-9b11-897273f44f61",
+ "revision": 1,
+ "last_node_id": 7,
+ "last_link_id": 11,
+ "nodes": [
+  {
+   "id": 2,
+   "type": "math/operation",
+   "pos": [
+    -81.65289306640625,
+    890.9908447265625
+   ],
+   "size": [
+    100,
+    60
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number,array,object",
+     "link": 11
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 2,
+     "slot_index": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "A+B",
+   "properties": {
+    "A": 2,
+    "B": 1,
+    "OP": "+"
+   }
+  },
+  {
+   "id": 3,
+   "type": "widget/number",
+   "pos": [
+    -211.65289306640625,
+    910.9908447265625
+   ],
+   "size": [
+    96,
+    31
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 1,
+    "step": 1
+   }
+  },
+  {
+   "id": 4,
+   "type": "basic/watch",
+   "pos": [
+    -110,
+    990
+   ],
+   "size": [
+    171,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 6,
+     "label": "3.000",
+     "slot_index": 0
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 10,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": null,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 1,
+   "type": "events/counter",
+   "pos": [
+    -280,
+    750
+   ],
+   "size": [
+    161.037683155911,
+    102
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": [],
+     "slot_index": 0
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": [
+      11
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "doCountExecution": true
+   }
+  },
+  {
+   "id": 5,
+   "type": "widget/button",
+   "pos": [
+    -211.65289306640625,
+    990.9908447265625
+   ],
+   "size": [
+    87,
+    50
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "DO",
+    "font_size": 30,
+    "message": ""
+   }
+  }
+ ],
+ "links": [
+  [
+   2,
+   3,
+   0,
+   2,
+   1,
+   "number"
+  ],
+  [
+   6,
+   2,
+   0,
+   4,
+   0,
+   "number"
+  ],
+  [
+   10,
+   5,
+   0,
+   4,
+   1,
+   -1
+  ],
+  [
+   11,
+   1,
+   1,
+   2,
+   0,
+   "number,array,object"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "What is it",
+   "bounding": [
+    49,
+    29,
+    362,
+    499
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 2,
+   "title": "LiteGraph.js",
+   "bounding": [
+    549,
+    20,
+    449,
+    93
+   ],
+   "color": "#b58b2a",
+   "font_size": 63
+  },
+  {
+   "id": 3,
+   "title": "A visual javascript library with no dependencies",
+   "bounding": [
+    99,
+    81,
+    208,
+    89
+   ],
+   "color": "#8A8",
+   "font_size": 21
+  },
+  {
+   "id": 4,
+   "title": "A visual programming environment",
+   "bounding": [
+    98,
+    188,
+    185,
+    89
+   ],
+   "color": "#8A8",
+   "font_size": 24
+  },
+  {
+   "id": 5,
+   "title": "An highly customizable graph solution",
+   "bounding": [
+    98,
+    294,
+    178,
+    90
+   ],
+   "color": "#8A8",
+   "font_size": 21
+  },
+  {
+   "id": 6,
+   "title": "A web canvas based pixel dream",
+   "bounding": [
+    98,
+    403,
+    221,
+    80
+   ],
+   "color": "#a1309b",
+   "font_size": 22
+  },
+  {
+   "id": 7,
+   "title": "How to",
+   "bounding": [
+    502,
+    158,
+    237,
+    368
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 8,
+   "title": "Try it and investigate",
+   "bounding": [
+    541,
+    207,
+    152,
+    80
+   ],
+   "color": "#8A8",
+   "font_size": 23
+  },
+  {
+   "id": 9,
+   "title": "Is this ready?",
+   "bounding": [
+    781,
+    158,
+    228,
+    367
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 10,
+   "title": "Are we?",
+   "bounding": [
+    809,
+    208,
+    164,
+    80
+   ],
+   "color": "#b06634",
+   "font_size": 24
+  },
+  {
+   "id": 11,
+   "title": "Versions",
+   "bounding": [
+    1047,
+    21,
+    392,
+    303
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 12,
+   "title": "Check existing forks",
+   "bounding": [
+    1256,
+    65,
+    158,
+    80
+   ],
+   "color": "#8A8",
+   "font_size": 22
+  },
+  {
+   "id": 13,
+   "title": "Check original historic version",
+   "bounding": [
+    1066,
+    66,
+    179,
+    80
+   ],
+   "color": "#8A8",
+   "font_size": 21
+  },
+  {
+   "id": 14,
+   "title": "Code your node set",
+   "bounding": [
+    540,
+    305,
+    140,
+    80
+   ],
+   "color": "#8A8",
+   "font_size": 22
+  },
+  {
+   "id": 15,
+   "title": "Things you should check",
+   "bounding": [
+    1047,
+    338,
+    390,
+    184
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 16,
+   "title": "Let's join and build this up",
+   "bounding": [
+    809,
+    306,
+    166,
+    80
+   ],
+   "color": "#a1309b",
+   "font_size": 22
+  },
+  {
+   "id": 17,
+   "title": "ComfyUI",
+   "bounding": [
+    1266,
+    383,
+    182,
+    80
+   ],
+   "color": "#b58b2a",
+   "font_size": 32
+  },
+  {
+   "id": 18,
+   "title": "WebGLStudio",
+   "bounding": [
+    1067,
+    383,
+    193,
+    80
+   ],
+   "color": "#b58b2a",
+   "font_size": 24
+  },
+  {
+   "id": 19,
+   "title": "Let's make more docs",
+   "bounding": [
+    538,
+    404,
+    141,
+    80
+   ],
+   "color": "#a1309b",
+   "font_size": 21
+  },
+  {
+   "id": 20,
+   "title": "github atlasan",
+   "bounding": [
+    1068,
+    163,
+    151,
+    80
+   ],
+   "color": "#b06634",
+   "font_size": 24
+  },
+  {
+   "id": 21,
+   "title": "github daniel-lewis-ab",
+   "bounding": [
+    1239,
+    162,
+    204,
+    80
+   ],
+   "color": "#b06634",
+   "font_size": 24
+  },
+  {
+   "id": 22,
+   "title": "Nodes",
+   "bounding": [
+    98,
+    693,
+    832,
+    486
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 23,
+   "title": "Mode",
+   "bounding": [
+    137,
+    741,
+    755,
+    382
+   ],
+   "color": "#8A8",
+   "font_size": 24
+  },
+  {
+   "id": 24,
+   "title": "Always mode will execute once per frame-step",
+   "bounding": [
+    167,
+    786,
+    196,
+    80
+   ],
+   "color": "#88A",
+   "font_size": 20
+  },
+  {
+   "id": 25,
+   "title": "OnEvent mode will not auto execute the node, usually for that nodes calculation is directly inside the onAction method",
+   "bounding": [
+    403,
+    785,
+    445,
+    80
+   ],
+   "color": "#88A",
+   "font_size": 22
+  },
+  {
+   "id": 26,
+   "title": "OnTrigger mode relay on a specific input slot named onTrigger, onExecute method will be called when that slot is triggered",
+   "bounding": [
+    169,
+    885,
+    683,
+    80
+   ],
+   "color": "#88A",
+   "font_size": 23
+  },
+  {
+   "id": 27,
+   "title": "OnRequest mode will only execute the onExecute method when requested from events fired in the following nodes",
+   "bounding": [
+    168,
+    982,
+    445,
+    80
+   ],
+   "color": "#88A",
+   "font_size": 22
+  },
+  {
+   "id": 28,
+   "title": "Try it: click DO to count; drag the Number up or down to change the sum. Press Play to keep the Watch updating.",
+   "bounding": [
+    -294,
+    652,
+    369,
+    403
+   ],
+   "color": "#8A8",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 7,
+  "lastLinkId": 11,
+  "lastGroupId": 28,
+  "lastRerouteId": 0
+ }
+}

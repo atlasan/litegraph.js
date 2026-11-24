@@ -71,16 +71,45 @@ test('imports unknown types as hidden placeholders and re-exports 0.4 without lo
     graph.clear();
 });
 
-test('Comfy BYPASS maps to NEVER and back; changed modes are kept', () => {
+test('Comfy BYPASS is native BYPASS (4) both ways; changed modes are kept', () => {
     const graph = new LGraph();
     const { bypassed } = ComfyInterop.importWorkflow(graph, workflow04());
     expect(bypassed).toEqual([2]);
-    expect(graph.getNodeById(2).mode).toBe(LiteGraph.NEVER);
+    expect(graph.getNodeById(2).mode).toBe(LiteGraph.BYPASS);
+    expect(LiteGraph.BYPASS).toBe(4);
     expect(ComfyInterop.exportWorkflow(graph).nodes.find((n) => n.id === 2).mode).toBe(4);
 
     graph.getNodeById(2).mode = LiteGraph.ALWAYS; // user re-enabled it
     expect(ComfyInterop.exportWorkflow(graph).nodes.find((n) => n.id === 2).mode).toBe(0);
     graph.clear();
+});
+
+test('documents from before mode numbering 2: comfy_bypassed lists and litegraph_mode 4 markers', () => {
+    // a LiteGraph document saved after an older Comfy import: BYPASS was kept as NEVER plus a list
+    const doc = json(new LGraph().serialize());
+    delete doc.litegraph_modes;
+    doc.nodes = [
+        { id: 1, type: 'interop/num', pos: [0, 0], size: [80, 30], flags: {}, mode: 2, properties: {} },
+        { id: 2, type: 'interop/num', pos: [0, 50], size: [80, 30], flags: {}, mode: 2, properties: {} },
+        { id: 3, type: 'interop/num', pos: [0, 100], size: [80, 30], flags: {}, mode: 4, properties: {} },
+    ];
+    doc.extra = { comfy_bypassed: [1] };
+    const graph = new LGraph();
+    graph.configure(doc);
+    expect(graph.getNodeById(1).mode).toBe(LiteGraph.BYPASS); // listed NEVER -> BYPASS
+    expect(graph.getNodeById(2).mode).toBe(LiteGraph.NEVER);
+    expect(graph.getNodeById(3).mode).toBe(LiteGraph.ON_REQUEST); // 4 was ON_REQUEST
+    expect(graph.extra.comfy_bypassed).toBeUndefined();
+    expect(graph.serialize().litegraph_modes).toBe(LiteGraph.MODES_VERSION);
+
+    // a Comfy export written by an older build marked ON_REQUEST as litegraph_mode 4
+    const workflow = workflow04();
+    workflow.nodes[0].litegraph_mode = 4;
+    const again = new LGraph();
+    ComfyInterop.importWorkflow(again, workflow);
+    expect(again.getNodeById(workflow.nodes[0].id).mode).toBe(LiteGraph.ON_REQUEST);
+    graph.clear();
+    again.clear();
 });
 
 test('LiteGraph ON_REQUEST exports as ALWAYS with a marker and imports back', () => {
@@ -221,7 +250,7 @@ test('a ComfyUI subgraph imports as an instance; inner placeholders and modes; e
     expect(instance.type).toBe('graph/subgraph');
     expect(instance.properties.subgraph_id).toBe(definition.id);
     const sharpen = instance.subgraph.getNodeById(6);
-    expect(sharpen.mode).toBe(LiteGraph.NEVER); // BYPASS inside the definition
+    expect(sharpen.mode).toBe(LiteGraph.BYPASS); // BYPASS inside the definition
 
     const out = json(ComfyInterop.exportWorkflow(graph));
     expect(out.litegraph_version).toBeUndefined();

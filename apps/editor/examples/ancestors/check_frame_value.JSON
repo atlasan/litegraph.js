@@ -1,0 +1,536 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 277,
+ "last_node_id": 10,
+ "last_link_id": 9,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/button",
+   "pos": [
+    40,
+    220
+   ],
+   "size": [
+    130,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "click me",
+    "font_size": 22,
+    "message": ""
+   }
+  },
+  {
+   "id": 2,
+   "type": "events/sequence",
+   "pos": [
+    230,
+    210
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {
+    "horizontal": true,
+    "render_box": false
+   },
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": -1,
+     "link": 1,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      2
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      4
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      8
+     ],
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 3,
+   "type": "basic/boolean",
+   "pos": [
+    400,
+    140
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "bool",
+     "type": "boolean",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "Const true",
+   "properties": {
+    "value": true
+   },
+   "widgets_values": [
+    true
+   ]
+  },
+  {
+   "id": 4,
+   "type": "basic/variable",
+   "pos": [
+    620,
+    140
+   ],
+   "size": [
+    124,
+    50
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "in",
+     "link": 3
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 2,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "links": null
+    }
+   ],
+   "title": "1. set pressed",
+   "properties": {
+    "varname": "pressed",
+    "container": 0
+   }
+  },
+  {
+   "id": 5,
+   "type": "basic/variable",
+   "pos": [
+    400,
+    300
+   ],
+   "size": [
+    96,
+    30
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "in",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "title": "get pressed",
+   "properties": {
+    "varname": "pressed",
+    "container": 0
+   }
+  },
+  {
+   "id": 6,
+   "type": "logic/IF",
+   "pos": [
+    620,
+    280
+   ],
+   "size": [
+    133,
+    50
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 4
+    },
+    {
+     "name": "condition",
+     "type": "boolean",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "true",
+     "type": -1,
+     "links": [
+      6
+     ]
+    },
+    {
+     "name": "false",
+     "type": -1,
+     "links": [
+      7
+     ]
+    }
+   ],
+   "title": "2. Branch",
+   "properties": {}
+  },
+  {
+   "id": 7,
+   "type": "events/counter",
+   "pos": [
+    840,
+    220
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 6
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "true",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 8,
+   "type": "events/counter",
+   "pos": [
+    840,
+    370
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 7
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "false",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 9,
+   "type": "basic/boolean",
+   "pos": [
+    400,
+    450
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "bool",
+     "type": "boolean",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "title": "Const false",
+   "properties": {
+    "value": false
+   },
+   "widgets_values": [
+    false
+   ]
+  },
+  {
+   "id": 10,
+   "type": "basic/variable",
+   "pos": [
+    620,
+    450
+   ],
+   "size": [
+    124,
+    50
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "in",
+     "link": 9
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 8,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "links": null
+    }
+   ],
+   "title": "3. reset pressed",
+   "properties": {
+    "varname": "pressed",
+    "container": 0
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   -1
+  ],
+  [
+   2,
+   2,
+   0,
+   4,
+   1,
+   -1
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "boolean"
+  ],
+  [
+   4,
+   2,
+   1,
+   6,
+   0,
+   -1
+  ],
+  [
+   5,
+   5,
+   0,
+   6,
+   1,
+   "boolean"
+  ],
+  [
+   6,
+   6,
+   0,
+   7,
+   0,
+   -1
+  ],
+  [
+   7,
+   6,
+   1,
+   8,
+   0,
+   -1
+  ],
+  [
+   8,
+   2,
+   2,
+   10,
+   1,
+   -1
+  ],
+  [
+   9,
+   9,
+   0,
+   10,
+   0,
+   "boolean"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "An event chain reads fresh values. A click runs the Sequence: 1 sets the variable \"pressed\" to true, 2 asks the Branch, which reads \"pressed\", 3 sets it back to false. Under \"ancestors\" the Branch pulls the getter (ON_REQUEST) when it runs, so it sees the value set one step earlier: every click counts as true.",
+   "bounding": [
+    40,
+    20,
+    820,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 10,
+  "lastLinkId": 9,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

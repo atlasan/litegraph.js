@@ -1,5 +1,9 @@
 import { LiteGraph } from "../litegraph.js";
 
+// built-in pack: node types registered below belong to "litegraph/math" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/math", version: LiteGraph.VERSION, title: "Math", description: "Number operations, comparisons, ranges, random and noise, formulas, interpolation and vector helpers.", builtin: true });
+
 // Converter
 class Converter {
 
@@ -327,6 +331,8 @@ LiteGraph.registerNodeType("math/noise", MathNoise);
 
 // generates spikes every random time
 class MathSpikes {
+    static title = "Spikes";
+    static desc = "Outputs random pulses: a smooth spike up to 1 that lasts duration seconds, every min_time to max_time seconds.";
     constructor() {
         this.addOutput("out", "number");
         this.addProperty("min_time", 1);
@@ -1424,3 +1430,20 @@ class Math3DXYZWToVec4 {
     }
 }
 LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
+
+// execution needs (Wave 6): pure nodes run on request in the ancestors model; rand, noise, spikes,
+// average, tendTo, accumulate and formula keep ALWAYS (state, time or scripts)
+LiteGraph.declareNodeExecution([
+    "math/converter", "math/bypass", "math/to_number", "math/range", "math/clamp", "math/lerp", "math/abs", "math/floor",
+    "math/frac", "math/smoothstep", "math/scale", "math/gate", "math/operation", "math/compare", "math/condition",
+    "math/branch", "math/trigonometry", "math3d/vec2-to-xy", "math3d/xy-to-vec2", "math3d/vec3-to-xyz",
+    "math3d/xyz-to-vec3", "math3d/vec4-to-xyzw", "math3d/xyzw-to-vec4",
+    "math/noise", // a noise table filled once: the same input gives the same output
+], { pure: true });
+// declaration pass (flows track): time- or history-based nodes advance once per step, never by a pull
+LiteGraph.declareNodeExecution(["math/average", "math/tendTo", "math/spikes", "math/accumulate"], { ticks: true });
+// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
+// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
+// math/rand, math/formula (its TIME variable).
+
+LiteGraph.packs.close("litegraph/math");

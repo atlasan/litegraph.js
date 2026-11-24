@@ -1,4 +1,10 @@
+// built-in pack: node types registered below belong to "litegraph/nodejs-process" (see LiteGraph.packs)
+LiteGraph.setupPlatform();
+LiteGraph.packs.open({ id: "litegraph/nodejs-process", version: LiteGraph.VERSION, title: "Node.js process", description: "Node.js process and host information (runner and Node.js only).", builtin: true });
+
 class NodeProcessInfo {
+    static title = "Process info";
+    static desc = "Information about the Node.js process and host: platform, memory, uptime.";
     constructor() {
         this.runtime = "node";
         this.libraries = ["os"];
@@ -28,7 +34,10 @@ class NodeProcessInfo {
     }
 }
 
-LiteGraph.registerNodeType("server/process/NodeProcessInfo", NodeProcessInfo);
+LiteGraph.registerNodeType("sys/processInfo", NodeProcessInfo);
+LiteGraph.registerNodeReplacement({ old_type: "server/process/NodeProcessInfo", new_type: "sys/processInfo", auto: true, reason: "renamed in the catalog cleanup (Wave 4e)" });
 
 // what these node types need from the runtime (see LiteGraph.declareCapabilities)
-LiteGraph.declareCapabilities("server/process/", ["node", "sys"]);
+LiteGraph.declareCapabilities("sys/processInfo", ["node", "sys"]);
+
+LiteGraph.packs.close("litegraph/nodejs-process");

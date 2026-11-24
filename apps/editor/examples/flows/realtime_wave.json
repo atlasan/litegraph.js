@@ -1,0 +1,425 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 200,
+ "last_node_id": 9,
+ "last_link_id": 8,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "basic/time",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    88,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "in ms",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "in sec",
+     "type": "number",
+     "links": [
+      1
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 2,
+   "type": "widget/knob",
+   "pos": [
+    40,
+    270
+   ],
+   "size": [
+    86,
+    100
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "title": "Speed",
+   "properties": {
+    "min": 0.5,
+    "max": 8,
+    "value": 2,
+    "color": "#7AF",
+    "precision": 1
+   },
+   "boxcolor": "rgba(-255,-255,-255,1.0)"
+  },
+  {
+   "id": 3,
+   "type": "math/operation",
+   "pos": [
+    260,
+    190
+   ],
+   "size": [
+    78,
+    50
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number,array,object",
+     "link": 1
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "seconds × speed",
+   "properties": {
+    "A": 0,
+    "B": 2,
+    "OP": "*"
+   }
+  },
+  {
+   "id": 4,
+   "type": "math/trigonometry",
+   "pos": [
+    480,
+    190
+   ],
+   "size": [
+    111.06400299072266,
+    30
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "v",
+     "type": "number",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "sin",
+     "type": "number",
+     "links": [
+      4,
+      5,
+      8
+     ]
+    }
+   ],
+   "title": "sin",
+   "properties": {
+    "amplitude": 1,
+    "offset": 0
+   }
+  },
+  {
+   "id": 5,
+   "type": "math/scale",
+   "pos": [
+    480,
+    310
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "in",
+     "type": "number",
+     "link": 5,
+     "label": ""
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": "number",
+     "links": [
+      6
+     ],
+     "label": ""
+    }
+   ],
+   "title": "to 0..1",
+   "properties": {
+    "factor": 0.5
+   }
+  },
+  {
+   "id": 6,
+   "type": "math/operation",
+   "pos": [
+    690,
+    310
+   ],
+   "size": [
+    81,
+    50
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number,array,object",
+     "link": 6
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "title": "+ 0.5",
+   "properties": {
+    "A": 1,
+    "B": 0.5,
+    "OP": "+"
+   }
+  },
+  {
+   "id": 7,
+   "type": "graphics/plot",
+   "pos": [
+    700,
+    150
+   ],
+   "size": [
+    260,
+    120
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "Number",
+     "link": 4
+    },
+    {
+     "name": "B",
+     "type": "Number",
+     "link": null
+    },
+    {
+     "name": "C",
+     "type": "Number",
+     "link": null
+    },
+    {
+     "name": "D",
+     "type": "Number",
+     "link": null
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "scale": 2
+   }
+  },
+  {
+   "id": 8,
+   "type": "widget/progress",
+   "pos": [
+    900,
+    330
+   ],
+   "size": [
+    160,
+    30
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "number",
+     "link": 7
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0,
+    "color": "#AAF"
+   }
+  },
+  {
+   "id": 9,
+   "type": "basic/watch",
+   "pos": [
+    900,
+    430
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 8,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Value",
+   "properties": {
+    "display": "value"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   1,
+   3,
+   0,
+   "number,array,object"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "number"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "number"
+  ],
+  [
+   4,
+   4,
+   0,
+   7,
+   0,
+   "Number"
+  ],
+  [
+   5,
+   4,
+   0,
+   5,
+   0,
+   "number"
+  ],
+  [
+   6,
+   5,
+   0,
+   6,
+   0,
+   "number,array,object"
+  ],
+  [
+   7,
+   6,
+   0,
+   8,
+   0,
+   "number"
+  ],
+  [
+   8,
+   4,
+   0,
+   9,
+   0,
+   "number"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Realtime: every frame. Time (ALWAYS) gives the seconds since Play; sin() turns them into a wave, scaled by the knob; the Plot, the Progress bar and the Watch show it as it moves. Press Play; Stop freezes it, Step advances one frame.",
+   "bounding": [
+    40,
+    20,
+    700,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 9,
+  "lastLinkId": 8,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}
