@@ -3,7 +3,7 @@ This fork takes the 2011-2014 code for LiteGraph and renews it.
 
 # 0.18.0-dev.2 (2026-11-23): dev pre-release
 
-This is a pre-release for testers, to be tagged `v0.18.0-dev.2`; nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track, the panels track, the editor examples, the launcher, the node pin and mode numbering 2, and the group UX (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.
+This is a pre-release for testers, tagged `v0.18.0-dev.2` on `master` (2026-11-24); nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track, the panels track, the editor examples, the launcher, the node pin and mode numbering 2, and the group UX (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.
 
 **Upgrade notes:**
 - **Mode numbering 2:** `LiteGraph.BYPASS` is now 4, as in ComfyUI, and `LiteGraph.ON_REQUEST` moved from 4 to 5 ([decision 0004](agents/memories/decisions/0004-mode-4-bypass.md)).
