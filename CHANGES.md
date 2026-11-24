@@ -72,7 +72,7 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
   * a drag on a group's empty body pans the view; the title bar or Alt+drag moves the group (`LiteGraph.Group.BodyDrag = "move"` for the old behaviour);
   * group titles keep a readable size at every zoom, 12 to 48 px on screen (`LiteGraph.Group.TitleScale` off for the old behaviour);
   * the header toggle looks like the node pin, is at most 14 px on screen, hides when tiny, and the title no longer runs under it.
-* **Repository: CI is local only.** The GitHub Actions workflow (`.github/workflows/validate.yml`) is removed; `npm run check:all` (`check` plus `check:fresh`) is the local CI.
+* **Repository: local CI, GitHub CI off by default.** `npm run ci:local` (`tools/ci/ci.mjs`, also `lg ci`) runs the workflow's steps (`npm ci --ignore-scripts`, `check`, build freshness) in a clean clone of any commit, several refs in parallel, with optional `npm audit`, packed-install, ComfyUI-probe and Bun steps, and writes a proof report (`report.json`, `report.md`, logs with hashes, a `Local-CI: pass <sha> ...` line for commit trailers, git notes and PR comments). `.github/workflows/validate.yml` is kept, its job gated on the repository variable `LG_GITHUB_CI` = `on`; `npm run ci:github -- on|off|status` is the switch. `npm run check:all` (`check` plus `check:fresh`) runs both in the working tree.
 * **Bypassed nodes get no `onStart`**, like NEVER nodes. **`checkExecution` skips them.**
 * **`LiteGraph.do_add_triggers_slots` is unassigned by default**, so the document's model decides; the editor no longer sets it to false.
   * A type that refuses ON_TRIGGER still gets `onTrigger` when an event link is dropped on it; before, the drop failed silently.

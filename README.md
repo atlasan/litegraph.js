@@ -64,7 +64,7 @@ Or with the launcher (Bun when installed, else Node): `./lg.sh` for a menu, `./l
   - `graph/function` calls a definition, and components register definitions as node types.
 - **Ecosystem:** packs with provenance, a missing-nodes report and replacement mappings; a shared execution-state protocol for the editor and the runner.
 - **Interop:** ComfyUI workflow JSON import and export, subgraphs included (`src/extensions/comfy_interop.js`).
-- **Quality gate:** `npm run check` runs lint, 12 builds, strict type consumers, over 500 Jest and integration tests, and a package check; `npm run check:all` (the local CI; there is no GitHub CI) also checks that the committed builds are fresh.
+- **Quality gate:** `npm run check` runs lint, 12 builds, strict type consumers, over 500 Jest and integration tests, and a package check; the local CI (`npm run ci:local`) runs it in a clean clone of a commit, checks that the committed builds are fresh, and writes a proof report; the GitHub workflow is kept but off by default.
 
 ## Documentation
 

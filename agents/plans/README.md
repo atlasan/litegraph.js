@@ -24,6 +24,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
+| 2026-11-24 | [Local CI and the gated GitHub workflow](2026-11-24-local-ci.md): `tools/ci/ci.mjs` runs the workflow's steps (and optional audit, pack, ComfyUI and Bun steps) in clean clones under `.lg/ci/`, in parallel, with proof reports; the workflow is kept, gated by the `LG_GITHUB_CI` variable; branch `LG/dev_HMD_ci` | done ([execution](../executions/2026-11-24-local-ci.md)) |
 | 2026-11-23 | [Node pin states, mode 4 as Bypass, exec slots on the edges](2026-11-23-node-pin-modes-exec-slots.md): mode 4 = BYPASS and ON_REQUEST = 5 with a migration, pass-through execution; exec slots placed by anchor and offset, created by default under `ancestors`; pin style registry with a mode-and-state extension, pin quick menu, graph status chip; debugger analysed and deferred; branches `LG/dev_HMD_modes`, `LG/dev_HMD_exec_slots`, `LG/dev_HMD_node_pin` | done except D (debugger notes) |
 | 2026-11-23 | [Launcher and Bun commands](2026-11-23-launcher-and-bun.md): `lg.sh` / `lg.bat` and one JS helper on Bun or Node (start, stop, restart, status, info, open, logs, menu), apps on Bun, `/docs` served; intake of the 2026-11-23 findings (`LCH`, `GRP`) with candidates for later plans; branch `LG/dev_HMD_launcher` | done; candidates C-1 to C-5 open |
 | 2026-11-23 | [Pre-release 0.18.0-dev.2](2026-11-23-pre-release-0.18.0-dev.2.md): everything on `LG/dev`; records hygiene, three pre-release fixes, version, release checks, PR and tag | accepted |

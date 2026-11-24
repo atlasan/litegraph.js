@@ -19,12 +19,59 @@ npm run graphrunner  # http://127.0.0.1:3000/
 | `npm run build` | `build.py`: regenerates `build/` and `build_node/`. Commit the output separately |
 | `npm test` / `npm run test:integration` | Jest (`test/`) / node:test (`tools/tests/`) |
 | `npm run check:fresh` | Rebuilds and fails when `build/` or `build_node/` differ from what is committed |
-| `npm run check:all` | `check`, then `check:fresh`: the local CI. Run it before a merge into `LG/dev` or a PR to `master`; there is no GitHub CI |
+| `npm run check:all` | `check`, then `check:fresh`, in the working tree |
+| `npm run ci:local` | The [local CI](#local-ci): the workflow's steps in a clean clone of a commit, with a proof report. Run it before a merge into `LG/dev` or a PR to `master` |
+| `npm run ci:github` | The switch for the GitHub workflow (off by default): `-- status`, `-- on`, `-- off` |
 | `npm run check:types` | Strict ESM and CJS consumers against `src/litegraph.d.cts`, plus export parity with the built modules |
 | `npm run lint` | ESLint, with warnings (the gate fails on errors only) |
 | `npm run docs` | JSDoc from `src/` into [docs/api](api/index.html); the plugin `docs/jsdoc-ts-types.cjs` turns TypeScript-style types JSDoc cannot parse into `function` / `Object` / `*` and keeps the original in the description |
 
 `--ignore-scripts` skips native integration bindings. Browser GPU, audio and MIDI nodes, and external services, are outside the gate.
+
+## Local CI
+
+GitHub CI is kept but switched off (roadmap D10); the local CI is the proof for merges and releases. `tools/ci/ci.mjs` (`npm run ci:local -- ...`, or `./lg.sh ci ...`) checks out a commit into a clean clone under the git-ignored `.lg/ci/work/`, runs the steps of `.github/workflows/validate.yml` there, and writes a report. It never touches the working tree it is started from, so uncommitted changes are not tested: commit first.
+
+```sh
+npm run ci:local                          # HEAD: npm ci --ignore-scripts, npm run check, build freshness
+npm run ci:local -- LG/dev my-branch -j 2 # several refs at once, each in its own clone
+npm run ci:local -- --full                # plus npm audit, the packed install, the ComfyUI probes, Bun
+npm run ci:local -- list                  # recent runs; show [run] --md|--json|--summary; clean
+```
+
+| Step | What it runs | Flag |
+|---|---|---|
+| `clone` | `git clone --local`, `checkout --detach <commit>`; the checkout must be clean | always |
+| `install` | `npm ci --ignore-scripts --prefer-offline` (the shared npm cache) | always |
+| `check` | `npm run check`; the Jest and node:test counts are read from the log | always |
+| `fresh` | `git diff --exit-code --stat -- build build_node`, plus new untracked files there | always |
+| `audit` | `npm audit --omit=dev` (needs the network) | `--audit` |
+| `pack` | `npm pack`, installed with `--omit=optional` into an empty project: ESM `.`, `/core`, a deep import; CJS `.` and `/node`; the version; `allow_scripts` false; `definitions`; `ancestors`; a graph run; `src/` not exported; no dependencies (`tools/ci/pack-smoke.mjs`) | `--pack` |
+| `comfy` | the ComfyUI probes from the git-ignored `experiments/comfy-interop/` (schema and content), copied into the clone; skipped when absent | `--comfy` |
+| `bun` | `bun test tools/tests` and the launcher on Bun; **advisory**: reported, never fails the run (one `library-manager` case is known to fail on Bun) | `--bun` |
+
+Each run has its own clone, `TMPDIR` and state, with `CI=true` and no npm settings inherited from an outer `npm run`; the tests use free ports (`listen(0)`), so runs can go in parallel (`--jobs N`, default 2). A passing run removes its clone; a failing one keeps it for inspection (`--keep` / `--no-keep` decide).
+
+**Report:** `.lg/ci/runs/<sha>-<time>/` holds `report.json` (commit and tree, ref, branches, clean flag, host, Node, npm, Python, git and Bun versions, each step's exit code, duration, counts and log sha256, the runner's own commit and hash), `report.md` (paste it into a PR body, an issue or a comment), `summary.txt` and `logs/`. The summary is one line, usable as a commit trailer:
+
+```
+Local-CI: pass 1a2b3c4 node22.23.4 jest 1016/1016 int 151/151 fresh ok
+```
+
+- `--note` (or `ci.mjs note [run]`) appends the summary as a git note under `refs/notes/ci`; `git log --notes=ci` shows it. Notes are local: the tool never pushes them (`git push origin refs/notes/ci` does, by hand).
+- `--pr N` / `--issue N` (or `ci.mjs comment [run] --pr N`) print the `gh pr comment N --body-file report.md` command; only `--post` runs it. Posting is outward-facing: agents ask the user first.
+
+### The GitHub workflow switch
+
+`.github/workflows/validate.yml` runs its job only when the repository variable `LG_GITHUB_CI` is `on`. Unset (the default), pushes and pull requests show the check as skipped and use no runner minutes. `workflow_dispatch` allows a manual run from the Actions tab, gated the same way.
+
+```sh
+npm run ci:github -- status    # gh variable list
+npm run ci:github -- on        # gh variable set LG_GITHUB_CI --body on
+npm run ci:github -- off       # gh variable delete LG_GITHUB_CI
+```
+
+`on` and `off` change a repository setting (they need `gh auth` with admin rights on the repository); `--dry-run` prints the command, `--repo OWNER/NAME` picks another repository, `LG_CI_GH` another `gh`. Only the repository owner switches it; agents never do. Keep the workflow's steps and the runner's core steps the same.
 
 ## Entry points
 

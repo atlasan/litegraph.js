@@ -19,6 +19,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
+| `tools/ci/`, `.github/workflows/validate.yml` | Local CI (`npm run ci:local`, `lg ci`): `ci.mjs` (clean clones under `.lg/ci/work/`, parallel runs, steps, reports in `.lg/ci/runs/`, notes, PR comments, the GitHub switch), `core.mjs` (arguments, step table, log parsers, summary line, `report.md`), `pack-smoke.mjs` (the packed-install checks). The workflow is gated on the repository variable `LG_GITHUB_CI` = `on` (off by default) |
 | `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses) |
 | `test/` | Jest suites |
 | `csharp/` | Experimental C#/Unity port, untouched since 2023 |
@@ -182,7 +183,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
 - **Tests:**
   - Jest: 45 files, 856 tests (26 golden snapshots, documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
-  - node:test: 21 files, in `tools/tests/`; covers the launcher (`launcher`, also under `bun test`), the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
+  - node:test: 22 files, in `tools/tests/`; covers the launcher (`launcher`, also under `bun test`), the local CI (`ci`: parsers, reports, the GitHub switch with a fake `gh`, parallel runs on a tiny repository), the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 

@@ -23,7 +23,11 @@ Short operational notes for contributors and coding agents. Keep this file refer
   - Waves (`LG/wave<N>_<topic>`) are milestones with a build and verification pass.
   - `master` changes only through reviewed PRs.
 - **Gate:** run `npm run check` before every commit that touches code. It runs lint, all 12 builds, strict type consumers, Jest, the node:test integration tests and the package check.
-- **CI is local only:** there is no GitHub CI. Don't add `.github/workflows`, don't wait on or poll GitHub checks, and don't turn on the app's PR Auto-fix. Before a merge into `LG/dev` or a PR to `master`, run `npm run check:all` (`check` plus `check:fresh`); releases also run the clean-clone checks of the release plan. Record the results in the execution record or the PR body.
+- **CI is local:** GitHub CI is kept but switched off ([development](docs/development.md#local-ci), roadmap D10).
+  - Before a merge into `LG/dev` or a PR to `master`, commit, then run `npm run ci:local -- <ref>` (a clean clone of the commit; several refs run in parallel). Releases add `--full` (audit, packed install, ComfyUI probes, Bun).
+  - Proof: put the run's one-line summary (`Local-CI: pass <sha> ...`, in `.lg/ci/runs/<run>/summary.txt`) in the execution record or the merge commit, and `report.md` in the PR body. `--note` adds it as a local git note.
+  - Posting a report (`--post`), pushing notes, and the GitHub switch (`npm run ci:github -- on|off`, a repository setting) are the user's: ask first, and never switch GitHub CI on yourself.
+  - Don't add other workflows, don't wait on or poll GitHub checks, and don't turn on the app's PR Auto-fix.
 - **Generated output:** `build/` and `build_node/` are committed. Regenerate them with `npm run build` and commit them separately (`build: regenerate distributions ...`) after the `fix:` / `feat:` / `docs:` commit.
 - **New `src/` modules:**
   - Add them to the file lists in `build.py`, in dependency order.
