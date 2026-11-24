@@ -1,0 +1,497 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 135,
+ "last_node_id": 13,
+ "last_link_id": 7,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/knob",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    86,
+    100
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      1
+     ]
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.3,
+    "color": "#7AF",
+    "precision": 2
+   }
+  },
+  {
+   "id": 2,
+   "type": "widget/hslider",
+   "pos": [
+    40,
+    310
+   ],
+   "size": [
+    160,
+    30
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      2,
+      7
+     ]
+    }
+   ],
+   "title": "Slider",
+   "properties": {
+    "color": "#7AF",
+    "min": 0,
+    "max": 1,
+    "value": 0.6
+   }
+  },
+  {
+   "id": 3,
+   "type": "widget/number",
+   "pos": [
+    40,
+    390
+   ],
+   "size": [
+    96,
+    60
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 7,
+    "step": 1
+   }
+  },
+  {
+   "id": 4,
+   "type": "widget/toggle",
+   "pos": [
+    40,
+    480
+   ],
+   "size": [
+    180,
+    50
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "e",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "v",
+     "type": "boolean",
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "e",
+     "type": -1,
+     "links": null
+    }
+   ],
+   "properties": {
+    "font": "",
+    "value": true
+   }
+  },
+  {
+   "id": 5,
+   "type": "widget/combo",
+   "pos": [
+    40,
+    570
+   ],
+   "size": [
+    146,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "string",
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    }
+   ],
+   "properties": {
+    "value": "B",
+    "values": "A;B;C"
+   }
+  },
+  {
+   "id": 6,
+   "type": "basic/string",
+   "pos": [
+    40,
+    660
+   ],
+   "size": [
+    180,
+    32
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "string",
+     "type": "string",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "title": "Text",
+   "properties": {
+    "value": "hello"
+   }
+  },
+  {
+   "id": 7,
+   "type": "basic/watch",
+   "pos": [
+    320,
+    170
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 1,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Knob",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 8,
+   "type": "basic/watch",
+   "pos": [
+    320,
+    310
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 2,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Slider",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 9,
+   "type": "basic/watch",
+   "pos": [
+    320,
+    390
+   ],
+   "size": [
+    96,
+    30
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 3,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Number",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 10,
+   "type": "basic/watch",
+   "pos": [
+    320,
+    480
+   ],
+   "size": [
+    88,
+    30
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 4,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Toggle",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 11,
+   "type": "basic/watch",
+   "pos": [
+    320,
+    570
+   ],
+   "size": [
+    92,
+    30
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 5,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Combo",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 12,
+   "type": "basic/watch",
+   "pos": [
+    320,
+    660
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 6,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Text",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 13,
+   "type": "widget/progress",
+   "pos": [
+    540,
+    310
+   ],
+   "size": [
+    160,
+    30
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "number",
+     "link": 7
+    }
+   ],
+   "outputs": [],
+   "title": "Slider as progress",
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0,
+    "color": "#AAF"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   7,
+   0,
+   "number"
+  ],
+  [
+   2,
+   2,
+   0,
+   8,
+   0,
+   "number"
+  ],
+  [
+   3,
+   3,
+   0,
+   9,
+   0,
+   "number"
+  ],
+  [
+   4,
+   4,
+   0,
+   10,
+   0,
+   "boolean"
+  ],
+  [
+   5,
+   5,
+   0,
+   11,
+   0,
+   "string"
+  ],
+  [
+   6,
+   6,
+   0,
+   12,
+   0,
+   "string"
+  ],
+  [
+   7,
+   2,
+   0,
+   13,
+   0,
+   "number"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Widget nodes to Watch. Each widget node outputs its value; each Watch shows what reaches it. Press Play, then turn the knob, drag the slider and the number, flip the toggle, pick in the combo, and edit the text.",
+   "bounding": [
+    40,
+    20,
+    700,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 13,
+  "lastLinkId": 7,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

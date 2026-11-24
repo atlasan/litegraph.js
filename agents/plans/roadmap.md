@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-23 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
+> **Updated** 2026-11-24 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` in preparation ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
 
 This is the single place for the current status of planned work.
 
@@ -38,6 +38,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | 7 | Event integration (one core, two faces) | **Done** (except generated doc tables and deprecation logs), merged into `LG/dev` from `LG/wave7_events` and `LG/dev_events_deferred` ([plan](2026-11-22-event-integration.md), [audit](../audits/2026-11-22-event-handling.md), [record](../executions/2026-11-22-wave7-event-core.md)): hooks and typed events on `ListenerList`, compatible `onX` API. The deferred items (snapshot and order golden, hook → event helper, tap, hook typing) are done on `LG/dev_events_deferred`, merged into `LG/dev` ([record](../executions/2026-11-22-wave7-deferred.md)); see [Wave 7](#wave-7-event-integration-done-two-leftovers-open) |
 | Track | Panels and widgets: value types, options and node panels | **Done**, merged into `LG/dev` ([plan](2026-11-22-panels-options-node-details.md), [record](../executions/2026-11-22-panels-and-widgets.md)); see [Panels and widgets track](#panels-and-widgets-track) |
 | Track | Node pin, modes and exec slots | **Done** except D ([plan](2026-11-23-node-pin-modes-exec-slots.md)): A (mode 4 = BYPASS, ON_REQUEST = 5, [decision 0004](../memories/decisions/0004-mode-4-bypass.md)) merged into `LG/dev` from `LG/dev_HMD_modes`; B (exec slots: layouts, per-model creation) merged from `LG/dev_HMD_exec_slots`; C (pin styles and quick menu, graph status chip) merged from `LG/dev_HMD_node_pin`; D (debugger notes) proposed as its own session; see [Node pin track](#node-pin-modes-and-exec-slots-track) |
+| Track | Editor examples polish | **Done**, merged into `LG/dev` from `LG/dev_HMD_examples` ([audit](../audits/2026-11-23-editor-examples.md), [record](../executions/2026-11-23-editor-examples.md)): every example states its execution model, fits its nodes and explains itself; 11 new examples (basics and one per flow category); a stricter examples test; 6 library fixes |
 | Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **Done**, merged into `LG/dev` from `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md), [record](../executions/2026-11-23-launcher-and-bun.md)); see [Launcher track](#launcher-track) |
 | Track | Group UX: body drag, title size, header toggle, space panning | **Done**, merged into `LG/dev` from `LG/dev_HMD_groups` ([record](../executions/2026-11-24-groups-ux.md)): the body pans and the title bar or Alt moves (`LiteGraph.Group.BodyDrag`), titles 12–48 px on screen (`LiteGraph.Group.TitleScale`), a capped node-pin-like toggle clear of the title, space panning fixed and on the gesture path (audit N-4) |
 | Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Ready**: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); release checks rerun on `LG/dev` @ `ce8c231` after the [audit fixes](../executions/2026-11-23-audit-fixes.md) (see the plan's History); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
@@ -205,6 +206,7 @@ Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open
 | Reference | `LG/dev_flows_reference` | `npm run docs:nodes` (`tools/node-reference.mjs`) → `docs/nodes/` (local, not committed: D9); pack descriptions; `def.usage`; catalog test | **Done** ([record](../executions/2026-11-22-flows-reference.md)) |
 | Declarations | `LG/dev_flows_declarations` | `pure` / `ticks` / default modes for the undeclared types; volatile nodes stay ALWAYS until FLW-02 | **Done** ([record](../executions/2026-11-22-flows-declarations.md)) |
 | Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | **Done** ([record](../executions/2026-11-22-flows-examples.md)) |
+| Examples polish | `LG/dev_HMD_examples` | Explicit models, sizes, notes, Watch/Button controls; Basics category and one example per flow category; stricter test ([audit](../audits/2026-11-23-editor-examples.md)) | **Done** ([record](../executions/2026-11-23-editor-examples.md)) |
 
 Steps 4–7 of the direction plan (call scopes, lifecycle and custom events, profiles, flow docs) stay proposed. Step 5 can now build on Wave 7's listener core (in `LG/dev`).
 
@@ -259,6 +261,10 @@ Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-
 - **Editor:** both are on.
 
 **D, debugger (deferred):** a research record and the FLW-16 card.
+
+## Human feedback usability track
+
+**Done** ([plan](2026-11-23-hmd-usability-first-pass.md), [execution](../executions/2026-11-24-hmd-usability-first-pass.md)), authorized 2026-11-23 and verified 2026-11-24. Feedback intake on `LG/dev_hmd_examples_nodes_icons`, then implementation on `LG/dev_hmd_usability`, merged into `LG/dev`: pack/section starter workflows in the existing editor, six explained examples, boolean and bounded auto-watch improvements, optional glyph/emoji slot labels. SVG asset management, schema validation, automatic wiring and generated-workflow reconciliation stay deferred. This is a named track, not a wave.
 
 ## Deferred (each needs its own proposal)
 

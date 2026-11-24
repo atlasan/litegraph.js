@@ -977,6 +977,15 @@ export class LiteGraphClass {
         }
     }
 
+    /** Display-only slot label. String icons are glyphs/emoji, not URLs or HTML. */
+    getSlotLabel(node, slot, canvasMode = "icon+text") {
+        const label = String(slot.label ?? slot.name ?? "");
+        const icon = typeof slot.label_icon === "string" ? slot.label_icon : "";
+        const mode = slot.label_mode ?? node.properties?.slot_label_mode ?? canvasMode;
+        if (!icon || mode === "text") return label;
+        return mode === "icon" ? icon : icon + (label ? " " + label : "");
+    }
+
     /**
      * Node pin styles (the title box), chosen by the setting LiteGraph.Node.PinStyle; "classic" is
      * built in (LGraphCanvas.classicNodePinStyle). A style is `(node, canvas, {shape}) => spec | null`
@@ -8889,6 +8898,11 @@ export class LGraph {
                     mode
                 }
                 of changes) node.mode = mode;
+            // a changed node inside a subgraph instance edits that instance: its definition is
+            // synced from it when the document is saved (registerSubgraphDefinitions)
+            for (const inner of new Set(changes.map(({
+                    node
+                }) => node.graph).filter((g) => g && g !== root))) inner.revision++;
             root.onGraphChanged({
                 action: "executionModelModes"
             });
@@ -14561,7 +14575,7 @@ export class LGraphCanvas {
 
                     // render name (a widget input is labelled by its widget)
                     if (render_text && !is_widget_input && !is_exec) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.UP) {
@@ -14667,7 +14681,7 @@ export class LGraphCanvas {
 
                     // render output name
                     if (render_text && !is_exec) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.DOWN) {
@@ -15821,6 +15835,8 @@ export class LGraphCanvas {
         const settings = LiteGraph.settings;
         return !settings?.has?.("LiteGraph.Canvas.ExecutionOverlays") || settings.get("LiteGraph.Canvas.ExecutionOverlays") !== false;
     }
+
+    slot_label_mode = "icon+text";
 
     /** The icon of a node: `node.icon`, else the definition's `icon` (a short text glyph or an image). */
     getNodeIcon(node) {
@@ -19950,6 +19966,17 @@ export class LGraphCanvas {
                 }
             }
             var slotOb = slot.input || slot.output;
+            if (slotOb.label_icon) {
+                const escape = (value) => String(value).replace(/[&<>]/g, (char) => ({
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;"
+                })[char]);
+                menu_info.unshift({
+                    content: `${escape(slotOb.name)} · ${escape(slotOb.type || "*")}`,
+                    disabled: true
+                }, null);
+            }
             options.title = slotOb.type || "*";
             if (slotOb.type == LiteGraph.ACTION) {
                 options.title = "Action";
@@ -20213,6 +20240,15 @@ export class LGraphCanvas {
             default: 8,
             always: true,
             tooltip: "Radius of the rounded corners of nodes and groups."
+        },
+        slot_label_mode: {
+            category: "Nodes",
+            label: "Slot labels",
+            type: "enum",
+            values: ["text", "icon+text", "icon"],
+            default: "icon+text",
+            always: true,
+            tooltip: "Show optional slot glyphs with the label or alone. Right-click the socket for its original name and type."
         },
         links_render_mode: {
             category: "Links",
@@ -22543,7 +22579,7 @@ export class LGraphNode {
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
                 if (!this._takesSlotRow(true, input)) return maxWidth; // labelled by its widget, or a placed exec slot
-                const text = input.label || input.name || "";
+                const text = LiteGraph.getSlotLabel(this, input, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -22551,7 +22587,7 @@ export class LGraphNode {
         if (this.outputs) {
             output_width = this.outputs.reduce((maxWidth, output) => {
                 if (!this._takesSlotRow(false, output)) return maxWidth; // a placed exec slot has no label
-                const text = output.label || output.name || "";
+                const text = LiteGraph.getSlotLabel(this, output, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -33070,6 +33106,102 @@ export class NodePalette {
                     items
                 }))
             }));
+    }
+
+    /** Preview a section/pack inventory without constructing or executing any nodes. */
+    starterPreview({
+        pack,
+        category
+    } = {}) {
+        return this.host.listNodeDefinitions({
+                category
+            }).filter((def) => !pack || def.pack?.id === pack)
+            .sort((a, b) => a.category.localeCompare(b.category) || a.type.localeCompare(b.type))
+            .map((def) => {
+                const sensitive = def.capabilities.filter((cap) => !["browser", "node"].includes(cap));
+                const reason = def.hidden || def.deprecated ? "Hidden or deprecated type" :
+                    ["graph/input", "graph/output"].includes(def.type) ? "Subgraph interface type" :
+                    !this.host.isNodeTypeSupported(def.type) ? "Unavailable in this host" :
+                    sensitive.length ? `Requires individual setup: ${sensitive.join(", ")}` : "";
+                return {
+                    type: def.type,
+                    title: def.title,
+                    category: def.category,
+                    pack: def.pack?.id ?? "",
+                    description: def.description,
+                    suggestedDescription: def.description ? "" : `Explore ${def.title} (${def.type}).`,
+                    usage: def.usage,
+                    reason
+                };
+            });
+    }
+
+    /** Append an organized, disconnected inventory in one undo step. Never starts the graph. */
+    insertStarter(canvas, options = {}) {
+        const graph = canvas?.graph;
+        if (!graph || canvas.read_only) throw new Error("An editable graph is required");
+        if (graph.status === this.host.LGraph.STATUS_RUNNING) throw new Error("Stop the graph before adding a starter workflow");
+        const entries = this.starterPreview(options);
+        const nodes = [],
+            skipped = entries.filter((entry) => entry.reason).map((entry) => ({
+                type: entry.type,
+                reason: entry.reason
+            }));
+        // Append below all existing content, preserving manual layouts and annotations.
+        let y = Math.max(80, ...graph._nodes.map((node) => node.pos[1] + node.size[1] + 120),
+            ...graph._groups.map((group) => group.pos[1] + group.size[1] + 120));
+        graph.transact("starterWorkflow", () => {
+            for (const category of new Set(entries.map((entry) => entry.category))) {
+                const section = [];
+                let x = 80,
+                    rowHeight = 0;
+                for (const entry of entries.filter((item) => item.category === category && !item.reason)) {
+                    let node;
+                    try {
+                        node = this.host.createNode(entry.type);
+                    } catch (error) {
+                        skipped.push({
+                            type: entry.type,
+                            reason: String(error?.message ?? error)
+                        });
+                        continue;
+                    }
+                    if (!node) {
+                        skipped.push({
+                            type: entry.type,
+                            reason: "Constructor failed"
+                        });
+                        continue;
+                    }
+                    node.pos = [x, y];
+                    graph.add(node);
+                    nodes.push(node);
+                    section.push(node);
+                    rowHeight = Math.max(rowHeight, node.size[1] + 70);
+                    x += Math.max(220, node.size[0] + 50);
+                    if (section.length % 3 === 0) {
+                        x = 80;
+                        y += rowHeight;
+                        rowHeight = 0;
+                    }
+                }
+                if (section.length) {
+                    const group = new this.host.LGraphGroup(category || "Nodes");
+                    group.resizeTo(section, 30);
+                    graph.add(group);
+                    y = Math.max(...section.map((node) => node.pos[1] + node.size[1])) + 140;
+                }
+            }
+        }, {
+            rollback: true
+        });
+        canvas.selectNodes?.(nodes);
+        canvas.setDirty?.(true, true);
+        return {
+            nodes,
+            skipped,
+            entries
+        };
     }
 
     /** @returns {string[]} favourite node types */

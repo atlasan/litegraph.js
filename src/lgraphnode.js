@@ -1758,7 +1758,7 @@ export class LGraphNode {
         if (this.inputs) {
             input_width = this.inputs.reduce((maxWidth, input) => {
                 if (!this._takesSlotRow(true, input)) return maxWidth; // labelled by its widget, or a placed exec slot
-                const text = input.label || input.name || "";
+                const text = LiteGraph.getSlotLabel(this, input, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);
@@ -1766,7 +1766,7 @@ export class LGraphNode {
         if (this.outputs) {
             output_width = this.outputs.reduce((maxWidth, output) => {
                 if (!this._takesSlotRow(false, output)) return maxWidth; // a placed exec slot has no label
-                const text = output.label || output.name || "";
+                const text = LiteGraph.getSlotLabel(this, output, this.getDefaultCanvas()?.slot_label_mode);
                 const text_width = get_text_width(text);
                 return Math.max(maxWidth, text_width);
             }, 0);

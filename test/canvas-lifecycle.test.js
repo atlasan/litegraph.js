@@ -112,3 +112,22 @@ test('closing a subgraph restores the parent view', () => {
     expect(canvas.ds.scale).toBe(0.75);
     canvas.dispose();
 });
+
+test('a wrapped group title stays inside the group (4 px on each side) and clear of its toggle', () => {
+    const graph = new LGraph();
+    const canvas = new LGraphCanvas(element(), graph, { skip_render: true });
+    const group = new LiteGraph.LGraphGroup('A caption long enough to wrap');
+    group.pos = [10, 20]; group.size = [200, 80];
+    graph.add(group);
+    canvas.visible_area = new Float32Array([0, 0, 1000, 1000]);
+    canvas.options.groups_title_wrap = true; // an options object passed to the constructor replaces the defaults
+    const wrap = jest.spyOn(LiteGraph, 'canvasFillTextMultiline');
+    canvas.drawGroups(canvas.canvas, canvas.ctx);
+    // the stub context is a Proxy that answers every key, so compare the arguments after it
+    const [, text, x, , maxWidth] = wrap.mock.calls[0];
+    const toggle = canvas.getGroupToggleRect(group); // the header toggle keeps its own corner free
+    expect(toggle).not.toBeNull();
+    expect([text, x]).toEqual([group.title, 14]);
+    expect(maxWidth).toBeGreaterThan(0);
+    expect(x + maxWidth).toBeLessThan(toggle[0]); // ends left of the toggle, inside the group
+});

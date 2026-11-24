@@ -128,3 +128,5 @@ On Windows use `lg` (or `.\lg.bat` in PowerShell) with the same commands; `npm r
 - **Building nodes:** the [guide](guide.md) covers widgets, events and callbacks, subgraphs and function nodes, components, packs and extensions.
 - **Callbacks:** [callbacks](callbacks.md) lists the hooks and their priorities.
 - **Contributing:** [development](development.md) covers the setup and the `npm run check` gate.
+
+The editor includes [explained essentials examples and a starter workflow tool](examples.md) for exploring whole node sections and packs.

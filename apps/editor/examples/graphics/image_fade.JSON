@@ -1,1 +1,569 @@
-{"last_node_id":23,"last_link_id":39,"nodes":[{"id":10,"type":"graphics/frame","pos":{"0":1134,"1":-6,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":343.3656311035156,"1":286.9884948730469},"flags":{},"order":11,"mode":0,"inputs":[{"name":"","type":"image,canvas","link":12},{"name":"onTrigger","type":-1,"link":16,"optional":true,"nameLocked":true}],"outputs":[{"name":"onExecuted","type":-1,"links":null,"optional":true,"nameLocked":true}],"properties":{}},{"id":5,"type":"graphics/drawImage","pos":{"0":911,"1":164,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":169.60000610351562,"1":106},"flags":{},"order":10,"mode":3,"inputs":[{"name":"canvas","type":"canvas","link":14,"slot_index":0},{"name":"img","type":"image,canvas","link":6},{"name":"x","type":"number","link":null,"slot_index":2},{"name":"y","type":"number","link":null},{"name":"onTrigger","type":-1,"link":18,"optional":true,"nameLocked":true,"slot_index":4}],"outputs":[{"name":"onExecuted","type":-1,"links":[16],"optional":true,"nameLocked":true,"slot_index":0}],"properties":{"x":0,"y":0,"opacity":1}},{"id":11,"type":"widget/button","pos":{"0":663,"1":101,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":46},"flags":{},"order":0,"mode":0,"inputs":[],"outputs":[{"name":"","type":-1,"links":[],"slot_index":0},{"name":"","type":"boolean","links":null,"slot_index":1}],"properties":{"text":"click me","font_size":30,"message":""}},{"id":14,"type":"math/rand","pos":{"0":425,"1":311,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":80,"1":30},"flags":{},"order":1,"mode":0,"inputs":[],"outputs":[{"name":"value","type":"number","links":[],"label":"0.318","slot_index":0}],"properties":{"min":0,"max":1}},{"id":18,"type":"basic/time","pos":{"0":365,"1":388,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":46},"flags":{},"order":2,"mode":0,"inputs":[],"outputs":[{"name":"in ms","type":"number","links":[]},{"name":"in sec","type":"number","links":[33],"slot_index":1}],"properties":{}},{"id":6,"type":"graphics/canvas","pos":{"0":913,"1":-4,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":46},"flags":{},"order":4,"mode":0,"inputs":[{"name":"clear","type":-1,"link":null,"slot_index":0}],"outputs":[{"name":"","type":"canvas","links":[12,14],"slot_index":0},{"name":"onExecuted","type":-1,"links":[],"optional":true,"nameLocked":true}],"properties":{"width":512,"height":512,"autoclear":false}},{"id":3,"type":"graphics/imagefade","pos":{"0":661,"1":188,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":169.60000610351562,"1":86},"flags":{},"order":9,"mode":3,"inputs":[{"name":"img1","type":"image","link":3},{"name":"img2","type":"image","link":4,"slot_index":1},{"name":"fade","type":"number","link":39,"slot_index":2},{"name":"onTrigger","type":-1,"link":24,"optional":true,"nameLocked":true,"slot_index":3}],"outputs":[{"name":"","type":"image","links":[6],"slot_index":0},{"name":"onExecuted","type":-1,"links":[18],"optional":true,"nameLocked":true}],"properties":{"fade":0.02817258575129721,"width":512,"height":512}},{"id":1,"type":"graphics/image","pos":{"0":403,"1":128,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":26},"flags":{},"order":5,"mode":0,"inputs":[],"outputs":[{"name":"frame","type":"image","links":[3],"slot_index":0}],"properties":{"url":"http://127.0.0.1:8000/editor/imgs/load-progress-empty.png"},"boxcolor":"#9F9"},{"id":2,"type":"graphics/image","pos":{"0":407,"1":222,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":26},"flags":{},"order":6,"mode":0,"inputs":[],"outputs":[{"name":"frame","type":"image","links":[4],"slot_index":0}],"properties":{"url":"http://127.0.0.1:8000/editor/imgs/play-icons.png"},"boxcolor":"#9F9"},{"id":19,"type":"math/formula","pos":{"0":523,"1":381,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":[160,100],"flags":{},"order":7,"mode":0,"inputs":[{"name":"x","type":"number","link":33,"slot_index":0},{"name":"y","type":"number","link":null}],"outputs":[{"name":"","type":"number","links":[38],"label":"Math.sin(x)","slot_index":0}],"properties":{"x":75.52469999998809,"y":1,"formula":"Math.sin(x)"}},{"id":23,"type":"math/abs","pos":{"0":704,"1":385,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":76.021484375,"1":30},"flags":{},"order":8,"mode":0,"inputs":[{"name":"in","type":"number","link":38}],"outputs":[{"name":"out","type":"number","links":[39],"slot_index":0}],"properties":{}},{"id":13,"type":"events/timer","pos":{"0":406,"1":48,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":26},"flags":{},"order":3,"mode":0,"inputs":[],"outputs":[{"name":"on_tick","type":-1,"links":[24],"slot_index":0}],"properties":{"interval":100,"event":"tick"},"boxcolor":"#222"}],"links":[[3,1,0,3,0,"image"],[4,2,0,3,1,"image"],[6,3,0,5,1,"image,canvas"],[12,6,0,10,0,"image,canvas"],[14,6,0,5,0,"canvas"],[16,5,0,10,1,-1],[18,3,1,5,4,-1],[24,13,0,3,3,-1],[33,18,1,19,0,"number"],[38,19,0,23,0,"number"],[39,23,0,3,2,"number"]],"groups":[],"config":{},"extra":{},"version":"a0.11.0"}
+{
+ "id": "35c9da2a-b29c-44d2-957d-7cf2b23a6a49",
+ "revision": 3,
+ "last_node_id": 23,
+ "last_link_id": 39,
+ "nodes": [
+  {
+   "id": 10,
+   "type": "graphics/frame",
+   "pos": [
+    1134,
+    -6
+   ],
+   "size": [
+    343.3656311035156,
+    286.9884948730469
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "image,canvas",
+     "link": 12
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 16,
+     "optional": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": null,
+     "optional": true,
+     "nameLocked": true
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 5,
+   "type": "graphics/drawImage",
+   "pos": [
+    911,
+    164
+   ],
+   "size": [
+    171,
+    110
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "canvas",
+     "type": "canvas",
+     "link": 14,
+     "slot_index": 0
+    },
+    {
+     "name": "img",
+     "type": "image,canvas",
+     "link": 6
+    },
+    {
+     "name": "x",
+     "type": "number",
+     "link": null,
+     "slot_index": 2
+    },
+    {
+     "name": "y",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 18,
+     "optional": true,
+     "nameLocked": true,
+     "slot_index": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [
+      16
+     ],
+     "optional": true,
+     "nameLocked": true,
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "x": 0,
+    "y": 0,
+    "opacity": 1
+   }
+  },
+  {
+   "id": 14,
+   "type": "math/rand",
+   "pos": [
+    425,
+    311
+   ],
+   "size": [
+    87,
+    30
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [],
+     "label": "0.000",
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1
+   }
+  },
+  {
+   "id": 18,
+   "type": "basic/time",
+   "pos": [
+    365,
+    388
+   ],
+   "size": [
+    140,
+    50
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "in ms",
+     "type": "number",
+     "links": []
+    },
+    {
+     "name": "in sec",
+     "type": "number",
+     "links": [
+      33
+     ],
+     "slot_index": 1
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 6,
+   "type": "graphics/canvas",
+   "pos": [
+    913,
+    -4
+   ],
+   "size": [
+    146,
+    50
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clear",
+     "type": -1,
+     "link": null,
+     "slot_index": 0
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "canvas",
+     "links": [
+      12,
+      14
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [],
+     "optional": true,
+     "nameLocked": true
+    }
+   ],
+   "properties": {
+    "width": 512,
+    "height": 512,
+    "autoclear": false
+   }
+  },
+  {
+   "id": 3,
+   "type": "graphics/imagefade",
+   "pos": [
+    661,
+    188
+   ],
+   "size": [
+    171,
+    90
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "img1",
+     "type": "image",
+     "link": 3
+    },
+    {
+     "name": "img2",
+     "type": "image",
+     "link": 4,
+     "slot_index": 1
+    },
+    {
+     "name": "fade",
+     "type": "number",
+     "link": 39,
+     "slot_index": 2
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 24,
+     "optional": true,
+     "nameLocked": true,
+     "slot_index": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "image",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [
+      18
+     ],
+     "optional": true,
+     "nameLocked": true
+    }
+   ],
+   "properties": {
+    "fade": 0.02817258575129721,
+    "width": 512,
+    "height": 512
+   }
+  },
+  {
+   "id": 1,
+   "type": "graphics/image",
+   "pos": [
+    403,
+    128
+   ],
+   "size": [
+    140,
+    30
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "frame",
+     "type": "image",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "url": "http://127.0.0.1:8000/editor/imgs/load-progress-empty.png"
+   },
+   "boxcolor": "#9F9"
+  },
+  {
+   "id": 2,
+   "type": "graphics/image",
+   "pos": [
+    407,
+    222
+   ],
+   "size": [
+    140,
+    30
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "frame",
+     "type": "image",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "url": "http://127.0.0.1:8000/editor/imgs/play-icons.png"
+   },
+   "boxcolor": "#9F9"
+  },
+  {
+   "id": 19,
+   "type": "math/formula",
+   "pos": [
+    523,
+    381
+   ],
+   "size": [
+    166,
+    100
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "x",
+     "type": "number",
+     "link": 33,
+     "slot_index": 0
+    },
+    {
+     "name": "y",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      38
+     ],
+     "label": "Math.sin(x)",
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "x": 75.52469999998809,
+    "y": 1,
+    "formula": "Math.sin(x)"
+   }
+  },
+  {
+   "id": 23,
+   "type": "math/abs",
+   "pos": [
+    704,
+    385
+   ],
+   "size": [
+    83,
+    30
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "in",
+     "type": "number",
+     "link": 38
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "type": "number",
+     "links": [
+      39
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 13,
+   "type": "events/timer",
+   "pos": [
+    406,
+    48
+   ],
+   "size": [
+    140,
+    30
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "on_tick",
+     "type": -1,
+     "links": [
+      24
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "interval": 100,
+    "event": "tick"
+   },
+   "boxcolor": "#222"
+  }
+ ],
+ "links": [
+  [
+   3,
+   1,
+   0,
+   3,
+   0,
+   "image"
+  ],
+  [
+   4,
+   2,
+   0,
+   3,
+   1,
+   "image"
+  ],
+  [
+   6,
+   3,
+   0,
+   5,
+   1,
+   "image,canvas"
+  ],
+  [
+   12,
+   6,
+   0,
+   10,
+   0,
+   "image,canvas"
+  ],
+  [
+   14,
+   6,
+   0,
+   5,
+   0,
+   "canvas"
+  ],
+  [
+   16,
+   5,
+   0,
+   10,
+   1,
+   -1
+  ],
+  [
+   18,
+   3,
+   1,
+   5,
+   4,
+   -1
+  ],
+  [
+   24,
+   13,
+   0,
+   3,
+   3,
+   -1
+  ],
+  [
+   33,
+   18,
+   1,
+   19,
+   0,
+   "number"
+  ],
+  [
+   38,
+   19,
+   0,
+   23,
+   0,
+   "number"
+  ],
+  [
+   39,
+   23,
+   0,
+   3,
+   2,
+   "number"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Image fade: Time and Math sin drive the fade between two images; the Frame node shows the result. Press Play.",
+   "bounding": [
+    365,
+    -146,
+    680,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 23,
+  "lastLinkId": 39,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

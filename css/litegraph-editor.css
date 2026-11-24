@@ -180,3 +180,33 @@
 .litegraph-editor .codeflask textarea {
     opacity: 0;
 }
+
+/* Starter inventories share the editor shell; content is always rendered as text. */
+.lg-starter-panel { position:absolute; top:8px; right:8px; bottom:8px; z-index:20; width:min(440px, calc(100% - 32px)); box-sizing:border-box; padding:16px; display:flex; flex-direction:column; gap:10px; background:#20252d; color:#e0e5ed; border:1px solid #536174; border-radius:8px; box-shadow:0 8px 30px #0008; font:13px/1.45 system-ui,sans-serif; }
+.lg-starter-panel h2 { font-size:18px; margin:0; display:inline-block; margin-right:20px; }
+.lg-starter-panel p { margin:0; }
+.lg-starter-panel label { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.lg-starter-panel select { min-width:0; max-width:75%; background:#151a21; color:inherit; border:1px solid #536174; padding:5px; }
+.lg-starter-panel button { padding:6px 10px; background:#354b68; color:#fff; border:1px solid #60718a; border-radius:4px; cursor:pointer; margin-right:6px; }
+.lg-starter-panel button:disabled { opacity:.45; cursor:default; }
+.lg-starter-list { flex:1; min-height:60px; overflow:auto; }
+.lg-starter-list article { padding:8px 0; border-bottom:1px solid #3a424f; }
+.lg-starter-list small { display:block; color:#aabace; overflow-wrap:anywhere; }
+
+.lg-example-help { position:absolute; left:12px; bottom:12px; z-index:5; width:min(470px, calc(100% - 48px)); max-height:35%; overflow:auto; padding:10px 14px; box-sizing:border-box; background:#20252df2; color:#dbe5f2; border:1px solid #536174; border-radius:6px; font:13px/1.5 system-ui,sans-serif; }
+.lg-example-help[hidden] { display:none; }
+.lg-example-help summary { cursor:pointer; color:#aacfff; font-weight:600; }
+.lg-example-help p { margin:8px 0 0; }
+.lg-example-help ol { padding-left:22px; margin-bottom:4px; }
+
+/* Keep the expanded authoring tools reachable without overlapping playback controls. */
+.litegraph-editor .header { display:flex; align-items:center; gap:8px; }
+.litegraph-editor .header > .tools { position:static; display:flex; align-items:center; gap:4px; margin:0 4px; }
+.litegraph-editor .header > .tools-left { flex:1; min-width:0; overflow-x:auto; white-space:nowrap; }
+.litegraph-editor .header > .tools-right { flex:none; }
+.litegraph-editor .header .btn { font-size:14px; white-space:nowrap; padding:4px 8px; }
+.litegraph-editor .header .loadmeter { flex:none; }
+#LGEditorTopBarSelector { display:inline-flex; align-items:center; gap:4px; }
+#LGEditorTopBarSelector select { max-width:210px; font-size:14px; }
+.lg-starter-panel [role="status"] { max-height:80px; overflow:auto; overflow-wrap:anywhere; }
+.litegraph-editor .header > .tools-left > * { flex-shrink:0; }

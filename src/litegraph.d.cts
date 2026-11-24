@@ -24,6 +24,9 @@ export interface INodeSlot {
     name: string;
     type: SlotType;
     label?: string;
+    /** Optional display-only glyph or emoji; never interpreted as a URL or markup. */
+    label_icon?: string;
+    label_mode?: "text" | "icon+text" | "icon";
     dir?:
         | typeof LiteGraph.UP
         | typeof LiteGraph.RIGHT
@@ -425,6 +428,7 @@ export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     persistPlatformState(storage?: SettingsStorage): void;
     node_definitions: Record<string, Readonly<NodeDefinition>>;
     describeNodeType(type: string, base: Function): Readonly<NodeDefinition>;
+    getSlotLabel(node: LGraphNode, slot: INodeSlot, canvasMode?: "text" | "icon+text" | "icon"): string;
     getNodeDefinition(type: string): Readonly<NodeDefinition> | null;
     /** recomputes the stored metadata of a registered type */
     refreshNodeDefinition(type: string): void;
@@ -1696,6 +1700,7 @@ export declare class DragAndScale {
  * @param options { skip_rendering, autoresize }
  */
 export declare class LGraphCanvas {
+    slot_label_mode: "text" | "icon+text" | "icon";
     /** a short notice over the canvas (execution refusals); logs without a DOM */
     showExecutionNotice(message: string, ms?: number): HTMLElement | null;
     /** writes a widget value as a canvas edit does (value type coercion, onWidgetChanged, bound property, history, widget-changed, callback); true when it changed */
@@ -3029,10 +3034,13 @@ export declare class LayoutRegistry {
     list(): string[];
 }
 export interface NodePalettePreview { type: string; title: string; icon: unknown; color: string | null; bgcolor: string | null; inputs: { name: string; type: unknown }[]; outputs: { name: string; type: unknown }[] }
+export interface StarterEntry { type: string; title: string; category: string; pack: string; description: string; suggestedDescription: string; usage: string; reason: string }
 export declare class NodePalette {
     static RECENT_LIMIT: number;
     static PREVIEW_SKIP_CAPABILITIES: string[];
     constructor(host: object);
+    starterPreview(options?: { pack?: string; category?: string }): StarterEntry[];
+    insertStarter(canvas: LGraphCanvas, options?: { pack?: string; category?: string }): { nodes: LGraphNode[]; skipped: { type: string; reason: string }[]; entries: StarterEntry[] };
     definitions(options?: { includeDeprecated?: boolean }): Readonly<NodeDefinition>[];
     list(options?: { query?: string; pack?: string; category?: string; favoritesOnly?: boolean }): (NodeDefinition & { favorite: boolean })[];
     groups(options?: { query?: string; pack?: string; category?: string; favoritesOnly?: boolean }): { pack: { id: string; title: string; builtin: boolean }; categories: { category: string; items: (NodeDefinition & { favorite: boolean })[] }[] }[];

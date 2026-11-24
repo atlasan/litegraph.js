@@ -1,7 +1,7 @@
 
 import { LiteGraph } from "../../../src/litegraph.js";
 import { Editor } from "../../../src/litegraph-editor.js";
-import { fetchExampleManifest, exampleGroups, fillDemoSelect } from "./examples.js";
+import { fetchExampleManifest, exampleGroups, fillDemoSelect, renderExampleHelp } from "./examples.js";
 
 export var gl = null; // webgl_canvas
 
@@ -63,8 +63,14 @@ window.addEventListener("load", (event) => {
 	elem.innerHTML += "Demo <select><option>Empty</option></select> <button class='btn' id='save'>Save</button><button class='btn' id='load'>Load</button><button class='btn' id='download'>Download</button> | <button class='btn' id='webgl'>WebGL</button> <button class='btn' id='multiview'>Multiview</button>";
 	editor.tools.appendChild(elem);
 	dom_demo_select = elem.querySelector("select");
+    const exampleHelp = document.createElement("details");
+    exampleHelp.className = "lg-example-help";
+    exampleHelp.hidden = true;
+    exampleHelp.open = true;
+    editor.content.appendChild(exampleHelp);
 	dom_demo_select.addEventListener("change", function(e){
 		var option = this.options[this.selectedIndex];
+        renderExampleHelp(exampleHelp, option.exampleInfo);
 		var url = option.dataset["url"];
 		
 		if(url){

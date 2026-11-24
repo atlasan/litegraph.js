@@ -10,6 +10,7 @@ What will change, and its status. What exists today is in [docs/](../../docs/) a
 
 | Stage | Where | Content |
 |---|---|---|
+| 2026-11-23 | [Human feedback usability first pass](2026-11-23-hmd-usability-first-pass.md): pack/section starter generator, six explained examples, boolean/auto-watch improvements and glyph slot labels; future contracts deferred | done ([execution](../executions/2026-11-24-hmd-usability-first-pass.md)) |
 | Idea | [ideas/](../ideas/README.md) | Problem or opportunity, purpose, source |
 | Proposal | here, `Status: proposed` | Alternatives, tradeoffs, compatibility, a recommendation |
 | Plan | here, `Status: accepted` | Outcome, scope, steps with acceptance checks |

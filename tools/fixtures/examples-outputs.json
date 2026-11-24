@@ -1,79 +1,278 @@
 {
- "lg-docs": {
-  "2": 1,
-  "6": 3,
-  "10": "<undefined>",
-  "11": "<undefined>"
+ "widgets-watch": {
+  "1": 0.3,
+  "2": 0.6,
+  "3": 7,
+  "4": true,
+  "5": "B",
+  "6": "hello",
+  "7": 0.6
  },
- "node-execution-modes": {
+ "button-counter": {
   "1": "<undefined>",
-  "2": 1,
+  "2": "<undefined>",
+  "3": "<undefined>",
+  "4": 0,
+  "5": 10,
+  "6": "<undefined>",
+  "7": 0
+ },
+ "sequence-branch": {
+  "1": "<undefined>",
+  "2": "<undefined>",
   "3": "<undefined>",
   "4": "<undefined>",
-  "5": 5,
-  "6": 1,
-  "7": 6,
-  "8": "<undefined>",
-  "9": "<undefined>",
-  "10": 1,
-  "11": 1,
-  "13": "<undefined>",
-  "14": "<undefined>",
-  "15": "<undefined>",
-  "16": "<undefined>",
-  "17": "<undefined>",
-  "18": "<undefined>"
+  "5": true,
+  "6": "<undefined>",
+  "7": "<undefined>",
+  "8": "step 3 of the sequence"
  },
- "check-frame-value": {
-  "3": "<undefined>",
+ "for-loop": {
+  "1": "<undefined>",
+  "2": 1,
+  "3": 5,
   "4": "<undefined>",
   "5": "<undefined>",
   "6": "<undefined>",
-  "7": false,
-  "8": false,
-  "9": "<undefined>",
+  "7": 5,
+  "8": "<undefined>",
+  "9": 5,
   "10": "<undefined>",
-  "11": false
+  "11": 0,
+  "12": "<undefined>"
  },
  "while-console": {
   "1": "<undefined>",
   "2": false,
   "3": "<undefined>",
-  "4": "<undefined>",
-  "5": "<undefined>",
+  "4": 0,
+  "5": 5,
   "6": "<undefined>",
   "7": "<undefined>",
+  "8": 0
+ },
+ "strings": {
+  "1": "red,green",
+  "2": ",blue",
+  "3": "red,green,blue",
+  "4": "red,green,blue",
+  "5": "red,green,blue",
+  "6": "green",
+  "7": "red,green,blue",
+  "8": "RED,GREEN,BLUE",
+  "9": [
+   "red",
+   "green",
+   "blue"
+  ],
+  "10": true
+ },
+ "objects-json": {
+  "1": "<undefined>",
+  "2": "{\"name\": \"Ada\", \"year\": 1843, \"langs\": [\"math\", \"notes\"]}",
+  "3": "<undefined>",
+  "4": {
+   "langs": [
+    "math",
+    "notes"
+   ],
+   "name": "Ada",
+   "year": 1842
+  },
+  "5": {
+   "langs": [
+    "math",
+    "notes"
+   ],
+   "name": "Ada",
+   "year": 1842
+  },
+  "6": {
+   "langs": [
+    "math",
+    "notes"
+   ],
+   "name": "Ada",
+   "year": 1842
+  },
+  "7": 1842,
   "8": "<undefined>",
   "9": "<undefined>",
   "10": "<undefined>",
-  "11": false,
-  "12": "<undefined>",
-  "13": "<undefined>",
-  "14": "<undefined>",
-  "15": "<undefined>",
-  "16": "<undefined>",
-  "17": "<undefined>",
-  "18": "<undefined>",
-  "19": 0,
-  "20": "<undefined>",
-  "21": "<undefined>",
-  "22": 10,
-  "23": "<undefined>",
-  "24": "<undefined>",
-  "25": "<undefined>",
-  "26": "<undefined>",
-  "27": "<undefined>",
-  "28": 1,
-  "29": "<undefined>",
-  "30": "<undefined>"
+  "11": "Ada",
+  "12": [
+   "name",
+   "year",
+   "langs"
+  ],
+  "13": {
+   "langs": [
+    "math",
+    "notes"
+   ],
+   "name": "Ada",
+   "year": 1842
+  }
  },
- "random-console": {
-  "1": 0.161637,
-  "2": 0.7,
-  "5": false,
+ "check-frame-value": {
+  "1": "<undefined>",
+  "2": "<undefined>",
+  "3": true,
+  "4": "<undefined>",
+  "5": true,
   "6": "<undefined>",
   "7": "<undefined>",
-  "8": 0.161637
+  "8": "<undefined>",
+  "9": false
+ },
+ "random-console": {
+  "1": "<undefined>",
+  "2": 0.011309,
+  "3": 0.7,
+  "4": false,
+  "5": "<undefined>",
+  "6": "<undefined>",
+  "7": 0.011309,
+  "8": "<undefined>",
+  "9": 0.011309,
+  "10": "<undefined>"
+ },
+ "values-math": {
+  "1": 3,
+  "2": 4,
+  "3": 3,
+  "4": 4,
+  "5": 3,
+  "6": 4,
+  "7": 3,
+  "8": 7,
+  "9": 12,
+  "10": 81,
+  "11": 0.14112
+ },
+ "realtime-wave": {
+  "1": 0.352,
+  "2": 2,
+  "3": 0.704,
+  "4": 0.647272,
+  "5": 0.647272,
+  "6": 0.323636,
+  "7": 0.823636,
+  "8": 0.647272
+ },
+ "stepped-accumulate": {
+  "1": 2,
+  "2": 44,
+  "3": 1,
+  "4": 22,
+  "5": 22,
+  "6": 2
+ },
+ "reactive-form": {
+  "1": "<undefined>",
+  "2": "<undefined>",
+  "3": "M",
+  "4": "<undefined>",
+  "5": "<undefined>",
+  "6": false
+ },
+ "lg-docs": {
+  "2": 1,
+  "6": 2,
+  "10": "<undefined>",
+  "11": 1
+ },
+ "node-execution-modes": {
+  "1": "<undefined>",
+  "2": "<undefined>",
+  "3": 3,
+  "4": "<undefined>",
+  "5": "<undefined>",
+  "6": 5,
+  "7": 10,
+  "8": 5
+ },
+ "subgraph": {
+  "1": 0.352,
+  "2": 0,
+  "3": "<undefined>",
+  "4": "<undefined>",
+  "subgraph 2": {
+   "1": 0.352,
+   "2": 0,
+   "4": 0,
+   "5": "<undefined>"
+  }
+ },
+ "check-subgraph": {
+  "4": "<undefined>",
+  "6": "<undefined>",
+  "8": 26,
+  "12": "<undefined>",
+  "21": "<undefined>",
+  "22": 1,
+  "23": 0,
+  "24": true,
+  "25": "<undefined>",
+  "27": 1,
+  "28": 28,
+  "subgraph 1": {
+   "2": 2,
+   "5": "<undefined>",
+   "8": 1,
+   "14": 0,
+   "15": "<undefined>",
+   "16": 26,
+   "18": 1,
+   "19": 26,
+   "20": 28,
+   "21": "<undefined>",
+   "22": true,
+   "23": 26,
+   "24": true,
+   "25": "<undefined>",
+   "subgraph 18": {
+    "2": 1,
+    "3": 2,
+    "4": 26,
+    "5": 2,
+    "6": 28,
+    "8": "<undefined>",
+    "9": true,
+    "10": "<undefined>"
+   }
+  }
+ },
+ "function-replication": {
+  "34825fdb-ffb3-4c7f-b8a5-7828296b9eed": 22,
+  "c727379e-c711-411a-9a43-cbd9e0467feb": 44,
+  "21958b97-e07f-457a-adad-a7a7110dae23": -5,
+  "2be422a6-0411-44c2-a601-811cd0f3c0dc": "<undefined>",
+  "5492cc21-20ee-44f6-ac93-75f1752588fd": 1,
+  "f469d2e2-63ae-476b-88c3-b27dd8e48ebc": "<undefined>",
+  "abbeede1-811d-4967-b33a-ac34e4a651c9": "<undefined>",
+  "aa64eacd-1083-48cc-9823-675ef822eca7": -11,
+  "5737591f-5b9b-4e3d-946b-506209b162f8": "<undefined>",
+  "subgraph 657fe0cd-d758-429d-a34d-9ae160616cea": {
+   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": "<undefined>",
+   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": "<undefined>",
+   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": "<undefined>"
+  },
+  "subgraph 782e0cc5-df59-429a-bae5-b4f3f976af85": {
+   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": 2,
+   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": 44,
+   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": 22
+  },
+  "subgraph 59127728-5d9b-41e5-a759-1f0f71abf7a5": {
+   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": "<undefined>",
+   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": "<undefined>",
+   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": "<undefined>"
+  },
+  "subgraph f9975d6f-d3bc-485c-bc44-4680381abbde": {
+   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": "<undefined>",
+   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": "<undefined>",
+   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": "<undefined>"
+  }
  },
  "features": {
   "1": "<undefined>",
@@ -288,14 +487,14 @@
  "html-nodes": {
   "1": "<undefined>",
   "3": "bg-red",
-  "5": "<undefined>",
+  "5": "<HTMLDivElement>",
   "6": "my content",
   "7": "#main",
   "8": null,
-  "9": "<undefined>",
+  "9": "<HTMLDivElement>",
   "10": "<undefined>",
-  "11": "<undefined>",
-  "12": false,
+  "11": null,
+  "12": true,
   "14": "mycont",
   "16": "#",
   "17": "mycont",
@@ -307,130 +506,13 @@
   "24": null,
   "25": "<undefined>",
   "26": "bg-red",
-  "27": "<undefined>",
+  "27": null,
   "28": null,
   "29": ".bg-red",
-  "32": "<undefined>",
+  "32": null,
   "35": "blue",
   "36": null,
   "37": "<undefined>"
- },
- "subgraph": {
-  "1": 0.08,
-  "2": 0,
-  "3": "<undefined>",
-  "4": "<undefined>",
-  "subgraph 2": {
-   "1": 0.08,
-   "2": 0,
-   "4": 0,
-   "5": "<undefined>"
-  }
- },
- "check-subgraph": {
-  "4": "<undefined>",
-  "6": "<undefined>",
-  "8": 26,
-  "12": "<undefined>",
-  "21": "<undefined>",
-  "22": 0,
-  "23": 0,
-  "24": false,
-  "25": "<undefined>",
-  "27": 0,
-  "28": 26,
-  "subgraph 1": {
-   "2": 2,
-   "5": "<undefined>",
-   "8": 0,
-   "14": 0,
-   "15": "<undefined>",
-   "16": 26,
-   "18": 0,
-   "19": 26,
-   "20": 26,
-   "21": "<undefined>",
-   "22": false,
-   "23": 26,
-   "24": false,
-   "25": "<undefined>",
-   "subgraph 18": {
-    "2": 0,
-    "3": 0,
-    "4": 26,
-    "5": 2,
-    "6": 26,
-    "8": "<undefined>",
-    "9": false,
-    "10": "<undefined>"
-   }
-  }
- },
- "function-replication": {
-  "34825fdb-ffb3-4c7f-b8a5-7828296b9eed": 22,
-  "c727379e-c711-411a-9a43-cbd9e0467feb": 44,
-  "21958b97-e07f-457a-adad-a7a7110dae23": -5,
-  "2be422a6-0411-44c2-a601-811cd0f3c0dc": "<undefined>",
-  "5492cc21-20ee-44f6-ac93-75f1752588fd": 1,
-  "f469d2e2-63ae-476b-88c3-b27dd8e48ebc": "<undefined>",
-  "abbeede1-811d-4967-b33a-ac34e4a651c9": "<undefined>",
-  "aa64eacd-1083-48cc-9823-675ef822eca7": -11,
-  "5737591f-5b9b-4e3d-946b-506209b162f8": "<undefined>",
-  "subgraph 657fe0cd-d758-429d-a34d-9ae160616cea": {},
-  "subgraph 782e0cc5-df59-429a-bae5-b4f3f976af85": {
-   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": 2,
-   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": 44,
-   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": 22
-  },
-  "subgraph 59127728-5d9b-41e5-a759-1f0f71abf7a5": {
-   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": "<undefined>",
-   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": "<undefined>",
-   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": "<undefined>"
-  },
-  "subgraph f9975d6f-d3bc-485c-bc44-4680381abbde": {
-   "edbd25ff-5c61-4e5f-9cad-ecff49dc34e0": "<undefined>",
-   "cf7367b9-cee4-4f57-b7c2-61ac94c8601a": "<undefined>",
-   "5dc3d5cd-1c8f-4469-9b36-07b91394aa43": "<undefined>"
-  }
- },
- "midi-generation": {
-  "5": "<undefined>",
-  "7": "<undefined>",
-  "10": "<undefined>",
-  "11": "<undefined>",
-  "12": "<undefined>",
-  "14": 0.028958,
-  "15": 0,
-  "16": 0,
-  "17": 0.21,
-  "18": 0.450413,
-  "19": "<undefined>",
-  "21": "<undefined>",
-  "33": "<undefined>",
-  "34": "<undefined>",
-  "35": "<undefined>",
-  "36": 0.450413,
-  "38": 59,
-  "39": "<undefined>",
-  "42": 47,
-  "43": "<undefined>",
-  "44": "<undefined>",
-  "45": 52,
-  "46": "A,B,C,D,E,F,G",
-  "47": "A,B,C,D,E,F,G",
-  "48": "A,B,C,D,E,F,G",
-  "49": "A,B,C,D,E,F,G",
-  "50": "A,B,C,B",
-  "52": "A,B,C,D,E,F,G",
-  "53": "<undefined>",
-  "54": "<undefined>",
-  "55": "A,B,C,D,E,F,G",
-  "57": "<undefined>",
-  "58": 0.209142,
-  "59": "D,E,F,G,F,E",
-  "60": 0.038135,
-  "62": "<undefined>",
-  "63": "<undefined>"
  },
  "image-fade": {
   "3": null,
@@ -441,8 +523,38 @@
   "16": "<undefined>",
   "18": "<undefined>",
   "24": "<undefined>",
-  "33": 0.08,
+  "33": 0.352,
   "38": "<undefined>",
   "39": "<undefined>"
+ },
+ "essentials-boolean-toggle": {
+  "1": "<undefined>",
+  "2": false
+ },
+ "essentials-structured-watch": {
+  "1": {
+   "enabled": true,
+   "name": "Sample",
+   "readings": [
+    3,
+    5,
+    8
+   ]
+  }
+ },
+ "essentials-text-watch": {
+  "1": "First line\nSecond line\nThird line"
+ },
+ "essentials-widget-input": {
+  "1": 7,
+  "2": 7
+ },
+ "essentials-bypass": {
+  "1": -3,
+  "2": -3
+ },
+ "essentials-slot-icons": {
+  "1": 42,
+  "2": 42
  }
 }

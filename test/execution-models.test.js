@@ -586,6 +586,22 @@ describe('graph info, reporting and runner parity (steps 15-17)', () => {
         }
     });
 
+    test('modes applied inside a subgraph instance are saved in its definition', () => {
+        const first = graph('legacy');
+        const sub = first.convertToSubgraph([make(first, 'math/operation')]);
+        // a loaded document: the definition is already in the registry, as with the editor examples
+        const g = new LGraph();
+        g.configure(JSON.parse(JSON.stringify(first.serialize())));
+        g.setExecutionModel('ancestors');
+        expect(g.applyExecutionModelModes()).toBe(1);
+        const data = JSON.parse(JSON.stringify(g.serialize()));
+        const reloaded = new LGraph();
+        reloaded.configure(data);
+        const inner = reloaded.getNodeById(sub.id).subgraph._nodes.find((n) => n.type === 'math/operation');
+        expect(inner.mode).toBe(LiteGraph.ON_REQUEST);
+        expect(reloaded.applyExecutionModelModes()).toBe(0);
+    });
+
     test('nodes run by actions or pulls report running then done, once per change', () => {
         const g = graph('ancestors');
         const messages = [];

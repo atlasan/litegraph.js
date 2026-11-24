@@ -160,7 +160,7 @@ class LGAudio {
 
         // only process the outputs events
         if (connection != LiteGraph.OUTPUT) {
-            console.warn("LGAudio","onConnectionsChange","skip cheking INPUT");
+            console.debug("LGAudio","onConnectionsChange","skip checking INPUT"); // inputs are handled by the output side
             return;
         }
 

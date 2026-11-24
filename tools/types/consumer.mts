@@ -88,3 +88,9 @@ void nodeSingleton;
     LiteGraph.setDispatchTap(previous);
 }
 
+
+// HMD first pass: the public starter and glyph-slot contracts compile for consumers.
+const starterEntries = LiteGraph.palette.starterPreview({ pack: 'litegraph/basic', category: 'basic' });
+const starterReason: string | undefined = starterEntries[0]?.reason;
+const glyphLabel: string = LiteGraph.getSlotLabel(node, { name: 'enabled', type: 'boolean', label_icon: '◉', label_mode: 'icon' });
+void starterReason; void glyphLabel;

@@ -4653,7 +4653,7 @@ export class LGraphCanvas {
 
                     // render name (a widget input is labelled by its widget)
                     if (render_text && !is_widget_input && !is_exec) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.UP) {
@@ -4759,7 +4759,7 @@ export class LGraphCanvas {
 
                     // render output name
                     if (render_text && !is_exec) {
-                        let text = slot.label != null ? slot.label : slot.name;
+                        let text = LiteGraph.getSlotLabel(node, slot, this.slot_label_mode);
                         if (text) {
                             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
                             if (horizontal || slot.dir == LiteGraph.DOWN) {
@@ -5870,6 +5870,8 @@ export class LGraphCanvas {
         const settings = LiteGraph.settings;
         return !settings?.has?.("LiteGraph.Canvas.ExecutionOverlays") || settings.get("LiteGraph.Canvas.ExecutionOverlays") !== false;
     }
+
+    slot_label_mode = "icon+text";
 
     /** The icon of a node: `node.icon`, else the definition's `icon` (a short text glyph or an image). */
     getNodeIcon(node) {
@@ -9798,6 +9800,10 @@ export class LGraphCanvas {
                 }
             }
             var slotOb = slot.input || slot.output;
+            if (slotOb.label_icon) {
+                const escape = (value) => String(value).replace(/[&<>]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[char]);
+                menu_info.unshift({ content: `${escape(slotOb.name)} · ${escape(slotOb.type || "*")}`, disabled: true }, null);
+            }
             options.title = slotOb.type || "*";
             if (slotOb.type == LiteGraph.ACTION) {
                 options.title = "Action";
@@ -9997,6 +10003,7 @@ export class LGraphCanvas {
         clear_background: { category: "Rendering", label: "Clear each frame", default: true, tooltip: "Clear the canvas before drawing each frame. Turn off only when the host draws the background itself." },
         always_render_background: { category: "Rendering", label: "Redraw background every frame", default: false, tooltip: "Redraw the grid on every frame, not only when the view changed." },
         round_radius: { category: "Rendering", label: "Corner radius", type: "int", min: 0, max: 24, unit: "px", default: 8, always: true, tooltip: "Radius of the rounded corners of nodes and groups." },
+        slot_label_mode: { category: "Nodes", label: "Slot labels", type: "enum", values: ["text", "icon+text", "icon"], default: "icon+text", always: true, tooltip: "Show optional slot glyphs with the label or alone. Right-click the socket for its original name and type." },
         links_render_mode: { category: "Links", label: "Link shape", type: "enum", store: "index", values: () => LiteGraph.LINK_RENDER_MODES, default: 2, always: true, tooltip: "How links are drawn: straight (right angles), linear or spline (curves).", examples: ["Spline: smooth curves", "Straight: right angles, tidy layouts"] },
         connections_width: { category: "Links", label: "Link width", type: "number", min: 1, max: 12, step: 0.5, unit: "px", default: 3, always: true, tooltip: "Thickness of links." },
         render_connections_border: { category: "Links", label: "Link outline", default: true, tooltip: "Draw a dark outline around links so they stand out on any background." },
