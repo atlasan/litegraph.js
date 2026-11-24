@@ -2612,6 +2612,9 @@ export class LGraph {
         if (!changes.length) return 0;
         root.transact("executionModelModes", () => {
             for (const { node, mode } of changes) node.mode = mode;
+            // a changed node inside a subgraph instance edits that instance: its definition is
+            // synced from it when the document is saved (registerSubgraphDefinitions)
+            for (const inner of new Set(changes.map(({ node }) => node.graph).filter((g) => g && g !== root))) inner.revision++;
             root.onGraphChanged({ action: "executionModelModes" });
         });
         return changes.length;

@@ -275,16 +275,20 @@ class JSONParse {
     }
 
     parse() {
-        if (!this._str) return;
-
+        // read the text now: the action can come before this node ever executed (graph stopped)
+        const str = this.getInputData(1) ?? this._str;
+        if (str == null || str === "") return;
         try {
-            this._str = this.getInputData(1);
-            this._obj = JSON.parse(this._str);
+            this._str = str;
+            this._obj = JSON.parse(str);
             this.boxcolor = "#AEA";
-            this.triggerSlot(0);
         } catch (err) {
             this.boxcolor = "red";
+            return;
         }
+        // the object output is set before "done" fires, so the nodes it triggers read the new object
+        this.setOutputData(1, this._obj);
+        this.triggerSlot(0);
     }
 
     onExecute() {
