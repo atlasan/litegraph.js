@@ -11,15 +11,15 @@ The editor examples were audited in the browser ([audit](../audits/2026-11-23-ed
 
 ## Changes
 
-- `dae2397` `fix:` a removed WebSocket node no longer reconnects; the button and audio debug warnings are gone (`cd16fb4` `build:`).
-- `fix:` commit after it:
+- `dae2397` `fix:` a removed WebSocket node no longer reconnects; the button and audio debug warnings are gone (`cd16fb4` `build:`); `a3e33dc` `build:` for the second fix.
+- `f8e69be` `fix:`:
   - `applyExecutionModelModes()` marks a changed subgraph instance as edited, so the definition saved with the document carries the new modes (before, they were lost on save);
   - `basic/jsonparse` parses on its action before the graph ran and sets its object output before `done`;
   - `widget/toggle` and `widget/combo` set their value output before their change event (needed under the `event` model);
   - `widget/number` shows the decimals of its step after loading; `widget/hslider` outputs its value before it was drawn;
   - group titles wrap inside the group and clear of the header toggle;
   - tests: `test/network-websocket.test.js`, `test/interface-nodes.test.js`, `test/base-nodes.test.js`, one case each in `test/execution-models.test.js` and `test/canvas-lifecycle.test.js`.
-- `feat:` commit: the examples, the manifest, the stricter test and its snapshot, these records.
+- `8e09e1b` `feat:`: the examples, the manifest, the stricter test and its snapshot, these records.
 
 **Examples:**
 
@@ -39,7 +39,7 @@ The editor examples were audited in the browser ([audit](../audits/2026-11-23-ed
 
 | Check | Result |
 |---|---|
-| `npm run check` | see the merge note below |
+| `npm run check` (before `f8e69be`) | exit 0: 989 Jest (57 suites), 145 integration, 12 builds, types and package checks |
 | `node --test tools/tests/examples.test.mjs` | 33 pass: 30 listed examples, manifest, menu, flow categories |
 | Browser, `editor_build.html`, each new example | Built in the page; Play, Step and real clicks: Button counter (+1 ×3, −1 → Watch 20), Reactive form (combo arrow, toggle → Watches L and true without Play), Stepped accumulate (Step ×3 → 6, 3, 3), FOR (Run → 5 iterations, index 5), WHILE (Run → 5 rounds), Objects (Parse → Ada, keys, new year), Node execution modes (all six boxes as their notes say) |
 | Browser, Demo menu after saving | "FOR loop": Run clicked, Index and Rounds show 5; "Timer, random and branch": Play 6 s, last hit 0.798 > threshold 0.7, threshold shown as 0.7 |

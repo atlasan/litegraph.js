@@ -55,9 +55,9 @@ Columns: nodes (inner nodes included), nodes smaller than `computeSize`, overlap
 
 | # | Severity | Finding | Evidence (`path:line`) | Since |
 |---|---|---|---|---|
-| 1 | medium | A removed `network/websocket` node reconnects forever: `disconnectSocket()` sets `_ws = null` before the `close` event, and the `onclose` handler reconnects when `!this._ws`. Loading another example leaves a socket retrying every 3 s. | `src/nodes/network.js:220-231`, `:233-241` | open |
-| 2 | low | Debug output on every button click: `console.warn("DBG","WidgetButton","onMouseDown",this)`. | `src/nodes/interface.js:64` | open |
-| 3 | low | Debug warning on loading audio graphs: "LGAudio onConnectionsChange skip cheking INPUT", once per connection. | `src/nodes/audio.js:163` | open |
+| 1 | medium | A removed `network/websocket` node reconnects forever: `disconnectSocket()` sets `_ws = null` before the `close` event, and the `onclose` handler reconnects when `!this._ws`. Loading another example leaves a socket retrying every 3 s. | `src/nodes/network.js:220-231`, `:233-241` | Fixed in `dae2397` |
+| 2 | low | Debug output on every button click: `console.warn("DBG","WidgetButton","onMouseDown",this)`. | `src/nodes/interface.js:64` | Fixed in `dae2397` |
+| 3 | low | Debug warning on loading audio graphs: "LGAudio onConnectionsChange skip cheking INPUT", once per connection. | `src/nodes/audio.js:163` | Fixed in `dae2397` |
 
 ## Verdict
 
