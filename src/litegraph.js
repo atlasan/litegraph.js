@@ -806,7 +806,11 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Node.IdBadge", name: "Show node id badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.SourceBadge", name: "Show node source badges", default: false });
             this.settings.define({ id: "LiteGraph.Node.LifecycleBadge", name: "Show deprecated and experimental badges", default: true });
-            this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true });
+            this.settings.define({ id: "LiteGraph.Group.HeaderToggle", name: "Show the mute toggle in group headers", default: true, tooltip: "A dot at the right end of the title (a ring when the group's nodes are muted); a click mutes or unmutes them." });
+            this.settings.define({ id: "LiteGraph.Group.BodyDrag", name: "Dragging a group's empty body", type: "combo", options: ["pan", "move"], default: "pan", tooltip: "pan: moves the view; the title bar or Alt+drag moves the group. move: moves the group (legacy LiteGraph)." });
+            this.settings.define({ id: "LiteGraph.Group.TitleScale", name: "Keep group titles readable at every zoom", default: true, tooltip: "The title's on-screen size stays between the min and max px below. Off: the title scales with the canvas (legacy)." });
+            this.settings.define({ id: "LiteGraph.Group.TitleMinPx", name: "Smallest group title on screen (px)", type: "number", default: 12 });
+            this.settings.define({ id: "LiteGraph.Group.TitleMaxPx", name: "Largest group title on screen (px)", type: "number", default: 48 });
             this.settings.define({ id: "LiteGraph.Subgraph.PasteLinked", name: "Pasted or duplicated subgraphs share their definition", default: true });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventDepth", name: "Deepest nesting of actions and executions in one event chain", default: 256 });
             this.settings.define({ id: "LiteGraph.Execution.MaxEventPasses", name: "Passes that deliver queued inner events at a subgraph or function boundary", default: 64 });

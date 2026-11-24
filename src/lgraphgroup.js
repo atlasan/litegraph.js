@@ -4,7 +4,10 @@ import { installHooks } from "./callbackhandler.js";
 export class LGraphGroup {
 
     static opts = {
-        inclusion_distance: 36 // distance to border to consider included inside the group 
+        inclusion_distance: 36, // distance to border to consider included inside the group
+        toggle_size: 10, // header toggle size in graph units (as the node pin)
+        toggle_max_px: 14, // largest on-screen header toggle
+        toggle_min_px: 6, // smaller on screen than this, the toggle is hidden
     }
 
     /**
