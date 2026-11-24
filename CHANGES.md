@@ -42,6 +42,7 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
 * **Graph status chip** (`graph_status` extension, setting `LiteGraph.Canvas.GraphStatus`): the execution model and run state on the canvas; a click switches the model or starts and stops the graph.
 * **Editor:** the `modes` pin style and the graph status chip are on by default.
 * **Mode migration:** `LGraph.migrateModes`, the setting `LiteGraph.Compat.UnmarkedMode4`, and `tools/migrate-modes.mjs` (`--check`, `--unmarked`). The examples and test fixtures are migrated.
+* **Group settings:** `LiteGraph.Group.BodyDrag` (`pan` / `move`), `LiteGraph.Group.TitleScale`, `TitleMinPx`, `TitleMaxPx`; `LGraphGroup.opts.toggle_size`, `toggle_max_px`, `toggle_min_px`; `LGraphCanvas.getGroupTitleFontSize`, `getGroupTitleHeight`, `isOverGroupTitle`, `groupPressMoves`. See the guide's Groups section.
 * **The editor server serves `/docs`** (the generated API and the reference pages) and resolves its paths from the repository root, so it starts from any working directory.
 
 ## Changed
@@ -50,6 +51,10 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
   * mode 4 imports and exports as native BYPASS instead of NEVER plus `extra.comfy_bypassed`;
   * ON_REQUEST exports as ALWAYS with `litegraph_mode: 5`;
   * an older `litegraph_mode: 4` marker still reads as ON_REQUEST.
+* **Groups:**
+  * a drag on a group's empty body pans the view; the title bar or Alt+drag moves the group (`LiteGraph.Group.BodyDrag = "move"` for the old behaviour);
+  * group titles keep a readable size at every zoom, 12 to 48 px on screen (`LiteGraph.Group.TitleScale` off for the old behaviour);
+  * the header toggle looks like the node pin, is at most 14 px on screen, hides when tiny, and the title no longer runs under it.
 * **Bypassed nodes get no `onStart`**, like NEVER nodes. **`checkExecution` skips them.**
 * **`LiteGraph.do_add_triggers_slots` is unassigned by default**, so the document's model decides; the editor no longer sets it to false.
   * A type that refuses ON_TRIGGER still gets `onTrigger` when an event link is dropped on it; before, the drop failed silently.
@@ -57,6 +62,7 @@ Plans: `agents/plans/2026-11-23-launcher-and-bun.md`, `agents/plans/2026-11-23-n
 
 ## Fixed
 
+* **Space-bar panning works again.** The key binding lookup threw on the space key (`KeybindingRegistry.fromEvent` gave `" "`, which `normalize` refused), so the canvas never saw it. Space plus a press now pans as a pointer gesture, over nodes and groups too; space plus a move pans as before, and losing focus ends it (state audit N-4).
 * **The node menu no longer throws** when exec slots are on and a `getMenuOptions` hook returns its own short list (it set `options[1].disabled`).
 * **Node types declared `runtime = "node"` (or `executionEnvironment = "node"`) also run on Bun**, which implements the Node.js APIs they use; before, they were disabled with "cannot run in bun". A `"bun"` declaration still means Bun only. `LGraphNode.runtimeMatches(declared, runtime)` holds the rule.
 

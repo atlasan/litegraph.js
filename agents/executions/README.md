@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-24 | [Group UX](2026-11-24-groups-ux.md): group body drag pans (title bar or Alt moves, `LiteGraph.Group.BodyDrag`), title size by zoom (`LiteGraph.Group.TitleScale`, 12–48 px), header toggle capped and clear of the title, space panning fixed (the space key threw in the keybinding lookup) and moved onto the gesture path (N-4); branch `LG/dev_HMD_groups` | final |
 | 2026-11-23 | [Node pin, modes and exec slots](2026-11-23-node-pin-modes-exec-slots.md): mode 4 = BYPASS and ON_REQUEST = 5 with a migration and pass-through; exec slots on the node edges, created under `ancestors`; pin styles by mode and state, pin quick menu, graph status chip; branches `LG/dev_HMD_modes`, `LG/dev_HMD_exec_slots`, `LG/dev_HMD_node_pin` | final; track D (debugger) separate |
 | 2026-11-23 | [Launcher and Bun commands](2026-11-23-launcher-and-bun.md): `lg.sh` / `lg.bat` and `tools/lg/` on Bun or Node (start, stop, restart, status, open, logs, info, menu), apps on Bun, `"node"` node types run on Bun, editor serves `/docs`; tests on Node and Bun | final; Windows and macOS not run |
 | 2026-11-23 | [State audit fixes before the release](2026-11-23-audit-fixes.md): D-5 `triggerInput` through the engine, D-6 `executionModel` setter, D-8 `o:`/`i:` probe, library badges, `npm run docs` exits 0; D-7 not reproducible | final |
