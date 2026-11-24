@@ -1,7 +1,9 @@
-// Examples library (FLW-22): every non-wip example of apps/editor/examples/index.json loads without
-// missing nodes, checks clean under "ancestors" after "Apply the model's node modes", runs a few
-// steps without errors or dropped events, and its link data matches a stored snapshot. Examples that
-// `need` the network or audio files load and check without running.
+// Examples library (FLW-22): every non-wip example of apps/editor/examples/index.json
+// - states its execution model (`config.execution`, a registered model) and has that model's node modes applied;
+// - loads without missing nodes and checks clean (`checkExecution()`) under its own model;
+// - has no node smaller than its `computeSize()`, and at least one text group (a note or a caption);
+// - runs a few steps without errors or dropped events, and its link data matches a stored snapshot.
+// Examples that `need` the network, audio or MIDI load and check without running.
 // Runs against src/ (like the editor pages) with the editor's demo nodes (apps/editor/js/demos.js).
 // Update the snapshot on purpose with: UPDATE_EXAMPLE_SNAPSHOTS=1 npm run test:integration
 import test from 'node:test';
@@ -15,7 +17,7 @@ import { exampleGroups } from '../../apps/editor/js/examples.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const EXAMPLES = path.join(ROOT, 'apps/editor/examples');
 const SNAPSHOT = path.join(ROOT, 'tools/fixtures/examples-outputs.json');
-const STEPS = 5;
+const STEPS = 20;
 
 for (const level of ['log', 'info', 'debug', 'warn', 'error']) console[level] = () => {};
 new Function(fs.readFileSync(path.join(ROOT, 'vendor/gl-matrix-min.js'), 'utf8')).call(globalThis);
@@ -69,10 +71,17 @@ test('the manifest lists every example file once, with the fields the menu and t
     const ids = new Set();
     for (const ex of manifest.examples) {
         for (const field of ['id', 'file', 'title', 'description', 'category', 'level']) assert.equal(typeof ex[field], 'string', `${ex.id}: ${field}`);
+        assert.ok(['basic', 'intermediate', 'advanced'].includes(ex.level), `${ex.id}: level ${ex.level}`);
         for (const field of ['tags', 'packs']) assert.ok(Array.isArray(ex[field]), `${ex.id}: ${field}`);
         assert.ok(categories.has(ex.category), `${ex.id}: category ${ex.category}`);
         assert.ok(!ids.has(ex.id), `duplicate id ${ex.id}`); ids.add(ex.id);
         if (ex.category !== 'wip') assert.ok(ex.profile && ex.flow, `${ex.id}: profile and flow`);
+    }
+});
+
+test('every flow category and the basics have at least one listed example', () => {
+    for (const id of ['basics', 'flows/blueprint', 'flows/dataflow', 'flows/realtime', 'flows/stepped', 'flows/reactive', 'flows/mixed', 'subgraphs', 'ui']) {
+        assert.ok(runnable.some((ex) => ex.category === id), `no example in ${id}`);
     }
 });
 
@@ -102,16 +111,33 @@ for (const ex of runnable) {
                 const problems = [];
                 graph.events.on('event-dropped', (e) => problems.push(`dropped ${e.detail?.reason ?? e.reason}: ${e.detail?.message ?? e.message}`));
                 graph.events.on('node-error', (e) => problems.push(`error: ${(e.detail ?? e).error?.message ?? 'node error'}`));
+                const model = doc.config?.execution;
+                assert.ok(model && LiteGraph.ExecutionEngine.getModel(model), `explicit execution model (config.execution: ${model})`);
                 assert.equal(graph.configure(doc), false, 'configure');
                 assert.deepEqual(graph.getMissingNodes().map((m) => m.type), [], 'missing nodes');
-                graph.setExecutionModel('ancestors');
-                graph.applyExecutionModelModes();
-                assert.deepEqual(graph.checkExecution().issues.map((i) => `${i.node.type} ${i.code}`), [], 'checkExecution after applying modes');
-                // loads and checks only: running would open connections (network) or fetch sound files (audio)
-                if (ex.needs?.some((need) => need === 'network' || need === 'audio')) return;
+                assert.equal(graph.executionModel, model);
+                assert.deepEqual(graph.checkExecution().issues.map((i) => `${i.path ?? i.node.id} ${i.node.type} ${i.code}`), [], 'checkExecution under its own model');
+                assert.equal(graph.applyExecutionModelModes(), 0, "the model's node modes are applied");
+                const small = [];
+                (function sizes(g, prefix) {
+                    for (const node of g._nodes) {
+                        if (!node.flags?.collapsed) {
+                            const min = node.computeSize();
+                            if (node.size[0] + 0.5 < min[0] || node.size[1] + 0.5 < min[1]) small.push(`${prefix}${node.id} ${node.type} ${[...node.size]} < ${[...min].map(Math.ceil)}`);
+                        }
+                        if (node.subgraph && node.subgraph !== g) sizes(node.subgraph, `${prefix}${node.id}/`);
+                    }
+                })(graph, '');
+                assert.deepEqual(small, [], 'nodes smaller than computeSize()');
+                assert.ok(graph._groups.some((g) => String(g.title ?? '').trim().length > 0), 'a text group explains the example');
+                // loads and checks only: running would open connections (network), fetch sound files (audio) or ask for MIDI
+                if (ex.needs?.some((need) => need === 'network' || need === 'audio' || need === 'midi')) return;
                 graph.catch_errors = true;
                 graph.starttime = graph.last_update_time = clock;
                 for (let i = 0; i < STEPS; i++) { clock += 16; graph.runStep(1); }
+                // then press every Button once (its event output), as a user would, and step again
+                for (const button of graph._nodes.filter((n) => n.type === 'widget/button')) if (button.outputs?.[0]?.links?.length) button.triggerSlot(0);
+                for (let i = 0; i < 2; i++) { clock += 16; graph.runStep(1); }
                 assert.deepEqual(problems.filter((p) => !p.startsWith('dropped no-handler') && !p.startsWith('dropped mode')), [], 'errors and dropped events');
                 snapshots[ex.id] = linkData(graph);
                 if (!process.env.UPDATE_EXAMPLE_SNAPSHOTS) assert.deepEqual(snapshots[ex.id], stored[ex.id], 'link data snapshot (UPDATE_EXAMPLE_SNAPSHOTS=1 to rewrite)');

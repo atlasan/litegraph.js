@@ -1,0 +1,351 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 215,
+ "last_node_id": 8,
+ "last_link_id": 6,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/number",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    109,
+    60
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      1
+     ]
+    }
+   ],
+   "title": "Increment",
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 2,
+    "step": 1
+   }
+  },
+  {
+   "id": 2,
+   "type": "math/accumulate",
+   "pos": [
+    250,
+    170
+   ],
+   "size": [
+    99.22000122070312,
+    30
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": "number",
+     "link": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "total",
+     "type": "number",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "title": "Total",
+   "properties": {
+    "increment": 1,
+    "value": 0
+   }
+  },
+  {
+   "id": 3,
+   "type": "basic/const",
+   "pos": [
+    40,
+    290
+   ],
+   "size": [
+    180,
+    32
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "One",
+   "properties": {
+    "value": 1,
+    "precision": 12,
+    "step": 1,
+    "min": 0,
+    "max": 9007199254740991
+   }
+  },
+  {
+   "id": 4,
+   "type": "math/accumulate",
+   "pos": [
+    250,
+    290
+   ],
+   "size": [
+    99.22000122070312,
+    30
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": "number",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "total",
+     "type": "number",
+     "links": [
+      4,
+      5
+     ]
+    }
+   ],
+   "title": "Steps",
+   "properties": {
+    "increment": 1,
+    "value": 0
+   }
+  },
+  {
+   "id": 5,
+   "type": "math/operation",
+   "pos": [
+    470,
+    290
+   ],
+   "size": [
+    85,
+    50
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number,array,object",
+     "link": 5
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "title": "Steps % 4",
+   "properties": {
+    "A": 1,
+    "B": 4,
+    "OP": "%"
+   }
+  },
+  {
+   "id": 6,
+   "type": "basic/watch",
+   "pos": [
+    690,
+    170
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 2,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Total",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 7,
+   "type": "basic/watch",
+   "pos": [
+    690,
+    290
+   ],
+   "size": [
+    85,
+    30
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 4,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Steps",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 8,
+   "type": "basic/watch",
+   "pos": [
+    690,
+    400
+   ],
+   "size": [
+    110,
+    30
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 6,
+     "label": ""
+    }
+   ],
+   "outputs": [],
+   "title": "Steps % 4",
+   "properties": {
+    "display": "value"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "number"
+  ],
+  [
+   2,
+   2,
+   0,
+   6,
+   0,
+   "number"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "number"
+  ],
+  [
+   4,
+   4,
+   0,
+   7,
+   0,
+   "number"
+  ],
+  [
+   5,
+   4,
+   0,
+   5,
+   0,
+   "number,array,object"
+  ],
+  [
+   6,
+   5,
+   0,
+   8,
+   0,
+   "number"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Stepped: one frame per Step. Under the \"strict\" model every node runs at most once per frame and actions wait for the next step, so the result after N steps is always the same. Press Step in the toolbar: Accumulate adds the increment once per step, and the Watches show the total and the step count. Play runs the steps continuously.",
+   "bounding": [
+    40,
+    20,
+    740,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "strict"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 8,
+  "lastLinkId": 6,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

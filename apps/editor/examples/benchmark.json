@@ -1,1 +1,2478 @@
-{"last_node_id":60,"last_link_id":50,"nodes":[{"id":9,"type":"features/slots","pos":[846,473],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":6}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":8,"type":"features/slots","pos":[671,475],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":10}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":18,"type":"features/slots","pos":[751.5619834710739,854.9586776859505],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":16}],"outputs":[{"name":"A","type":"number","links":[17,18]},{"name":"B","type":"number","links":[]}],"properties":{}},{"id":28,"type":"features/slots","pos":[1386.361032999997,389.62936599999995],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":23}],"outputs":[{"name":"A","type":"number","links":[24,25]},{"name":"B","type":"number","links":[]}],"properties":{}},{"id":35,"type":"features/shape","pos":[1555.6387189504107,741.7260602148749],"size":{"0":140,"1":39},"flags":{},"mode":0,"inputs":[{"name":"","type":"number","link":26}],"outputs":[{"name":"","type":"number","links":null}],"properties":{}},{"id":38,"type":"features/slots","pos":[1461.838718950411,987.9260602148759],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":28}],"outputs":[{"name":"A","type":"number","links":[29,30]},{"name":"B","type":"number","links":[]}],"properties":{}},{"id":39,"type":"features/slots","pos":[1376.8387189504106,1088.9260602148756],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":29}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":40,"type":"features/slots","pos":[1551.838718950411,1086.9260602148754],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":30}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":45,"type":"features/slots","pos":[588.5619834710739,1055.9586776859496],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":33}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":46,"type":"features/slots","pos":[721.5619834710739,1058.9586776859496],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":34}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":19,"type":"features/slots","pos":[666.5619834710739,955.9586776859505],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":17}],"outputs":[{"name":"A","type":"number","links":[33]},{"name":"B","type":"number","links":[34]}],"properties":{}},{"id":47,"type":"features/slots","pos":[846.5619834710739,1060.9586776859496],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":35}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":48,"type":"features/slots","pos":[976.5619834710739,1059.9586776859496],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":36}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":20,"type":"features/slots","pos":[841.5619834710739,953.9586776859505],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":18}],"outputs":[{"name":"A","type":"number","links":[35]},{"name":"B","type":"number","links":[36]}],"properties":{}},{"id":29,"type":"features/slots","pos":[1307,490],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":24}],"outputs":[{"name":"A","type":"number","links":[37]},{"name":"B","type":"number","links":[38]}],"properties":{}},{"id":30,"type":"features/slots","pos":[1476.3610329999974,488.62936599999995],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":25}],"outputs":[{"name":"A","type":"number","links":[39]},{"name":"B","type":"number","links":[40]}],"properties":{}},{"id":7,"type":"features/slots","pos":[756,374],"size":[100,40],"flags":{"horizontal":true,"collapsed":false},"mode":0,"inputs":[{"name":"C","type":"number","link":13}],"outputs":[{"name":"A","type":"number","links":[10]},{"name":"B","type":"number","links":[6]}],"properties":{}},{"id":34,"type":"features/widgets","pos":[1054,349],"size":{"0":189,"1":176},"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"","type":"number","links":[23]}],"properties":{}},{"id":12,"type":"input/gamepad","pos":[607,204],"size":{"0":155,"1":69},"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"left_x_axis","type":"number","links":null},{"name":"left_y_axis","type":"number","links":null},{"name":"button_pressed","type":-1,"links":[12]}],"properties":{"gamepad_index":0,"threshold":0.1}},{"id":4,"type":"math/operation","pos":[604,106],"size":[164,51],"flags":{"collapsed":false},"mode":0,"inputs":[{"name":"A","type":"number","link":2},{"name":"B","type":"number","link":9}],"outputs":[{"name":"=","type":"number","links":[1]}],"properties":{"A":2,"B":0.5,"OP":"+"},"shape":2},{"id":2,"type":"features/shape","pos":[867,112],"size":{"0":140,"1":39},"flags":{},"mode":0,"inputs":[{"name":"","type":"number","link":1}],"outputs":[{"name":"","type":"number","links":null}],"properties":{}},{"id":13,"type":"events/log","pos":[868,215],"size":{"0":143,"1":30},"flags":{},"mode":0,"inputs":[{"name":"event","type":-1,"link":12}],"properties":{}},{"id":14,"type":"features/widgets","pos":[432,357],"size":{"0":209,"1":178},"flags":{},"mode":0,"outputs":[{"name":"","type":"number","links":[13]}],"properties":{}},{"id":24,"type":"features/widgets","pos":[429,841],"size":{"0":184.9173583984375,"1":176.34710693359375},"flags":{},"mode":0,"outputs":[{"name":"","type":"number","links":[16]}],"properties":{}},{"id":44,"type":"features/widgets","pos":[1154,942],"size":{"0":191,"1":174},"flags":{},"mode":0,"outputs":[{"name":"","type":"number","links":[28]}],"properties":{}},{"id":36,"type":"math/operation","pos":[1333,729],"size":[144,45],"flags":{},"mode":0,"inputs":[{"name":"A","type":"number","link":27},{"name":"B","type":"number","link":null}],"outputs":[{"name":"=","type":"number","links":[26]}],"properties":{"A":2,"B":1,"OP":"+"},"shape":2},{"id":42,"type":"input/gamepad","pos":[1316,821],"size":{"0":182.3612823486328,"1":69.27394104003906},"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"left_x_axis","type":"number","links":null},{"name":"left_y_axis","type":"number","links":null},{"name":"button_pressed","type":-1,"links":[]}],"properties":{"gamepad_index":0,"threshold":0.1}},{"id":43,"type":"events/log","pos":[1562,845],"size":{"0":142.16128540039062,"1":31.07394027709961},"flags":{},"mode":0,"inputs":[{"name":"event","type":-1,"link":null}],"properties":{}},{"id":41,"type":"widget/knob","pos":[1155,824],"size":[54,74],"flags":{},"mode":0,"outputs":[{"name":"","type":"number","links":[]}],"properties":{"min":0,"max":1,"value":0.5,"color":"#7AF","precision":2,"wcolor":"#7AF","size":50},"boxcolor":"rgba(128,128,128,1.0)"},{"id":37,"type":"math/operation","pos":[1138,739],"size":[148,44],"flags":{},"mode":0,"inputs":[{"name":"A","type":"number","link":null},{"name":"B","type":"number","link":null}],"outputs":[{"name":"=","type":"number","links":[27]}],"properties":{"A":1,"B":1,"OP":"+"},"color":"#233","bgcolor":"#355","shape":2},{"id":33,"type":"events/log","pos":[1493.3610329999974,224.629366],"size":{"0":147.6389617919922,"1":29.370634078979492},"flags":{},"mode":0,"inputs":[{"name":"event","type":-1,"link":32}],"properties":{}},{"id":26,"type":"math/operation","pos":[1268,128],"size":[144,50],"flags":{},"mode":0,"inputs":[{"name":"A","type":"number","link":22},{"name":"B","type":"number","link":31}],"outputs":[{"name":"=","type":"number","links":[21]}],"properties":{"A":2,"B":0.5,"OP":"+"},"shape":2},{"id":5,"type":"math/operation","pos":[437,114],"size":[140,48],"flags":{"collapsed":true},"mode":0,"inputs":[{"name":"A","type":"number","link":null},{"name":"B","type":"number","link":null}],"outputs":[{"name":"=","type":"number","links":[2]}],"properties":{"A":1,"B":1,"OP":"+"},"shape":2},{"id":27,"type":"math/operation","pos":[1061,129],"size":[144,44],"flags":{"collapsed":true},"mode":0,"inputs":[{"name":"A","type":"number","link":null},{"name":"B","type":"number","link":null}],"outputs":[{"name":"=","type":"number","links":[22]}],"properties":{"A":1,"B":1,"OP":"+"},"shape":2},{"id":49,"type":"features/slots","pos":[1210,589],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":37}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":50,"type":"features/slots","pos":[1342,591],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":38}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":51,"type":"features/slots","pos":[1471,590],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":39}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":52,"type":"features/slots","pos":[1597,588],"size":[100,40],"flags":{"horizontal":true},"mode":0,"inputs":[{"name":"C","type":"number","link":40}],"outputs":[{"name":"A","type":"number","links":null},{"name":"B","type":"number","links":null}],"properties":{}},{"id":25,"type":"features/shape","pos":[1500,116],"size":{"0":140,"1":39},"flags":{},"mode":0,"inputs":[{"name":"","type":"number","link":21}],"outputs":[{"name":"","type":"number","links":null}],"properties":{}},{"id":10,"type":"widget/knob","pos":[435,161],"size":[91,111],"flags":{},"mode":0,"outputs":[{"name":"","type":"number","links":[9]}],"properties":{"min":0,"max":1,"value":0.5,"color":"#7AF","precision":2,"wcolor":"#7AF","size":50},"boxcolor":"rgba(128,128,128,1.0)"},{"id":31,"type":"widget/knob","pos":[1058,182],"size":[95,114],"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"","type":"number","links":[31]}],"properties":{"min":0,"max":1,"value":0.5,"color":"#7AF","precision":2,"wcolor":"#7AF","size":50},"boxcolor":"rgba(128,128,128,1.0)"},{"id":32,"type":"input/gamepad","pos":[1232,231],"size":{"0":191.6389617919922,"1":73.37063598632812},"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"left_x_axis","type":"number","links":[46]},{"name":"left_y_axis","type":"number","links":[47]},{"name":"button_pressed","type":-1,"links":[32]}],"properties":{"gamepad_index":0,"threshold":0.1}},{"id":57,"type":"graphics/plot","pos":[1722,335],"size":{"0":140,"1":86},"flags":{},"mode":0,"inputs":[{"name":"A","type":"Number","link":48},{"name":"B","type":"Number","link":null},{"name":"C","type":"Number","link":null},{"name":"D","type":"Number","link":null}],"properties":{"scale":2}},{"id":21,"type":"widget/knob","pos":[435,591],"size":[72,90],"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"","type":"number","links":[43]}],"properties":{"min":0,"max":1,"value":0.7297408895318863,"color":"#7AF","precision":2,"wcolor":"#7AF","size":50},"boxcolor":"rgba(186,186,186,1.0)"},{"id":16,"type":"math/operation","pos":[583,611],"size":[140,47],"flags":{"collapsed":false},"mode":0,"inputs":[{"name":"A","type":"number","link":43},{"name":"B","type":"number","link":45}],"outputs":[{"name":"=","type":"number","links":[44]}],"properties":{"A":0.7297408895318863,"B":5000,"OP":"*"},"shape":2},{"id":54,"type":"events/timer","pos":[764,620],"size":{"0":147,"1":30},"flags":{"collapsed":false},"mode":0,"inputs":[{"name":"interval","type":"number","link":44}],"outputs":[{"name":"on_tick","type":-1,"links":[42]}],"properties":{"interval":1000,"event":"tick"},"boxcolor":"#222","shape":2},{"id":23,"type":"events/log","pos":[961,622],"size":{"0":137,"1":28},"flags":{},"mode":0,"inputs":[{"name":"event","type":-1,"link":42}],"properties":{}},{"id":56,"type":"graph/subgraph","pos":[1543,336],"size":{"0":140,"1":86},"flags":{},"mode":0,"inputs":[{"name":"enabled","type":"boolean","link":49},{"name":"AxisX","type":0,"link":46},{"name":"AxisY","type":0,"link":47}],"outputs":[{"name":"sum","type":0,"links":[48]}],"properties":{"enabled":true},"subgraph":{"last_node_id":6,"last_link_id":4,"nodes":[{"id":4,"type":"graph/output","pos":[1655,311],"size":[180,60],"flags":{},"mode":0,"inputs":[{"name":"","type":0,"link":3}],"properties":{"name":"sum","type":0}},{"id":2,"type":"graph/input","pos":[1227,233],"size":[180,60],"flags":{},"mode":0,"outputs":[{"name":"","type":"","links":[1]}],"properties":{"name":"AxisX","type":""}},{"id":3,"type":"graph/input","pos":[1234,341],"size":[180,60],"flags":{},"mode":0,"outputs":[{"name":"","type":"","links":[2]}],"properties":{"name":"AxisY","type":""}},{"id":6,"type":"math/operation","pos":[1496,268],"size":[100,60],"flags":{},"mode":0,"inputs":[{"name":"A","type":"number","link":1},{"name":"B","type":"number","link":2}],"outputs":[{"name":"=","type":"number","links":[3]}],"properties":{"A":1,"B":1,"OP":"+"}}],"links":[[1,2,0,6,0,"number"],[2,3,0,6,1,"number"],[3,6,0,4,0,0]],"groups":[],"config":{},"version":0.4}},{"id":58,"type":"widget/toggle","pos":[1686,131],"size":[160,44],"flags":{},"mode":0,"inputs":[{"name":"","type":"boolean","link":null},{"name":"e","type":-1,"link":null}],"outputs":[{"name":"v","type":"boolean","links":[49]},{"name":"e","type":-1,"links":null}],"properties":{"font":"","value":true}},{"id":60,"type":"widget/number","pos":[626,706],"size":[74,54],"flags":{},"mode":0,"outputs":[{"name":"","type":"number","links":null}],"properties":{"min":-1000,"max":1000,"value":1,"step":1}},{"id":55,"type":"basic/const","pos":[422,738],"size":{"0":139,"1":28},"flags":{"collapsed":false},"mode":0,"outputs":[{"name":"value","type":"number","links":[45],"label":"5000.000"}],"properties":{"value":5000}}],"links":[[1,4,0,2,0,"number"],[2,5,0,4,0,"number"],[6,7,1,9,0,"number"],[9,10,0,4,1,"number"],[10,7,0,8,0,"number"],[12,12,2,13,0,-1],[13,14,0,7,0,"number"],[16,24,0,18,0,"number"],[17,18,0,19,0,"number"],[18,18,0,20,0,"number"],[21,26,0,25,0,"number"],[22,27,0,26,0,"number"],[23,34,0,28,0,"number"],[24,28,0,29,0,"number"],[25,28,0,30,0,"number"],[26,36,0,35,0,"number"],[27,37,0,36,0,"number"],[28,44,0,38,0,"number"],[29,38,0,39,0,"number"],[30,38,0,40,0,"number"],[31,31,0,26,1,"number"],[32,32,2,33,0,-1],[33,19,0,45,0,"number"],[34,19,1,46,0,"number"],[35,20,0,47,0,"number"],[36,20,1,48,0,"number"],[37,29,0,49,0,"number"],[38,29,1,50,0,"number"],[39,30,0,51,0,"number"],[40,30,1,52,0,"number"],[42,54,0,23,0,-1],[43,21,0,16,0,"number"],[44,16,0,54,0,"number"],[45,55,0,16,1,"number"],[46,32,0,56,1,0],[47,32,1,56,2,0],[48,56,0,57,0,"Number"],[49,58,0,56,0,"boolean"]],"groups":[{"title":"Group","bounding":[417,292,564,255],"color":"#3f789e"},{"title":"Group","bounding":[1120,678,642,461],"color":"#A88"},{"title":"Group","bounding":[411,777,679,361],"color":"#8A8"}],"config":{},"version":0.4}
+{
+ "id": "e6ccc5b4-e43f-44ba-a64b-1eca62bebf4c",
+ "revision": 2,
+ "last_node_id": 60,
+ "last_link_id": 50,
+ "nodes": [
+  {
+   "id": 9,
+   "type": "features/slots",
+   "pos": [
+    1099.800048828125,
+    614.9000244140625
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 32,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 8,
+   "type": "features/slots",
+   "pos": [
+    872.2999877929688,
+    617.5
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 31,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 10
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 18,
+   "type": "features/slots",
+   "pos": [
+    977.0306396484375,
+    1111.4462890625
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 21,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 16
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      17,
+      18
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": []
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 28,
+   "type": "features/slots",
+   "pos": [
+    1802.2694091796875,
+    506.5181884765625
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 18,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 23
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      24,
+      25
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": []
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 35,
+   "type": "features/shape",
+   "pos": [
+    2022.330322265625,
+    964.243896484375
+   ],
+   "size": [
+    146,
+    50
+   ],
+   "flags": {},
+   "order": 37,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "number",
+     "link": 26
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 38,
+   "type": "features/slots",
+   "pos": [
+    1900.390380859375,
+    1284.303955078125
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 22,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 28
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      29,
+      30
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": []
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 39,
+   "type": "features/slots",
+   "pos": [
+    1789.890380859375,
+    1415.6038818359375
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 35,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 29
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 40,
+   "type": "features/slots",
+   "pos": [
+    2017.390380859375,
+    1413.0037841796875
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 36,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 30
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 45,
+   "type": "features/slots",
+   "pos": [
+    765.130615234375,
+    1372.7462158203125
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 46,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 33
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 46,
+   "type": "features/slots",
+   "pos": [
+    938.0306396484375,
+    1376.646240234375
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 47,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 34
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 19,
+   "type": "features/slots",
+   "pos": [
+    866.5306396484375,
+    1242.746337890625
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 33,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 17
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      33
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": [
+      34
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 47,
+   "type": "features/slots",
+   "pos": [
+    1100.5306396484375,
+    1379.2462158203125
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 48,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 35
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 48,
+   "type": "features/slots",
+   "pos": [
+    1269.5306396484375,
+    1377.9461669921875
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 49,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 36
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 20,
+   "type": "features/slots",
+   "pos": [
+    1094.0306396484375,
+    1240.146240234375
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 34,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 18
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      35
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": [
+      36
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 29,
+   "type": "features/slots",
+   "pos": [
+    1699.0999755859375,
+    637
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 29,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 24
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      37
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": [
+      38
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 30,
+   "type": "features/slots",
+   "pos": [
+    1919.2694091796875,
+    635.2182006835938
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 30,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 25
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      39
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": [
+      40
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 7,
+   "type": "features/slots",
+   "pos": [
+    982.7999877929688,
+    486.20001220703125
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true,
+    "collapsed": false
+   },
+   "order": 20,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": [
+      10
+     ]
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 34,
+   "type": "features/widgets",
+   "pos": [
+    1370.199951171875,
+    453.70001220703125
+   ],
+   "size": [
+    189,
+    230
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      23
+     ]
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    0.5,
+    0.5,
+    "red",
+    "edit me",
+    "multiline",
+    true,
+    null,
+    true
+   ]
+  },
+  {
+   "id": 12,
+   "type": "input/gamepad",
+   "pos": [
+    789.0999755859375,
+    265.20001220703125
+   ],
+   "size": [
+    155,
+    70
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "left_x_axis",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "left_y_axis",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "button_pressed",
+     "type": -1,
+     "links": [
+      12
+     ]
+    }
+   ],
+   "properties": {
+    "gamepad_index": 0,
+    "threshold": 0.1
+   }
+  },
+  {
+   "id": 4,
+   "type": "math/operation",
+   "pos": [
+    785.2000122070312,
+    137.8000030517578
+   ],
+   "size": [
+    164,
+    51
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 24,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 2
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 9
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      1
+     ]
+    }
+   ],
+   "properties": {
+    "A": 2,
+    "B": 0.5,
+    "OP": "+"
+   },
+   "shape": 2
+  },
+  {
+   "id": 2,
+   "type": "features/shape",
+   "pos": [
+    1127.0999755859375,
+    145.60000610351562
+   ],
+   "size": [
+    146,
+    50
+   ],
+   "flags": {},
+   "order": 38,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "number",
+     "link": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 13,
+   "type": "events/log",
+   "pos": [
+    1128.4000244140625,
+    279.5
+   ],
+   "size": [
+    143,
+    30
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "event",
+     "type": -1,
+     "link": 12
+    }
+   ],
+   "outputs": [],
+   "properties": {}
+  },
+  {
+   "id": 14,
+   "type": "features/widgets",
+   "pos": [
+    561.5999755859375,
+    464.1000061035156
+   ],
+   "size": [
+    209,
+    230
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    0.5,
+    0.5,
+    "red",
+    "edit me",
+    "multiline",
+    true,
+    null,
+    true
+   ]
+  },
+  {
+   "id": 24,
+   "type": "features/widgets",
+   "pos": [
+    557.7000122070312,
+    1093.300048828125
+   ],
+   "size": [
+    184.9173583984375,
+    230
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      16
+     ]
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    0.5,
+    0.5,
+    "red",
+    "edit me",
+    "multiline",
+    true,
+    null,
+    true
+   ]
+  },
+  {
+   "id": 44,
+   "type": "features/widgets",
+   "pos": [
+    1500.199951171875,
+    1224.5999755859375
+   ],
+   "size": [
+    191,
+    230
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      28
+     ]
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    0.5,
+    0.5,
+    "red",
+    "edit me",
+    "multiline",
+    true,
+    null,
+    true
+   ]
+  },
+  {
+   "id": 36,
+   "type": "math/operation",
+   "pos": [
+    1732.9000244140625,
+    947.7000122070312
+   ],
+   "size": [
+    144,
+    50
+   ],
+   "flags": {},
+   "order": 23,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 27
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      26
+     ]
+    }
+   ],
+   "properties": {
+    "A": 2,
+    "B": 1,
+    "OP": "+"
+   },
+   "shape": 2
+  },
+  {
+   "id": 42,
+   "type": "input/gamepad",
+   "pos": [
+    1710.800048828125,
+    1067.300048828125
+   ],
+   "size": [
+    182.3612823486328,
+    70
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "left_x_axis",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "left_y_axis",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "button_pressed",
+     "type": -1,
+     "links": []
+    }
+   ],
+   "properties": {
+    "gamepad_index": 0,
+    "threshold": 0.1
+   }
+  },
+  {
+   "id": 43,
+   "type": "events/log",
+   "pos": [
+    2030.5999755859375,
+    1098.5
+   ],
+   "size": [
+    142.16128540039062,
+    31.07394027709961
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "event",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [],
+   "properties": {}
+  },
+  {
+   "id": 41,
+   "type": "widget/knob",
+   "pos": [
+    1501.5,
+    1071.199951171875
+   ],
+   "size": [
+    86,
+    100
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": []
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.5,
+    "color": "#7AF",
+    "precision": 2,
+    "wcolor": "#7AF",
+    "size": 50
+   },
+   "boxcolor": "rgba(128,128,128,1.0)"
+  },
+  {
+   "id": 37,
+   "type": "math/operation",
+   "pos": [
+    1479.4000244140625,
+    960.7000122070312
+   ],
+   "size": [
+    148,
+    50
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      27
+     ]
+    }
+   ],
+   "properties": {
+    "A": 1,
+    "B": 1,
+    "OP": "+"
+   },
+   "color": "#233",
+   "bgcolor": "#355",
+   "shape": 2
+  },
+  {
+   "id": 33,
+   "type": "events/log",
+   "pos": [
+    1941.369384765625,
+    292.0181884765625
+   ],
+   "size": [
+    147.6389617919922,
+    30
+   ],
+   "flags": {},
+   "order": 26,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "event",
+     "type": -1,
+     "link": 32
+    }
+   ],
+   "outputs": [],
+   "properties": {}
+  },
+  {
+   "id": 26,
+   "type": "math/operation",
+   "pos": [
+    1648.4000244140625,
+    166.39999389648438
+   ],
+   "size": [
+    144,
+    50
+   ],
+   "flags": {},
+   "order": 25,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 22
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 31
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      21
+     ]
+    }
+   ],
+   "properties": {
+    "A": 2,
+    "B": 0.5,
+    "OP": "+"
+   },
+   "shape": 2
+  },
+  {
+   "id": 5,
+   "type": "math/operation",
+   "pos": [
+    568.0999755859375,
+    148.1999969482422
+   ],
+   "size": [
+    140,
+    48
+   ],
+   "flags": {
+    "collapsed": true
+   },
+   "order": 9,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "properties": {
+    "A": 1,
+    "B": 1,
+    "OP": "+"
+   },
+   "shape": 2
+  },
+  {
+   "id": 27,
+   "type": "math/operation",
+   "pos": [
+    1379.300048828125,
+    167.6999969482422
+   ],
+   "size": [
+    144,
+    44
+   ],
+   "flags": {
+    "collapsed": true
+   },
+   "order": 10,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      22
+     ]
+    }
+   ],
+   "properties": {
+    "A": 1,
+    "B": 1,
+    "OP": "+"
+   },
+   "shape": 2
+  },
+  {
+   "id": 49,
+   "type": "features/slots",
+   "pos": [
+    1573,
+    765.7000122070312
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 42,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 37
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 50,
+   "type": "features/slots",
+   "pos": [
+    1744.5999755859375,
+    768.2999877929688
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 43,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 38
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 51,
+   "type": "features/slots",
+   "pos": [
+    1912.300048828125,
+    767
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 44,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 39
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 52,
+   "type": "features/slots",
+   "pos": [
+    2076.10009765625,
+    764.4000244140625
+   ],
+   "size": [
+    105,
+    40
+   ],
+   "flags": {
+    "horizontal": true
+   },
+   "order": 45,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "C",
+     "type": "number",
+     "link": 40
+    }
+   ],
+   "outputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "links": null
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 25,
+   "type": "features/shape",
+   "pos": [
+    1950,
+    150.8000030517578
+   ],
+   "size": [
+    146,
+    50
+   ],
+   "flags": {},
+   "order": 39,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "number",
+     "link": 21
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 10,
+   "type": "widget/knob",
+   "pos": [
+    565.5,
+    209.3000030517578
+   ],
+   "size": [
+    91,
+    111
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.5,
+    "color": "#7AF",
+    "precision": 2,
+    "wcolor": "#7AF",
+    "size": 50
+   },
+   "boxcolor": "rgba(128,128,128,1.0)"
+  },
+  {
+   "id": 31,
+   "type": "widget/knob",
+   "pos": [
+    1375.4000244140625,
+    236.60000610351562
+   ],
+   "size": [
+    95,
+    114
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 12,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      31
+     ]
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.5,
+    "color": "#7AF",
+    "precision": 2,
+    "wcolor": "#7AF",
+    "size": 50
+   },
+   "boxcolor": "rgba(128,128,128,1.0)"
+  },
+  {
+   "id": 32,
+   "type": "input/gamepad",
+   "pos": [
+    1601.5999755859375,
+    300.29998779296875
+   ],
+   "size": [
+    191.6389617919922,
+    73.37063598632812
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 13,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "left_x_axis",
+     "type": "number",
+     "links": [
+      46
+     ]
+    },
+    {
+     "name": "left_y_axis",
+     "type": "number",
+     "links": [
+      47
+     ]
+    },
+    {
+     "name": "button_pressed",
+     "type": -1,
+     "links": [
+      32
+     ]
+    }
+   ],
+   "properties": {
+    "gamepad_index": 0,
+    "threshold": 0.1
+   }
+  },
+  {
+   "id": 57,
+   "type": "graphics/plot",
+   "pos": [
+    2238.60009765625,
+    435.5
+   ],
+   "size": [
+    140,
+    90
+   ],
+   "flags": {},
+   "order": 40,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "Number",
+     "link": 48
+    },
+    {
+     "name": "B",
+     "type": "Number",
+     "link": null
+    },
+    {
+     "name": "C",
+     "type": "Number",
+     "link": null
+    },
+    {
+     "name": "D",
+     "type": "Number",
+     "link": null
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "scale": 2
+   }
+  },
+  {
+   "id": 21,
+   "type": "widget/knob",
+   "pos": [
+    565.5,
+    768.2999877929688
+   ],
+   "size": [
+    86,
+    100
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 14,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      43
+     ]
+    }
+   ],
+   "properties": {
+    "min": 0,
+    "max": 1,
+    "value": 0.7297408895318863,
+    "color": "#7AF",
+    "precision": 2,
+    "wcolor": "#7AF",
+    "size": 50
+   },
+   "boxcolor": "rgba(186,186,186,1.0)"
+  },
+  {
+   "id": 16,
+   "type": "math/operation",
+   "pos": [
+    757.9000244140625,
+    794.2999877929688
+   ],
+   "size": [
+    140,
+    50
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 28,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "A",
+     "type": "number",
+     "link": 43
+    },
+    {
+     "name": "B",
+     "type": "number",
+     "link": 45
+    }
+   ],
+   "outputs": [
+    {
+     "name": "=",
+     "type": "number",
+     "links": [
+      44
+     ]
+    }
+   ],
+   "properties": {
+    "A": 0.7297408895318863,
+    "B": 5000,
+    "OP": "*"
+   },
+   "shape": 2
+  },
+  {
+   "id": 54,
+   "type": "events/timer",
+   "pos": [
+    993.2000122070312,
+    806
+   ],
+   "size": [
+    147,
+    30
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 41,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "interval",
+     "type": "number",
+     "link": 44
+    }
+   ],
+   "outputs": [
+    {
+     "name": "on_tick",
+     "type": -1,
+     "links": [
+      42
+     ]
+    }
+   ],
+   "properties": {
+    "interval": 1000,
+    "event": "tick"
+   },
+   "boxcolor": "#222",
+   "shape": 2
+  },
+  {
+   "id": 23,
+   "type": "events/log",
+   "pos": [
+    1249.300048828125,
+    808.5999755859375
+   ],
+   "size": [
+    137,
+    30
+   ],
+   "flags": {},
+   "order": 50,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "event",
+     "type": -1,
+     "link": 42
+    }
+   ],
+   "outputs": [],
+   "properties": {}
+  },
+  {
+   "id": 56,
+   "type": "ed4f05bf-028b-477f-9a11-92a650a0e72e",
+   "pos": [
+    2005.9000244140625,
+    436.79998779296875
+   ],
+   "size": [
+    206,
+    90
+   ],
+   "flags": {},
+   "order": 27,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "enabled",
+     "type": "boolean",
+     "link": 49
+    },
+    {
+     "name": "AxisX",
+     "type": "",
+     "link": 46
+    },
+    {
+     "name": "AxisY",
+     "type": "",
+     "link": 47
+    }
+   ],
+   "outputs": [
+    {
+     "name": "sum",
+     "type": 0,
+     "links": [
+      48
+     ]
+    }
+   ],
+   "properties": {
+    "enabled": true,
+    "subgraph_id": "ed4f05bf-028b-477f-9a11-92a650a0e72e"
+   }
+  },
+  {
+   "id": 58,
+   "type": "widget/toggle",
+   "pos": [
+    2191.800048828125,
+    170.3000030517578
+   ],
+   "size": [
+    160,
+    50
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "e",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "v",
+     "type": "boolean",
+     "links": [
+      49
+     ]
+    },
+    {
+     "name": "e",
+     "type": -1,
+     "links": null
+    }
+   ],
+   "properties": {
+    "font": "",
+    "value": true
+   }
+  },
+  {
+   "id": 60,
+   "type": "widget/number",
+   "pos": [
+    813.7999877929688,
+    917.7999877929688
+   ],
+   "size": [
+    96,
+    54
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 1,
+    "step": 1
+   }
+  },
+  {
+   "id": 55,
+   "type": "basic/const",
+   "pos": [
+    548.5999755859375,
+    959.4000244140625
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {
+    "collapsed": false
+   },
+   "order": 17,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "value",
+     "type": "number",
+     "links": [
+      45
+     ],
+     "label": "5000"
+    }
+   ],
+   "properties": {
+    "value": 5000,
+    "precision": 12,
+    "step": 1,
+    "min": 0,
+    "max": 9007199254740991
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   4,
+   0,
+   2,
+   0,
+   "number"
+  ],
+  [
+   2,
+   5,
+   0,
+   4,
+   0,
+   "number"
+  ],
+  [
+   6,
+   7,
+   1,
+   9,
+   0,
+   "number"
+  ],
+  [
+   9,
+   10,
+   0,
+   4,
+   1,
+   "number"
+  ],
+  [
+   10,
+   7,
+   0,
+   8,
+   0,
+   "number"
+  ],
+  [
+   12,
+   12,
+   2,
+   13,
+   0,
+   -1
+  ],
+  [
+   13,
+   14,
+   0,
+   7,
+   0,
+   "number"
+  ],
+  [
+   16,
+   24,
+   0,
+   18,
+   0,
+   "number"
+  ],
+  [
+   17,
+   18,
+   0,
+   19,
+   0,
+   "number"
+  ],
+  [
+   18,
+   18,
+   0,
+   20,
+   0,
+   "number"
+  ],
+  [
+   21,
+   26,
+   0,
+   25,
+   0,
+   "number"
+  ],
+  [
+   22,
+   27,
+   0,
+   26,
+   0,
+   "number"
+  ],
+  [
+   23,
+   34,
+   0,
+   28,
+   0,
+   "number"
+  ],
+  [
+   24,
+   28,
+   0,
+   29,
+   0,
+   "number"
+  ],
+  [
+   25,
+   28,
+   0,
+   30,
+   0,
+   "number"
+  ],
+  [
+   26,
+   36,
+   0,
+   35,
+   0,
+   "number"
+  ],
+  [
+   27,
+   37,
+   0,
+   36,
+   0,
+   "number"
+  ],
+  [
+   28,
+   44,
+   0,
+   38,
+   0,
+   "number"
+  ],
+  [
+   29,
+   38,
+   0,
+   39,
+   0,
+   "number"
+  ],
+  [
+   30,
+   38,
+   0,
+   40,
+   0,
+   "number"
+  ],
+  [
+   31,
+   31,
+   0,
+   26,
+   1,
+   "number"
+  ],
+  [
+   32,
+   32,
+   2,
+   33,
+   0,
+   -1
+  ],
+  [
+   33,
+   19,
+   0,
+   45,
+   0,
+   "number"
+  ],
+  [
+   34,
+   19,
+   1,
+   46,
+   0,
+   "number"
+  ],
+  [
+   35,
+   20,
+   0,
+   47,
+   0,
+   "number"
+  ],
+  [
+   36,
+   20,
+   1,
+   48,
+   0,
+   "number"
+  ],
+  [
+   37,
+   29,
+   0,
+   49,
+   0,
+   "number"
+  ],
+  [
+   38,
+   29,
+   1,
+   50,
+   0,
+   "number"
+  ],
+  [
+   39,
+   30,
+   0,
+   51,
+   0,
+   "number"
+  ],
+  [
+   40,
+   30,
+   1,
+   52,
+   0,
+   "number"
+  ],
+  [
+   42,
+   54,
+   0,
+   23,
+   0,
+   -1
+  ],
+  [
+   43,
+   21,
+   0,
+   16,
+   0,
+   "number"
+  ],
+  [
+   44,
+   16,
+   0,
+   54,
+   0,
+   "number"
+  ],
+  [
+   45,
+   55,
+   0,
+   16,
+   1,
+   "number"
+  ],
+  [
+   46,
+   32,
+   0,
+   56,
+   1,
+   0
+  ],
+  [
+   47,
+   32,
+   1,
+   56,
+   2,
+   0
+  ],
+  [
+   48,
+   56,
+   0,
+   57,
+   0,
+   "Number"
+  ],
+  [
+   49,
+   58,
+   0,
+   56,
+   0,
+   "boolean"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Group",
+   "bounding": [
+    542,
+    368,
+    733,
+    408
+   ],
+   "color": "#3f789e",
+   "font_size": 24
+  },
+  {
+   "id": 2,
+   "title": "Group",
+   "bounding": [
+    1456,
+    852,
+    835,
+    685
+   ],
+   "color": "#A88",
+   "font_size": 24
+  },
+  {
+   "id": 3,
+   "title": "Group",
+   "bounding": [
+    534,
+    997,
+    885,
+    482
+   ],
+   "color": "#8A8",
+   "font_size": 24
+  },
+  {
+   "id": 4,
+   "title": "Benchmark: four copies of the Node features demo plus a subgraph, timers and a plot. Press Play and watch the frame rate (FPS) in the lower left corner; zoom out to see the cost of drawing many nodes.",
+   "bounding": [
+    534,
+    -2,
+    760,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 60,
+  "lastLinkId": 50,
+  "lastGroupId": 4,
+  "lastRerouteId": 0
+ },
+ "definitions": {
+  "subgraphs": [
+   {
+    "id": "ed4f05bf-028b-477f-9a11-92a650a0e72e",
+    "revision": 1,
+    "groups": [],
+    "config": {},
+    "extra": {
+     "litegraph": {
+      "io": {
+       "359330ac-e462-4d88-860e-9a31e246f667": {
+        "pos": [
+         1227,
+         233
+        ],
+        "size": [
+         180,
+         80
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "AxisX",
+         "type": "",
+         "value": 0,
+         "slot_id": "359330ac-e462-4d88-860e-9a31e246f667"
+        }
+       },
+       "a039d0a9-f8ee-4ef9-a999-1d8dbdc460e5": {
+        "pos": [
+         1234,
+         341
+        ],
+        "size": [
+         180,
+         80
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "AxisY",
+         "type": "",
+         "value": 0,
+         "slot_id": "a039d0a9-f8ee-4ef9-a999-1d8dbdc460e5"
+        }
+       },
+       "9c187b93-f11f-4b64-a6e9-e7a8fda789c4": {
+        "pos": [
+         1655,
+         311
+        ],
+        "size": [
+         180,
+         60
+        ],
+        "flags": {},
+        "mode": 0,
+        "properties": {
+         "name": "sum",
+         "type": 0,
+         "slot_id": "9c187b93-f11f-4b64-a6e9-e7a8fda789c4"
+        }
+       }
+      }
+     }
+    },
+    "version": 1,
+    "litegraph_modes": 2,
+    "state": {
+     "lastNodeId": 6,
+     "lastLinkId": 4,
+     "lastGroupId": 0,
+     "lastRerouteId": 0
+    },
+    "name": "Subgraph",
+    "inputNode": {
+     "id": -10,
+     "bounding": [
+      1227,
+      233,
+      187,
+      188
+     ]
+    },
+    "outputNode": {
+     "id": -20,
+     "bounding": [
+      1655,
+      311,
+      180,
+      60
+     ]
+    },
+    "inputs": [
+     {
+      "id": "359330ac-e462-4d88-860e-9a31e246f667",
+      "name": "AxisX",
+      "type": "*",
+      "linkIds": [
+       1
+      ]
+     },
+     {
+      "id": "a039d0a9-f8ee-4ef9-a999-1d8dbdc460e5",
+      "name": "AxisY",
+      "type": "*",
+      "linkIds": [
+       2
+      ]
+     }
+    ],
+    "outputs": [
+     {
+      "id": "9c187b93-f11f-4b64-a6e9-e7a8fda789c4",
+      "name": "sum",
+      "type": "*",
+      "linkIds": [
+       3
+      ]
+     }
+    ],
+    "widgets": [],
+    "nodes": [
+     {
+      "id": 6,
+      "type": "math/operation",
+      "pos": [
+       1496,
+       268
+      ],
+      "size": [
+       100,
+       60
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 5,
+      "inputs": [
+       {
+        "name": "A",
+        "type": "number",
+        "link": 1
+       },
+       {
+        "name": "B",
+        "type": "number",
+        "link": 2
+       }
+      ],
+      "outputs": [
+       {
+        "name": "=",
+        "type": "number",
+        "links": [
+         3
+        ]
+       }
+      ],
+      "properties": {
+       "A": 1,
+       "B": 1,
+       "OP": "+"
+      }
+     }
+    ],
+    "links": [
+     {
+      "id": 1,
+      "origin_id": -10,
+      "origin_slot": 0,
+      "target_id": 6,
+      "target_slot": 0,
+      "type": "number"
+     },
+     {
+      "id": 2,
+      "origin_id": -10,
+      "origin_slot": 1,
+      "target_id": 6,
+      "target_slot": 1,
+      "type": "number"
+     },
+     {
+      "id": 3,
+      "origin_id": 6,
+      "origin_slot": 0,
+      "target_id": -20,
+      "target_slot": 0,
+      "type": 0
+     }
+    ]
+   }
+  ]
+ }
+}

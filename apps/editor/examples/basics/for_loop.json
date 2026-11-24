@@ -1,0 +1,558 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 98,
+ "last_node_id": 10,
+ "last_link_id": 12,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/button",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Run",
+   "properties": {
+    "text": "Run",
+    "font_size": 24,
+    "message": ""
+   }
+  },
+  {
+   "id": 2,
+   "type": "widget/number",
+   "pos": [
+    40,
+    270
+   ],
+   "size": [
+    80,
+    60
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "title": "From",
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 1,
+    "step": 1
+   }
+  },
+  {
+   "id": 3,
+   "type": "widget/number",
+   "pos": [
+    40,
+    370
+   ],
+   "size": [
+    84,
+    60
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "number",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "Count",
+   "properties": {
+    "min": -1000,
+    "max": 1000,
+    "value": 5,
+    "step": 1
+   }
+  },
+  {
+   "id": 4,
+   "type": "widget/button",
+   "pos": [
+    40,
+    470
+   ],
+   "size": [
+    110,
+    50
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      12
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "title": "Reset",
+   "properties": {
+    "text": "Reset",
+    "font_size": 20,
+    "message": ""
+   }
+  },
+  {
+   "id": 5,
+   "type": "logic/CycleFOR",
+   "pos": [
+    260,
+    230
+   ],
+   "size": [
+    169,
+    90
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "start",
+     "type": "number",
+     "link": 2
+    },
+    {
+     "name": "nElements",
+     "type": "number",
+     "link": 3
+    },
+    {
+     "name": "do",
+     "type": -1,
+     "link": 1
+    },
+    {
+     "name": "break",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "do",
+     "type": -1,
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "index",
+     "type": "number",
+     "links": [
+      7,
+      9
+     ]
+    },
+    {
+     "name": "completed",
+     "type": -1,
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 6,
+   "type": "events/sequence",
+   "pos": [
+    480,
+    170
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {
+    "horizontal": true,
+    "render_box": false
+   },
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": -1,
+     "link": 4,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      5
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      6
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      8
+     ],
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 7,
+   "type": "events/counter",
+   "pos": [
+    700,
+    150
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 5
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "title": "Iterations",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 8,
+   "type": "basic/watch",
+   "pos": [
+    700,
+    300
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 7,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 6,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "Index",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 9,
+   "type": "basic/console",
+   "pos": [
+    700,
+    410
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 1,
+   "inputs": [
+    {
+     "name": "log",
+     "type": -1,
+     "link": 8
+    },
+    {
+     "name": "msg",
+     "type": 0,
+     "link": 9
+    }
+   ],
+   "outputs": [],
+   "title": "Log index",
+   "properties": {
+    "msg": ""
+   }
+  },
+  {
+   "id": 10,
+   "type": "basic/watch",
+   "pos": [
+    480,
+    430
+   ],
+   "size": [
+    201,
+    50
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 11,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 10,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "Rounds when completed",
+   "properties": {
+    "display": "value"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   5,
+   2,
+   -1
+  ],
+  [
+   2,
+   2,
+   0,
+   5,
+   0,
+   "number"
+  ],
+  [
+   3,
+   3,
+   0,
+   5,
+   1,
+   "number"
+  ],
+  [
+   4,
+   5,
+   0,
+   6,
+   0,
+   -1
+  ],
+  [
+   5,
+   6,
+   0,
+   7,
+   0,
+   -1
+  ],
+  [
+   6,
+   6,
+   1,
+   8,
+   1,
+   -1
+  ],
+  [
+   7,
+   5,
+   1,
+   8,
+   0,
+   "number"
+  ],
+  [
+   8,
+   6,
+   2,
+   9,
+   0,
+   -1
+  ],
+  [
+   9,
+   5,
+   1,
+   9,
+   1,
+   "number"
+  ],
+  [
+   10,
+   5,
+   2,
+   10,
+   1,
+   -1
+  ],
+  [
+   11,
+   7,
+   1,
+   10,
+   0,
+   "number"
+  ],
+  [
+   12,
+   4,
+   0,
+   7,
+   2,
+   -1
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "FOR loop. Click Run: the loop fires \"do\" once per index, from From to From + Count - 1, all within the click. For each index a Sequence counts the iteration, shows the index in the Watch and logs it to the browser console; \"completed\" then shows the number of rounds. Change From and Count, Reset, and Run again.",
+   "bounding": [
+    40,
+    20,
+    760,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 10,
+  "lastLinkId": 12,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

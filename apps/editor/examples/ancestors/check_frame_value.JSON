@@ -1,1 +1,536 @@
-{"last_node_id":10,"last_link_id":11,"nodes":[{"id":5,"type":"events/log","pos":{"0":816.781982421875,"1":556.3540649414062,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":26},"flags":{},"order":8,"mode":0,"inputs":[{"name":"event","type":-1,"link":4}],"outputs":[],"properties":{}},{"id":10,"type":"basic/boolean","pos":{"0":281.67236328125,"1":719.458984375,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":30},"flags":{},"order":1,"mode":0,"inputs":[],"outputs":[{"name":"bool","type":"boolean","links":[11]}],"properties":{"value":false},"widgets_values":[false]},{"id":6,"type":"events/sequence","pos":{"0":100.24735260009766,"1":274.415771484375,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":[69.52016254380919,90.4102549376563],"flags":{"horizontal":true,"render_box":false},"order":3,"mode":0,"inputs":[{"name":"","type":-1,"link":5},{"name":"","type":-1,"link":null},{"name":"","type":-1,"link":null}],"outputs":[{"name":"","type":-1,"links":[6],"slot_index":0},{"name":"","type":-1,"links":[9],"slot_index":1},{"name":"","type":-1,"links":[10],"slot_index":2}],"properties":{}},{"id":9,"type":"basic/variable","pos":{"0":468.85107421875,"1":706.2533569335938,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":169.60000610351562,"1":46},"flags":{},"order":6,"mode":0,"inputs":[{"name":"in","type":0,"link":11,"slot_index":0},{"name":"onTrigger","type":-1,"link":10,"optional":true,"nameLocked":true}],"outputs":[{"name":"out","links":[],"slot_index":0},{"name":"onExecuted","type":-1,"links":null,"optional":true,"nameLocked":true}],"properties":{"varname":"myname","container":0}},{"id":7,"type":"basic/variable","pos":{"0":356.78961181640625,"1":194.51345825195312,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":169.60000610351562,"1":46},"flags":{},"order":4,"mode":3,"inputs":[{"name":"in","type":0,"link":7},{"name":"onTrigger","type":-1,"link":6,"optional":true,"nameLocked":true}],"outputs":[{"name":"out","links":null},{"name":"onExecuted","type":-1,"links":null,"optional":true,"nameLocked":true}],"properties":{"varname":"myname","container":0}},{"id":8,"type":"basic/variable","pos":{"0":550.4593505859375,"1":370.08526611328125,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":169.60000610351562,"1":46},"flags":{},"order":0,"mode":0,"inputs":[{"name":"in","type":0,"link":null},{"name":"onTrigger","type":-1,"link":null,"optional":true,"nameLocked":true}],"outputs":[{"name":"out","links":[8],"slot_index":0},{"name":"onExecuted","type":-1,"links":null,"optional":true,"nameLocked":true}],"properties":{"varname":"myname","container":0}},{"id":2,"type":"logic/IF","pos":{"0":550.4593505859375,"1":460.08526611328125,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":46},"flags":{},"order":5,"mode":3,"inputs":[{"name":"onTrigger","type":-1,"link":9},{"name":"condition","type":"boolean","link":8,"slot_index":1}],"outputs":[{"name":"true","type":-1,"links":[3],"slot_index":0},{"name":"false","type":-1,"links":[4],"slot_index":1}],"properties":{}},{"id":4,"type":"events/log","pos":{"0":820,"1":460,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":26},"flags":{},"order":7,"mode":0,"inputs":[{"name":"event","type":-1,"link":3}],"outputs":[],"properties":{}},{"id":1,"type":"widget/button","pos":{"0":50.24723434448242,"1":154.4152374267578,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":46},"flags":{},"order":2,"mode":0,"inputs":[],"outputs":[{"name":"","type":-1,"links":[5],"slot_index":0},{"name":"","type":"boolean","links":[7],"slot_index":1}],"properties":{"text":"click me","font_size":30,"message":""}}],"links":[[3,2,0,4,0,-1],[4,2,1,5,0,-1],[5,1,0,6,0,-1],[6,6,0,7,1,-1],[7,1,1,7,0,"boolean"],[8,8,0,2,1,"boolean"],[9,6,1,2,0,-1],[10,6,2,9,1,-1],[11,10,0,9,0,"boolean"]],"groups":[{"title":"reset","bounding":{"0":267,"1":625,"2":388,"3":142},"color":"#3f789e","font_size":24},{"title":"set pressed (true)","bounding":{"0":339,"1":118,"2":208,"3":143},"color":"#3f789e","font_size":24},{"title":"Check value ","bounding":{"0":532,"1":285,"2":441,"3":312},"color":"#3f789e","font_size":24},{"title":"checking retroupdating node values","bounding":{"0":35,"1":75,"2":1014,"3":724},"color":"#3f789e","font_size":24}],"config":{"align_to_grid":true,"links_ontop":false},"extra":{},"version":"a0.11.0"}
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 277,
+ "last_node_id": 10,
+ "last_link_id": 9,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/button",
+   "pos": [
+    40,
+    220
+   ],
+   "size": [
+    130,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "click me",
+    "font_size": 22,
+    "message": ""
+   }
+  },
+  {
+   "id": 2,
+   "type": "events/sequence",
+   "pos": [
+    230,
+    210
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {
+    "horizontal": true,
+    "render_box": false
+   },
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": -1,
+     "link": 1,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      2
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      4
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      8
+     ],
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 3,
+   "type": "basic/boolean",
+   "pos": [
+    400,
+    140
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "bool",
+     "type": "boolean",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "Const true",
+   "properties": {
+    "value": true
+   },
+   "widgets_values": [
+    true
+   ]
+  },
+  {
+   "id": 4,
+   "type": "basic/variable",
+   "pos": [
+    620,
+    140
+   ],
+   "size": [
+    124,
+    50
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "in",
+     "link": 3
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 2,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "links": null
+    }
+   ],
+   "title": "1. set pressed",
+   "properties": {
+    "varname": "pressed",
+    "container": 0
+   }
+  },
+  {
+   "id": 5,
+   "type": "basic/variable",
+   "pos": [
+    400,
+    300
+   ],
+   "size": [
+    96,
+    30
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 5,
+   "inputs": [
+    {
+     "name": "in",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "title": "get pressed",
+   "properties": {
+    "varname": "pressed",
+    "container": 0
+   }
+  },
+  {
+   "id": 6,
+   "type": "logic/IF",
+   "pos": [
+    620,
+    280
+   ],
+   "size": [
+    133,
+    50
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 4
+    },
+    {
+     "name": "condition",
+     "type": "boolean",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "true",
+     "type": -1,
+     "links": [
+      6
+     ]
+    },
+    {
+     "name": "false",
+     "type": -1,
+     "links": [
+      7
+     ]
+    }
+   ],
+   "title": "2. Branch",
+   "properties": {}
+  },
+  {
+   "id": 7,
+   "type": "events/counter",
+   "pos": [
+    840,
+    220
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 6
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "true",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 8,
+   "type": "events/counter",
+   "pos": [
+    840,
+    370
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 7
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "false",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 9,
+   "type": "basic/boolean",
+   "pos": [
+    400,
+    450
+   ],
+   "size": [
+    146,
+    32
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 5,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "bool",
+     "type": "boolean",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "title": "Const false",
+   "properties": {
+    "value": false
+   },
+   "widgets_values": [
+    false
+   ]
+  },
+  {
+   "id": 10,
+   "type": "basic/variable",
+   "pos": [
+    620,
+    450
+   ],
+   "size": [
+    124,
+    50
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "in",
+     "link": 9
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 8,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "out",
+     "links": null
+    }
+   ],
+   "title": "3. reset pressed",
+   "properties": {
+    "varname": "pressed",
+    "container": 0
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   -1
+  ],
+  [
+   2,
+   2,
+   0,
+   4,
+   1,
+   -1
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "boolean"
+  ],
+  [
+   4,
+   2,
+   1,
+   6,
+   0,
+   -1
+  ],
+  [
+   5,
+   5,
+   0,
+   6,
+   1,
+   "boolean"
+  ],
+  [
+   6,
+   6,
+   0,
+   7,
+   0,
+   -1
+  ],
+  [
+   7,
+   6,
+   1,
+   8,
+   0,
+   -1
+  ],
+  [
+   8,
+   2,
+   2,
+   10,
+   1,
+   -1
+  ],
+  [
+   9,
+   9,
+   0,
+   10,
+   0,
+   "boolean"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "An event chain reads fresh values. A click runs the Sequence: 1 sets the variable \"pressed\" to true, 2 asks the Branch, which reads \"pressed\", 3 sets it back to false. Under \"ancestors\" the Branch pulls the getter (ON_REQUEST) when it runs, so it sees the value set one step earlier: every click counts as true.",
+   "bounding": [
+    40,
+    20,
+    820,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 10,
+  "lastLinkId": 9,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

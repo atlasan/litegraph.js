@@ -1,0 +1,361 @@
+{
+ "id": "860d3a7b-8ea2-4bfb-8900-e709dc5c9461",
+ "revision": 228,
+ "last_node_id": 6,
+ "last_link_id": 6,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "widget/combo",
+   "pos": [
+    40,
+    170
+   ],
+   "size": [
+    146,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "string",
+     "links": [
+      3
+     ]
+    },
+    {
+     "name": "change",
+     "type": -1,
+     "links": [
+      1
+     ]
+    }
+   ],
+   "title": "Size",
+   "properties": {
+    "value": "M",
+    "values": "S;M;L;XL"
+   }
+  },
+  {
+   "id": 2,
+   "type": "widget/toggle",
+   "pos": [
+    40,
+    310
+   ],
+   "size": [
+    180,
+    50
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": "boolean",
+     "link": null
+    },
+    {
+     "name": "e",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "v",
+     "type": "boolean",
+     "links": [
+      6
+     ]
+    },
+    {
+     "name": "e",
+     "type": -1,
+     "links": [
+      5
+     ]
+    }
+   ],
+   "title": "Gift wrap",
+   "properties": {
+    "font": "",
+    "value": false
+   }
+  },
+  {
+   "id": 3,
+   "type": "events/sequence",
+   "pos": [
+    280,
+    170
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {
+    "horizontal": true,
+    "render_box": false
+   },
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "",
+     "type": -1,
+     "link": 1,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "link": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      2
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      4
+     ],
+     "removable": true,
+     "nameLocked": false
+    },
+    {
+     "name": "",
+     "type": -1,
+     "links": null,
+     "removable": true,
+     "nameLocked": false
+    }
+   ],
+   "properties": {}
+  },
+  {
+   "id": 4,
+   "type": "basic/watch",
+   "pos": [
+    500,
+    150
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 3,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 2,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "Size",
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": 5,
+   "type": "events/counter",
+   "pos": [
+    500,
+    260
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": 4
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "title": "Changes",
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": 6,
+   "type": "basic/watch",
+   "pos": [
+    500,
+    400
+   ],
+   "size": [
+    107,
+    50
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": 6,
+     "label": ""
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": 5,
+     "removable": true,
+     "nameLocked": true,
+     "exec": "trigger"
+    }
+   ],
+   "outputs": [],
+   "title": "Gift wrap",
+   "properties": {
+    "display": "value"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   1,
+   3,
+   0,
+   -1
+  ],
+  [
+   2,
+   3,
+   0,
+   4,
+   1,
+   -1
+  ],
+  [
+   3,
+   1,
+   0,
+   4,
+   0,
+   "string"
+  ],
+  [
+   4,
+   3,
+   1,
+   5,
+   0,
+   -1
+  ],
+  [
+   5,
+   2,
+   1,
+   6,
+   1,
+   -1
+  ],
+  [
+   6,
+   2,
+   0,
+   6,
+   0,
+   "boolean"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Reactive: only on change. Under the \"event\" model nothing runs per frame, so there is no need to press Play. Pick a size or flip the toggle: each change fires an event, and the Watches update right away.",
+   "bounding": [
+    40,
+    20,
+    700,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "event"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 6,
+  "lastLinkId": 6,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

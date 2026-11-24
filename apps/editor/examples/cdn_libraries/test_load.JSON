@@ -1,1 +1,518 @@
-{"last_node_id":0,"last_link_id":0,"nodes":[{"id":"cce17570-285e-4085-a2f0-48b48799e14d","type":"events/counter","pos":{"0":500,"1":300,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":102},"flags":{},"order":6,"mode":0,"inputs":[{"name":"inc","type":-1,"link":"33f4e71a-d59f-458c-8504-0756059a7c21"},{"name":"dec","type":-1,"link":null},{"name":"reset","type":-1,"link":null}],"outputs":[{"name":"change","type":-1,"links":null},{"name":"num","type":"number","links":null}],"properties":{"doCountExecution":false}},{"id":"4ac3559f-1ff6-46c9-a4d9-ee04b1955775","type":"events/counter","pos":{"0":500,"1":450,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":140,"1":102},"flags":{},"order":7,"mode":0,"inputs":[{"name":"inc","type":-1,"link":"88be137d-6462-4a27-a117-b16768deafd2","slot_index":0},{"name":"dec","type":-1,"link":null},{"name":"reset","type":-1,"link":null}],"outputs":[{"name":"change","type":-1,"links":null},{"name":"num","type":"number","links":null}],"properties":{"doCountExecution":false},"color":"#322","bgcolor":"#533"},{"id":"88083304-5444-4308-9220-14002ae0226e","type":"libraries/search_CDN_lib","pos":{"0":270,"1":90,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":144,"1":122},"flags":{},"order":2,"mode":0,"inputs":[{"name":"search","type":-1,"link":"b9bfa72e-ce42-4e3e-9a95-401e4b835b39","slot_index":0}],"outputs":[{"name":"ready","type":-1,"links":["56666d23-2ced-4e79-a080-be6226ab9e05"],"slot_index":0},{"name":"results","type":"array","links":["a4cc5ed3-bf9c-4161-a550-bc704df64f3b"],"slot_index":1},{"name":"first name","type":"object","links":null},{"name":"first object","type":"object","links":["8538b5fa-85d2-454c-9ea5-1c956245b0d2","bc0d3d23-ae54-4fc1-818f-898af6b3aee3"],"slot_index":3}],"properties":{"name":"three.js"},"boxcolor":"#0F0"},{"id":"2bfda5c2-197d-4c5f-ac05-d4990f62746a","type":"basic/watch","pos":{"0":734,"1":296,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":79,"1":30},"flags":{},"order":5,"mode":0,"inputs":[{"name":"value","type":0,"link":"8538b5fa-85d2-454c-9ea5-1c956245b0d2","label":"0.000"}],"outputs":[],"properties":{}},{"id":"0d1aa158-1afa-48f5-95e5-74649af33f7f","type":"html/json_viewer","pos":{"0":520,"1":80,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":289,"1":139},"flags":{},"order":4,"mode":3,"inputs":[{"name":"value","type":0,"link":"a4cc5ed3-bf9c-4161-a550-bc704df64f3b"},{"name":"onTrigger","type":-1,"link":"56666d23-2ced-4e79-a080-be6226ab9e05","removable":true,"nameLocked":true}],"outputs":[{"name":"onExecuted","type":-1,"links":["7462fbd0-f01e-4b19-9296-0a6d70908437"],"removable":true,"nameLocked":true,"slot_index":0}],"properties":{"html":""}},{"id":"72cac44b-1afe-4998-9381-ed620fe55781","type":"html/json_viewer","pos":{"0":830,"1":80,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":323,"1":183},"flags":{},"order":8,"mode":3,"inputs":[{"name":"value","type":0,"link":"bc0d3d23-ae54-4fc1-818f-898af6b3aee3","slot_index":0},{"name":"onTrigger","type":-1,"link":"7462fbd0-f01e-4b19-9296-0a6d70908437","removable":true,"nameLocked":true}],"outputs":[{"name":"onExecuted","type":-1,"links":null,"removable":true,"nameLocked":true}],"properties":{"html":""}},{"id":"ec83016c-1160-4903-9f84-40ce08963892","type":"widget/button","pos":{"0":100,"1":110,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":81,"1":50},"flags":{},"order":0,"mode":0,"inputs":[],"outputs":[{"name":"","type":-1,"links":["b9bfa72e-ce42-4e3e-9a95-401e4b835b39"]},{"name":"","type":"boolean","links":null}],"properties":{"text":"DO","font_size":30,"message":""}},{"id":"2bb78704-eabb-4b63-8f00-dcebe9748028","type":"libraries/load","pos":{"0":280,"1":300,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":158,"1":173},"flags":{},"order":3,"mode":0,"inputs":[{"name":"load","type":-1,"link":"f6e0805a-0bb5-4568-9d5b-a19684432f28","slot_index":0},{"name":"lib_spec","type":"object,cdn_lib","link":null},{"name":"url","type":"string,url","link":null,"param_bind":true},{"name":"name","type":"string","link":null,"param_bind":true}],"outputs":[{"name":"ready","type":-1,"links":["33f4e71a-d59f-458c-8504-0756059a7c21"],"slot_index":0},{"name":"error","type":-1,"links":["88be137d-6462-4a27-a117-b16768deafd2"]}],"properties":{"type":"module","module":true,"url":"https://cdnjs.cloudflare.com/ajax/libs/three.js/0.166.1/three.module.js","name":"three.js"},"boxcolor":"#0F0"},{"id":"b9cdfaa8-8e59-40a6-a500-f6dd3d9e4486","type":"widget/button","pos":{"0":149,"1":301,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0},"size":{"0":81,"1":50},"flags":{},"order":1,"mode":0,"inputs":[],"outputs":[{"name":"","type":-1,"links":["f6e0805a-0bb5-4568-9d5b-a19684432f28"]},{"name":"","type":"boolean","links":null}],"properties":{"text":"DO","font_size":30,"message":""}}],"links":[["b9bfa72e-ce42-4e3e-9a95-401e4b835b39","ec83016c-1160-4903-9f84-40ce08963892",0,"88083304-5444-4308-9220-14002ae0226e",0,-1],["a4cc5ed3-bf9c-4161-a550-bc704df64f3b","88083304-5444-4308-9220-14002ae0226e",1,"0d1aa158-1afa-48f5-95e5-74649af33f7f",0,"array"],["56666d23-2ced-4e79-a080-be6226ab9e05","88083304-5444-4308-9220-14002ae0226e",0,"0d1aa158-1afa-48f5-95e5-74649af33f7f",1,-1],["f6e0805a-0bb5-4568-9d5b-a19684432f28","b9cdfaa8-8e59-40a6-a500-f6dd3d9e4486",0,"2bb78704-eabb-4b63-8f00-dcebe9748028",0,-1],["33f4e71a-d59f-458c-8504-0756059a7c21","2bb78704-eabb-4b63-8f00-dcebe9748028",0,"cce17570-285e-4085-a2f0-48b48799e14d",0,-1],["88be137d-6462-4a27-a117-b16768deafd2","2bb78704-eabb-4b63-8f00-dcebe9748028",1,"4ac3559f-1ff6-46c9-a4d9-ee04b1955775",0,-1],["8538b5fa-85d2-454c-9ea5-1c956245b0d2","88083304-5444-4308-9220-14002ae0226e",3,"2bfda5c2-197d-4c5f-ac05-d4990f62746a",0,"object"],["bc0d3d23-ae54-4fc1-818f-898af6b3aee3","88083304-5444-4308-9220-14002ae0226e",3,"72cac44b-1afe-4998-9381-ed620fe55781",0,"object"],["7462fbd0-f01e-4b19-9296-0a6d70908437","0d1aa158-1afa-48f5-95e5-74649af33f7f",0,"72cac44b-1afe-4998-9381-ed620fe55781",1,-1]],"groups":[],"config":{"align_to_grid":true,"links_ontop":false},"extra":{},"version":"a0.11.0"}
+{
+ "id": "e172f19c-a7a1-4998-928a-aa37a8cb87b4",
+ "revision": 1,
+ "last_node_id": 0,
+ "last_link_id": 0,
+ "nodes": [
+  {
+   "id": "cce17570-285e-4085-a2f0-48b48799e14d",
+   "type": "events/counter",
+   "pos": [
+    500,
+    300
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": "33f4e71a-d59f-458c-8504-0756059a7c21"
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {
+    "doCountExecution": false
+   }
+  },
+  {
+   "id": "4ac3559f-1ff6-46c9-a4d9-ee04b1955775",
+   "type": "events/counter",
+   "pos": [
+    500,
+    450
+   ],
+   "size": [
+    146,
+    102
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "inc",
+     "type": -1,
+     "link": "88be137d-6462-4a27-a117-b16768deafd2",
+     "slot_index": 0
+    },
+    {
+     "name": "dec",
+     "type": -1,
+     "link": null
+    },
+    {
+     "name": "reset",
+     "type": -1,
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "change",
+     "type": -1,
+     "links": null
+    },
+    {
+     "name": "num",
+     "type": "number",
+     "links": null
+    }
+   ],
+   "properties": {
+    "doCountExecution": false
+   },
+   "color": "#322",
+   "bgcolor": "#533"
+  },
+  {
+   "id": "88083304-5444-4308-9220-14002ae0226e",
+   "type": "libraries/search_CDN_lib",
+   "pos": [
+    270,
+    90
+   ],
+   "size": [
+    163,
+    122
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "search",
+     "type": -1,
+     "link": "b9bfa72e-ce42-4e3e-9a95-401e4b835b39",
+     "slot_index": 0
+    }
+   ],
+   "outputs": [
+    {
+     "name": "ready",
+     "type": -1,
+     "links": [
+      "56666d23-2ced-4e79-a080-be6226ab9e05"
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "results",
+     "type": "array",
+     "links": [
+      "a4cc5ed3-bf9c-4161-a550-bc704df64f3b"
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "first name",
+     "type": "object",
+     "links": null
+    },
+    {
+     "name": "first object",
+     "type": "object",
+     "links": [
+      "8538b5fa-85d2-454c-9ea5-1c956245b0d2",
+      "bc0d3d23-ae54-4fc1-818f-898af6b3aee3"
+     ],
+     "slot_index": 3
+    }
+   ],
+   "properties": {
+    "name": "three.js"
+   },
+   "boxcolor": "#0F0"
+  },
+  {
+   "id": "2bfda5c2-197d-4c5f-ac05-d4990f62746a",
+   "type": "basic/watch",
+   "pos": [
+    734,
+    296
+   ],
+   "size": [
+    86,
+    30
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": "8538b5fa-85d2-454c-9ea5-1c956245b0d2",
+     "label": "null"
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "display": "value"
+   }
+  },
+  {
+   "id": "0d1aa158-1afa-48f5-95e5-74649af33f7f",
+   "type": "html/json_viewer",
+   "pos": [
+    520,
+    80
+   ],
+   "size": [
+    289,
+    139
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": "a4cc5ed3-bf9c-4161-a550-bc704df64f3b"
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": "56666d23-2ced-4e79-a080-be6226ab9e05",
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": [
+      "7462fbd0-f01e-4b19-9296-0a6d70908437"
+     ],
+     "removable": true,
+     "nameLocked": true,
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "html": "",
+    "collapsed": false,
+    "max_depth": 3
+   }
+  },
+  {
+   "id": "72cac44b-1afe-4998-9381-ed620fe55781",
+   "type": "html/json_viewer",
+   "pos": [
+    830,
+    80
+   ],
+   "size": [
+    323,
+    183
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 3,
+   "inputs": [
+    {
+     "name": "value",
+     "type": 0,
+     "link": "bc0d3d23-ae54-4fc1-818f-898af6b3aee3",
+     "slot_index": 0
+    },
+    {
+     "name": "onTrigger",
+     "type": -1,
+     "link": "7462fbd0-f01e-4b19-9296-0a6d70908437",
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "onExecuted",
+     "type": -1,
+     "links": null,
+     "removable": true,
+     "nameLocked": true
+    }
+   ],
+   "properties": {
+    "html": "",
+    "collapsed": false,
+    "max_depth": 3
+   }
+  },
+  {
+   "id": "ec83016c-1160-4903-9f84-40ce08963892",
+   "type": "widget/button",
+   "pos": [
+    100,
+    110
+   ],
+   "size": [
+    87,
+    50
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      "b9bfa72e-ce42-4e3e-9a95-401e4b835b39"
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "DO",
+    "font_size": 30,
+    "message": ""
+   }
+  },
+  {
+   "id": "2bb78704-eabb-4b63-8f00-dcebe9748028",
+   "type": "libraries/load",
+   "pos": [
+    280,
+    300
+   ],
+   "size": [
+    158,
+    173
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "load",
+     "type": -1,
+     "link": "f6e0805a-0bb5-4568-9d5b-a19684432f28",
+     "slot_index": 0
+    },
+    {
+     "name": "lib_spec",
+     "type": "object,cdn_lib",
+     "link": null
+    },
+    {
+     "name": "url",
+     "type": "string,url",
+     "link": null,
+     "param_bind": true
+    },
+    {
+     "name": "name",
+     "type": "string",
+     "link": null,
+     "param_bind": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "ready",
+     "type": -1,
+     "links": [
+      "33f4e71a-d59f-458c-8504-0756059a7c21"
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "error",
+     "type": -1,
+     "links": [
+      "88be137d-6462-4a27-a117-b16768deafd2"
+     ]
+    }
+   ],
+   "properties": {
+    "name": "three.js",
+    "type": "module",
+    "module": true,
+    "url": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.166.1/three.module.js"
+   },
+   "boxcolor": "#0F0"
+  },
+  {
+   "id": "b9cdfaa8-8e59-40a6-a500-f6dd3d9e4486",
+   "type": "widget/button",
+   "pos": [
+    149,
+    301
+   ],
+   "size": [
+    87,
+    50
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": -1,
+     "links": [
+      "f6e0805a-0bb5-4568-9d5b-a19684432f28"
+     ]
+    },
+    {
+     "name": "",
+     "type": "boolean",
+     "links": null
+    }
+   ],
+   "properties": {
+    "text": "DO",
+    "font_size": 30,
+    "message": ""
+   }
+  }
+ ],
+ "links": [
+  [
+   "b9bfa72e-ce42-4e3e-9a95-401e4b835b39",
+   "ec83016c-1160-4903-9f84-40ce08963892",
+   0,
+   "88083304-5444-4308-9220-14002ae0226e",
+   0,
+   -1
+  ],
+  [
+   "a4cc5ed3-bf9c-4161-a550-bc704df64f3b",
+   "88083304-5444-4308-9220-14002ae0226e",
+   1,
+   "0d1aa158-1afa-48f5-95e5-74649af33f7f",
+   0,
+   "array"
+  ],
+  [
+   "56666d23-2ced-4e79-a080-be6226ab9e05",
+   "88083304-5444-4308-9220-14002ae0226e",
+   0,
+   "0d1aa158-1afa-48f5-95e5-74649af33f7f",
+   1,
+   -1
+  ],
+  [
+   "f6e0805a-0bb5-4568-9d5b-a19684432f28",
+   "b9cdfaa8-8e59-40a6-a500-f6dd3d9e4486",
+   0,
+   "2bb78704-eabb-4b63-8f00-dcebe9748028",
+   0,
+   -1
+  ],
+  [
+   "33f4e71a-d59f-458c-8504-0756059a7c21",
+   "2bb78704-eabb-4b63-8f00-dcebe9748028",
+   0,
+   "cce17570-285e-4085-a2f0-48b48799e14d",
+   0,
+   -1
+  ],
+  [
+   "88be137d-6462-4a27-a117-b16768deafd2",
+   "2bb78704-eabb-4b63-8f00-dcebe9748028",
+   1,
+   "4ac3559f-1ff6-46c9-a4d9-ee04b1955775",
+   0,
+   -1
+  ],
+  [
+   "8538b5fa-85d2-454c-9ea5-1c956245b0d2",
+   "88083304-5444-4308-9220-14002ae0226e",
+   3,
+   "2bfda5c2-197d-4c5f-ac05-d4990f62746a",
+   0,
+   "object"
+  ],
+  [
+   "bc0d3d23-ae54-4fc1-818f-898af6b3aee3",
+   "88083304-5444-4308-9220-14002ae0226e",
+   3,
+   "72cac44b-1afe-4998-9381-ed620fe55781",
+   0,
+   "object"
+  ],
+  [
+   "7462fbd0-f01e-4b19-9296-0a6d70908437",
+   "0d1aa158-1afa-48f5-95e5-74649af33f7f",
+   0,
+   "72cac44b-1afe-4998-9381-ed620fe55781",
+   1,
+   -1
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Load a library from a CDN: the first DO searches cdnjs for \"three.js\" and shows the result in the JSON views; the second DO loads the library, and the Counters count \"ready\" and \"error\". Needs the network.",
+   "bounding": [
+    100,
+    -60,
+    740,
+    80
+   ],
+   "color": "#3f789e",
+   "font_size": 16
+  }
+ ],
+ "config": {
+  "align_to_grid": true,
+  "links_ontop": false,
+  "execution": "ancestors"
+ },
+ "extra": {},
+ "version": 0.4,
+ "litegraph_version": "0.18.0-dev.2",
+ "litegraph_modes": 2,
+ "state": {
+  "lastNodeId": 0,
+  "lastLinkId": 0,
+  "lastGroupId": 1,
+  "lastRerouteId": 0
+ }
+}

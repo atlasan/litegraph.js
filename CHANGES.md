@@ -73,6 +73,27 @@ This is a pre-release for testers, to be tagged `v0.18.0-dev.2`; nothing is publ
 - **Optional dependencies:** the package has no required dependencies. Network and system integrations are optional, and a missing one is reported with its install command.
 - **From 0.18.0-dev.1** (below): subgraphs are saved as definitions (`LiteGraph.subgraph_format = "inline"` for older builds); full bundles no longer turn on `allow_scripts`, debug logging or the editor UX flags; exports list each bundle by path; apps live in `apps/`; some node types were renamed, with automatic replacements on load.
 
+# 0.18.0-dev.2: editor examples
+
+Audit: `agents/audits/2026-11-23-editor-examples.md`; record: `agents/executions/2026-11-23-editor-examples.md`.
+
+## Changed
+
+* **Every editor example states its execution model** (`config.execution`, `ancestors` except "Stepped accumulate" under `strict` and "Reactive form" under `event`) with the model's node modes applied, nodes at least as large as `computeSize()`, and a note that says what it shows and what to click. Before, all of them loaded as `legacy`.
+* **Rewritten examples:** "Node execution modes" (one box per mode, including BYPASS and NEVER, and a note on the models), "WHILE loop", "Event chain reads fresh values" (its variable was never set, so the branch always took false) and "Timer, random and branch" (under `legacy` the logged value was not the one compared). "Copy and paste", "Autoconnect" and the others keep their content, resized and laid out, with notes.
+* **New examples:** a **Basics** category (Widgets to Watch, Button, counter and watch, Sequence and branch, FOR loop, WHILE loop, Strings, Objects and JSON) and one example per flow category (Numbers and math for dataflow, Realtime wave, Stepped accumulate, Reactive form).
+* **The examples test is stricter** (`tools/tests/examples.test.mjs`): explicit model, modes applied, no `checkExecution()` issue under the document's own model, no node smaller than `computeSize()`, a note in each example, 20 steps plus a press on every Button without errors, outputs snapshotted; and every flow category has an example.
+
+## Fixed
+
+* **A removed `network/websocket` node kept reconnecting** every few seconds (also after loading another document): only the current socket reconnects now.
+* **`applyExecutionModelModes()` changes inside subgraph instances were lost on save:** the subgraph definition was written from the registry, unchanged. The instance now counts as edited, so its definition is synced.
+* **`basic/jsonparse` did nothing on its `parse` action before the graph ran,** and fired `done` before setting its object output. It now reads the text when the action arrives and sets the object first.
+* **`widget/toggle` and `widget/combo` fired their change event before updating their value output,** so under the `event` model (no frames) a Watch triggered by the event showed the old value.
+* **`widget/number` showed 0.7 as "1" after loading** (its decimals were only set when the step was edited); **`widget/hslider` output -1** until it had been drawn.
+* **Group titles wrapped past the group's right edge and under its header toggle.**
+* Debug output removed: `console.warn("DBG", "WidgetButton", ...)` on every button click, a warning per audio input connection, and a `console.warn` on double-clicking a Number widget.
+
 # 0.18.0-dev.2: pre-release fixes
 
 Plan: `agents/plans/2026-11-23-pre-release-0.18.0-dev.2.md`; audit: `agents/audits/2026-11-23-state-audit.md`.
