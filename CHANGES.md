@@ -1,6 +1,18 @@
 
 This fork takes the 2011-2014 code for LiteGraph and renews it.
 
+# Unreleased
+
+Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each track adds its entries under the headings below.
+
+## Added
+
+## Changed
+
+* **Development environment:** Node.js 22 is pinned in `.nvmrc` (`nvm use`); Bun is the preferred script and app runner (`bun run check`, `editor:bun`, `graphrunner:bun`); installs stay on `npm ci` and `package-lock.json`.
+
+## Fixed
+
 # 0.18.0-dev.2 (2026-11-23): dev pre-release
 
 This is a pre-release for testers, tagged `v0.18.0-dev.2` on `master` (2026-11-24); nothing is published to npm. It contains everything on `LG/dev`: roadmap Waves 0–7, the flows track, the panels track, the editor examples, the launcher, the node pin and mode numbering 2, and the group UX (sections below, newest first). It supersedes `0.18.0-dev.1`, which was prepared but never tagged; that content is kept below and ships in this release.

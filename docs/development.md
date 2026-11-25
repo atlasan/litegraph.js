@@ -4,13 +4,18 @@ Setup, the validation gate and the package contracts. The full stabilization rec
 
 ## Setup
 
-Requires Node.js 22 and Python 3.
+Requires Node.js 22 (pinned in `.nvmrc`), Python 3, and preferably Bun.
+
+- **Node through nvm:** `nvm install` once, then `nvm use` in each shell (both read `.nvmrc`). Jest and the integration tests run on Node, so the gate always needs it.
+- **Bun as the preferred runner:** `bun run <script>` runs the package scripts (they still call Node where they say `node`), and the apps and the launcher run on Bun (`npm run editor:bun`, `graphrunner:bun`, `./lg.sh`). Bun is advisory in the local CI (`--bun`).
+- **Install with npm:** `package-lock.json` is the lock file, so install with `npm ci`; don't commit a `bun.lock`.
 
 ```sh
+nvm use                  # Node 22 from .nvmrc
 npm ci --ignore-scripts
-npm run check        # the gate: run before every commit that touches code
-npm run editor       # http://127.0.0.1:8000/  (editor_build.html loads the extensions)
-npm run graphrunner  # http://127.0.0.1:3000/
+bun run check            # the gate (or npm run check): run before every commit that touches code
+bun run editor:bun       # http://127.0.0.1:8000/  (editor_build.html loads the extensions)
+bun run graphrunner:bun  # http://127.0.0.1:3000/
 ```
 
 | Command | What it does |
