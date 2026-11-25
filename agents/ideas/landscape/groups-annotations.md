@@ -1,8 +1,8 @@
 # Groups, notes and reroutes
 
-> **Updated** 2026-11-23 · **Kind** idea area · **Status** living
+> **Updated** 2026-11-25 · **Kind** idea area · **Status** living
 
-Ideas `GRP-01`–`GRP-08`. Source: the user's findings of 2026-11-23 (`agents/human_feed/261123_findings_and_ideas.txt`), items 2 and 3. None of them is planned; they wait for a proposal.
+Ideas `GRP-01`–`GRP-08`. Source: the user's findings of 2026-11-23 (`agents/human_feed/261123_findings_and_ideas.txt`), items 2 and 3. Current delivery is reconciled by the [2026-11-25 audit](../../audits/2026-11-25-capabilities-and-gaps.md): title/body drag and group modes shipped; broader ambitions remain partial.
 
 **Question:** how should groups grow from a coloured rectangle with a title into the organising tool of a graph (frames, comments, bypass regions, nested sections), staying compatible with legacy litegraph, ComfyUI and WebGLStudio documents? And do reroutes hold up against ComfyUI documents?
 
@@ -21,7 +21,7 @@ These facts are from reading `LG/dev` @ `bb9af60`:
 |---|---|---|
 | GRP-01 | Title-only drag: only the title band moves a group; a press in the body starts a box selection or pans, as in ComfyUI | Behaviour change: a setting, default to be decided by the user |
 | GRP-02 | Nested groups: a containment tree, moving a group moves its child groups, drawing order by depth | Legacy documents have flat groups; nesting can be derived from geometry, so no format change is needed [I] |
-| GRP-03 | Group modes: bypass, mute or disable every contained node from the group header | Mode 4 is ON_REQUEST here and BYPASS in ComfyUI; use `comfy_interop.js` mapping, never reuse 4 (roadmap D5) |
+| GRP-03 | Group modes: bypass, mute or disable every contained node from the group header | BYPASS = 4 and ON_REQUEST = 5 since decision 0004; use constants and the existing document migration. Group modes already have an API/menu |
 | GRP-04 | Group styling: palette colour, title font and size, alignment, a type or kind (frame, note, region) | Store only fields other editors ignore or already know (`font_size`, `color`, `flags`) |
 | GRP-05 | Groups as comments: a multiline text body (plain or sanitized markdown), a mode that does not capture nodes | Links CFY-18 (markdown service) |
 | GRP-06 | Better drag and resize: handles on every edge and corner, snapping, "fit to nodes", locked groups | ComfyUI stores `flags.pinned`; LiteGraph kept `locked` in unknown fields |

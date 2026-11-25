@@ -1,6 +1,6 @@
 # Bun process designer and runner
 
-> **Updated** 2026-11-19 · **Kind** idea area · **Status** living
+> **Updated** 2026-11-25 · **Kind** idea area · **Status** living
 
 Ideas `BUN-01`–`BUN-22`. The concept design is in [card BUN-01](../cards/BUN-01-process-runner-on-bun.md).
 
@@ -75,7 +75,7 @@ These facts are from reading the code on `LG/dev`.
 | ID | Idea | Kind | Effort | Notes |
 |---|---|---|---|---|
 | BUN-01 | **Process runner on Bun**: the umbrella concept ([card](../cards/BUN-01-process-runner-on-bun.md)) | runtime | XL | Composes BUN-02 to BUN-14 |
-| BUN-02 | **Process execution mode**: a run is a token moving along EVENT/ACTION links; each node runs once per activation; data links carry payloads | core | L | Reuses existing slot types and modes; mode 4 stays ON_REQUEST |
+| BUN-02 | **Process execution mode**: a run is a token moving along EVENT/ACTION links; each node runs once per activation; data links carry payloads | core | L | Reuses existing slot types and modes; use mode constants; BYPASS = 4 and ON_REQUEST = 5 since decision 0004 |
 | BUN-03 | **Durable step journal**: `(runId, stepKey, attempt) → output` in SQLite; resume by walking from the trigger and skipping completed steps; pin a graph hash per run | runtime | L | Simpler than Temporal because topology is data [I] |
 | BUN-04 | **Retry, backoff, timeout and idempotency-key** properties on steps, with an editor widget | node | M | Non-idempotent side effects |
 | BUN-05 | **Cron and timer triggers**; timers persisted so waits survive restarts | node | S | Time zones; missed ticks while down |

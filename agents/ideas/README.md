@@ -4,7 +4,7 @@
 
 This is a database of feature and integration ideas for this fork. It is grouped by *purpose* (what people build with node graphs) and informed by how other projects use litegraph and its neighbours.
 
-**This is not the production pipeline.** Nothing here is planned, scheduled or promised:
+**This is not the production pipeline.** Entries are candidates unless explicitly linked to accepted plans:
 - The [roadmap](../plans/roadmap.md) and [plans/](../plans/README.md) hold accepted work.
 - This folder is upstream of the first step there (*idea*).
 - Ideas move into `plans/` only by a deliberate promotion (see [Lifecycle](#lifecycle)). Adding ideas here never changes the roadmap.
@@ -18,12 +18,14 @@ This is a database of feature and integration ideas for this fork. It is grouped
 | [landscape/](#landscape-investigations) | The investigations behind the ideas, one document per area |
 | [cards/](#cards) | Ideas that outgrew a row: design sketches, open questions, experiments |
 
-## State on 2026-11-23
+## State on 2026-11-25
 
 **Contents:**
-- **264 ideas**: 13 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries, 22 for the Bun runner, 27 for execution flows, 6 for repository tooling, 9 for the launcher, 8 for groups, notes and reroutes and 7 from human feedback on examples, everyday nodes and workflow authoring.
-- **Maturity:** 177 seed, 61 sketched, 6 investigated, 19 promoted and 1 parked (counted by script from the catalog).
-- **Sources:** X-08 to X-12 and DEV-01 to DEV-06 include 11 open 2025 proposals that are still open; the [improvements ledger](../audits/2026-11-19-improvements-ledger.md) records what happened to the others.
+- **276 ideas** across 13 prefixes: 21 cross-cutting, 45 USE, 55 ComfyUI, 10 WebGLStudio, 6 nunuStudio, 22 3D, 34 JS, 22 Bun, 28 execution flows, 8 repository tooling, 9 launcher, 8 groups and 8 human-feedback ideas.
+- **Maturity:** 178 seed, 72 sketched, 6 investigated, 19 promoted and 1 parked (recounted from the catalog).
+- **Current delivery:** the [full inventory](../audits/2026-11-25-idea-inventory.md) separately records 15 delivered baselines, 24 partial implementations, 9 open/source-checked items, 227 candidates and 1 parked entry. A promoted card is not necessarily complete.
+- **Fresh synthesis:** [capability/gap audit](../audits/2026-11-25-capabilities-and-gaps.md), [priority proposal](../plans/2026-11-25-priority-refresh.md), [machine-readable node and idea snapshot](../audits/2026-11-25-capability-inventory.json). These supersede older summaries for current prioritization; donor/activity/licence claims below remain historical study snapshots.
+- **Collected backlog:** eleven earlier wishes now have rows (X-14–X-21, DEV-07/08, HMD-08) in [remaining platform gaps](landscape/remaining-platform-gaps.md); none is accepted implementation work.
 
 **What each area found:**
 - **Human feedback (2026-11-23):** seven sketches with current-code anchors, open questions and bounded experiments ([HMD-01–07](landscape/human-feedback-usability.md)); follow-ups to existing example, watch and icon foundations, now promoted for a bounded [first pass](../plans/2026-11-23-hmd-usability-first-pass.md), with future contracts deferred.
@@ -37,13 +39,13 @@ This is a database of feature and integration ideas for this fork. It is grouped
 - **WebGLStudio:** archived. LiteScene's MIT graph patterns are still useful: graph components, locator properties, shared graph templates, graph materials.
 - **nunuStudio:** has a node-graph stub with empty bodies. Its main value for this fork is as a reference for hosting litegraph in a 3D editor.
 - **3D libraries:** glTF **KHR_interactivity** is ratified and maps almost one-to-one onto litegraph; it is the strongest 3D interop idea ([3D-01](cards/3D-01-gltf-khr-interactivity.md)). three.js archived its TSL node editor, which leaves room for one.
-- **Execution flows:** 15 node systems compared (Unreal Engine as the main donor). Their concepts map onto this fork's Wave 6 engine. The gaps are a scope rule for volatile pure nodes ([FLW-01](cards/FLW-01-call-scopes-and-pure-semantics.md)), lifecycle and custom events ([FLW-05](cards/FLW-05-lifecycle-and-custom-events.md)), graph profiles per document ([FLW-08](cards/FLW-08-graph-profiles.md)), and a node reference plus an examples library ([FLW-22](cards/FLW-22-node-reference-and-examples.md)).
+- **Execution flows:** 15 node systems compared (Unreal Engine as the main donor). Their concepts map onto this fork's Wave 6 engine. The gaps are a scope rule for volatile pure nodes ([FLW-01](cards/FLW-01-call-scopes-and-pure-semantics.md)), lifecycle and custom events ([FLW-05](cards/FLW-05-lifecycle-and-custom-events.md)), graph profiles per document ([FLW-08](cards/FLW-08-graph-profiles.md)), and further guided examples. The node reference and examples library shipped ([FLW-22/23](cards/FLW-22-node-reference-and-examples.md)); profiles and lifecycle/scopes remain open.
 - **Bun:** 1.4.4 provides server, pub/sub, SQLite, SQL, Redis, S3, secrets, cron and single-binary builds. It has **no permission model**, so the runner's sandbox must come from the OS ([BUN-01](cards/BUN-01-process-runner-on-bun.md)).
-- **Launcher (2026-11-23):** both apps already run on Bun 1.4.4 unchanged; the gap is process control and a friendly entry point ([LCH-01](cards/LCH-01-cross-os-launcher.md), promoted).
-- **Groups, notes and reroutes (2026-11-23):** the user's group and reroute wishes, mapped against `LGraphGroup` and `reroute.js`; candidates for a later plan.
+- **Launcher (2026-11-23):** both apps already run on Bun 1.4.4 unchanged; process control and a friendly entry point shipped ([LCH-01](cards/LCH-01-cross-os-launcher.md)). Cross-OS acceptance and optional follow-ups remain.
+- **Groups, notes and reroutes (2026-11-23):** title/body dragging, capped group controls and space panning shipped; broader nesting, notes, locking, collapse and reroute verification remain partial ([audit](../audits/2026-11-25-capabilities-and-gaps.md)).
 
 **Suggested next investigations [I]:**
-- P5 devices and IoT (only 7 ideas so far).
+- P5 devices and IoT, when selected as a concrete product direction.
 - Measured performance of large graphs.
 - A deeper licence check of the `adapt` candidates before any of them is promoted.
 
@@ -60,6 +62,7 @@ This is a database of feature and integration ideas for this fork. It is grouped
 | [bun-process-runner.md](landscape/bun-process-runner.md) | Bun runtime, durable workflows | What would a Bun-powered process designer and runner look like? |
 | [launcher-cli.md](landscape/launcher-cli.md) | Launcher, command line, process control | How does a fresh clone start, stop and open the apps on every OS, with Bun or Node? |
 | [human-feedback-usability.md](landscape/human-feedback-usability.md) | Human feedback: examples, everyday nodes, slot labels/icons and workflow authoring | How can examples explain more, common nodes feel better, and the editor/runner seed starter workflows from whole node sections and packs? |
+| [remaining-platform-gaps.md](landscape/remaining-platform-gaps.md) | Eleven wishes collected from earlier plans and records | Which follow-ups had no dedicated catalog row? |
 | [groups-annotations.md](landscape/groups-annotations.md) | Groups, comments, reroutes | How should groups grow into frames, comments, bypass regions and nested sections, compatible with ComfyUI and legacy documents? |
 | [execution-flows.md](landscape/execution-flows.md) | Unreal Engine, Unity, Blender, Houdini, TouchDesigner, Pd, Node-RED, ComfyUI, Rete, KHR_interactivity and others | How do node systems run their graphs (exec pins, pure values, lifecycles, custom events), and which flow categories and profiles should this fork offer? |
 

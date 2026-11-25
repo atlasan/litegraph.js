@@ -1,10 +1,12 @@
 # Ideas catalog
 
-> **Updated** 2026-11-23 · **Kind** idea catalog · **Status** living
+> **Updated** 2026-11-25 · **Kind** idea catalog · **Status** living
 
 One row per idea. The [README](README.md#conventions) defines the IDs, fields and lifecycle, and [purposes.md](purposes.md) defines P1 to P10. Details are in each idea's area document.
 
 Rows are grouped by area and sorted by ID. Keep the columns as they are, because the table is meant to be parsed. Before relying on any count derived from it, regenerate the count with a script.
+
+Current delivery and proposal grouping are reconciled in the [2026-11-25 inventory](../audits/2026-11-25-idea-inventory.md); maturity alone is not completion.
 
 **Columns:**
 - **Reuse:** `adapt` / `ref` / `none` / `—`, where `—` means our own concept or an open standard.
@@ -29,6 +31,14 @@ These ideas recur across several areas, so each one also absorbs related area id
 | X-11 | Node property presets: named value sets per node type, stored as a setting | P10 | ext | S | — | seed | 2025 improvements ledger |
 | X-12 | Settings export, import and profiles on `LiteGraph.settings` | P10 | ext | S | — | seed | 2025 improvements ledger |
 | X-13 | Movable, dockable and configurable panels: floating and docked panels, stacks and tabs, saved layouts, built on `PanelHost` | P10 | core | M | ref | seed | Follow-up of the [panels and widgets plan](../plans/2026-11-22-panels-options-node-details.md); CFY-47 |
+| X-14 | Inspector for multiple nodes, groups and reroutes; mixed values and one edit transaction | P10 | core | M | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-15 | Graph document tabs with independent dirty/draft/resource ownership | P10 | app | L | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-16 | Higher-order graph/map and subgraph-definition references as values | P6 P10 | core | M | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-17 | Live synchronization of linked subgraphs while editing | P10 | core | L | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-18 | Optional subgraph IO rails over stable interface slots | P10 | core | M | ref | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-19 | UI conversion between input slots and widgets with link/fallback preservation | P10 | core | M | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-20 | Virtual/broadcast links with explicit scope and serialization | P10 | core | L | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
+| X-21 | Remote pack discovery/registry with provenance and explicit installation boundaries | P10 | app | L | — | sketched | [Collected backlog](landscape/remaining-platform-gaps.md) |
 
 ## Census of litegraph users (`USE`)
 
@@ -320,6 +330,8 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | DEV-04 | Source maps for `build/` bundles | P10 | runtime | S | — | seed |
 | DEV-05 | Release workflow: version alignment checklist, tag-triggered publish after `npm run check` | P10 | app | S | — | seed |
 | DEV-06 | Node and extension scaffolder (template, test stub, declaration entry) | P10 P9 | app | S | — | seed |
+| DEV-07 | Generated hook/event reference and compatibility deprecation diagnostics ([backlog](landscape/remaining-platform-gaps.md)) | P10 | app | S | — | sketched |
+| DEV-08 | One tester controller for progress, cancellation and cleanup ([backlog](landscape/remaining-platform-gaps.md)) | P10 | app | M | — | sketched |
 
 ## Launcher and command line (`LCH`)
 
@@ -354,7 +366,7 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 
 ## Human feedback: examples, nodes and authoring (`HMD`)
 
-[landscape/human-feedback-usability.md](landscape/human-feedback-usability.md). Direct human feedback of 2026-11-23; sketches for consideration, not accepted work.
+[landscape/human-feedback-usability.md](landscape/human-feedback-usability.md). Direct human feedback of 2026-11-23: a bounded first pass shipped; broader scope and HMD-08 remain candidates.
 
 | ID | Idea | Purpose | Kind | Effort | Reuse | Maturity |
 |---|---|---|---|---|---|---|
@@ -365,3 +377,4 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
 | HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | L | — | promoted |
 | HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
+| HMD-08 | Fit or restore the viewport when loading an example ([backlog](landscape/remaining-platform-gaps.md)) | P9 P10 | app | S | — | sketched |

@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-24 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
+> **Updated** 2026-11-25 · **Kind** reference · **Status** living · **Base** `LG/dev` @ `a14c29a`
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -175,19 +175,19 @@ Listed in build order (`build.py` `lib_js_files`):
 | Output (`build/*.js` and `build_node/*.cjs`) | Contents | Registered types under Node |
 |---|---|---|
 | `litegraph.core` | Core only | 4 (`graph/*`) |
-| `litegraph`, `litegraph.mini` | Core + nodes | 249 |
-| `litegraph.full`, `litegraph.full.mini` | + editor, extensions, `defaults_debug.js` | 249 |
-| `litegraph_nodejs.full` | + `nodejs_only` | 267 |
+| `litegraph`, `litegraph.mini` | Core + nodes | 247 (255 with gl-matrix) |
+| `litegraph.full`, `litegraph.full.mini` | + editor and extensions; no editor defaults | 247 (255 with gl-matrix) |
+| `litegraph_nodejs.full` | + `nodejs_only` | 265 (273 with gl-matrix) |
 
 - **Minification:** `mini` builds are `uglifyjs -c`; the others are beautified. CJS is produced by a regex conversion in `build.py`.
-- **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
+- **Package exports:** `.`, `./core`, `./node` (ESM and CJS), explicit compatibility build paths and `./css/*`; no build wildcard. `package.json` owns the contract.
 - **Tests:**
-  - Jest: 45 files, 856 tests (26 golden snapshots, documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
+  - Jest: 60 files; latest recorded release local CI passed 1016 tests (documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
   - node:test: 22 files, in `tools/tests/`; covers the launcher (`launcher`, also under `bun test`), the local CI (`ci`: parsers, reports, the GitHub switch with a fake `gh`, parallel runs on a tiny repository), the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 
-- **`allow_scripts`:** false in the core, **true in every `*.full*` bundle** (because `defaults_debug.js` is part of the build), and toggleable from the `math/formula` widget. The runner resets it.
+- **`allow_scripts`:** false in every library bundle. The editor app presets opt in where intended; the runner applies its explicit policy. `defaults_debug.js` is not bundled. See `docs/development.md` and `apps/runner/nodePolicy.js`.
 - **Unbuilt node files:** five node files are in no build: `device`, `threejs`, `libraries/osc`, `libraries/udp`, `nodejs_mysql` (`jquery.js` was removed in Wave 4e).
 - **Renamed types (Wave 4e):** old names load through automatic replacement mappings registered next to the new types (`basic/watch_advanced`, `watch/value` → `basic/watch` with a `display`; network servers → `network/server/*`; `network/SocketIO` → `network/socketio`; `server/process/NodeProcessInfo` → `sys/processInfo`). `nodePolicy.RENAMED_TYPES` keeps the same table for runner settings.
 - **Gated families:** geometry, glfx and math3d register fewer types without `GL` or `glMatrix`.
@@ -199,3 +199,7 @@ Listed in build order (`build.py` `lib_js_files`):
 ## Human feedback usability additions
 
 The [first-pass plan](../../plans/2026-11-23-hmd-usability-first-pass.md) adds canonical Watch `auto` inspection in `src/nodes/base.js`, boolean state/usage improvements and linked-number widget fallback. `LiteGraph.getSlotLabel` resolves optional glyph labels for both `LGraphCanvas` drawing and `LGraphNode.computeSize`; precedence is slot, node property, canvas. UI/docs: [examples reference](../../../docs/examples.md).
+
+## Current capability measurements
+
+The [2026-11-25 audit](../../audits/2026-11-25-capabilities-and-gaps.md) measured 273 shipped types under the node-reference harness, 27 manifests (25 node-bearing), 86 execution declarations, 9 usage texts, zero static input/output declarations and zero exposed templates. The editor manifest has 50 examples (36 visible, 14 WIP), including 6 structured guides. Full [node/idea metadata](../../audits/2026-11-25-capability-inventory.json) and [priority proposals](../../plans/2026-11-25-priority-refresh.md) are separate from implementation contracts. Stub construction does not verify hardware or service operation.

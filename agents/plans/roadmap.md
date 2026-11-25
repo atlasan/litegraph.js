@@ -1,12 +1,16 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-24 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` released: merged into `master` (`0bdeff3`, PR #11) and tagged `v0.18.0-dev.2` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
+> **Updated** 2026-11-25 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev` except generated doc tables and deprecation logs; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` released: merged into `master` (`0bdeff3`, PR #11) and tagged `v0.18.0-dev.2` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
 
 This is the single place for the current status of planned work.
 
 - **Design reasoning and idea catalog:** [feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md).
 - **Evidence:** [ecosystem study](../memories/research/ecosystem-study/README.md) and [audits](../audits/README.md).
 - **Open items, classified:** the [state audit of 2026-11-23](../audits/2026-11-23-state-audit.md) (FIX D-4 to D-8, DECISION DEC-1 to DEC-5, NICE N-1 to N-12). D-5, D-6 and D-8 are fixed and D-7 was not reproducible ([record](../executions/2026-11-23-audit-fixes.md)); D-4 is flows step 4.
+
+## Fresh priority review (proposed, 2026-11-25)
+
+The [priority refresh](2026-11-25-priority-refresh.md), [capability audit](../audits/2026-11-25-capabilities-and-gaps.md) and [complete idea/card inventory](../audits/2026-11-25-idea-inventory.md) reconcile current delivery and collect 276 ideas. Recommended next proposals: scoped execution freshness, reproducible editor acceptance, and pack metadata/templates/guides. These are recommendations, not a new wave or accepted implementation track. Existing deferred decisions remain in force.
 
 ## Branch model
 
