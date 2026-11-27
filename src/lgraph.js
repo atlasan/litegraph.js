@@ -8,6 +8,7 @@ import { SubgraphDefs } from "./subgraphdefs.js";
 import { PackRegistry } from "./packs.js";
 import { ExecutionState } from "./executionstate.js";
 import { ExecutionEngine } from "./execution.js";
+import { GraphLoader } from "./graphloader.js";
 
 /**
  * LGraph is the class that contain a full graph. We instantiate one and add nodes to it, and then we can run the execution loop.
@@ -3040,9 +3041,53 @@ export class LGraph {
     }
 
     /**
-     * Loads graph data from a given URL or file and configures the graph accordingly.
+     * Configures the graph from untrusted data (a file, a drop, a pushed document): validates it
+     * first with LiteGraph.validateGraphData and loads the cleaned copy. A refused document leaves
+     * the graph unchanged. A report with issues is emitted as `load-report {report, ok, source}`.
+     * Trusted in-memory data can still use configure() directly.
+     * @param {*} data serialized graph; never changed
+     * @param {{repair?: boolean, limits?: object, allowType?: Function, source?: string, keep_old?: boolean}} [options]
+     *   repair defaults to true; source names where the data came from (default "data")
+     * @returns {{ok: boolean, error: boolean, report: object}} error: configure() reported missing or broken nodes
+     */
+    configureValidated(data, options = {}) {
+        const { source = "data", repair = true, keep_old = false, ...validation } = options;
+        const result = LiteGraph.validateGraphData(data, { ...validation, repair });
+        const { report } = result;
+        if (!result.ok || report.issues.length) {
+            const summary = GraphLoader.formatReport(report);
+            if (result.ok) LiteGraph.log_info("lgraph", "configureValidated", `loaded ${source} with fixes: ${summary}`);
+            else LiteGraph.log_warn("lgraph", "configureValidated", `refused ${source}: ${summary}`);
+            this._emit("load-report", { report, ok: result.ok, source });
+        }
+        if (!result.ok) return { ok: false, error: true, report };
+        const error = this.configure(result.data, keep_old);
+        return { ok: true, error: !!error, report };
+    }
+
+    /** data opened from a file, URL or drop: checked as the setting LiteGraph.Loader.OnOpen says */
+    _configureOpened(text, source) {
+        let data;
+        try {
+            data = typeof text === "string" ? JSON.parse(text) : text;
+        } catch (error) {
+            const report = GraphLoader.failure("bad-json", `not a JSON document: ${error.message}`);
+            LiteGraph.log_warn("lgraph", "load", `refused ${source}: ${report.issues[0].message}`);
+            this._emit("load-report", { report, ok: false, source });
+            return { ok: false, error: true, report };
+        }
+        let mode = "repair";
+        try { mode = LiteGraph.settings?.get("LiteGraph.Loader.OnOpen") ?? "repair"; } catch { mode = "repair"; }
+        if (mode === "off") return { ok: true, error: !!this.configure(data), report: null };
+        return this.configureValidated(data, { repair: mode !== "strict", source });
+    }
+
+    /**
+     * Loads graph data from a given URL or file and configures the graph accordingly. The data is
+     * untrusted: it is validated as the setting `LiteGraph.Loader.OnOpen` says ("repair" by default,
+     * "strict", or "off" for configure() as before); see configureValidated.
      * @param {string | File | Blob} url - The URL or file to load the graph data from.
-     * @param {Function} callback - An optional callback function to be executed after loading and configuring the graph.
+     * @param {Function} callback - called after loading with `{ok, error, report}` (report is null with "off").
      */
     // @TODO implement Node.JS loading? check string for being a graph
     load(url, callback) {
@@ -3052,9 +3097,7 @@ export class LGraph {
         if(url.constructor === File || url.constructor === Blob) {
             var reader = new FileReader();
             reader.addEventListener('load', (event) => {
-                var data = JSON.parse(event.target.result);
-                that.configure(data);
-                callback?.();
+                callback?.(that._configureOpened(event.target.result, url.name || "file"));
             });
             reader.readAsText(url);
             return;
@@ -3069,9 +3112,7 @@ export class LGraph {
                 LiteGraph.log_error("Error loading graph:", req.status, req.response);
                 return;
             }
-            var data = JSON.parse( req.response );
-            that.configure(data);
-            callback?.();
+            callback?.(that._configureOpened(req.response, url));
         };
         req.onerror = (err) => {
             LiteGraph.log_error("Error loading graph:", err);

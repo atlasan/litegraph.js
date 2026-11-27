@@ -1,6 +1,6 @@
 import DefaultLibraryManager, {
     LiteGraph, LiteGraphClass, LGraph, LGraphNode, Subgraph, LibraryManager,
-    CallbackHandler, ContextMenu, CurveEditor, isBrowser, getRuntime,
+    CallbackHandler, ContextMenu, CurveEditor, isBrowser, getRuntime, GraphLoader,
     type SerializedLLink,
 } from '@litegraph/litegraph';
 import { LGraph as NodeGraph } from '@litegraph/litegraph/node';
@@ -94,3 +94,12 @@ const starterEntries = LiteGraph.palette.starterPreview({ pack: 'litegraph/basic
 const starterReason: string | undefined = starterEntries[0]?.reason;
 const glyphLabel: string = LiteGraph.getSlotLabel(node, { name: 'enabled', type: 'boolean', label_icon: '◉', label_mode: 'icon' });
 void starterReason; void glyphLabel;
+
+// validated loader (X-04): untrusted documents are checked before anything is constructed.
+const checked = LiteGraph.validateGraphData({ nodes: [] }, { repair: true, limits: { maxNodes: 100 }, allowType: (type) => type !== 'sys/runCommand' || 'refused' });
+const firstIssue: string | undefined = checked.report.issues[0]?.code;
+const loaded = new LGraph().configureValidated(checked.data ?? {}, { source: 'drop' });
+const loadedOk: boolean = loaded.ok && !loaded.error;
+const loaderSummary: string = GraphLoader.formatReport(loaded.report);
+new LGraph().events.on('load-report', (event) => { const refused: boolean = !event.detail.ok; void refused; });
+void firstIssue; void loadedOk; void loaderSummary; void GraphLoader.DEFAULT_LIMITS.maxNodes;

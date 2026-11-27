@@ -2,10 +2,10 @@ import { parentPort, workerData } from 'node:worker_threads';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { format } from 'node:util';
-import { assertAllowedGraph, graphPolicyNotes, scriptsAllowed, renamedType } from '../nodePolicy.js';
+import { assertAllowedGraph, graphPolicyNotes, scriptsAllowed, renamedType, typePolicy } from '../nodePolicy.js';
 
 const require = createRequire(import.meta.url);
-const { LiteGraph, LGraph } = require('../../../build_node/litegraph_nodejs.full.cjs');
+const { LiteGraph, LGraph, GraphLoader } = require('../../../build_node/litegraph_nodejs.full.cjs');
 LiteGraph.logging_set_level(process.env.LOG_LEVEL === 'debug' ? 4 : 2);
 // the Node.js build enables script nodes (math/formula, basic/script, ...); a pushed workflow must
 // not run arbitrary code unless the operator opts in (RUNNER_ALLOW_SCRIPTS=1 or RUNNER_ALLOW_SYS=1)
@@ -26,7 +26,21 @@ async function configure(data) {
     const mapping = LiteGraph.getNodeReplacement?.(type);
     return mapping?.auto && LiteGraph.settings?.get('LiteGraph.Packs.AutoReplace') !== false ? mapping.new_type : renamedType(type);
   };
-  assertAllowedGraph(data, (type) => Object.hasOwn(LiteGraph.registered_node_types, type), { replacedType });
+  const isRegistered = (type) => Object.hasOwn(LiteGraph.registered_node_types, type);
+  // validated loader: bounds, runtime-only fields, malformed links and the type policy, before
+  // anything is constructed; a refusal carries the structured report to the client
+  const checked = LiteGraph.validateGraphData(data, { allowType: typePolicy(isRegistered, { replacedType }) });
+  if (!checked.ok) {
+    let message = `Workflow refused: ${GraphLoader.formatReport(checked.report)}`;
+    // type refusals keep the policy's message, with the settings that enable each type
+    if (checked.report.issues.some((issue) => issue.code === 'type-refused')) {
+      try { assertAllowedGraph(data, isRegistered, { replacedType }); } catch (error) { message = error.message; }
+    }
+    throw Object.assign(new Error(message), { report: checked.report });
+  }
+  data = checked.data;
+  if (checked.report.issues.length) console.warn(`Workflow loaded with notes: ${GraphLoader.formatReport(checked.report, 10)}`);
+  assertAllowedGraph(data, isRegistered, { replacedType }); // defence in depth: unchanged policy check
   for (const note of graphPolicyNotes(data)) console.warn(note); // shown in the runner page log
   const candidate = new LGraph();
   // execution errors name the failing node by its path ("3:7:2" inside subgraphs)
@@ -50,8 +64,12 @@ async function configure(data) {
   }
 }
 
-let graph = await configure(JSON.parse(fs.readFileSync(workerData, 'utf8')));
-const status = () => graph.status === LGraph.STATUS_RUNNING ? 'running' : 'stopped';
+// a workflow that fails to load is reported to the first command (with its report), not thrown
+let graph = null;
+let loadError = null;
+try { graph = await configure(JSON.parse(fs.readFileSync(workerData, 'utf8'))); }
+catch (error) { loadError = error; }
+const status = () => !graph ? 'error' : graph.status === LGraph.STATUS_RUNNING ? 'running' : 'stopped';
 
 let commands = Promise.resolve();
 parentPort.on('message', (message) => {
@@ -59,6 +77,10 @@ parentPort.on('message', (message) => {
 });
 
 async function handleCommand({ requestId, action, serializedGraph }) {
+  if (loadError) {
+    parentPort.postMessage({ requestId, error: loadError.message, ...(loadError.report ? { report: loadError.report } : {}), status: 'error' });
+    return;
+  }
   try {
     let data = {};
     switch (action) {
@@ -84,6 +106,6 @@ async function handleCommand({ requestId, action, serializedGraph }) {
     }
     parentPort.postMessage({ requestId, status: status(), iteration: graph.iteration, ...data });
   } catch (error) {
-    parentPort.postMessage({ requestId, error: error.message, status: status() });
+    parentPort.postMessage({ requestId, error: error.message, ...(error.report ? { report: error.report } : {}), status: status() });
   }
 }

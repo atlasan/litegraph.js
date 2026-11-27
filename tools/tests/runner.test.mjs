@@ -60,6 +60,42 @@ test('worker lifecycle, execution updates, validation, and unload', async () => 
   } finally { await manager.unloadAllGraphs(logger); }
 });
 
+test('oversized and malformed workflows are refused with a structured report (validated loader)', async () => {
+  const many = Array.from({ length: 10001 }, (_, i) => ({ id: i + 1, type: 'basic/const' }));
+  fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'oversized.json'), JSON.stringify({ ...workflow, nodes: many }));
+  const malformedLinks = { ...workflow, nodes: [{ id: 1, type: 'basic/const', outputs: [{ name: 'value', type: 'number', links: [1] }] }], links: [[1, 1, 0, 99, 0, 'number'], [2, 1, 0.5]] };
+  fs.writeFileSync(path.join(process.env.WORKFLOWS_DIR, 'malformed.json'), JSON.stringify(malformedLinks));
+  const longString = { ...workflow, nodes: [{ id: 1, type: 'basic/const', properties: { value: 'x'.repeat(1048577) } }] };
+  const hijack = JSON.parse(JSON.stringify({ ...workflow, runStep: 'boom', nodes: [{ id: 1, type: 'basic/const', onExecute: 'x', graph: { nodes: [] } }] }));
+  try {
+    const oversized = await manager.openGraph('oversized.json', logger);
+    assert.match(oversized.error ?? '', /too-many-nodes/);
+    assert.equal(oversized.report?.ok, false);
+    assert.deepEqual(oversized.report.issues.filter((i) => i.severity === 'error').map((i) => i.code), ['too-many-nodes']);
+    assert.equal(oversized.report.issues[0].limit, 10000);
+    const malformed = await manager.openGraph('malformed.json', logger);
+    assert.match(malformed.error ?? '', /bad-link at \$\.links\[1\]/);
+    assert.equal(malformed.report.issues.find((i) => i.code === 'dangling-link').severity, 'warning', 'a link to nothing is reported too');
+    assert.deepEqual(manager.getCurrentProcesses(), [], 'refused workflows leave no worker behind');
+    // a loaded graph refuses a bad update with a report and keeps running the old one
+    assert.equal((await manager.openGraph('empty.json', logger)).status, 'stopped');
+    const refused = await manager.updateGraph('empty.json', longString, logger);
+    assert.match(refused.error ?? '', /string-too-long/);
+    assert.equal(refused.report.issues[0].path, '$.nodes[0].properties.value');
+    assert.equal((await manager.requestSync('empty.json', logger)).serializedGraph.nodes.length, 0);
+    // runtime-only fields are dropped, not executed or assigned
+    const cleaned = await manager.updateGraph('empty.json', hijack, logger);
+    assert.equal(cleaned.status, 'stopped', cleaned.error);
+    assert.equal((await manager.controlGraph('empty.json', 'start', logger)).status, 'running');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.ok((await manager.controlGraph('empty.json', 'status', logger)).iteration > 0);
+    // the type policy plugs into the loader: refusals keep the policy's message and carry the report
+    const denied = await manager.updateGraph('empty.json', { ...workflow, nodes: [{ id: 4, type: 'sys/runCommand' }] }, logger);
+    assert.match(denied.error ?? '', /not allowed in the runner: sys\/runCommand \(node 4\)/);
+    assert.equal(denied.report.issues.find((i) => i.code === 'type-refused').node, 4);
+  } finally { await manager.unloadAllGraphs(logger); }
+});
+
 test('a workflow with subgraph definitions opens, runs and syncs back in the definitions form', async () => {
   const id = 'a7f1c2d3-0000-4000-8000-0000000000aa';
   const doc = { ...workflow, nodes: [
@@ -234,6 +270,11 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     assert.equal(openedReply.data.status, 'stopped');
     ws.send(JSON.stringify({ type: 'update_graph', requestId: 'denied-fixture', data: { graphId: 'empty.json', serializedGraph: { ...workflow, nodes: [{ id: 1, type: 'sys/runCommand' }] } } }));
     assert.match((await waitFor((m) => m.requestId === 'denied-fixture')).data.message, /not allowed in the runner: sys\/runCommand/);
+    ws.send(JSON.stringify({ type: 'update_graph', requestId: 'malformed-fixture', data: { graphId: 'empty.json', serializedGraph: { ...workflow, nodes: [{ id: 1, type: 'basic/const' }, { id: 1, type: 'basic/const' }] } } }));
+    const malformedReply = await waitFor((m) => m.requestId === 'malformed-fixture');
+    assert.equal(malformedReply.type, 'error');
+    assert.match(malformedReply.data.message, /duplicate-node-id/);
+    assert.deepEqual(malformedReply.data.report.issues.map((i) => i.code), ['duplicate-node-id'], 'the WebSocket error carries the report');
     // script nodes must not evaluate pushed code: a formula that would write a file stays inert
     const marker = path.join(temp, 'formula-ran');
     const formula = `process.getBuiltinModule('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`;

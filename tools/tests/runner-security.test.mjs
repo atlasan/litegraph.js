@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isAllowedHost, isAllowedUpgrade, upgradeRefusal } from '../../apps/runner/server/security.js';
-import { assertAllowedGraph, DEFAULT_DENIED_TYPES, DENIED_FAMILIES, deniedTypes, scriptsAllowed, graphPolicyNotes, describePolicy } from '../../apps/runner/nodePolicy.js';
+import { assertAllowedGraph, DEFAULT_DENIED_TYPES, DENIED_FAMILIES, deniedTypes, scriptsAllowed, graphPolicyNotes, describePolicy, typePolicy } from '../../apps/runner/nodePolicy.js';
 
 const env = { HOST: '127.0.0.1' };
 
@@ -62,6 +62,20 @@ test('runner node policy refuses dangerous types at any subgraph depth', () => {
   assert.equal(scriptsAllowed({}), false, 'script nodes are off by default');
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SYS: '1' }), true);
   assert.equal(scriptsAllowed({ RUNNER_ALLOW_SCRIPTS: '1' }), true, 'scripts alone');
+});
+
+test('the loader type hook (typePolicy) refuses what assertAllowedGraph refuses', () => {
+  const known = (type) => !type.startsWith('nope/') && !type.startsWith('old/');
+  const allow = typePolicy(known, { env: {} });
+  assert.equal(allow('basic/const'), true);
+  assert.equal(allow('nope/missing'), 'unknown node type');
+  for (const type of DEFAULT_DENIED_TYPES) assert.match(allow(type), /not allowed in the runner \(RUNNER_ALLOW_TYPES=@/, type);
+  assert.equal(typePolicy(known, { env: { RUNNER_ALLOW_TYPES: '@host-read' } })('sys/fileRead'), true);
+  assert.equal(typePolicy(known, { env: { RUNNER_ALLOW_SYS: '1' } })('sys/runCommand'), true);
+  assert.match(typePolicy(known, { env: { RUNNER_DENY_TYPES: 'basic/' } })('basic/const'), /basic\/const is not allowed.*RUNNER_ALLOW_TYPES=basic\/const/);
+  const replacedType = (type) => ({ 'old/run': 'sys/runCommand', 'old/log': 'sys/log' })[type] ?? null;
+  assert.match(typePolicy(known, { env: {}, replacedType })('old/run'), /sys\/runCommand is not allowed/, 'a renamed type cannot load a denied one');
+  assert.equal(typePolicy(known, { env: {}, replacedType })('old/log'), true);
 });
 
 test('runner node policy checks the type an automatic replacement loads as', () => {
