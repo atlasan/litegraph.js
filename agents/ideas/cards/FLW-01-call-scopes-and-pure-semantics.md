@@ -8,7 +8,7 @@
 | Inspiration | UE Blueprints pure nodes (re-run per consumer); Houdini dirty flags and time dependency; ComfyUI `IS_CHANGED` (NaN = always rerun); Rete DataflowEngine `reset` |
 | License of the inspiration | UE, Houdini: proprietary; ComfyUI: GPL-3.0. Design reference only. Rete: MIT (adaptable, nothing needed) |
 | Effort | M |
-| Maturity | investigated (the [research note](../../memories/research/2026-11-22-call-scopes-and-pure-nodes.md) compares the options and gives tests) |
+| Maturity | promoted: implemented on `LG/dev_flows_call_scopes` ([plan](../../plans/2026-11-25-call-scopes.md), [decision 0009](../../memories/decisions/0009-call-scopes.md)); the [research note](../../memories/research/2026-11-22-call-scopes-and-pure-nodes.md) compares the options and gives tests |
 | Depends on | Wave 6 (`src/execution.js` memo, stamps, `_dispatchEvent`); decision 0002 |
 | Last reviewed | 2026-11-22 |
 
@@ -60,3 +60,4 @@ A branch with only FLW-01 and FLW-02, `math/rand` declared volatile, and tests 1
 ## History
 
 - 2026-11-22: created from the event flows audit probe. The user's position: ON_REQUEST, refreshing only when needed, is the usual want; use execution to regenerate otherwise.
+- 2026-11-27: promoted and implemented (flows step 4, DEC-5): scopes, `pure: "volatile"`, property version, `refresh` input, `volatile-loop-input`. Answers to the open questions are in the plan's design choices: mutators restamp later; scopes in every model but `legacy`; `branches` on Sequence only; the scope id in `execution-state` later.

@@ -113,7 +113,21 @@ graph.applyExecutionModelModes();     // the model's declared default modes, one
 LiteGraph.registerExecutionModel("mine", { delivery: "immediate", refresh: "ancestors", frame_pull: true });
 ```
 
-**The ancestors frame.** In each frame, before an ALWAYS node runs, its ON_REQUEST inputs are pulled. A pulled node runs **at most once per frame or call** (an event chain started outside a step is one call), and again only when one of its inputs has newer data: `setOutputData` stamps a data version on the links. So two consumers of one pure node run it once, and a loop body re-runs exactly the pure nodes that depend on the index. ALWAYS nodes are never re-run by a pull; they give this frame's value (an ALWAYS node that never ran yet gives its first value). A pulled node gets no `param`, and an event fired while it is pulled is dropped (`refreshing`): event emitters cannot be ON_REQUEST. `getInputData(slot, true)` is a pull too: memoized for ON_REQUEST origins; under the other models it runs the origin once per frame or call. A node that changes an output object in place must call `setOutputData` again, or consumers keep their memo.
+**The ancestors frame.** In each frame, before an ALWAYS node runs, its ON_REQUEST inputs are pulled. When a pulled node runs again depends on what it declares (see call scopes below):
+- **Deterministic** (`pure: true`): only when one of its inputs has newer data (`setOutputData` stamps a data version on the links), one of its properties changed, or the graph was edited. It keeps its value across frames and calls.
+- **Volatile** (`pure: "volatile"`) **and undeclared** ON_REQUEST nodes: once per **call scope**, and again on newer input data or a property edit.
+
+So two consumers of one pure node run it once, and a loop body re-runs exactly the pure nodes that depend on the index. ALWAYS nodes are never re-run by a pull; they give this frame's value (an ALWAYS node that never ran yet gives its first value). A pulled node gets no `param`, and an event fired while it is pulled is dropped (`refreshing`): event emitters cannot be ON_REQUEST. `getInputData(slot, true)` is a pull too: memoized for ON_REQUEST origins; under the other models it runs the origin under the same rules. A node that changes an output object in place must call `setOutputData` again, or consumers keep their memo.
+
+**Call scopes.** Outside `legacy` every run belongs to a call scope, with an id such as `call_3/7.s1/5.i2`:
+- a **root scope** per frame (`frame_N`) and per event chain started outside a step (`call_N`: a click, a timer, a network message);
+- a **child scope** per Sequence output (`<id>.sK`, from the `branches` declaration), per loop iteration of FOR, ForEach and WHILE (`<id>.iK`; WHILE evaluates its condition in the iteration's scope), and per `graph/function` call (`<id>.fK`).
+
+Inside one scope every consumer of a volatile node sees the same value; the next iteration or Sequence output gets a new one. `options.action_call` is the scope id (one call id; `ExecutionEngine.scopeId` reads it). A loop or a custom node opens a scope per iteration with `ExecutionEngine.iterate(node, k, fn)`.
+
+**Property edits.** `setProperty` bumps the node's property version, so the next pull in the same call sees the edit. A direct write to `node.properties` is seen at the next pull by a deterministic node (it compares its property values), but within one call scope only `setProperty` is seen.
+
+**Regenerating a value: the refresh input.** An ON_REQUEST node's Inputs menu offers **Refresh** outside `legacy`: an ACTION input (`refresh: true`; `ExecutionEngine.addRefreshInput(node)`) that runs the node again now and restamps its outputs, so pure nodes downstream follow at their next pull. Use it for a deterministic node that reads outside state, instead of making it ALWAYS.
 
 **Where the model comes from.**
 - A document with `config.execution` runs under that model; a document without it loads as `legacy` and is saved without it.
@@ -139,21 +153,24 @@ class MyLoop {
   } };
 }
 LiteGraph.declareNodeExecution(["my/add", "my/mul"], { pure: true });  // ON_REQUEST by default under "ancestors"
+LiteGraph.declareNodeExecution(["my/now"], { pure: "volatile" });      // ON_REQUEST, once per call scope
 LiteGraph.getNodeDefinition("events/timer").execution;  // { ticks: true, modes: [0, 2], ... }
 ```
 
 - `pure: true`: safe to re-run; new nodes are ON_REQUEST under `ancestors`. Declared by the math, math3d, logic and string packs, and the basic constants and conversions (`basic/const`, `boolean`, `string`, `data`, `array`, `length`, `not`).
+- `pure: "volatile"`: reads the time, randomness or outside state; new nodes are ON_REQUEST under `ancestors` and give a new value per call scope (frame, event, loop iteration, Sequence output). Declared by `math/rand`, `math/formula` (its `TIME`) and `basic/time`. A volatile node saved in ALWAYS mode keeps it: one value per frame, shared by every reader (no `pure-always` warning, and "Apply the model's node modes" leaves it).
+- `branches: true`: each event output opens a child call scope (Sequence).
 - `ticks: true`: needs the step loop; a pull never re-runs it. Declared by Timer, Delay, `math/average`, `tendTo`, `spikes`, `accumulate`, `audio/adsr` and the two texture smoothers.
 - Nodes that only react to events default to ON_EVENT outside `legacy`: `events/once`, `waitAll`, `filter`, `log`, `basic/alert`.
-- **Volatile nodes stay undeclared, so ALWAYS:** nodes that read the time, randomness, outside state or a widget (`basic/time`, `math/rand`, `widget/*`, …). ON_REQUEST would keep one value per frame or call; a `volatile` kind is planned (FLW-02). The node reference (`npm run docs:nodes`) shows every type's declaration.
+- **Other volatile nodes stay undeclared, so ALWAYS,** until they are checked in a browser: outside state or widgets (`basic/object`, `objects/evaluate`, `widget/*`, `input/gamepad`, …). An undeclared node set ON_REQUEST by hand runs once per call scope. `basic/variable` is not pure: with its input connected it writes. The node reference (`npm run docs:nodes`) shows every type's declaration.
 - **Host calls:** `node.actionDo(action)` from your code is an event entry. Under `ancestors` it pulls the node's ON_REQUEST inputs first, as a delivered event does. Calling `node.onAction(...)` directly bypasses the engine.
 - `changeMode`, the node panel, the Mode menu and the group's "Mode for all nodes" refuse a mode the type declares invalid. The refusal (`node.mode_refusal`) names `LiteGraph.Execution.AllowAnyMode`, the setting that lifts it; a group lists the nodes it skipped. `LiteGraph.getValidNodeModes(node)`.
 - A new node of a declared type gets its model's default mode when it is added; a loaded node keeps its stored mode.
-- `graph.checkExecution()` returns `{model, issues}`: an invalid model or mode, a `ticks` node that is not stepped (also inside a non-ALWAYS subgraph node), an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS. A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
+- `graph.checkExecution()` returns `{model, issues}`: an invalid model or mode, a `ticks` node that is not stepped (also inside a non-ALWAYS subgraph node), an ON_REQUEST event emitter, a loop without a body, a pure node left ALWAYS, and a loop input that comes from a volatile ON_REQUEST node (`volatile-loop-input`: the loop reads it once, while a body that reads it again gets a new value per iteration). A root graph emits `execution-check {report}` after loading when someone listens; the setting `LiteGraph.Node.ExecutionBadge` (on in the Editor) shows the issues as node badges.
 
 ### Loops
 
-FOR, ForEach and WHILE deliver their body immediately in every model but `legacy`, fire `completed` when done, and stop within the loop on `break`. Under `ancestors`, compute the loop's data with pure ON_REQUEST nodes: they re-run only when the loop changed their inputs.
+FOR, ForEach and WHILE deliver their body immediately in every model but `legacy`, fire `completed` when done, and stop within the loop on `break`. Each iteration is a call scope. Under `ancestors`, compute the loop's data with pure ON_REQUEST nodes: deterministic ones re-run only when the loop changed their inputs, volatile ones (`math/rand`) once per iteration.
 
 ```js
 const graph = new LGraph();                                  // ancestors

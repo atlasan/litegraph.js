@@ -65,9 +65,10 @@ class EvSequence {
 
     static title = "Sequence";
     static desc = "Triggers a sequence of events when an event arrives";
-    // its outputs fire now, in slot order, in every model (B4)
+    // its outputs fire now, in slot order, in every model (B4); each output is a branch with its own
+    // call scope outside legacy, so pulled values are fresh per output (flows step 4)
     static def = {
-        execution: { emit: "immediate" },
+        execution: { emit: "immediate", branches: true },
         usage: "Connect one event to an input; its outputs fire one after the other, top to bottom, before the next node runs.",
     };
     // @ BUG: fails to construct Node
@@ -93,8 +94,13 @@ class EvSequence {
     }
 
     onAction(action, param, options) {
+        if (this.outputs && this.graph && !LiteGraph.ExecutionEngine.rulesFor(this.graph).legacy) {
+            // the engine gives each output its child scope, whose id is the call id
+            for (let i = 0; i < this.outputs.length; ++i) this.triggerSlot(i, param, null, { ...options });
+            return;
+        }
         if (this.outputs) {
-            // each output gets its own call id on a copy: the caller's options are not changed (B4)
+            // legacy: each output gets its own call id on a copy: the caller's options are not changed (B4)
             const base = options?.action_call ?? this.id + "_" + (action ? action : "action");
             for (var i = 0; i < this.outputs.length; ++i) {
                 const call = { ...options, action_call: base + "_seq_" + i + "_" + Math.floor(Math.random() * 9999) };

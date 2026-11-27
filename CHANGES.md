@@ -10,6 +10,11 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 * **`LiteGraph.Hooks.StrictHandled`** (setting, off by default; [decision 0007](agents/memories/decisions/0007-hook-handled-rule.md)): when on, every hook site counts only `true` or `{return_value: true}` as handled. Eight sites accept more today (node `onMouseDown`, `onDblClick`, `onDropItem`, `onDropFile`, `onAddPropertyToPanel`; canvas `onDropItem`, `onShowNodePanel`); `CallbackHandler.handledAt(name, result, legacy)` is their shared rule. See `docs/callbacks.md`.
 * **Generated callback tables:** the hook and typed-event tables of `docs/callbacks.md` are generated from the maps in `src/litegraph.d.cts` (`npm run docs:callbacks`, `tools/hook-docs.mjs`), with the handler arguments and event payloads; a test fails when they are stale.
 * **Compatibility charter** (`docs/compatibility.md`, linked from `AGENTS.md`): the targets (this library's API and documents, the original LiteGraph API, ComfyUI workflows, WebGLStudio and other hosts), how far each is kept, how each is checked, and the rules for compatibility changes ([decision 0008](agents/memories/decisions/0008-legacy-compatibility-scope.md)).
+* **Call scopes** (flows step 4, FLW-01 to FLW-04, FLW-14; [plan](agents/plans/2026-11-25-call-scopes.md), [decision 0009](agents/memories/decisions/0009-call-scopes.md)). Outside `legacy`:
+  * Every run belongs to a call scope: a root scope per frame and per outer event, and a child scope per Sequence output, loop iteration (FOR, ForEach, WHILE) and `graph/function` call. `ExecutionEngine.scopeId`, `ExecutionEngine.iterate(node, k, fn)`, and the `branches` declaration.
+  * `pure: "volatile"` declares a node that reads time, randomness or outside state: ON_REQUEST by default under `ancestors`, run once per call scope. Declared by `math/rand`, `math/formula` and `basic/time`.
+  * A **refresh input** (Inputs menu of an ON_REQUEST node, `ExecutionEngine.addRefreshInput`) runs the node again and restamps its outputs.
+  * `checkExecution` reports `volatile-loop-input`: a loop input fed by a volatile ON_REQUEST node.
 
 * **Validated loader for untrusted graphs** (`src/graphloader.js`, plan `agents/plans/2026-11-25-graph-loader.md`, idea X-04): `LiteGraph.validateGraphData(data, {repair, limits, allowType})` checks a serialized graph before any node is constructed and returns `{ok, data, report}`. It bounds node, link, group and definition counts, subgraph and value nesting, string, properties and document sizes and coordinates (settings `LiteGraph.Loader.*`), drops runtime-only fields (private keys, prototype keys, class members, `on…` callbacks, runtime state), reports malformed links, and asks a type hook about every node type. `graph.configureValidated(data, options)` validates and loads, and emits `load-report`. `GraphLoader` is exported with the defaults and `formatReport`.
 
@@ -21,8 +26,17 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 * **Deprecated, logged once per name, no removal date:** `host.cb_handler` (read or assigned), `handler.callbacks_handlers` and `host.callbackhandler_setup()` keep working. Use `registerCallbackHandler`, `onHook`, `unregisterCallbackHandler` and `hasCallbackHandlers` on the host, and `LiteGraph.setDispatchTap` for tracing; `callbackhandler_setup()` needs no replacement. The library no longer uses these names itself (`initialize()` and `setupPlatform()` no longer create the hook registry; it is created when a handler is first registered).
 * **Development environment:** Node.js 22 is pinned in `.nvmrc` (`nvm use`); Bun is the preferred script and app runner (`bun run check`, `editor:bun`, `graphrunner:bun`); installs stay on `npm ci` and `package-lock.json`.
 * **`no-undef` is an error in `eslint.config.js`:** browser and Node globals come from the `globals` package (new dev dependency, 13.24.0, already in the lock through ESLint), and the scripts in `src/nodes/nodejs_only/` and `src/nodes/libraries/` get the `LiteGraph` script-scope globals. `tools/tests/undeclared-names.test.mjs` now checks that the config keeps the rule on and that `src/` is clean.
+* **Pulled values under `ancestors` and the newer models** (call scopes; `legacy` and its golden snapshots unchanged):
+  * a deterministic pure node (`pure: true`) keeps its value across frames and calls, and runs again only on newer input data, a property change or a graph edit (it used to run once per frame);
+  * volatile and **undeclared** ON_REQUEST nodes run once per call scope, so a loop iteration or a Sequence output gets a fresh value (it used to be once per frame or outer call);
+  * `setProperty` inside a call is seen by the next pull in the same call;
+  * `options.action_call` is the call scope id (`call_3/7.s1`); Sequence no longer builds ids with `Math.random`, and triggers no longer draw a uuid;
+  * a volatile node saved in ALWAYS mode keeps it: no `pure-always` warning, and "Apply the model's node modes" leaves it;
+  * the `random-console` example keeps Rand ALWAYS, so the Watch and the log show the compared value.
 
 ## Fixed
+
+* **Event flows audit findings 1–4:** ON_REQUEST random, time and state readers were stale across loop iterations and Sequence outputs; a property edit inside one call was not seen; two call ids existed; `graph/function` ran in its caller's scope (see call scopes above).
 
 # 0.18.0-dev.2 (2026-11-23): dev pre-release
 

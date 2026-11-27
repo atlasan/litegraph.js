@@ -46,7 +46,7 @@
    ],
    "flags": {},
    "order": 1,
-   "mode": 5,
+   "mode": 0,
    "inputs": [],
    "outputs": [
     {
@@ -461,7 +461,7 @@
  "groups": [
   {
    "id": 1,
-   "title": "Every second the Timer asks the Branch: is Rand above the threshold? On true, a Sequence logs the value to the browser console, shows it in the Watch and counts the hit. Watch and Console get the same number the comparison used: under \"ancestors\" Rand runs once per tick. Press Play.",
+   "title": "Every second the Timer asks the Branch: is Rand above the threshold? On true, a Sequence logs the value to the browser console, shows it in the Watch and counts the hit. Watch and Console get the same number the comparison used: Rand is Always, so it has one value per frame (an On Request Rand would give each Sequence output a new value). Press Play.",
    "bounding": [
     40,
     20,

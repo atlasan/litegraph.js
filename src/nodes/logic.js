@@ -230,8 +230,12 @@ class logicBranch {
 
     onExecute(_param, _options) {
         var conditition = this.getInputData(1);
-        // run by the step loop (ALWAYS mode, not triggered): only a changed condition branches (B14)
-        const stepped = this.mode === LiteGraph.ALWAYS && (!_options?.action_call || String(_options.action_call).startsWith(`${this.id}_exec_`));
+        // run by the step loop (ALWAYS mode, not triggered): only a changed condition branches (B14);
+        // outside legacy the call id is the scope id, so the step's own turn tells it
+        const legacy = !this.graph || LiteGraph.ExecutionEngine.rulesFor(this.graph).legacy;
+        const stepped = this.mode === LiteGraph.ALWAYS && (legacy
+            ? (!_options?.action_call || String(_options.action_call).startsWith(`${this.id}_exec_`))
+            : this.graph._step_node === this);
         if (stepped) {
             if (conditition === this._last_condition) return;
             this._last_condition = conditition;
@@ -283,9 +287,12 @@ class logicFor {
         if (!this.started) return;
         var iI = this.getInputData(0) ?? 0;
         var num = this.getInputData(1) ?? 0;
-        for (var k=iI;k<iI+num;k++) {
-            this.setOutputData(1, k);
-            this.triggerSlot(0, param);
+        // each iteration has its own call scope outside legacy: pulled values are fresh per iteration
+        for (let k=iI;k<iI+num;k++) {
+            LiteGraph.ExecutionEngine.iterate(this, k - iI, () => {
+                this.setOutputData(1, k);
+                this.triggerSlot(0, param);
+            });
             if (this.stopped) break;
         }
         this.started = false;
@@ -344,9 +351,11 @@ class logicForEach {
         // a plain loop, so that break stops it (B5); slot 1 is the "do" action, not data
         const elements = Array.from(ar);
         for (let k = 0; k < elements.length; k++) {
-            this.setOutputData(1, k);
-            this.setOutputData(2, elements[k]);
-            this.triggerSlot(0, param);
+            LiteGraph.ExecutionEngine.iterate(this, k, () => {
+                this.setOutputData(1, k);
+                this.setOutputData(2, elements[k]);
+                this.triggerSlot(0, param);
+            });
             if (this.stopped) break;
         }
         this.started = false;
@@ -419,14 +428,20 @@ class logicWhile {
                 this.cond = !checkOnStart || this.getInputData(1);
                 this.k = 0;
                 var cycleLimit = this.properties.cycleLimit || 999;
+                // outside legacy each iteration (its condition, then its body) has its own call scope
+                var Engine = LiteGraph.ExecutionEngine;
+                var scope = Engine.scopeFor(this, `i${this.k}`);
                 while (this.cond && this.k<cycleLimit) {
-                    this.setOutputData(1, this.k);
-                    this.triggerSlot(0, param);
+                    Engine.inScope(scope, () => {
+                        this.setOutputData(1, this.k);
+                        this.triggerSlot(0, param);
+                    });
                     // done
                     if (this.stopped) break;
                     this.k++;
+                    scope = Engine.scopeFor(this, `i${this.k}`);
                     // a pull: the condition's ON_REQUEST ancestors run again when the body changed their inputs
-                    this.cond = this.getInputData(1,true,true);
+                    this.cond = Engine.inScope(scope, () => this.getInputData(1,true,true));
                 }
                 if (this.cond && !this.stopped && this.k >= cycleLimit) {
                     // stopped by the limit, not by the condition: say so, and what lifts it

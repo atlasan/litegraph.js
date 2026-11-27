@@ -156,7 +156,7 @@ function executionSummary(LiteGraph, type, decl) {
         if (mode != null) defaults[rules.name] = name(mode);
     }
     return {
-        pure: decl.pure, ticks: decl.ticks, loop: decl.loop, emit: decl.emit ?? null,
+        pure: decl.pure, volatile: !!decl.volatile, ticks: decl.ticks, loop: decl.loop, branches: !!decl.branches, emit: decl.emit ?? null,
         modes: decl.modes ? decl.modes.map(name) : null,
         default_mode: decl.default_mode != null ? name(decl.default_mode) : null,
         defaults, invalid_in: invalid,
@@ -220,7 +220,7 @@ const slotsText = (slots) => (slots === null ? '?' : slots.length ? slots.map((s
 function executionText(exec) {
     if (!exec) return '—';
     const parts = [];
-    for (const flag of ['pure', 'ticks', 'loop']) if (exec[flag]) parts.push(flag);
+    for (const flag of ['pure', 'volatile', 'ticks', 'loop', 'branches']) if (exec[flag]) parts.push(flag);
     if (exec.emit) parts.push(`emit ${exec.emit}`);
     const defaults = Object.entries(exec.defaults).map(([model, mode]) => `${model}: ${mode}`);
     if (defaults.length) parts.push(`default ${defaults.join(', ')}`);
@@ -239,7 +239,7 @@ function readmePage(json) {
         `LiteGraph ${json.litegraph}: ${total} node types in ${json.packs.length} packs, ${declared} with execution declarations.`, '',
         'Each pack page has one table per category. Columns:',
         '- **Inputs / outputs:** `name:type`. `action` and `event` are execution slots; `any` accepts every type; `?` means the slots are only known in a browser.',
-        '- **Execution:** the declared needs (`pure`, `ticks`, `loop`, the default mode per execution model). `—` means undeclared: the node starts ALWAYS. See the [guide](../guide.md#execution-models).',
+        '- **Execution:** the declared needs (`pure`, `volatile`, `ticks`, `loop`, `branches`, the default mode per execution model). `—` means undeclared: the node starts ALWAYS. See the [guide](../guide.md#execution-models).',
         '', 'The same data is in [nodes.json](nodes.json), for search and tools.', '',
         '| Pack | Description | Nodes | Declared | Categories |', '|---|---|---|---|---|'];
     for (const pack of json.packs) {

@@ -76,6 +76,8 @@ export interface INodeInputSlot extends INodeSlot {
     link: LLink["id"] | null;
     /** set on an input attached to a widget (see LGraphNode.addWidgetInput) */
     widget?: { name: string };
+    /** an ACTION input that re-runs the node and restamps its outputs (ExecutionEngine.addRefreshInput) */
+    refresh?: boolean;
 }
 export interface INodeOutputSlot extends INodeSlot {
     links: LLink["id"][] | null;
@@ -2808,14 +2810,19 @@ export interface NodeExecutionDeclaration {
     emit?: 'immediate';
     /** needs the step loop (Timer, Delay): never re-run by a pull */
     ticks?: boolean;
-    /** safe to re-run: ON_REQUEST by default under "ancestors" */
-    pure?: boolean;
+    /** safe to re-run: ON_REQUEST by default under "ancestors". `true`: deterministic, run again only when its
+     * inputs, properties or graph changed; `"volatile"`: reads time, randomness or outside state, run once per call scope */
+    pure?: boolean | 'volatile';
+    /** set by `pure: "volatile"` (normalized declarations): memoized per call scope */
+    volatile?: boolean;
+    /** each event output opens a child call scope (Sequence) */
+    branches?: boolean;
     /** a loop: checkExecution reports it without a body */
     loop?: boolean;
     /** action inputs delivered immediately even under deferred models ("break") */
     immediate_inputs?: readonly string[];
 }
-export interface ExecutionIssue { node: LGraphNode; path: string | null; code: 'invalid-model' | 'invalid-mode' | 'ticks-not-stepped' | 'on-request-emitter' | 'loop-without-body' | 'pure-always'; message: string }
+export interface ExecutionIssue { node: LGraphNode; path: string | null; code: 'invalid-model' | 'invalid-mode' | 'ticks-not-stepped' | 'on-request-emitter' | 'loop-without-body' | 'pure-always' | 'volatile-loop-input'; message: string }
 export interface ExecutionReport { model: string; issues: ExecutionIssue[] }
 
 /** A pack manifest: plain data, never code (see LiteGraph.packs). */
@@ -2962,6 +2969,8 @@ export interface ExecutionModel extends Required<Pick<ExecutionModelRules, 'deli
     title?: string;
     description?: string;
 }
+/** A call scope (flows step 4): a new object per opening; `id` is shown and used as the call id. */
+export interface CallScope { readonly id: string; readonly parent: CallScope | null }
 /** Execution models and the engine (Wave 6); see the guide's Execution section. */
 export declare class ExecutionEngine {
     static models: Map<string, ExecutionModel>;
@@ -2972,9 +2981,29 @@ export declare class ExecutionEngine {
     static resolveDefaultModel(): string;
     static modelNameFor(graph: LGraph): string;
     static rulesFor(graph: LGraph): ExecutionModel | { name: 'legacy'; legacy: true; title: string };
-    /** pulls a node's ON_REQUEST data ancestors (memo per frame and call, link data versions) */
+    /** pulls a node's ON_REQUEST data ancestors (memo per call scope or, for deterministic pure nodes, per data and property version) */
     static pull(node: LGraphNode): void;
     static ensureFresh(node: LGraphNode): void;
+    /** the current call scope id (`call_3/7.s1/5.i2`), or null outside any run; outside legacy it is the `action_call` */
+    static readonly scopeId: string | null;
+    /** a child call scope `<node id>.<tag>` of the current one, or null under legacy */
+    static scopeFor(node: LGraphNode, tag: string): CallScope | null;
+    /** runs fn in a call scope (null: in the current one) */
+    static inScope<T>(scope: CallScope | null, fn: () => T): T;
+    /** runs one loop iteration in its own child call scope (`<node id>.i<k>`); under legacy just runs it */
+    static iterate<T>(node: LGraphNode, k: number, fn: () => T): T;
+    /** true for a node declared `pure: true` (not volatile) */
+    static isDeterministic(node: LGraphNode): boolean;
+    /** a property edit: bumps the node's property version (setProperty calls it) */
+    static touch(node: LGraphNode): void;
+    /** true for an ACTION input marked `refresh: true` */
+    static isRefreshInput(input: INodeInputSlot | null | undefined): boolean;
+    /** whether the Inputs menu offers a refresh input (an ON_REQUEST node without one, outside legacy) */
+    static offersRefresh(node: LGraphNode): boolean;
+    /** adds a refresh input (once); returns its slot */
+    static addRefreshInput(node: LGraphNode): number;
+    /** runs a node again now and restamps its outputs; false for a NEVER node or one without a graph */
+    static refresh(node: LGraphNode): boolean;
     /** what a BYPASS node does instead of its code: data outputs take their mapped input; with events, events go on to the event outputs */
     static passThrough(node: LGraphNode, run?: { events?: boolean; param?: unknown; options?: object }): void;
     /** the input a bypassed node passes to a data output (same index first, then the first fitting type), or -1 */

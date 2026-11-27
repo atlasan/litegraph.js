@@ -91,12 +91,14 @@ describe('execution declarations (Wave 6c)', () => {
         expect(exec).toMatchObject({ pure: true, modes: [0, 4], models: { strict: false, event: { default_mode: 1 } } });
         expect(Object.isFrozen(exec)).toBe(true);
         expect(constructed).toBe(0);
-        expect(LiteGraph.getNodeDefinition('basic/time').execution).toBeNull(); // volatile: undeclared (basic/const is pure since the declaration pass)
+        expect(LiteGraph.getNodeDefinition('basic/script').execution).toBeNull(); // undeclared (basic/const is pure since the declaration pass)
+        expect(LiteGraph.getNodeDefinition('basic/time').execution).toMatchObject({ pure: true, volatile: true }); // flows step 4
         expect(LiteGraph.getNodeDefinition('logic/CycleFOR').execution).toMatchObject({ emit: 'immediate', loop: true, immediate_inputs: ['break'] });
         expect(LiteGraph.getNodeDefinition('events/timer').execution).toMatchObject({ ticks: true, modes: [0, 2] });
         expect(LiteGraph.getNodeDefinition('math/operation').execution.pure).toBe(true);
         expect(LiteGraph.getNodeDefinition('string/concatenate').execution.pure).toBe(true);
-        expect(LiteGraph.getNodeDefinition('math/rand').execution).toBeNull();
+        expect(LiteGraph.getNodeDefinition('math/rand').execution).toMatchObject({ pure: true, volatile: true });
+        expect(LiteGraph.getNodeDefinition('math/operation').execution.volatile).toBe(false);
     });
 
     test('changeMode refuses an invalid mode and names the setting that lifts it', () => {
@@ -132,7 +134,7 @@ describe('execution declarations (Wave 6c)', () => {
         const add = (g, type) => { const n = LiteGraph.createNode(type); g.add(n); return n; };
         const a = graph('ancestors');
         expect([add(a, 'math/operation').mode, add(a, 'logic/CycleFOR').mode, add(a, 'math/rand').mode, add(a, 'logic/IF').mode])
-            .toEqual([LiteGraph.ON_REQUEST, LiteGraph.ON_EVENT, LiteGraph.ALWAYS, LiteGraph.ON_TRIGGER]);
+            .toEqual([LiteGraph.ON_REQUEST, LiteGraph.ON_EVENT, LiteGraph.ON_REQUEST, LiteGraph.ON_TRIGGER]); // math/rand: volatile since flows step 4
         const s = graph('step');
         expect([add(s, 'math/operation').mode, add(s, 'logic/CycleFOR').mode]).toEqual([LiteGraph.ALWAYS, LiteGraph.ON_EVENT]);
         const legacy = graph('legacy');
