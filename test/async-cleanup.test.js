@@ -121,3 +121,30 @@ test('manual starts wait for cleanup and run only the steps supplied by the host
     expect(node.onExecute).toHaveBeenCalledTimes(1);
     await graph.stopAsync();
 });
+
+test('a pending manual start waits for cleanup queued during initialization', async () => {
+    const graph = new LGraph();
+    const removed = add(graph);
+    const loading = add(graph);
+    const initialization = deferred();
+    const cleanup = deferred();
+    removed.onRemoved = () => cleanup.promise;
+    loading.ready = initialization.promise;
+    loading.initialization_state = 'loading';
+    loading.onStart = jest.fn();
+
+    const started = graph.start(0, { manual: true });
+    await Promise.resolve();
+    graph.remove(removed);
+    loading.initialization_state = 'ready';
+    initialization.resolve();
+    await new Promise(setImmediate);
+    expect(graph.status).toBe(LGraph.STATUS_STOPPED);
+    expect(loading.onStart).not.toHaveBeenCalled();
+
+    cleanup.resolve();
+    expect(await started).toBe(true);
+    expect(loading.onStart).toHaveBeenCalledTimes(1);
+    expect(graph.execution_timer_id ?? null).toBeNull();
+    await graph.stopAsync();
+});

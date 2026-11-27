@@ -47,6 +47,8 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 
 ## Fixed
 
+* A pending graph start now waits for cleanup that begins during node initialization. Host-driven graphs resume once and keep scheduling under the host's control.
+
 * **WaitAll:** pending inputs now use their own instance state. The node can complete another cycle after runtime initialization and resets its pending inputs on completion.
 
 * **`check:types` checked the wrong declarations under `ci:local`:** its temporary consumer had no `package.json`, so when the temporary directory sat inside a checkout (`ci:local` puts `TMPDIR` under `.lg/ci/work/`), TypeScript's package self-reference resolved `@litegraph/litegraph` to that checkout's declarations instead of the commit under test. A run from a checkout on another branch then failed (or passed) for the wrong reason. The consumer now has its own `package.json`.

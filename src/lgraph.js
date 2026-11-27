@@ -449,12 +449,16 @@ export class LGraph {
         const request = {};
         this._pending_start = request;
         request.promise = this.whenIdle().then(() => this.whenReady()).then(async () => {
-            // Include nodes added between readiness settlement and this continuation.
-            while (this._pending_start === request && this.hasPendingInitialization()) await this.whenReady();
-            if (this._pending_start !== request) return false;
-            request.starting = true;
-            this.start(interval, options);
-            return this.status === LGraph.STATUS_RUNNING;
+            while (this._pending_start === request) {
+                if (this._cleanupWait || this._pendingCleanup?.size) await this.whenIdle();
+                else if (this.hasPendingInitialization()) await this.whenReady();
+                else {
+                    request.starting = true;
+                    this.start(interval, options);
+                    return this.status === LGraph.STATUS_RUNNING;
+                }
+            }
+            return false;
         }).catch((error) => {
             if (this._pending_start !== request && !request.starting) return false;
             this.initialization_error = error;
