@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-27 | [LiteGraph host support and pipeline integration](2026-11-27-host-pipeline-merge.md) | final, full local CI passed on `6d65e20` |
 | 2026-11-27 | [Development plan integration](2026-11-27-dev-plan-merge.md) into `LG/dev` | final, full local CI passed on `9308cea` |
 | 2026-11-27 | [LiteGraph scripts in nunuStudio](2026-11-27-nunustudio-litegraph.md): host-driven execution, prototype-format import, editor and exported preview | final |
 | 2026-11-27 | [Classic browser build and WebGLStudio compatibility](2026-11-27-classic-browser-webglstudio.md) | final |

@@ -29,6 +29,14 @@ These ideas recur across several areas, so each one also absorbs related area id
 | X-11 | Node property presets: named value sets per node type, stored as a setting | P10 | ext | S | — | seed | 2025 improvements ledger |
 | X-12 | Settings export, import and profiles on `LiteGraph.settings` | P10 | ext | S | — | seed | 2025 improvements ledger |
 | X-13 | Movable, dockable and configurable panels: floating and docked panels, stacks and tabs, saved layouts, built on `PanelHost` | P10 | core | M | ref | seed | Follow-up of the [panels and widgets plan](../plans/2026-11-22-panels-options-node-details.md); CFY-47 |
+| X-14 | Mixed-value inspector for nodes, groups and reroutes with one edit transaction | P10 | core | M | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-15 | Graph document tabs with independent draft, dirty state and resource ownership | P10 | app | L | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-16 | Higher-order graph map and subgraph definitions as values | P6 P10 | core | M | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-17 | Live synchronization across linked subgraph instances during edits | P10 | core | L | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-18 | Optional subgraph IO rails using stable interface slots | P10 | core | M | ref | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-19 | Editor conversion between widget and input slot with link and fallback preservation | P10 | core | M | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-20 | Virtual links with explicit scope, diagnostics and serialization | P10 | core | L | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
+| X-21 | Remote pack discovery with provenance and explicit install boundaries | P10 | app | L | — | sketched | [Follow-ups](landscape/remaining-platform-gaps.md) |
 
 ## Census of litegraph users (`USE`)
 
@@ -320,6 +328,8 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | DEV-04 | Source maps for `build/` bundles | P10 | runtime | S | — | seed |
 | DEV-05 | Release workflow: version alignment checklist, tag-triggered publish after `npm run check` | P10 | app | S | — | seed |
 | DEV-06 | Node and extension scaffolder (template, test stub, declaration entry) | P10 P9 | app | S | — | seed |
+| DEV-07 | Generated hook/event reference and compatibility diagnostics ([Wave 7f](../plans/roadmap.md#wave-7-event-integration-done)) | P10 | app | S | — | promoted |
+| DEV-08 | One tester controller for progress, cancellation and cleanup ([follow-ups](landscape/remaining-platform-gaps.md)) | P10 | app | M | — | sketched |
 
 ## Launcher and command line (`LCH`)
 
@@ -365,3 +375,4 @@ From the [2025 improvements ledger](../audits/2026-11-19-improvements-ledger.md)
 | HMD-05 | Optional slot `label_icon`, icon+text or compact icon-only labels, name/type disclosure ([card](cards/HMD-05-slot-label-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
 | HMD-06 | Editor/runner auto workflow generator: add all nodes from sections/packs, propose organization/descriptions/metadata, seed and refresh starter workflows ([card](cards/HMD-06-workflow-builder-runner.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | app | L | — | promoted |
 | HMD-07 | Shared native, SVG and emoji icon contract for nodes, slots and app surfaces ([card](cards/HMD-07-shared-icons.md)); bounded first pass ([plan](../plans/2026-11-23-hmd-usability-first-pass.md)) | P9 P10 | core | M | — | promoted |
+| HMD-08 | Fit or restore the viewport when opening an example ([follow-ups](landscape/remaining-platform-gaps.md)) | P9 P10 | app | S | — | sketched |

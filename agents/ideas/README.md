@@ -21,7 +21,7 @@ This is a database of feature and integration ideas for this fork. It is grouped
 ## State on 2026-11-23
 
 **Contents:**
-- **264 ideas**: 13 cross-cutting, 45 from other litegraph users, 55 from the ComfyUI world, 10 WebGLStudio, 6 nunuStudio, 22 for 3D libraries, 34 for JS libraries, 22 for the Bun runner, 27 for execution flows, 6 for repository tooling, 9 for the launcher, 8 for groups, notes and reroutes and 7 from human feedback on examples, everyday nodes and workflow authoring.
+- **276 ideas and 15 cards.** The [catalog](catalog.md) lists every ID. The [pipeline review](../plans/2026-11-27-pipeline-priority-review.md) connects current priorities to the relevant cards and records which proposals have shipped.
 - **Maturity:** 177 seed, 59 sketched, 6 investigated, 21 promoted and 1 parked (counted by script from the catalog).
 - **Sources:** X-08 to X-12 and DEV-01 to DEV-06 include 11 open 2025 proposals that are still open; the [improvements ledger](../audits/2026-11-19-improvements-ledger.md) records what happened to the others.
 
@@ -62,6 +62,7 @@ This is a database of feature and integration ideas for this fork. It is grouped
 | [human-feedback-usability.md](landscape/human-feedback-usability.md) | Human feedback: examples, everyday nodes, slot labels/icons and workflow authoring | How can examples explain more, common nodes feel better, and the editor/runner seed starter workflows from whole node sections and packs? |
 | [groups-annotations.md](landscape/groups-annotations.md) | Groups, comments, reroutes | How should groups grow into frames, comments, bypass regions and nested sections, compatible with ComfyUI and legacy documents? |
 | [execution-flows.md](landscape/execution-flows.md) | Unreal Engine, Unity, Blender, Houdini, TouchDesigner, Pd, Node-RED, ComfyUI, Rete, KHR_interactivity and others | How do node systems run their graphs (exec pins, pure values, lifecycles, custom events), and which flow categories and profiles should this fork offer? |
+| [remaining-platform-gaps.md](landscape/remaining-platform-gaps.md) | Cross-cutting platform follow-ups | Which older editor and tooling proposals have catalog IDs and acceptance checks? |
 
 ## Cards
 
