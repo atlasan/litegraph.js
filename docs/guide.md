@@ -73,6 +73,8 @@ LiteGraph.registerNodeType("math/my_sum", Sum);
 
 `graph.runStep()` runs one cycle (a **frame**); `graph.start(interval)` runs frames continuously. Nodes run in topological order: nodes with no inputs first, ties broken by `priority`. Data written with `setOutputData` is stored on the link and read with `getInputData`.
 
+A host that already has a frame loop can call `graph.start(0, { manual: true })` instead. This runs the normal start lifecycle and waits for pending initialization when necessary. Once the graph is running, call `graph.runStep()` from the host’s frame loop and `graph.stop()` on shutdown. `startAsync(0, { manual: true })` is available when the caller needs a promise.
+
 **Modes** (`node.mode`) say when a node runs:
 
 | Mode | Runs |

@@ -270,7 +270,7 @@ def get_new_version():
             version_number = update_version(version_number, "--patch")
     return version_number
 
-def convert_es6_to_commonjs(data):
+def strip_esm_exports(data):
     class_names = []
     var_names = []
     const_names = []
@@ -319,12 +319,15 @@ def convert_es6_to_commonjs(data):
     data = re.sub(r'export\s+default\s+([a-zA-Z0-9_]+)', export_default_replacer, data)
     data = re.sub(r'(?m)^export\s+function\s+([a-zA-Z0-9_]+)', export_function_replacer, data)
     data = re.sub(r'export\s+\{([a-zA-Z0-9_,\s]+)\};', r'\1;', data)
-    data = re.sub(r'import\s+([a-zA-Z0-9_,{}\s*]+)\s+from\s+["\']([a-zA-Z0-9_./-]+)["\'];', lambda match: "var " + match.group(1).strip() + " = require('" + match.group(2).strip() + "');", data)
-    # data = re.sub(r'\let\b', 'var', data)
+    names = list(dict.fromkeys(class_names + function_names + var_names + const_names + let_names))
+    return data, names
 
-    # Add exports at the end of the file
-    if class_names or function_names or var_names or const_names or let_names:
-        exports = '\n'.join([f'exports.{name} = {name};' for name in dict.fromkeys(class_names + function_names + var_names + const_names + let_names)])
+def convert_es6_to_commonjs(data):
+    data, names = strip_esm_exports(data)
+    data = re.sub(r'import\s+([a-zA-Z0-9_,{}\s*]+)\s+from\s+["\']([a-zA-Z0-9_./-]+)["\'];', lambda match: "var " + match.group(1).strip() + " = require('" + match.group(2).strip() + "');", data)
+
+    if names:
+        exports = '\n'.join(f'exports.{name} = {name};' for name in names)
         data += '\n' + exports
 
     return data
@@ -403,8 +406,40 @@ def build_distribution(milestone):
                 os.replace(file, destination)
     print("Milestone snapshot refreshed" if milestone else f"Local package built in {output}")
 
+def build_classic():
+    output = Path(".lg/classic-build")
+    output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="build-", dir=output) as temporary:
+        stage = Path(temporary)
+        filename = "litegraph.classic.js"
+        concatenate_js_files(lib_js_files + lib_nodes_files, filename, stage, remove_imports=True)
+        path = stage / filename
+        data, exports = strip_esm_exports(path.read_text(encoding="utf-8"))
+        globals_to_expose = (
+            "LiteGraph", "LGraph", "LGraphNode", "LGraphCanvas", "LGraphGroup",
+            "LLink", "LGraphTexture", "ContextMenu", "CurveEditor", "DragAndScale",
+        )
+        if missing := set(globals_to_expose).difference(exports):
+            raise RuntimeError(f"Missing classic script globals: {', '.join(sorted(missing))}")
+        globals_js = ", ".join(globals_to_expose)
+        path.write_text(
+            '(function () {\n'
+            '"use strict";\n'
+            'if (globalThis.LiteGraph) {\n'
+            '    throw new Error("Load litegraph.classic.js as the only LiteGraph build on the page.");\n'
+            '}\n'
+            f'{data}\nObject.assign(globalThis, {{ {globals_js} }});\n'
+            '})();\n',
+            encoding="utf-8",
+        )
+        os.replace(path, output / filename)
+    print(f"Classic browser script built at {output / filename}")
+
 
 if options["update-version"]:
     update_version_in_files(get_new_version(), ["src/litegraph.js", "package.json"])
 
-build_distribution(milestone="--milestone" in sys.argv)
+if "--classic" in sys.argv:
+    build_classic()
+else:
+    build_distribution(milestone="--milestone" in sys.argv)

@@ -93,3 +93,31 @@ test('cleanup queued while another cleanup is pending is included', async () => 
     a.resolve(); await Promise.resolve(); expect(done).toBe(false);
     b.resolve(); await Promise.all([removedA, removedB]);
 });
+
+test('manual starts wait for cleanup and run only the steps supplied by the host', async () => {
+    const graph = new LGraph();
+    const node = add(graph);
+    const cleanup = deferred();
+    node.onExecute = jest.fn();
+    node.onStart = jest.fn();
+    node.onStop = jest.fn(() => cleanup.promise);
+    graph.updateExecutionOrder();
+
+    graph.start(0, { manual: true });
+    expect(graph.status).toBe(LGraph.STATUS_RUNNING);
+    expect(graph.execution_timer_id ?? null).toBeNull();
+    expect(node.onExecute).not.toHaveBeenCalled();
+    graph.runStep();
+    expect(node.onExecute).toHaveBeenCalledTimes(1);
+    graph.stop();
+    expect(node.onStop).toHaveBeenCalledTimes(1);
+
+    const restarted = graph.start(0, { manual: true });
+    expect(graph.status).toBe(LGraph.STATUS_STOPPED);
+    cleanup.resolve();
+    expect(await restarted).toBe(true);
+    expect(node.onStart).toHaveBeenCalledTimes(2);
+    expect(graph.execution_timer_id ?? null).toBeNull();
+    expect(node.onExecute).toHaveBeenCalledTimes(1);
+    await graph.stopAsync();
+});

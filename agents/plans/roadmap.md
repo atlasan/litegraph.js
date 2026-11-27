@@ -26,16 +26,21 @@ Routine changes build into the ignored `.lg/local-build/` package. Refresh the t
 
 ## Integration baseline
 
-`LG/dev` at merge commit `9308cea` is the verified integration baseline. Full local CI passed on Linux with Node 22.23.5, including the frozen snapshot check. Bun passed 169/172 with three advisory failures. The external ComfyUI probes await their local inputs. [Merge and CI results](../executions/2026-11-27-dev-plan-merge.md)
+`LG/dev` at merge commit `9308cea` is the verified pre-host integration baseline. Full local CI passed on Linux with Node 22.23.5, including the frozen snapshot check. Bun passed 169/172 with three advisory failures. The offline ComfyUI workflow JSON probes skipped because the local inputs were absent. [Merge and CI results](../executions/2026-11-27-dev-plan-merge.md)
 
-1. **Finish 0.18 validation.** Verify the Windows and macOS launchers, run the external ComfyUI probes with their fixtures, and resolve the distribution decision (D12).
-2. **Run the host tracks in parallel.** The nunuStudio session is evaluating the new integration and can propose compatible LiteGraph changes. The WebGLStudio session is pursuing full legacy compatibility against real host projects. Each track should contribute reproducible fixtures and record remaining differences. [Host acceptance criteria](../../docs/compatibility.md#targets)
-3. **Add a headless entry for 0.19.** This revises Tier 2 step 7. Verify the new entry loads and executes a saved graph without canvas dependencies. Test existing ESM, CommonJS and typed consumers of `./core`, including its canvas exports. Use the host fixtures during subsequent canvas and bundler refactors.
+## Current priorities
+
+1. **Finish 0.18 validation.** Smoke-test the shipped quick-start commands (`lg.bat` on Windows, `lg.sh` on macOS), resolve distribution (D12), and run local CI on the release candidate. The ComfyUI fixture comparison is an optional offline interoperability check in that report.
+2. **Continue the host tracks in parallel.** Use the classic script and WebGLStudio browser fixtures, and the ESM integration and Playwright fixtures in nunuStudio. Expand existing project coverage and track reverse export, shared scene behavior and shader materials as separate milestones.
+3. **Add a headless entry for 0.19.** Verify graph execution without canvas dependencies and preserve the existing ESM, CommonJS and typed `./core` consumers. Use the host fixtures during later canvas and bundler refactors.
+
+See the [pipeline and priority review](2026-11-27-pipeline-priority-review.md) for tasks, status, acceptance checks, dependencies and cards.
 
 ## Status at a glance
 
 | Wave | Theme | Status |
 |---|---|---|
+| Track | [Legacy project compatibility and 3D editor integration](2026-11-27-legacy-projects-and-editor-integration.md) | **In progress.** The classic build and WebGLStudio editor compatibility fixes pass the two-runtime fixture comparison ([verification](../executions/2026-11-27-classic-browser-webglstudio.md)). nunuStudio has a prototype-format import, graph tab, and host-driven playback ([verification](../executions/2026-11-27-nunustudio-litegraph.md)). Legacy export to the older WebGLStudio runtime and shader materials remain open. |
 | Track | [Browser and Node execution parity](2026-11-27-browser-node-execution-parity.md) | Trace comparison covers linked instance state and deferred queues across stop/start, reopen, and explicit clearing, plus paused inspection for unavailable models |
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
@@ -241,7 +246,7 @@ Follow-ups: movable, dockable and configurable panels (X-13), multi-node editing
 - The apps run on Bun (`npm run editor:bun`, `graphrunner:bun`); `"node"` runtime declarations match Bun.
 - The editor server serves `/docs`.
 
-Open: a Windows and macOS check of the wrappers; ideas LCH-04 and LCH-06 to LCH-09. Candidates for later plans from the same findings (C-1 to C-5): ComfyUI groups and reroutes, group UI, a ComfyUI custom-node survey, a compatibility charter, concept docs from a survey of visual programming systems.
+Open: [native Windows and macOS wrapper smoke checks](2026-11-27-pipeline-priority-review.md#launcher-and-comfyui-verification) and launcher ideas LCH-04 and LCH-06 to LCH-09. GRP-01 and the compatibility charter (C-4) shipped. The reroute audit, deeper group UI, custom-node survey and concept docs remain candidates.
 
 ## Node pin, modes and exec slots track
 

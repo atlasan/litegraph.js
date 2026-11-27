@@ -8,6 +8,7 @@
     "private": false,
     "scripts": {
         "build": "python3 build.py",
+        "build:classic": "python3 build.py --classic",
         "build:milestone": "python3 build.py --milestone",
         "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs/api -r --verbose --debug",
         "docs:nodes": "node tools/node-reference.mjs",
@@ -24,7 +25,8 @@
         "nodemon": "nodemon",
         "test:integration": "node --test tools/tests/*.test.mjs",
         "check:build": "node tools/check-build.mjs",
-        "check": "npm run lint -- --quiet && npm run build && npm run check:types && npm test -- --runInBand && npm run test:integration && npm run check:build && npm run check:browser && npm run check:execution-parity -- --if-browser",
+        "check:classic": "npm run build:classic && node tools/check-classic.mjs",
+        "check": "npm run lint -- --quiet && npm run build && npm run check:types && npm test -- --runInBand && npm run test:integration && npm run check:build && npm run check:classic && npm run check:browser && npm run check:execution-parity -- --if-browser",
         "check:types": "node tools/check-types.mjs",
         "check:browser": "node tools/browser/smoke.mjs",
         "check:execution-parity": "node tools/execution-parity/check.mjs",

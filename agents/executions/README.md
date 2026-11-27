@@ -7,6 +7,8 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 | Date | Record | Status |
 |---|---|---|
 | 2026-11-27 | [Development plan integration](2026-11-27-dev-plan-merge.md) into `LG/dev` | final, full local CI passed on `9308cea` |
+| 2026-11-27 | [LiteGraph scripts in nunuStudio](2026-11-27-nunustudio-litegraph.md): host-driven execution, prototype-format import, editor and exported preview | final |
+| 2026-11-27 | [Classic browser build and WebGLStudio compatibility](2026-11-27-classic-browser-webglstudio.md) | final |
 | 2026-11-27 | [Browser and Node execution parity verification](2026-11-27-browser-node-execution-parity.md) | final |
 | 2026-11-27 | [Tier 1 integration](2026-11-27-tier1-integration.md): loader, hook deprecations, call scopes and browser smoke merged into `LG/dev`; only records and minified bundles conflicted; stale `docs/callbacks.md` (new `load-report` event) regenerated; Jest 1151, integration 170 | final |
 | 2026-11-25 | [Validated loader for untrusted graphs](2026-11-25-graph-loader.md): `LiteGraph.validateGraphData` (`src/graphloader.js`) with `LiteGraph.Loader.*` limits, runtime fields dropped, link checks and a type hook; the runner refuses failing workflows with a structured report; `graph.load()` and the Editor drop validate in repair mode; branch `LG/dev_graph_loader` | final; not merged |

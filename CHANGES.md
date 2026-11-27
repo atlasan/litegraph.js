@@ -7,6 +7,10 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 
 ## Added
 
+* **Host-driven graph execution:** `graph.start(0, { manual: true })` starts the graph lifecycle without adding a second frame loop. The embedding host calls `runStep()` from its own loop. The option is supported by `startAsync()` and survives a deferred start.
+
+* **Classic browser build:** `npm run build:classic` writes `.lg/classic-build/litegraph.classic.js` for legacy hosts such as WebGLStudio. It exposes the legacy globals and runs through the same LiteGraph core as the ESM build. `npm run check` includes a classic-script smoke check. [Build and loading guide](docs/development.md#classic-browser-script)
+
 * **`LiteGraph.Hooks.StrictHandled`** (setting, off by default; [decision 0007](agents/memories/decisions/0007-hook-handled-rule.md)): when on, every hook site counts only `true` or `{return_value: true}` as handled. Eight sites accept more today (node `onMouseDown`, `onDblClick`, `onDropItem`, `onDropFile`, `onAddPropertyToPanel`; canvas `onDropItem`, `onShowNodePanel`); `CallbackHandler.handledAt(name, result, legacy)` is their shared rule. See `docs/callbacks.md`.
 * **Generated callback tables:** the hook and typed-event tables of `docs/callbacks.md` are generated from the maps in `src/litegraph.d.cts` (`npm run docs:callbacks`, `tools/hook-docs.mjs`), with the handler arguments and event payloads; a test fails when they are stale.
 * **Compatibility charter** (`docs/compatibility.md`, linked from `AGENTS.md`): the targets (this library's API and documents, the original LiteGraph API, ComfyUI workflows, WebGLStudio and other hosts), how far each is kept, how each is checked, and the rules for compatibility changes ([decision 0008](agents/memories/decisions/0008-legacy-compatibility-scope.md)).

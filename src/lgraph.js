@@ -443,7 +443,7 @@ export class LGraph {
         }
     }
 
-    startAsync(interval = 0) {
+    startAsync(interval = 0, options) {
         if (this.getExecutionBlockReason()) return Promise.resolve(false);
         if (this._pending_start) return this._pending_start.promise;
         const request = {};
@@ -453,7 +453,7 @@ export class LGraph {
             while (this._pending_start === request && this.hasPendingInitialization()) await this.whenReady();
             if (this._pending_start !== request) return false;
             request.starting = true;
-            this.start(interval);
+            this.start(interval, options);
             return this.status === LGraph.STATUS_RUNNING;
         }).catch((error) => {
             if (this._pending_start !== request && !request.starting) return false;
@@ -466,11 +466,11 @@ export class LGraph {
         return request.promise;
     }
 
-    /** Start immediately when ready, or return a Promise while dependencies load. */
-    start(interval = 0) {
+    /** Start when ready. With manual scheduling the host drives frames with runStep(). */
+    start(interval = 0, { manual = false } = {}) {
         if (this.getExecutionBlockReason()) return;
         if (this.status === LGraph.STATUS_RUNNING) return;
-        if (this.hasPendingInitialization() || this._pendingCleanup?.size || this._cleanupWait) return this.startAsync(interval);
+        if (this.hasPendingInitialization() || this._pendingCleanup?.size || this._cleanupWait) return this.startAsync(interval, { manual });
         this.initialization_error = null;
 
         this.status = LGraph.STATUS_RUNNING;
@@ -490,6 +490,7 @@ export class LGraph {
         this.last_update_time = this.starttime;
         this._shareTiming();
         if (!this._subgraph_node) this.reportExecutionState(null, "reset");
+        if (manual) return;
 
         const onAnimationFrame = () => {
             if (this.execution_timer_id !== -1) {

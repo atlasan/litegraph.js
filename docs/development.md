@@ -24,6 +24,8 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 | `npm run check:browser` | The [browser smoke test](#browser-smoke-test): `editor_build.html` in a headless Firefox, driven by pointer and key input. Skipped (exit 0) when no Firefox is found |
 | `npm run check:execution-parity` | [Browser and Node execution parity](#browser-and-node-execution-parity) across the built editor and Node runner. Requires Firefox. |
 | `npm run build` | Builds the current source into the ignored package at `.lg/local-build/` |
+| `npm run build:classic` | Builds the separate [classic browser script](#classic-browser-script) |
+| `npm run check:classic` | Builds that script and checks the globals and a running graph. Included in `npm run check` |
 | `npm run build:milestone` | Regenerates the tracked compatibility snapshot at an agreed milestone |
 | `npm test` / `npm run test:integration` | Jest (`test/`) / node:test (`tools/tests/`) |
 | `npm run check:fresh` | Rebuilds locally and compares the tracked bundle paths against the local build |
@@ -121,6 +123,14 @@ npm run ci:github -- off       # gh variable delete LG_GITHUB_CI
 ```
 
 `on` and `off` change a repository setting (they need `gh auth` with admin rights on the repository); `--dry-run` prints the command, `--repo OWNER/NAME` picks another repository, `LG_CI_GH` another `gh`. Only the repository owner switches it; agents never do. Keep the workflow's steps and the runner's core steps the same.
+
+## Classic browser script
+
+Run `npm run build:classic` to generate `.lg/classic-build/litegraph.classic.js` from the same sources and standard node catalog as the browser ESM build. The classic artifact has a separate output directory from the package and tracked milestone builds. Serve it as a regular script before a host that reads LiteGraph from the browser global.
+
+The script exposes `LiteGraph`, `LGraph`, `LGraphNode`, `LGraphCanvas`, `LGraphGroup`, `LLink`, `LGraphTexture`, `ContextMenu`, `CurveEditor`, and `DragAndScale`. Load one LiteGraph build per page. Where host scripts provide gl-matrix or LiteGL, load those first. WebGLStudio provides both. Script evaluation stays disabled by default.
+
+For WebGLStudio, test the bundled runtime and the generated script as separate deployments using the host's `test/legacy-compat/verify.mjs` command. See the [compatibility targets](compatibility.md#targets) for the legacy document scope.
 
 ## Milestone builds
 
