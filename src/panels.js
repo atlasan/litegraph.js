@@ -1,5 +1,6 @@
 import { LiteGraph } from "./litegraph.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
+import { CallbackHandler } from "./callbackhandler.js";
 
 /**
  * Side panels: the shell (sections, tabs, toolbar with search / sort / modified-only filter,
@@ -32,6 +33,11 @@ function panelHumanize(name) {
         .trim()
         .toLowerCase();
     return text ? text[0].toUpperCase() + text.slice(1) : "";
+}
+
+/** onAddPropertyToPanel's own rule: any truthy result, with a {return_value} counting by its value. */
+function panelRowHandled(r) {
+    return !!r && (typeof r !== "object" || !("return_value" in r) || !!r.return_value);
 }
 
 function panelSetting(id, fallback) {
@@ -1482,11 +1488,12 @@ PanelBuilder.showNode = function(graphcanvas, node) {
                 for (const { pName, info } of list) {
                     const value = node.properties[pName];
                     // in case the node wants control over its panel row
-                    // (registered handlers too; any truthy legacy result means handled, a {return_value} counts by its value)
+                    // (registered handlers too; its own rule: any truthy result, a {return_value} counting by its value;
+                    // strict with LiteGraph.Hooks.StrictHandled)
                     const r = node.processCallbackHandlers
                         ? node.processCallbackHandlers("onAddPropertyToPanel", { def_cb: node.onAddPropertyToPanel }, pName, panel, value, info, fUpdate)
                         : node.onAddPropertyToPanel?.(pName, panel, value, info, fUpdate);
-                    if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) continue;
+                    if (CallbackHandler.handledAt("onAddPropertyToPanel", r, panelRowHandled)) continue;
                     panel.addRow({
                         name: pName,
                         value,

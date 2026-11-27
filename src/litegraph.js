@@ -314,8 +314,7 @@ export class LiteGraphClass {
      * initialize LiteGraph, call when other classes are instantiated
      */
     initialize(){
-        // event dispatcher, along direct (single) assignment of callbacks [ event entrypoint ]
-        this.callbackhandler_setup();
+        // hooks: the registry is created when a handler is first registered (installHooks)
 
         this.LLink = LLink;
         this.LGraph = LGraph;
@@ -784,7 +783,6 @@ export class LiteGraphClass {
      * settings and extensions. Called by initialize(); safe to call earlier.
      */
     setupPlatform() {
-        this.callbackhandler_setup();
         this.commands ??= new CommandRegistry();
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
@@ -793,6 +791,9 @@ export class LiteGraphClass {
         this.valueTypes ??= new ValueTypeRegistry();
         this.panel_editors ??= { ...defaultPanelEditors(), ...PanelBuilder.extraEditors() };
         this.panel_sections ??= new Map();
+        if (!this.settings.has(CallbackHandler.STRICT_HANDLED)) {
+            this.settings.define({ id: CallbackHandler.STRICT_HANDLED, name: "Hooks: only true or {return_value: true} counts as handled", default: false, tooltip: "Off: each hook site keeps its own rule and warns once when another truthy result decided it. On: every site uses the strict rule (decision 0007)." });
+        }
         if (!this.settings.has("LiteGraph.Panel.Side")) {
             // side panels (options, node details): where they dock, their width, remembered state
             this.settings.define({ id: "LiteGraph.Panel.Side", name: "Side panels dock on the", type: "combo", options: ["left", "right"], default: "left", tooltip: "Where the options and node panels open. The ⇆ button in a panel switches it." });

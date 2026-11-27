@@ -10,6 +10,7 @@
         "build": "python3 build.py",
         "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs/api -r --verbose --debug",
         "docs:nodes": "node tools/node-reference.mjs",
+    "docs:callbacks": "node tools/hook-docs.mjs",
         "editor": "nodemon apps/editor/server.js",
         "graphrunner": "nodemon --exec node apps/runner/server/index.js",
         "editor:bun": "bun apps/editor/server.js",

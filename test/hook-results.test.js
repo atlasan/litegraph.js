@@ -3,6 +3,7 @@ import { JSDOM } from 'jsdom';
 import { LiteGraph } from '../src/litegraph.js';
 import { LGraph } from '../src/lgraph.js';
 import { LGraphCanvas } from '../src/lgraphcanvas.js';
+import { CallbackHandler } from '../src/callbackhandler.js';
 
 /**
  * Per-site result rules (event integration plan, step 2). Every canvas and node call site that
@@ -10,7 +11,11 @@ import { LGraphCanvas } from '../src/lgraphcanvas.js';
  * snapshot records what the site made of each: "default" when it behaved as with no result,
  * otherwise what changed. The snapshot pins each site's own rule (CallbackHandler.is / handled /
  * valueOf / objectOf); it must stay identical unless a rule is changed on purpose (decision 2).
+ *
+ * Strict mode (decision 0007): with the setting LiteGraph.Hooks.StrictHandled on, only `true` and
+ * `{return_value: true}` count as handled. The second snapshot lists the cells that it changes.
  */
+const STRICT = 'LiteGraph.Hooks.StrictHandled';
 
 const ITEM = { content: 'From hook' };
 const RESULTS = {
@@ -232,7 +237,9 @@ const SITES = {
 function outcome([hook, where, driver], result, hasResult) {
     const env = setup();
     const host = where === 'canvas' ? env.canvas : env[where];
-    if (hasResult) host[hook] = () => result;
+    // a fresh copy per run: menu sites append to a returned list
+    const fresh = result !== null && typeof result === 'object' ? structuredClone(result) : result;
+    if (hasResult) host[hook] = () => fresh;
     try {
         return driver(env);
     } catch (error) {
@@ -243,18 +250,100 @@ function outcome([hook, where, driver], result, hasResult) {
     }
 }
 
-test('each site keeps its own rule for a hook result', () => {
-    const table = {};
-    for (const [name, site] of Object.entries(SITES)) {
-        const base = outcome(site, null, false);
-        const results = { ...RESULTS, ...(site[3] ? LIST_RESULTS(site[3]) : {}) };
-        const row = { 'no result': base };
-        for (const [label, result] of Object.entries(results)) {
-            const seen = outcome(site, result, true);
-            row[label] = JSON.stringify(seen) === JSON.stringify(base) ? 'default' : (typeof seen === 'number' ? 'handled' : seen);
+/** every site × every result, with the strict setting on or off */
+function buildTable(strict) {
+    LiteGraph.settings.set(STRICT, strict);
+    try {
+        const table = {};
+        for (const [name, site] of Object.entries(SITES)) {
+            const base = outcome(site, null, false);
+            const results = { ...RESULTS, ...(site[3] ? LIST_RESULTS(site[3]) : {}) };
+            const row = { 'no result': base };
+            for (const [label, result] of Object.entries(results)) {
+                const seen = outcome(site, result, true);
+                row[label] = JSON.stringify(seen) === JSON.stringify(base) ? 'default' : (typeof seen === 'number' ? 'handled' : seen);
+            }
+            if (typeof base === 'number') row['no result'] = 'drawn';
+            table[name] = row;
         }
-        if (typeof base === 'number') row['no result'] = 'drawn';
-        table[name] = row;
+        return table;
+    } finally {
+        LiteGraph.settings.set(STRICT, false);
     }
-    expect(table).toMatchSnapshot();
+}
+
+let lenient;
+test('each site keeps its own rule for a hook result', () => {
+    lenient = buildTable(false);
+    expect(lenient).toMatchSnapshot();
+});
+
+test('strict mode: only true and {return_value: true} count as handled', () => {
+    expect(LiteGraph.settings.get(STRICT)).toBe(false); // off by default
+    const strict = buildTable(true);
+    // the strict-mode column: "lenient -> strict" for each cell the setting changes
+    const changed = {};
+    for (const [name, row] of Object.entries(strict)) {
+        for (const [label, seen] of Object.entries(row)) {
+            const before = lenient[name][label];
+            if (JSON.stringify(seen) !== JSON.stringify(before)) (changed[name] ??= {})[label] = `${JSON.stringify(before)} -> ${JSON.stringify(seen)}`;
+        }
+    }
+    expect(changed).toMatchSnapshot();
+    // only truthy results other than true change, and they fall back to the site's default
+    for (const row of Object.values(changed)) {
+        for (const [label, cell] of Object.entries(row)) {
+            expect(['1', '{return_value: 1}']).toContain(label);
+            expect(cell).toMatch(/-> "default"$/);
+        }
+    }
+    expect(Object.keys(changed).sort()).toEqual([
+        'canvas onDropItem (drop on the background)', 'canvas onShowNodePanel',
+        'node onAddPropertyToPanel', 'node onDblClick (double click on a selected node)',
+        'node onDropFile', 'node onDropItem', 'node onMouseDown (pointer down on the body)',
+    ]);
+});
+
+describe('strict "handled" warnings (setting off)', () => {
+    const hookWarnings = (warn) => warn.mock.calls.filter((args) => args[0] === 'hooks');
+    beforeEach(() => CallbackHandler._warnedOnce.clear());
+
+    test('a truthy non-true result that decided a site warns once per hook, naming the setting', () => {
+        const warn = jest.spyOn(LiteGraph, 'log_warn');
+        const { canvas, node } = setup();
+        node.onMouseDown = () => ({ return_value: 1 });
+        canvas.processMouseDown(pointer(160, 140));
+        canvas.processMouseDown(pointer(160, 140));
+        node.onDropFile = () => 1;
+        jest.spyOn(window.FileReader.prototype, 'readAsText').mockImplementation(() => {});
+        canvas.processDrop(drop([{ name: 'a.txt', type: 'text/plain' }]));
+        const lines = hookWarnings(warn).map((args) => args.slice(1).join(' '));
+        expect(lines).toHaveLength(2);
+        expect(lines[0]).toMatch(/onMouseDown/);
+        expect(lines[1]).toMatch(/onDropFile/);
+        for (const line of lines) {
+            expect(line).toContain(STRICT);
+            expect(line).toContain('{return_value: true}');
+        }
+    });
+
+    test('true, {return_value: true}, false and no result never warn; strict mode never warns', () => {
+        const warn = jest.spyOn(LiteGraph, 'log_warn');
+        for (const result of [true, { return_value: true }, false, undefined]) {
+            const { canvas, node } = setup();
+            node.onMouseDown = () => result;
+            canvas.processMouseDown(pointer(160, 140));
+        }
+        LiteGraph.settings.set(STRICT, true);
+        try {
+            const { canvas, node } = setup();
+            const drag = jest.spyOn(canvas, '_dragNodesGesture');
+            node.onMouseDown = () => ({ return_value: 1 });
+            canvas.processMouseDown(pointer(160, 140));
+            expect(drag).toHaveBeenCalled(); // not handled in strict mode: the drag starts
+        } finally {
+            LiteGraph.settings.set(STRICT, false);
+        }
+        expect(hookWarnings(warn)).toEqual([]);
+    });
 });

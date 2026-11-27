@@ -239,6 +239,31 @@ export class LGraphEventTarget {
     }
 }
 
+/** The setting that makes every "handled" site strict (decision 0007); also CallbackHandler.STRICT_HANDLED. */
+const HOOK_STRICT_HANDLED = "LiteGraph.Hooks.StrictHandled";
+
+/** Logs a warning once per key per process (deprecations, lenient "handled" results). */
+function hookWarnOnce(key, topic, message) {
+    if (CallbackHandler._warnedOnce.has(key)) return;
+    CallbackHandler._warnedOnce.add(key);
+    LiteGraph?.log_warn?.(topic, message);
+}
+
+/** A host's registry, created when first needed (the library's own path; `cb_handler` is the deprecated one). */
+function hookRegistryOf(host) {
+    return (host._cb_handler ||= new CallbackHandler(host));
+}
+
+/** A result as a warning shows it. */
+function describeHookResult(result) {
+    try {
+        const text = JSON.stringify(result);
+        return text === undefined ? String(result) : (text.length > 60 ? text.slice(0, 57) + "..." : text);
+    } catch {
+        return String(result);
+    }
+}
+
 /**
  * Prioritised, vetoable hooks around the classic `onX` callbacks.
  *
@@ -260,8 +285,23 @@ export class CallbackHandler {
 
     constructor(ref) {
         /** @type {Record<string, ListenerList>} per hook name: `{handlers, last_id}` */
-        this.callbacks_handlers = {};
+        this._lists = {};
         this.ob_ref = ref;
+    }
+
+    /**
+     * The per-name record (live). Deprecated: logged once; use registerCallbackHandler, onHook,
+     * unregisterCallbackHandler and hasCallbackHandlers.
+     * @deprecated
+     */
+    get callbacks_handlers() {
+        hookWarnOnce("deprecated:callbacks_handlers", "deprecated", "CallbackHandler.callbacks_handlers is deprecated (it keeps working, no removal date); use registerCallbackHandler, onHook, unregisterCallbackHandler and hasCallbackHandlers on the hook host.");
+        return this._lists;
+    }
+
+    set callbacks_handlers(record) {
+        hookWarnOnce("deprecated:callbacks_handlers", "deprecated", "CallbackHandler.callbacks_handlers is deprecated (it keeps working, no removal date); use registerCallbackHandler, onHook, unregisterCallbackHandler and hasCallbackHandlers on the hook host.");
+        this._lists = record;
     }
 
     /**
@@ -287,9 +327,9 @@ export class CallbackHandler {
             ...(opts && typeof opts === "object" ? opts : {})
         };
         if (data.once) data.call_once = true;
-        let list = this.callbacks_handlers[name];
+        let list = this._lists[name];
         // code that replaced an entry with a plain {last_id, handlers} object keeps working
-        if (!(list instanceof ListenerList)) list = this.callbacks_handlers[name] = Object.assign(new ListenerList(), list);
+        if (!(list instanceof ListenerList)) list = this._lists[name] = Object.assign(new ListenerList(), list);
         return list.add(callback, data);
     }
 
@@ -302,12 +342,12 @@ export class CallbackHandler {
 
     /** @returns {boolean} true if the handler was registered */
     unregisterCallbackHandler(name, h_id) {
-        return this.callbacks_handlers[name]?.remove(h_id) ?? false;
+        return this._lists[name]?.remove(h_id) ?? false;
     }
 
     /** true when a handler is registered for name */
     hasCallbackHandlers(name) {
-        return !!this.callbacks_handlers[name]?.size;
+        return !!this._lists[name]?.size;
     }
 
     /**
@@ -341,7 +381,7 @@ export class CallbackHandler {
             }
         }
         const def_cb = typeof opts?.def_cb === "function" ? opts.def_cb : null;
-        const handlers = handler ? handler.callbacks_handlers[name]?.handlers : null;
+        const handlers = handler ? (handler._lists ?? handler.callbacks_handlers)?.[name]?.handlers : null;
         if (!handlers?.length) {
             if (!def_cb) return null;
             const ret = def_cb.apply(owner, args);
@@ -463,34 +503,76 @@ export class CallbackHandler {
     static handled(result) {
         return result === true || (result !== null && typeof result === "object" && !!result.return_value);
     }
+
+    /**
+     * "Handled" at a site whose own rule also accepts other truthy results (decision 0007).
+     * - `true` or `{return_value: true}` is handled in both modes.
+     * - With the setting `LiteGraph.Hooks.StrictHandled` on, nothing else is.
+     * - Off (the default), the site's `legacy` rule decides; when it accepts the result, a warning
+     *   naming the setting is logged once per hook name.
+     * @param {string} name the hook name, for the warning
+     * @param {any} result the hook result
+     * @param {(result: any) => any} [legacy=CallbackHandler.handled] the site's own rule
+     * @returns {boolean}
+     */
+    static handledAt(name, result, legacy = CallbackHandler.handled) {
+        if (result === true) return true;
+        if (result === null || result === undefined || result === false) return false;
+        if (typeof result === "object" && result.return_value === true) return true;
+        if (CallbackHandler.strictHandled()) return false;
+        if (!legacy(result)) return false;
+        hookWarnOnce(`handled:${name}`, "hooks", `hook ${name}: the result ${describeHookResult(result)} counted as handled. Only true or {return_value: true} will when the setting ${HOOK_STRICT_HANDLED} is on (a later release may make it the default): return true or {return_value: true}.`);
+        return true;
+    }
+
+    /** true when the setting `LiteGraph.Hooks.StrictHandled` is on (false before the settings exist). */
+    static strictHandled() {
+        try {
+            return LiteGraph?.settings?.get(HOOK_STRICT_HANDLED) === true;
+        } catch {
+            return false;
+        }
+    }
 }
+
+/** Keys already warned about in this process (see hookWarnOnce); tests clear it. */
+CallbackHandler._warnedOnce = new Set();
+/** The id of the setting that makes every "handled" site strict. */
+CallbackHandler.STRICT_HANDLED = HOOK_STRICT_HANDLED;
 
 /**
  * Gives a class the hook API. One implementation for LiteGraph, LGraph, LGraphNode, LGraphGroup
  * and LGraphCanvas (registered node classes receive it through the LGraphNode prototype copy).
- * The CallbackHandler is created when first needed: reading `cb_handler` or registering a handler.
+ * The CallbackHandler is created when first needed: registering a handler (or reading the deprecated `cb_handler`).
  * Dispatching while there is none only calls `onX`.
  * @param {Function} Class
  */
 export function installHooks(Class) {
     const proto = Class.prototype;
+    const cbHandlerMessage = "cb_handler is deprecated (it keeps working, no removal date); register on the host itself with registerCallbackHandler or onHook, and trace dispatches with LiteGraph.setDispatchTap.";
     Object.defineProperty(proto, "cb_handler", {
         configurable: true,
-        /** this object's CallbackHandler (created on first read; assignable, as before) */
+        /** this object's CallbackHandler (created on first read; assignable, as before). Deprecated: logged once. */
         get() {
-            return (this._cb_handler ||= new CallbackHandler(this));
+            hookWarnOnce("deprecated:cb_handler", "deprecated", cbHandlerMessage);
+            return hookRegistryOf(this);
         },
         set(handler) {
+            hookWarnOnce("deprecated:cb_handler", "deprecated", cbHandlerMessage);
             this._cb_handler = handler;
         },
     });
     const methods = {
-        /** @returns {CallbackHandler} this object's handler registry (created once) */
+        /**
+         * @returns {CallbackHandler} this object's handler registry (created once)
+         * @deprecated logged once; the registry is created when first needed
+         */
         callbackhandler_setup() {
-            return this.cb_handler;
+            hookWarnOnce("deprecated:callbackhandler_setup", "deprecated", "callbackhandler_setup() is deprecated (it keeps working, no removal date); nothing replaces it: the hook registry is created when a handler is first registered.");
+            return hookRegistryOf(this);
         },
         registerCallbackHandler(name, callback, opts) {
-            return this.cb_handler.registerCallbackHandler(name, callback, opts);
+            return hookRegistryOf(this).registerCallbackHandler(name, callback, opts);
         },
         unregisterCallbackHandler(name, h_id) {
             return this._cb_handler ? this._cb_handler.unregisterCallbackHandler(name, h_id) : false;
@@ -511,7 +593,7 @@ export function installHooks(Class) {
          * @returns {() => boolean} unregisters the handler
          */
         onHook(name, callback, opts) {
-            return this.cb_handler.onHook(name, callback, opts);
+            return hookRegistryOf(this).onHook(name, callback, opts);
         },
     };
     for (const [key, value] of Object.entries(methods)) {
@@ -822,8 +904,7 @@ export class LiteGraphClass {
      * initialize LiteGraph, call when other classes are instantiated
      */
     initialize() {
-        // event dispatcher, along direct (single) assignment of callbacks [ event entrypoint ]
-        this.callbackhandler_setup();
+        // hooks: the registry is created when a handler is first registered (installHooks)
 
         this.LLink = LLink;
         this.LGraph = LGraph;
@@ -1358,7 +1439,6 @@ export class LiteGraphClass {
      * settings and extensions. Called by initialize(); safe to call earlier.
      */
     setupPlatform() {
-        this.callbackhandler_setup();
         this.commands ??= new CommandRegistry();
         this.keybindings ??= new KeybindingRegistry(this.commands);
         this.settings ??= new SettingsRegistry();
@@ -1370,6 +1450,14 @@ export class LiteGraphClass {
             ...PanelBuilder.extraEditors()
         };
         this.panel_sections ??= new Map();
+        if (!this.settings.has(CallbackHandler.STRICT_HANDLED)) {
+            this.settings.define({
+                id: CallbackHandler.STRICT_HANDLED,
+                name: "Hooks: only true or {return_value: true} counts as handled",
+                default: false,
+                tooltip: "Off: each hook site keeps its own rule and warns once when another truthy result decided it. On: every site uses the strict rule (decision 0007)."
+            });
+        }
         if (!this.settings.has("LiteGraph.Panel.Side")) {
             // side panels (options, node details): where they dock, their width, remembered state
             this.settings.define({
@@ -11147,7 +11235,7 @@ export class LGraphCanvas {
                             cbRet = node.processCallbackHandlers("onDblClick", {
                                 def_cb: node.onDblClick
                             }, e, pos, this);
-                            if (CallbackHandler.handled(cbRet)) {
+                            if (CallbackHandler.handledAt("onDblClick", cbRet)) {
                                 LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onDblClick", cbRet);
                             } else {
                                 this.processNodeDblClicked(node);
@@ -11161,7 +11249,7 @@ export class LGraphCanvas {
                         }, e, pos, this);
 
                         // if do not capture mouse
-                        if (CallbackHandler.handled(cbRet)) {
+                        if (CallbackHandler.handledAt("onMouseDown", cbRet)) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onMouseDownCbRet", cbRet);
                             block_drag_node = true;
                         } else {
@@ -12695,7 +12783,7 @@ export class LGraphCanvas {
             r = this.processCallbackHandlers("onDropItem", {
                 def_cb: this.onDropItem
             }, e);
-            if (!CallbackHandler.valueOf(r)) {
+            if (!CallbackHandler.handledAt("onDropItem", r, CallbackHandler.valueOf)) {
                 LiteGraph.log_verbose("lgraphcanvas", "processDrop", "running default implementation", e);
                 this.checkDropItem(e);
                 return CallbackHandler.valueOf(r); // this is probably ignored
@@ -12722,7 +12810,7 @@ export class LGraphCanvas {
                     }, file);
 
                     // if not getting a positive result, process file as data and call onDropData
-                    if (!CallbackHandler.valueOf(r)) {
+                    if (!CallbackHandler.handledAt("onDropFile", r, CallbackHandler.valueOf)) {
 
                         // prepare reader
                         var reader = new FileReader();
@@ -12755,7 +12843,7 @@ export class LGraphCanvas {
                 def_cb: node.onDropItem
             }, e);
             // if getting a positive result, return
-            if (CallbackHandler.handled(r)) {
+            if (CallbackHandler.handledAt("onDropItem", r)) {
                 return true;
             }
 
@@ -12764,7 +12852,7 @@ export class LGraphCanvas {
                 def_cb: this.onDropItem
             }, e);
             // if getting a positive result, return
-            if (CallbackHandler.handled(r)) {
+            if (CallbackHandler.handledAt("onDropItem", r)) {
                 return true;
             }
 
@@ -19253,7 +19341,7 @@ export class LGraphCanvas {
         let r = this.processCallbackHandlers("onShowNodePanel", {
             def_cb: this.onShowNodePanel
         }, node);
-        if (!CallbackHandler.valueOf(r)) {
+        if (!CallbackHandler.handledAt("onShowNodePanel", r, CallbackHandler.valueOf)) {
             this.showShowNodePanel(node); // use onShowNodePanel, this is an only local method
             return true;
         }
@@ -29771,6 +29859,11 @@ function panelHumanize(name) {
     return text ? text[0].toUpperCase() + text.slice(1) : "";
 }
 
+/** onAddPropertyToPanel's own rule: any truthy result, with a {return_value} counting by its value. */
+function panelRowHandled(r) {
+    return !!r && (typeof r !== "object" || !("return_value" in r) || !!r.return_value);
+}
+
 function panelSetting(id, fallback) {
     const settings = LiteGraph.settings;
     if (!settings?.has?.(id)) return fallback;
@@ -31595,13 +31688,14 @@ PanelBuilder.showNode = function(graphcanvas, node) {
                     of list) {
                     const value = node.properties[pName];
                     // in case the node wants control over its panel row
-                    // (registered handlers too; any truthy legacy result means handled, a {return_value} counts by its value)
+                    // (registered handlers too; its own rule: any truthy result, a {return_value} counting by its value;
+                    // strict with LiteGraph.Hooks.StrictHandled)
                     const r = node.processCallbackHandlers ?
                         node.processCallbackHandlers("onAddPropertyToPanel", {
                             def_cb: node.onAddPropertyToPanel
                         }, pName, panel, value, info, fUpdate) :
                         node.onAddPropertyToPanel?.(pName, panel, value, info, fUpdate);
-                    if (r && (typeof r !== "object" || !("return_value" in r) || r.return_value)) continue;
+                    if (CallbackHandler.handledAt("onAddPropertyToPanel", r, panelRowHandled)) continue;
                     panel.addRow({
                         name: pName,
                         value,
