@@ -33,7 +33,7 @@ Branch `LG/dev_graph_loader`. `LiteGraph.validateGraphData(data, options)` (`src
 | `tools/tests/runner-security.test.mjs` | new test: `typePolicy` refuses what `assertAllowedGraph` refuses (families, allow/deny settings, renamed types) |
 | Browser: `/editor/editor_build.html` (in-app browser) | a refused file shows "Not loaded (bad.json): duplicate-node-id …" and leaves the graph as it was; a repairable one loads with "Loaded fixable.json with fixes: dropped-field … dangling-link …", and the node keeps its real `onExecute` |
 | `bun run check` | pass: lint, 12 builds, strict type consumers, 1116 Jest (61 suites), 162 integration, package check |
-| `npm run ci:local -- HEAD` | LOCAL_CI_LINE |
+| `npm run ci:local -- HEAD` (clean clone of `3a685aa`) | `Local-CI: pass 3a685aa node22.23.5 jest 1116/1116 int 162/162 fresh ok` |
 
 **Finding while testing:** two shipped examples, `audio_reverb.json` and `functions/function_replication.JSON`, contain dangling links (links to nodes that are not in the graph). `configure()` loads them as inert links. Refusing them would make the runner refuse files the editor ships, so dangling links are warnings in strict mode (plan choice 9 corrected); repair removes them.
 
