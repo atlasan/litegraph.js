@@ -55,6 +55,8 @@ This plan orders what is still open after the `0.18.0-dev.2` pre-release. Tier 1
 
 ### Tier 4: other projects
 
+[Legacy project compatibility and 3D editor integration](2026-11-27-legacy-projects-and-editor-integration.md) details the downstream checks for step 15 and the WebGLStudio and nunuStudio follow-up work.
+
 | # | Step | Acceptance check |
 |---|---|---|
 | 15 | A classic-script bundle that exposes the global `LiteGraph` and the old names, for webglstudio (WGS) and nunuStudio (NUN-01, NUN-06) | webglstudio's saved graphs load and run as fixtures in a test |

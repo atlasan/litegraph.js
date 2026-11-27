@@ -671,8 +671,9 @@ export declare class LGraph {
      * @param interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
      */
     /** Basic graphs start immediately; graphs with dependencies return a readiness promise. */
-    start(interval?: number): void | Promise<boolean>;
-    startAsync(interval?: number): Promise<boolean>;
+    /** With manual scheduling the host calls runStep() for each frame. */
+    start(interval?: number, options?: { manual?: boolean }): void | Promise<boolean>;
+    startAsync(interval?: number, options?: { manual?: boolean }): Promise<boolean>;
     whenReady(): Promise<this>;
     hasPendingInitialization(): boolean;
     /** Stops the execution loop of the graph */
