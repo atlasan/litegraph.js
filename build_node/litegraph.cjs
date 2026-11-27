@@ -3220,6 +3220,7 @@ class ExecutionEngine {
             visiting.delete(node);
         }
         if (this.isFresh(node)) return;
+        const before = node._exec_memo;
         this._pulling++;
         try {
             node.doExecute(undefined, this._scope ? {
@@ -3228,7 +3229,8 @@ class ExecutionEngine {
         } finally {
             this._pulling--;
         }
-        this.remember(node);
+        // doExecute remembers a run; a refused run is remembered here, so it is not retried in this scope
+        if (node._exec_memo === before) this.remember(node);
     }
 
     // ---- delivery --------------------------------------------------------------------------------
