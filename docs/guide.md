@@ -639,6 +639,41 @@ graph.configure(data);             // emits "configuring" (cancelable), then "co
 
 Typed events (`graph.events.on("changed", …)`) and [callback handlers](callbacks.md) report changes.
 
+### Untrusted documents
+
+`configure()` trusts its data: it copies every field it finds. For a file, a drop or a pushed document, validate first. `LiteGraph.validateGraphData(data, options)` checks the document before any node is constructed and never changes it:
+
+```js
+const { ok, data: clean, report } = LiteGraph.validateGraphData(data, {
+    repair: true,                                // fix malformed links, slots and coordinates
+    allowType: (type, { path, node }) => type !== "sys/runCommand" || "not here", // optional type policy
+    limits: { maxNodes: 2000 },                  // per-call overrides of the settings below
+});
+if (ok) graph.configure(clean);                  // or graph.configureValidated(data) for both steps
+else console.warn(GraphLoader.formatReport(report));
+```
+
+- **Bounds:** counts of nodes, links, groups and subgraph definitions in the whole document, nesting of subgraphs and of values, string, properties and document sizes, and finite coordinates within `MaxCoordinate`. Bounds are never repaired.
+- **Runtime-only fields are dropped** with a warning: keys starting with `_`, `__proto__` / `constructor` / `prototype` at any depth, members of the graph and node classes (`runStep`, `getTitle`), `on…` callbacks and runtime state (`graph`, `widgets`, `libraries`, `status`). Other unknown fields, such as another editor's, are kept for round trips.
+- **Links:** a malformed entry or a duplicate id is an error. A link naming a missing node or slot, and a slot reference to a missing link, are warnings (`configure()` keeps them inert). `repair` removes them all.
+- **Report:** `{ok, repaired, issues, counts}`. Each issue has `severity` (`error` or `warning`), a `code` (`too-many-nodes`, `string-too-long`, `bad-coordinate`, `dangling-link`, `dropped-field`, `type-refused`, …), a JSON `path` (`$.nodes[2].properties.text`) and a `message`. `data` is a cleaned copy, or `null` when the result is not ok.
+- **`graph.configureValidated(data, {source, repair = true})`** validates and loads, and leaves the graph unchanged when the document is refused. It emits `load-report {report, ok, source}` when there is something to report. `graph.load(fileOrUrl, callback)` and the Editor's file drop use it, as the setting `LiteGraph.Loader.OnOpen` says. The Editor shows the report as a notice.
+- **The runner** validates every pushed or opened workflow in strict mode, with its node-type policy as `allowType`, and refuses failing data with the report (`{type: "error", data: {message, report}}` on the WebSocket).
+
+| Setting | Default | Bounds |
+|---|---|---|
+| `LiteGraph.Loader.MaxNodes` | 10000 | nodes in the document, subgraphs and definitions included |
+| `LiteGraph.Loader.MaxLinks` | 50000 | links in the document |
+| `LiteGraph.Loader.MaxGroups` | 2000 | groups in the document |
+| `LiteGraph.Loader.MaxDefinitions` | 1000 | subgraph definitions, nested blocks included |
+| `LiteGraph.Loader.MaxDepth` | 32 | nesting of subgraphs and definition blocks |
+| `LiteGraph.Loader.MaxValueDepth` | 64 | nesting of objects and arrays in one value |
+| `LiteGraph.Loader.MaxStringLength` | 1048576 | characters in one string |
+| `LiteGraph.Loader.MaxPropertiesSize` | 4194304 | approximate JSON size of one node's `properties` or `widgets_values` |
+| `LiteGraph.Loader.MaxDocumentSize` | 67108864 | approximate JSON size of the document |
+| `LiteGraph.Loader.MaxCoordinate` | 10000000 | absolute value of positions, sizes and bounds |
+| `LiteGraph.Loader.OnOpen` | `repair` | how `graph.load()` and the Editor's drop check files: `repair`, `strict`, or `off` (`configure()` as before) |
+
 ## Everyday values and inspection
 
 `basic/boolean` is a persistent true/false value with a toggle widget. Its optional `toggle` action input inverts the stored value; it does not turn the boolean output into an event. Search for “toggle”, “bool”, “true” or “false”. The saved value is authoritative if a legacy document's widget value disagrees.

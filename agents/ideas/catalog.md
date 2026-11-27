@@ -19,7 +19,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | X-01 | Public, versioned runner API: durable jobs, idempotent submit, snapshot SSE, `/features`, assets ([card](cards/X-01-runner-public-api.md)) | P1 P7 P8 | proto | L | adapt | sketched | CFY-27 to CFY-32, BUN-08, JS-02 |
 | X-02 | Host services for widgets: asset store with hash dedupe and GC, upload, file picker, sanitized markdown, modal editor contract, panels and toasts | P1 P10 | core | L | adapt | sketched | CFY-11 to CFY-14, CFY-18, CFY-23, CFY-28, CFY-47 |
 | X-03 | Documented graph-change stream and an external-model reconcile mode (the canvas as a projection) | P10 | core | M | — | sketched | USE-16, H9; the main reason apps left for Rete |
-| X-04 | Validated loader for untrusted graphs: type allowlist, size and coordinate bounds, unknown runtime fields dropped; shared by the editor and the runner | P10 P8 | core | M | adapt | sketched | USE-23, runner `nodePolicy.js` |
+| X-04 | Validated loader for untrusted graphs: type allowlist, size and coordinate bounds, unknown runtime fields dropped; shared by the editor and the runner | P10 P8 | core | M | adapt | promoted | USE-23, runner `nodePolicy.js`; [plan](../plans/2026-11-25-graph-loader.md) |
 | X-05 | Schema-generated node packs: JSON Schema, zod, OpenAPI, MCP tools, backend operator catalogs, other-language decorators | P6 P7 P10 | io | L | adapt | sketched | JS-01, JS-19, USE-24, USE-26, CFY-33 |
 | X-06 | Exporter and code-generation registry (`exportAs(format)`) | P6 P8 P2 | io | M | adapt | sketched | CFY-35, USE-08, 3D-02, 3D-05, BUN-21, BUN-22 |
 | X-07 | Node-type aliases and migrations for renamed types | P10 | core | S | — | promoted | Roadmap Wave 4 "replacement mappings as data"; USE evidence: Talemate |
@@ -58,7 +58,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-20 | Dashboards generated from UI nodes | P5 | ext | L | ref | seed |
 | USE-21 | Per-node log stream and device-status badge | P5 | ext | M | none | seed |
 | USE-22 | Hardware-protocol test-case graphs | P5 | node | M | ref | seed |
-| USE-23 | Validated loader for untrusted graphs | P10 | core | M | adapt | sketched |
+| USE-23 | Validated loader for untrusted graphs (→ X-04) | P10 | core | M | adapt | promoted |
 | USE-24 | Nodes from a backend operator catalog with inline validation | P6 | io | M | adapt | seed |
 | USE-25 | Canvas as a Jupyter notebook widget | P6 P9 | app | M | ref | seed |
 | USE-26 | OpenAPI node-pack generator | P6 P8 | io | M | adapt | seed |

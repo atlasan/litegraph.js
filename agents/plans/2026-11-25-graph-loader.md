@@ -23,7 +23,7 @@ A pure validation pass, `LiteGraph.validateGraphData(data, options)` (module `sr
 | 6 | Limits | constants, options, or settings | **settings** `LiteGraph.Loader.*` with defaults in `GraphLoader.DEFAULT_LIMITS`; `options.limits` overrides per call; without a settings registry the defaults apply |
 | 7 | Editor wiring | a. validate inside `configure()`; b. a new `graph.configureValidated(data, options)`, used by `graph.load()` (files and URLs) and the Editor's file drop | **b**: `configure()` stays trusted and unchanged, so fixtures, examples and ComfyUI probes load as before. A `load-report` graph event carries the report; the Editor shows it as a notice. Setting `LiteGraph.Loader.OnOpen` (`repair`, `strict`, `off`) picks the mode |
 | 8 | Report shape | strings, or structured issues | **structured**: `{ok, repaired, issues: [{severity, code, path, message, node?, limit?, value?}], counts}`; `GraphLoader.formatReport(report)` gives a short text for logs and notices |
-| 9 | Malformed and dangling links in strict mode | warning or error | **error** for a malformed entry, a duplicate id, an unknown origin or target node, and a slot outside the stored slots; a slot reference to a missing link is a **warning** (configure and `validateLinks` already clear it). Checked against every example and fixture |
+| 9 | Malformed and dangling links in strict mode | warning or error | **error** for a malformed entry and a duplicate id; **warning** for a link naming a missing node or a slot past the stored slots, and for a slot reference to a missing link: `configure()` keeps such links inert and `validateLinks` clears them, and two shipped examples (`audio_reverb.json`, `functions/function_replication.JSON`) contain dangling links. Repair removes all of them |
 
 ## Limits (settings)
 
@@ -65,3 +65,4 @@ A pure validation pass, `LiteGraph.validateGraphData(data, options)` (module `sr
 ## History
 
 - 2026-11-25: proposed and accepted (choices above taken as recommended, per the session brief).
+- 2026-11-27: choice 9 corrected while implementing: dangling links are warnings in strict mode, after the examples check found two shipped examples with dangling links.

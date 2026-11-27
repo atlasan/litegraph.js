@@ -81,6 +81,7 @@ Mode 4 is BYPASS, as in ComfyUI: the node passes its inputs on as a wire. ON_REQ
 Every restriction is on by default, can be lifted by a named setting, and says which setting in its refusal:
 - **Script evaluation:** off unless `LiteGraph.allow_scripts`; in the runner, `RUNNER_ALLOW_SCRIPTS=1`.
 - **Runner:** checks Origin and Host, and refuses dangerous node families at any depth, including inside subgraph definitions (`RUNNER_ALLOW_TYPES`).
+- **Untrusted documents:** the validated loader (`src/graphloader.js`, `LiteGraph.validateGraphData`) checks a document before any node is built: size, count, nesting and coordinate bounds (`LiteGraph.Loader.*` settings), runtime-only fields dropped, malformed links reported, a type hook. The runner refuses failing workflows with the report; `graph.load()` and the Editor's drop load in repair mode (`LiteGraph.Loader.OnOpen`). `configure()` stays trusted.
 - **LibraryManager:** no shell, validated package specs, and remote code only when it is enabled.
 - **Packs:** a pack that needs another litegraph version is refused unless `LiteGraph.Packs.AllowIncompatible`.
 
