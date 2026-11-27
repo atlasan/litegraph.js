@@ -25,6 +25,11 @@ The loader went first because the core split (step 7) waits on it.
 
 **One fix found only by the combined tree:** the generated tables in `docs/callbacks.md` (from step 5) were stale. They were missing the loader's new `load-report` typed event (step 4). The freshness test `tools/tests/hook-docs.test.mjs` failed as designed, and `npm run docs:callbacks` fixed it.
 
+**A local CI bug the integration exposed:** the first `ci:local` run of the combined head failed `check:types` (missing `GraphLoader`, `validateGraphData`, `STRICT_HANDLED`), while the same check passed in the worktree.
+- **Cause:** `ci:local` sets `TMPDIR` under `.lg/ci/work/`, inside the host checkout. The temporary type consumer had no `package.json`, so TypeScript's NodeNext self-reference resolved `@litegraph/litegraph` to the host checkout's `package.json` and declarations. The host was on the older `LG/dev`.
+- **Why the four tracks didn't catch it:** each ran `ci:local` from its own worktree, whose declarations matched the commit under test.
+- **Fix** (`tools/check-types.mjs`): the consumer directory gets its own `package.json`. Reproduced before and checked after, with `TMPDIR` inside the main checkout.
+
 ## Verification
 
 | Check | Result |

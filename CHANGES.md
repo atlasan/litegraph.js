@@ -37,6 +37,7 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 
 ## Fixed
 
+* **`check:types` checked the wrong declarations under `ci:local`:** its temporary consumer had no `package.json`, so when the temporary directory sat inside a checkout (`ci:local` puts `TMPDIR` under `.lg/ci/work/`), TypeScript's package self-reference resolved `@litegraph/litegraph` to that checkout's declarations instead of the commit under test. A run from a checkout on another branch then failed (or passed) for the wrong reason. The consumer now has its own `package.json`.
 * **Event flows audit findings 1–4:** ON_REQUEST random, time and state readers were stale across loop iterations and Sequence outputs; a property edit inside one call was not seen; two call ids existed; `graph/function` ran in its caller's scope (see call scopes above).
 
 # 0.18.0-dev.2 (2026-11-23): dev pre-release
