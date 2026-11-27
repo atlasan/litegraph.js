@@ -23,6 +23,8 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 
 ## Changed
 
+* **Development builds** go to `.lg/local-build/`. The checked-in bundles serve as a compatibility snapshot and are refreshed at agreed milestones. The full local CI pack check installs the newly built package.
+
 * **Deferred queue clearing:** `graph.stopAsync({dropQueued: true})` and a runner stop request with `dropQueued: true` clear pending actions in the graph and its linked instances.
 * **Unavailable execution models:** graphs preserve the requested model on save and stay inspectable with execution paused. `graph.getExecutionBlockReason()` exposes the reason. The Editor gates Play, Step and graph dispatch. The Node runner returns the reason on open or sync and refuses Start. Run `npm run check:execution-parity` to compare both hosts.
 * **Opened files are validated:** `graph.load(fileOrUrl, callback)` and the Editor's file drop go through `graph.configureValidated` in repair mode: oversized files are refused, runtime-only fields dropped and malformed links removed, and the Editor shows a notice. The setting `LiteGraph.Loader.OnOpen` (`repair`, `strict`, `off`) picks the mode. The `load()` callback now receives `{ok, error, report}`. `configure()` is unchanged.

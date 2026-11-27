@@ -2,11 +2,9 @@
 // ComfyUI's own zod schema (local copy, never committed).
 import fs from 'node:fs'
 import path from 'node:path'
-import { createRequire } from 'node:module'
 import { zComfyWorkflow, zComfyWorkflow1 } from './schema/workflowSchema.ts'
 
-const require = createRequire(import.meta.url)
-const lg = require('../../build_node/litegraph_nodejs.full.cjs')
+import { LGmod as lg } from './lg.mjs'
 const { LiteGraph } = lg
 const LGraph = LiteGraph.LGraph
 for (const k of ['log_debug', 'log_verbose', 'log_warn', 'log_info', 'log_error']) LiteGraph[k] = () => {}

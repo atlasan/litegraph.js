@@ -25,7 +25,7 @@ If you install with `--omit=optional`, a node that needs one of these packages r
 | `@litegraph/litegraph` | Classes, canvas and the node catalog (ESM and CommonJS) |
 | `@litegraph/litegraph/core` | Classes and canvas, without the node catalog |
 | `@litegraph/litegraph/node` | Adds the Node.js-only nodes and the optional editor and extensions (CommonJS) |
-| `@litegraph/litegraph/build/<file>`, `/build_node/<file>` | One of the 12 committed bundles, by its path |
+| `@litegraph/litegraph/build/<file>`, `/build_node/<file>` | One of the 12 distribution bundles, by its path |
 | `@litegraph/litegraph/css/litegraph.css` | Canvas, menu and panel styles |
 
 The bundles initialize themselves when imported.
@@ -80,6 +80,7 @@ To run a saved document, call `graph.configure(JSON.parse(text))`, then `await g
 
 ```sh
 npm ci --ignore-scripts
+npm run build         # optional for the snapshot, required to run the current source bundles
 npm run editor        # editor:  http://127.0.0.1:8000/editor/editor_build.html (also /apps/editor/...)
 npm run graphrunner   # runner:  http://127.0.0.1:3000/
 npm start             # both

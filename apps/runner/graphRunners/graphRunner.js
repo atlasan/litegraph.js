@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { format } from 'node:util';
 import { assertAllowedGraph, graphPolicyNotes, scriptsAllowed, renamedType, typePolicy } from '../nodePolicy.js';
+import { bundlePath } from '../../../tools/local-build.mjs';
 
 const require = createRequire(import.meta.url);
-const { LiteGraph, LGraph, GraphLoader } = require('../../../build_node/litegraph_nodejs.full.cjs');
+const { LiteGraph, LGraph, GraphLoader } = require(bundlePath('build_node/litegraph_nodejs.full.cjs'));
 LiteGraph.logging_set_level(process.env.LOG_LEVEL === 'debug' ? 4 : 2);
 // the Node.js build enables script nodes (math/formula, basic/script, ...); a pushed workflow must
 // not run arbitrary code unless the operator opts in (RUNNER_ALLOW_SCRIPTS=1 or RUNNER_ALLOW_SYS=1)

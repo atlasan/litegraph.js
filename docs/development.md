@@ -23,10 +23,11 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 | `npm run check` | Lint, builds, type checks, Jest, integration, package, browser smoke, and execution parity |
 | `npm run check:browser` | The [browser smoke test](#browser-smoke-test): `editor_build.html` in a headless Firefox, driven by pointer and key input. Skipped (exit 0) when no Firefox is found |
 | `npm run check:execution-parity` | [Browser and Node execution parity](#browser-and-node-execution-parity) across the built editor and Node runner. Requires Firefox. |
-| `npm run build` | `build.py`: regenerates `build/` and `build_node/`. Commit the output separately |
+| `npm run build` | Builds the current source into the ignored package at `.lg/local-build/` |
+| `npm run build:milestone` | Regenerates the tracked compatibility snapshot at an agreed milestone |
 | `npm test` / `npm run test:integration` | Jest (`test/`) / node:test (`tools/tests/`) |
-| `npm run check:fresh` | Rebuilds and fails when `build/` or `build_node/` differ from what is committed |
-| `npm run check:all` | `check`, then `check:fresh`, in the working tree |
+| `npm run check:fresh` | Rebuilds locally and compares the tracked bundle paths against the local build |
+| `npm run check:all` | `check` plus the milestone snapshot comparison |
 | `npm run ci:local` | The [local CI](#local-ci): the workflow's steps in a clean clone of a commit, with a proof report. Run it before a merge into `LG/dev` or a PR to `master` |
 | `npm run ci:github` | The switch for the GitHub workflow (off by default): `-- status`, `-- on`, `-- off` |
 | `npm run check:types` | Strict ESM and CJS consumers against `src/litegraph.d.cts`, plus export parity with the built modules |
@@ -79,7 +80,7 @@ The cases check paused inspection when the saved model is unavailable. The brows
 GitHub CI is kept but switched off (roadmap D10); the local CI is the proof for merges and releases. `tools/ci/ci.mjs` (`npm run ci:local -- ...`, or `./lg.sh ci ...`) checks out a commit into a clean clone under the git-ignored `.lg/ci/work/`, runs the steps of `.github/workflows/validate.yml` there, and writes a report. It never touches the working tree it is started from, so uncommitted changes are not tested: commit first.
 
 ```sh
-npm run ci:local                          # HEAD: npm ci --ignore-scripts, npm run check, build freshness
+npm run ci:local                          # HEAD: npm ci --ignore-scripts, npm run check, snapshot guard
 npm run ci:local -- LG/dev my-branch -j 2 # several refs at once, each in its own clone
 npm run ci:local -- --full                # plus npm audit, the packed install, the ComfyUI probes, Bun
 npm run ci:local -- list                  # recent runs; show [run] --md|--json|--summary; clean
@@ -90,9 +91,9 @@ npm run ci:local -- list                  # recent runs; show [run] --md|--json|
 | `clone` | `git clone --local`, `checkout --detach <commit>`; the checkout must be clean | always |
 | `install` | `npm ci --ignore-scripts --prefer-offline` (the shared npm cache) | always |
 | `check` | `npm run check`; the Jest, node:test and browser smoke counts are read from the log | always |
-| `fresh` | `git diff --exit-code --stat -- build build_node`, plus new untracked files there | always |
+| `snapshot` | Verifies that validation left the tracked bundle directories untouched. Older refs keep their original `fresh` check. | always |
 | `audit` | `npm audit --omit=dev` (needs the network) | `--audit` |
-| `pack` | `npm pack`, installed with `--omit=optional` into an empty project: ESM `.`, `/core`, a deep import; CJS `.` and `/node`; the version; `allow_scripts` false; `definitions`; `ancestors`; a graph run; `src/` not exported; no dependencies (`tools/ci/pack-smoke.mjs`) | `--pack` |
+| `pack` | `npm pack` from the local build package, installed with `--omit=optional` into an empty project: ESM `.`, `/core`, a deep import; CJS `.` and `/node`; the version; `allow_scripts` false; `definitions`; `ancestors`; a graph run; `src/` not exported; no dependencies (`tools/ci/pack-smoke.mjs`) | `--pack` |
 | `comfy` | the ComfyUI probes from the git-ignored `experiments/comfy-interop/` (schema and content), copied into the clone; skipped when absent | `--comfy` |
 | `bun` | `bun test tools/tests` and the launcher on Bun; **advisory**: reported, never fails the run (one `library-manager` case is known to fail on Bun) | `--bun` |
 
@@ -101,7 +102,7 @@ Each run has its own clone, `TMPDIR` and state, with `CI=true` and no npm settin
 **Report:** `.lg/ci/runs/<sha>-<time>/` holds `report.json` (commit and tree, ref, branches, clean flag, host, Node, npm, Python, git and Bun versions, each step's exit code, duration, counts and log sha256, the runner's own commit and hash), `report.md` (paste it into a PR body, an issue or a comment), `summary.txt` and `logs/`. The summary is one line, usable as a commit trailer:
 
 ```
-Local-CI: pass 1a2b3c4 node22.23.4 jest 1016/1016 int 151/151 browser 9/9 fresh ok
+Local-CI: pass 1a2b3c4 node22.23.4 jest 1016/1016 int 151/151 browser 9/9 snapshot ok
 ```
 
 `browser 9/9` is the browser smoke test inside `check`; `browser skip` means the machine had no Firefox, so that run did not exercise the browser. Commits from before the test show no `browser` token.
@@ -120,6 +121,21 @@ npm run ci:github -- off       # gh variable delete LG_GITHUB_CI
 ```
 
 `on` and `off` change a repository setting (they need `gh auth` with admin rights on the repository); `--dry-run` prints the command, `--repo OWNER/NAME` picks another repository, `LG_CI_GH` another `gh`. Only the repository owner switches it; agents never do. Keep the workflow's steps and the runner's core steps the same.
+
+## Milestone builds
+
+`npm run build` creates a packable copy of the package at `.lg/local-build/`. The editor and Node runner use it when present and retain their existing browser URLs. A clean checkout can still use the checked-in snapshot. Direct imports from the repository root, git installs, and plain `npm pack` at the root use the snapshot. To pack current sources, use `npm pack ./.lg/local-build --ignore-scripts --pack-destination <artifact-directory>` after building.
+
+Refresh the compatibility snapshot at an agreed milestone after the full validation pass. Make the version decision first so the package manifest, lockfile, and runtime version agree.
+
+```sh
+npm run check
+npm run build:milestone
+npm run check:fresh
+git diff --stat -- build build_node
+```
+
+Review the snapshot changes with the milestone. After the milestone commit exists, run `npm run ci:local -- --full` on that exact commit. A release can use the tarball from a clean build of the approved tag, with its checksum and versioned release notes.
 
 ## Entry points
 

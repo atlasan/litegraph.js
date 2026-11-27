@@ -50,7 +50,7 @@ LiteGraph.registerNodeType("math/my_sum", Sum);
 ```
 
 - **`static def`** feeds the search box and `LiteGraph.getNodeDefinition(type)`. It accepts `display_name`, `description`, `usage` (a short how-to), `category`, `search_aliases`, `capabilities`, `deprecated`, `experimental`, `hidden`, `inputs`, `outputs` and `execution`.
-- **Node reference:** `npm run docs:nodes` writes `docs/nodes/` from the registry: a README with the packs, one page per pack (type, title, description, slots as `name:type`, execution declarations, usage) and `nodes.json` for tools. The pages are generated locally and not committed (roadmap decision D9). Run `npm run build` first, because the tool reads `build/litegraph_nodejs.full.js`.
+- **Node reference:** `npm run docs:nodes` writes `docs/nodes/` from the registry: a README with the packs, one page per pack (type, title, description, slots as `name:type`, execution declarations, usage) and `nodes.json` for tools. The pages are generated locally and not committed (roadmap decision D9). Run `npm run build` first, to generate the bundled catalog from the current sources.
 - **Classic statics** still work: `title`, `desc`, `title_color`, `shape`, `priority`, `skip_list`.
 - **`LiteGraph.wrapFunctionAsNode(type, fn, inputTypes, outputType)`** turns a plain function into a node.
 - **Optional libraries:** list them in `this.libraries` / `this.requiredLibraries`. The node's `ready` promise settles once they are loaded.

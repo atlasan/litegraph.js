@@ -31,7 +31,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
   - Proof: put the run's one-line summary (`Local-CI: pass <sha> ...`, in `.lg/ci/runs/<run>/summary.txt`) in the execution record or the merge commit, and `report.md` in the PR body. `--note` adds it as a local git note.
   - Posting a report (`--post`), pushing notes, and the GitHub switch (`npm run ci:github -- on|off`, a repository setting) are the user's: ask first, and never switch GitHub CI on yourself.
   - Don't add other workflows, don't wait on or poll GitHub checks, and don't turn on the app's PR Auto-fix.
-- **Generated output:** `build/` and `build_node/` are committed. Regenerate them with `npm run build` and commit them separately (`build: regenerate distributions ...`) after the `fix:` / `feat:` / `docs:` commit.
+- **Generated output:** `npm run build` writes an ignored package under `.lg/local-build/`. Leave the tracked `build/` and `build_node/` bundles alone during routine work. Refresh them with `npm run build:milestone` only at an agreed milestone, and verify them with `npm run check:fresh`. See [Milestone builds](docs/development.md#milestone-builds).
 - **New `src/` modules:**
   - Add them to the file lists in `build.py`, in dependency order.
   - Declare new public exports in `src/litegraph.d.cts`, or `src/litegraph.node.d.cts` for the Node bundle. `check:types` fails when the declared exports and the runtime exports differ.

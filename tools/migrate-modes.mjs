@@ -15,11 +15,9 @@
  * Files keep their layout: one line stays one line; an indented file keeps its indentation.
  */
 import fs from 'node:fs';
-import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { bundlePath } from './local-build.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
 const args = process.argv.slice(2);
@@ -36,7 +34,7 @@ if (!files.length) {
 }
 
 console.info = () => {}; // the bundle logs its start and each migration; this tool reports per file
-const { LGraph } = require(path.join(ROOT, 'build_node/litegraph.core.cjs'));
+const { LGraph } = require(bundlePath('build_node/litegraph.core.cjs'));
 if (typeof LGraph?.migrateModes !== 'function') {
     console.error('build_node/litegraph.core.cjs has no LGraph.migrateModes; run npm run build');
     process.exit(2);

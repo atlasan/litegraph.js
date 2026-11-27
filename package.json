@@ -8,6 +8,7 @@
     "private": false,
     "scripts": {
         "build": "python3 build.py",
+        "build:milestone": "python3 build.py --milestone",
         "docs": "jsdoc -c ./docs/.jsdoc.config -d ./docs/api -r --verbose --debug",
         "docs:nodes": "node tools/node-reference.mjs",
     "docs:callbacks": "node tools/hook-docs.mjs",
@@ -27,8 +28,8 @@
         "check:types": "node tools/check-types.mjs",
         "check:browser": "node tools/browser/smoke.mjs",
         "check:execution-parity": "node tools/execution-parity/check.mjs",
-        "check:all": "npm run check && npm run check:fresh",
-        "check:fresh": "npm run build && git diff --exit-code --stat -- build build_node",
+        "check:all": "npm run check && node tools/check-build.mjs --snapshot",
+        "check:fresh": "npm run build && node tools/check-build.mjs --snapshot",
         "ci:local": "node tools/ci/ci.mjs",
         "ci:github": "node tools/ci/ci.mjs github"
     },

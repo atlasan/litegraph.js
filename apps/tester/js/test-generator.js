@@ -3,7 +3,7 @@
  * Automatically generates test cases for LiteGraph nodes based on their structure
  */
 
-import { LiteGraph } from "../../../build/litegraph.js";
+import { LiteGraph } from "./litegraph.js";
 
 import { setNodeInput, slotName, slotType } from './test-inputs.js';
 import { checkAbort, pause } from './test-control.js';

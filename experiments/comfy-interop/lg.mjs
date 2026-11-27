@@ -1,6 +1,9 @@
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-export const LGmod = require('../../build_node/litegraph_nodejs.full.cjs')
+const local = new URL('../../.lg/local-build/build_node/litegraph_nodejs.full.cjs', import.meta.url)
+export const LGmod = require(existsSync(local) ? fileURLToPath(local) : '../../build_node/litegraph_nodejs.full.cjs')
 export const { LiteGraph, LGraph } = LGmod
 LiteGraph.logging_set_level?.(0)
 // recursive diff: returns list of {path, kind}

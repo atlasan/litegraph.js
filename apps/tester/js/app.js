@@ -3,7 +3,7 @@
  * Integrates the testing framework with the UI and manages user interactions
  */
 
-import { LiteGraph } from "../../../build/litegraph.js";
+import { LiteGraph } from "./litegraph.js";
 const { LGraphCanvas } = LiteGraph;
 import { testFramework } from "./test-framework.js";
 import { TestCaseGenerator } from "./test-generator.js";

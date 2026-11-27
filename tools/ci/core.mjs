@@ -20,7 +20,7 @@ export const EXTRA_STEPS = {
 export const CORE_STEPS = [
   { name: 'install', title: 'npm ci --ignore-scripts', command: ['npm', 'ci', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'] },
   { name: 'check', title: 'npm run check', command: ['npm', 'run', 'check'] },
-  { name: 'fresh', title: 'git diff --exit-code --stat -- build build_node', command: ['git', 'diff', '--exit-code', '--stat', '--', 'build', 'build_node'] },
+  { name: 'snapshot', title: 'Verify the build left the milestone snapshot untouched', command: ['git', 'diff', 'HEAD', '--exit-code', '--stat', '--', 'build', 'build_node'] },
 ];
 
 export class UsageError extends Error {}
@@ -235,9 +235,9 @@ export function summaryLine(report) {
   if (browser) parts.push(`browser ${browser.skipped ? 'skip' : browser.failed ? `FAIL ${pair(browser)}` : pair(browser)}`);
   const executionParity = report.counts.executionParity;
   if (executionParity) parts.push(`execution parity ${executionParity.failed ? 'FAIL' : `${pair(executionParity)}${executionParity.browser ? '' : ' (Node only)'}`}`);
-  const fresh = step('fresh');
+  const bundles = step('snapshot') ?? step('fresh');
   const waiting = (s) => s.status === 'pending' || s.status === 'running';
-  parts.push(`fresh ${!fresh || fresh.status === 'skip' ? 'n/a' : waiting(fresh) ? '…' : fresh.status === 'pass' ? 'ok' : 'FAIL'}`);
+  if (bundles) parts.push(`${bundles.name} ${bundles.status === 'skip' ? 'n/a' : waiting(bundles) ? '…' : bundles.status === 'pass' ? 'ok' : 'FAIL'}`);
   for (const name of Object.keys(EXTRA_STEPS)) {
     const s = step(name);
     if (!s) continue;
@@ -275,6 +275,7 @@ function stepDetail(step) {
       c.executionParity && (c.executionParity.failed ? `execution parity failed (${c.executionParity.reason})`
         : `execution parity ${pair(c.executionParity)} (${c.executionParity.browser ? 'browser and Node' : `Node only: ${c.executionParity.browserSkipReason}`})`),
     ].filter(Boolean).join(', ');
+    case 'snapshot': return c.ok ? 'The milestone snapshot was untouched' : `changed: ${c.files.join(', ')}`;
     case 'fresh': return c.ok ? 'build/ and build_node/ match the sources' : `differs: ${c.files.join(', ')}`;
     case 'audit': return `${c.vulnerabilities} vulnerabilities`;
     case 'pack': return `${pair(c)} checks; ${c.files ?? '?'} files, ${c.size ?? '?'}`;

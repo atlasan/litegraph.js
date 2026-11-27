@@ -168,7 +168,7 @@ test('the workflow is kept and gated off by the LG_GITHUB_CI variable', () => {
   const workflow = fs.readFileSync(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /^\s+if: vars\.LG_GITHUB_CI == 'on' \|\| github\.event_name == 'workflow_dispatch'$/m);
   assert.match(workflow, /workflow_dispatch:/);
-  for (const step of ['npm ci --ignore-scripts', 'npm run check', 'git diff --exit-code --stat -- build build_node']) assert.ok(workflow.includes(`run: ${step}`), step);
+  for (const step of ['npm ci --ignore-scripts', 'npm run check', 'git diff HEAD --exit-code --stat -- build build_node']) assert.ok(workflow.includes(`run: ${step}`), step);
 });
 
 test('github switch: status, on, off and dry runs call gh with the expected arguments', { skip: !posix }, async () => {
@@ -289,6 +289,28 @@ test('runs: clean clones, two at once, freshness, reports, notes; the working tr
   assert.equal(listRuns(dir).length, 2);
   assert.equal(findRun(stale.report.commit.slice(0, 7), dir).id, stale.report.id);
   assert.equal(findRun(fresh.report.id, dir).result, 'pass');
+});
+
+test('local-output refs leave the milestone snapshot untouched', { skip: !posix, timeout: 120000 }, async () => {
+  const { repo, sh } = tinyRepo();
+  sh('restore', 'src.js');
+  sh('checkout', '--quiet', 'stale');
+  fs.mkdirSync(path.join(repo, 'tools'));
+  fs.writeFileSync(path.join(repo, 'tools/local-build.mjs'), '');
+  const check = path.join(repo, 'check.js');
+  fs.writeFileSync(check, fs.readFileSync(check, 'utf8').replace(
+    "fs.writeFileSync('build/out.js', fs.readFileSync('src.js'));",
+    "fs.mkdirSync('.lg/local-build/build', { recursive: true }); fs.writeFileSync('.lg/local-build/build/out.js', fs.readFileSync('src.js'));",
+  ));
+  sh('add', 'check.js', 'tools/local-build.mjs');
+  sh('commit', '--quiet', '-m', 'Build to ignored output');
+  const dir = path.join(repo, '.lg', 'ci');
+  const [{ report }] = await runMany(['stale'], { dir, root: repo, keep: true, versions: { node: process.version, npm: '10' } });
+  assert.equal(report.result, 'pass', JSON.stringify(report.steps));
+  assert.match(report.summary, /snapshot ok$/);
+  const checkout = path.join(dir, 'work', report.id, 'repo');
+  assert.equal(fs.readFileSync(path.join(checkout, 'build/out.js'), 'utf8'), 'one\n');
+  assert.equal(fs.readFileSync(path.join(checkout, '.lg/local-build/build/out.js'), 'utf8'), 'two\n');
 });
 
 test('CLI: show, note (dry run), comment without --post, clean', { skip: !posix, timeout: 120000 }, async () => {

@@ -2,7 +2,7 @@
 // Issue numbers refer to https://github.com/jagenjo/litegraph.js/issues. Runs against the build.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiteGraph, LGraph, LGraphNode, LGraphCanvas } from '../../build/litegraph.js';
+import { LiteGraph, LGraph, LGraphNode, LGraphCanvas } from '../../.lg/local-build/build/litegraph.js';
 
 for (const level of ['log', 'warn', 'debug', 'info']) console[level] = () => {};
 

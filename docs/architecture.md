@@ -6,7 +6,7 @@ How the library is put together, for readers who want to change it or build on i
 
 - **Sources:** the library is ES modules in `src/`.
 - **Bundles:** `build.py` concatenates them in dependency order into 12 bundles: the same six in each format: core, standard, standard minified, full, full minified, and the Node.js full bundle (which adds the Node-only nodes), as ESM in `build/` and CommonJS in `build_node/`.
-- **Committed output:** the bundles are committed. `npm run check:fresh` rebuilds them and fails when they differ from the sources; the [local CI](development.md#local-ci) (`npm run ci:local`) checks the same on a clean clone of each commit.
+- **Development output:** routine builds use the same layout inside the ignored `.lg/local-build/` package. The tracked `build/` and `build_node/` keep a compatibility snapshot, refreshed at [milestones](development.md#milestone-builds).
 - **Exports:** `package.json` maps `.`, `./core` and `./node`, and lists each bundle by its path. Nothing else is exported.
 - **Types:** `src/*.d.ts` / `*.d.cts` declare the public API. `npm run check:types` fails when the declared exports and the runtime exports differ.
 - **One global:** every bundle shares the global `LiteGraph` singleton (`global.js`), so a page that loads a bundle and `src/` modules gets one `LiteGraph`.

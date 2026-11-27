@@ -8,6 +8,7 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import { Worker } from 'node:worker_threads';
+import { localBuildRoot } from '../local-build.mjs';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'litegraph-runner-'));
 process.env.WORKFLOWS_DIR = path.join(temp, 'workflows');
@@ -280,7 +281,9 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     const listed = await fetch(`http://${address}/api/list_files`).then((r) => r.json());
     assert.ok(listed.includes('empty.json'));
     assert.ok(!listed.includes('escape.json'));
-    assert.equal((await fetch(`http://${address}/build/litegraph.full.js`)).status, 200);
+    const bundle = await fetch(`http://${address}/build/litegraph.full.js`);
+    assert.equal(bundle.status, 200);
+    assert.deepEqual(Buffer.from(await bundle.arrayBuffer()), fs.readFileSync(path.join(localBuildRoot, 'build/litegraph.full.js')));
     ws.send('null');
     assert.match((await waitFor((m) => m.type === 'error')).data.message, /Invalid message/);
     ws.send(JSON.stringify({ type: 'open_graph', requestId: 'open-fixture', data: { file: 'empty.json' } }));

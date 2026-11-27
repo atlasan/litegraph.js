@@ -1,7 +1,7 @@
 // Auto-layout with the real dagre package, loaded on demand through the LibraryManager (Wave 4d).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiteGraph, LGraph } from '../../build/litegraph.js';
+import { LiteGraph, LGraph } from '../../.lg/local-build/build/litegraph.js';
 
 test('graph.autoLayout loads @dagrejs/dagre on first use and arranges a chain left to right', async () => {
     await LiteGraph.LibraryManager.ready;

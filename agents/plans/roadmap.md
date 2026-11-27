@@ -22,7 +22,7 @@ This is the single place for the current status of planned work.
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
 | `LG/dev` → `master` | [PR #10](https://github.com/atlasan/litegraph.js/pull/10) (Wave 3) was merged into `master` on 2026-11-20 as `18f5545` after CI passed; `LG/dev` was fast-forwarded to the same commit. Earlier: [PR #9](https://github.com/atlasan/litegraph.js/pull/9) (Wave 2) as `768f176`, [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1) as `35c7e4f`. |
 
-Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
+Routine changes build into the ignored `.lg/local-build/` package. Refresh the tracked `build/` and `build_node/` snapshot in a separate build commit at agreed milestones. See [Milestone builds](../../docs/development.md#milestone-builds).
 
 ## Status at a glance
 
@@ -151,7 +151,7 @@ Plan: [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md)
 From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 11-18 roadmap phases 2 and 5:
 
 - **Packaging truthfulness:** an exports map without `./build/*` wildcards, real runtime dependencies, no `defaults_debug.js` in library builds.
-- **CI:** check that `build/` is fresh (`git diff --exit-code`). Since 2026-11-24 local (D10): `npm run ci:local`, with proof reports; the workflow is kept, gated off.
+- **CI:** test the local output and check that validation leaves the tracked milestone snapshot untouched. `npm run ci:local` records the proof (D10); the GitHub workflow is kept, gated off.
 - **Documentation:** README, getting-started, architecture docs; generated API docs out of the authored tree. **Not done:** the generated API is still in `docs/api/` (see the [state audit](../audits/2026-11-23-state-audit.md) §3); it is regenerated for 0.18.0-dev.2 (D-3).
 - **Applications:** move the editor, tester and runner apps into their own homes; one defaults module; one tester controller (**not done**: N-3).
 
