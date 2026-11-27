@@ -279,10 +279,10 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 
 | ID | Idea | Purpose | Kind | Effort | Reuse | Maturity | Absorbs / links |
 |---|---|---|---|---|---|---|---|
-| FLW-01 | Call scopes: one hierarchical scope id (call → Sequence branch → loop iteration → function call) for the memo and the legacy dedupe ([card](cards/FLW-01-call-scopes-and-pure-semantics.md)) | P3 P2 P10 | core | M | ref | investigated | Audit findings 1, 3, 4; [research](../memories/research/2026-11-22-call-scopes-and-pure-nodes.md) |
-| FLW-02 | Volatile pure: `pure: "volatile"` runs once per scope, shared by its consumers; rand, time and state readers can be ON_REQUEST | P3 P2 | core | S | ref | investigated | FLW-01 card; Houdini time dependency |
-| FLW-03 | `refresh` action input on ON_REQUEST nodes: invalidate and re-run explicitly | P3 P10 | core | S | — | investigated | FLW-01 card |
-| FLW-04 | Property and widget version in the memo key | P10 | core | S | — | investigated | Audit finding 2; FLW-01 card |
+| FLW-01 | Call scopes: one hierarchical scope id (call → Sequence branch → loop iteration → function call) for the memo and the legacy dedupe ([card](cards/FLW-01-call-scopes-and-pure-semantics.md)) | P3 P2 P10 | core | M | ref | promoted | Audit findings 1, 3, 4; [research](../memories/research/2026-11-22-call-scopes-and-pure-nodes.md); [plan](../plans/2026-11-25-call-scopes.md) |
+| FLW-02 | Volatile pure: `pure: "volatile"` runs once per scope, shared by its consumers; rand, time and state readers can be ON_REQUEST | P3 P2 | core | S | ref | promoted | FLW-01 card; Houdini time dependency; [plan](../plans/2026-11-25-call-scopes.md) |
+| FLW-03 | `refresh` action input on ON_REQUEST nodes: invalidate and re-run explicitly | P3 P10 | core | S | — | promoted | FLW-01 card; [plan](../plans/2026-11-25-call-scopes.md) |
+| FLW-04 | Property and widget version in the memo key | P10 | core | S | — | promoted | Audit finding 2; FLW-01 card; [plan](../plans/2026-11-25-call-scopes.md) |
 | FLW-05 | Lifecycle event nodes: `on_start`, `on_tick(dt, time)`, `on_stop`, `on_pause`/`on_resume` (KHR names as aliases) ([card](cards/FLW-05-lifecycle-and-custom-events.md)) | P3 P4 P9 | node | S | ref | sketched | Audit finding 6; 3D-01 |
 | FLW-06 | Custom events and dispatchers: `custom_event`, `call_event`, `dispatcher` (bind, unbind, unbind all, call), `bind_event`, an "Assign" helper | P3 P9 | node | M | ref | sketched | Audit finding 7; FLW-05 card; 3D-01 |
 | FLW-07 | Exec pins per document (`onTrigger`/`onExecuted`), set by the profile instead of a global flag | P3 P9 | core | S | — | promoted | Audit finding 8; FLW-08 |
@@ -292,7 +292,7 @@ From the [execution flows](landscape/execution-flows.md) area and the [event flo
 | FLW-11 | State-machine and behaviour-tree runners over the same node model | P3 P7 | runtime | L | ref | seed | USE-13; UE AnimGraph SM, Behavior Trees, Unity State Graph |
 | FLW-12 | Signal and control rates: a slot rate for audio and video streams, apart from control events | P4 P2 | core | L | ref | seed | JS-04; Pd `~`; Web Audio |
 | FLW-13 | Cook on demand: dirty propagation, cook only what an observed output needs, "needs cook" and "time dependent" badges | P2 P6 | core | L | ref | seed | Houdini, TouchDesigner; extends the Wave 6 memo |
-| FLW-14 | Loop pitfall lint: warn when a volatile source feeds a loop's count or collection | P9 | core | S | ref | seed | UE ForEach pitfall; FLW-01 card |
+| FLW-14 | Loop pitfall lint: warn when a volatile source feeds a loop's count or collection | P9 | core | S | ref | promoted | UE ForEach pitfall; FLW-01 card; [plan](../plans/2026-11-25-call-scopes.md) |
 | FLW-15 | Functions vs macros: `graph/function` (one exec in, no latent nodes) against an inlined macro subgraph (several exec pins, latent allowed) | P3 P9 | core | M | ref | seed | Wave 3 subgraphs |
 | FLW-16 | Flow debugger: exec breakpoints, step, pin watches, animated exec wires, cook counts and times | P10 P9 | ext | L | ref | seed | USE-34, USE-42 |
 | FLW-17 | Signature cache with a per-node fingerprint hook (NaN = always rerun) | P1 P6 | core | M | ref | seed | CFY-29; ComfyUI design, re-implemented |

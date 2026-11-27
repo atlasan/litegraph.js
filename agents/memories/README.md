@@ -23,6 +23,7 @@ Template: [decision](../_templates/decision.md).
 | [0006 Node metadata](decisions/0006-node-metadata.md) | **accepted** 2026-11-25 (`static def` is the stored format; `defineNodeType` later as a factory producing it; D4) |
 | [0007 Hook "handled" rule](decisions/0007-hook-handled-rule.md) | **accepted** 2026-11-25 (strict rule behind `LiteGraph.Hooks.StrictHandled` with one-time warnings, no removal; no `node.events`; no async hooks; D8) |
 | [0008 Legacy compatibility scope](decisions/0008-legacy-compatibility-scope.md) | **accepted** 2026-11-25 (`legacy` kept with no removal date; classic-script bundle with the old global names; a compatibility charter; DEC-4) |
+| [0009 Call scopes](decisions/0009-call-scopes.md) | **accepted** 2026-11-27 (hierarchical call scopes outside `legacy`; volatile and undeclared ON_REQUEST nodes memoized per scope, deterministic pure nodes by data, property and graph version; `refresh` input; flows step 4, DEC-5) |
 
 ## Research
 

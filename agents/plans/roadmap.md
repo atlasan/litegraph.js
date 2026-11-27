@@ -7,7 +7,7 @@ This is the single place for the current status of planned work.
 - **Design reasoning and idea catalog:** [feature harvest and priorities](2026-11-19-feature-harvest-and-priorities.md).
 - **Evidence:** [ecosystem study](../memories/research/ecosystem-study/README.md) and [audits](../audits/README.md).
 - **Next priorities (proposed 2026-11-25):** [next priorities after 0.18.0-dev.2](2026-11-25-next-priorities-after-0.18.0-dev.2.md), five tiers from a stable 0.18.0 to the 0.20 removals.
-- **Open items, classified:** the [state audit of 2026-11-23](../audits/2026-11-23-state-audit.md) (FIX D-4 to D-8, DECISION DEC-1 to DEC-5, NICE N-1 to N-12). D-5, D-6 and D-8 are fixed and D-7 was not reproducible ([record](../executions/2026-11-23-audit-fixes.md)); D-4 is flows step 4.
+- **Open items, classified:** the [state audit of 2026-11-23](../audits/2026-11-23-state-audit.md) (FIX D-4 to D-8, DECISION DEC-1 to DEC-5, NICE N-1 to N-12). D-5, D-6 and D-8 are fixed and D-7 was not reproducible ([record](../executions/2026-11-23-audit-fixes.md)); D-4 is flows step 4, done on `LG/dev_flows_call_scopes` ([record](../executions/2026-11-25-call-scopes.md)).
 
 ## Branch model
 
@@ -209,8 +209,9 @@ Open decisions: see D8 below and the [plan](2026-11-22-event-integration.md#open
 | Declarations | `LG/dev_flows_declarations` | `pure` / `ticks` / default modes for the undeclared types; volatile nodes stay ALWAYS until FLW-02 | **Done** ([record](../executions/2026-11-22-flows-declarations.md)) |
 | Examples | `LG/dev_flows_examples` | `apps/editor/examples/index.json`, pack `templates[]`, Demo menu by category, examples test, audit finding 10 | **Done** ([record](../executions/2026-11-22-flows-examples.md)) |
 | Examples polish | `LG/dev_HMD_examples` | Explicit models, sizes, notes, Watch/Button controls; Basics category and one example per flow category; stricter test ([audit](../audits/2026-11-23-editor-examples.md)) | **Done** ([record](../executions/2026-11-23-editor-examples.md)) |
+| Call scopes (step 4, D-4) | `LG/dev_flows_call_scopes` | One scope id per frame, outer call, Sequence output, loop iteration and function call; `pure: "volatile"`; property version; `refresh` input; `volatile-loop-input` (FLW-01 to FLW-04, FLW-14; audit findings 1–4; [plan](2026-11-25-call-scopes.md), [decision 0009](../memories/decisions/0009-call-scopes.md)) | **Done on the branch, waiting for the merge** ([record](../executions/2026-11-25-call-scopes.md)) |
 
-**Step 4 (call scopes, D-4) accepted (user, 2026-11-25, DEC-5)** as step 2 of the [next priorities](2026-11-25-next-priorities-after-0.18.0-dev.2.md). Steps 5–7 (lifecycle and custom events, profiles, flow docs) stay proposed until step 4 lands. Step 5 can now build on Wave 7's listener core (in `LG/dev`).
+**Step 4 (call scopes, D-4) accepted (user, 2026-11-25, DEC-5)** as step 2 of the [next priorities](2026-11-25-next-priorities-after-0.18.0-dev.2.md); implemented on `LG/dev_flows_call_scopes`. Steps 5–7 (lifecycle and custom events, profiles, flow docs) stay proposed until step 4 lands. Step 5 can now build on Wave 7's listener core (in `LG/dev`).
 
 ## Panels and widgets track
 
