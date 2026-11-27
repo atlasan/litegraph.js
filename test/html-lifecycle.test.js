@@ -31,7 +31,7 @@ function attachedGraph() {
     graph.list_of_graphcanvas = [canvas];
     return { graph, canvas, callbacks };
 }
-const handlerCount = (callbacks) => Object.values(callbacks.callbacks_handlers).reduce((sum, entry) => sum + entry.handlers.length, 0);
+const handlerCount = (callbacks) => Object.values(callbacks._lists).reduce((sum, entry) => sum + entry.handlers.length, 0);
 
 test.each(['html/node_html', 'html/json_viewer'])('%s releases overlays and canvas handlers through repeated removal', (type) => {
     const { graph, callbacks } = attachedGraph();

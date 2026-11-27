@@ -313,3 +313,33 @@ Object {
   },
 }
 `;
+
+exports[`strict mode: only true and {return_value: true} count as handled 1`] = `
+Object {
+  "canvas onDropItem (drop on the background)": Object {
+    "1": "\\"handled\\" -> \\"default\\"",
+    "{return_value: 1}": "\\"handled\\" -> \\"default\\"",
+  },
+  "canvas onShowNodePanel": Object {
+    "1": "\\"handled\\" -> \\"default\\"",
+    "{return_value: 1}": "\\"handled\\" -> \\"default\\"",
+  },
+  "node onAddPropertyToPanel": Object {
+    "1": "\\"handled\\" -> \\"default\\"",
+    "{return_value: 1}": "\\"handled\\" -> \\"default\\"",
+  },
+  "node onDblClick (double click on a selected node)": Object {
+    "{return_value: 1}": "\\"node handled\\" -> \\"default\\"",
+  },
+  "node onDropFile": Object {
+    "1": "\\"handled\\" -> \\"default\\"",
+    "{return_value: 1}": "\\"handled\\" -> \\"default\\"",
+  },
+  "node onDropItem": Object {
+    "{return_value: 1}": "\\"true\\" -> \\"default\\"",
+  },
+  "node onMouseDown (pointer down on the body)": Object {
+    "{return_value: 1}": "\\"drag blocked\\" -> \\"default\\"",
+  },
+}
+`;

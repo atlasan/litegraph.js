@@ -2410,8 +2410,16 @@ export interface CallbackHost<H = {}> {
     /** runs the handlers and the default callback (def_cb, the legacy onX); synchronous; rethrows the first handler error after the chain */
     processCallbackHandlers(name: string, options?: { def_cb?: Function | false; on_result?: (result: any) => void }, ...args: any[]): any;
     hasCallbackHandlers(name: string): boolean;
-    /** the handler registry, created on first read */
+    /**
+     * the handler registry, created on first read
+     * @deprecated logged once; register on the host (registerCallbackHandler, onHook) and trace with LiteGraph.setDispatchTap. No removal date.
+     */
     cb_handler: CallbackHandler;
+    /**
+     * returns the handler registry, creating it
+     * @deprecated logged once; not needed, the registry is created when a handler is first registered. No removal date.
+     */
+    callbackhandler_setup(): CallbackHandler;
     /** registers a handler and returns its disposer */
     onHook<K extends keyof H & string>(name: K, callback: (info: CallbackInfo, ...args: HookArgs<H, K>) => any, options?: CallbackOptions): () => boolean;
     onHook(name: string, callback: (info: CallbackInfo, ...args: any[]) => any, options?: CallbackOptions): () => boolean;
@@ -2426,6 +2434,16 @@ export declare class CallbackHandler {
     static is(result: any, value: any): boolean;
     /** true for true, or an object result with a truthy return_value */
     static handled(result: any): boolean;
+    /** the id of the setting that makes every "handled" site strict: "LiteGraph.Hooks.StrictHandled" */
+    static readonly STRICT_HANDLED: "LiteGraph.Hooks.StrictHandled";
+    /**
+     * "handled" at a site whose own rule (legacy, default handled) also accepts other truthy results:
+     * true or {return_value: true} always; with LiteGraph.Hooks.StrictHandled on, nothing else; off,
+     * legacy decides and a result it accepts logs a warning once per hook name
+     */
+    static handledAt(name: string, result: any, legacy?: (result: any) => any): boolean;
+    /** true when the setting LiteGraph.Hooks.StrictHandled is on */
+    static strictHandled(): boolean;
     /** menu and slot-list hooks: return_value when it is an object (null included), with arrays also an array result; otherwise fallback */
     static objectOf<T = any>(result: any, fallback?: T, arrays?: boolean): any;
     /**
@@ -2436,8 +2454,11 @@ export declare class CallbackHandler {
     static fireHookThenEvent(owner: CallbackHost<any>, name: string, args: any[], emitter: { _emit?(type: string, detail: any, options?: any): any } | null | undefined,
         type: string, detail: object | (() => object | null), options?: { veto?: any; emit?: { recorded?: boolean; cancelable?: boolean } }): any;
 }
-export interface CallbackHandler extends Omit<CallbackHost, "cb_handler"> {
-    /** per hook name */
+export interface CallbackHandler extends Omit<CallbackHost, "cb_handler" | "callbackhandler_setup"> {
+    /**
+     * per hook name (the live record)
+     * @deprecated logged once; use registerCallbackHandler, onHook, unregisterCallbackHandler and hasCallbackHandlers on the host. No removal date.
+     */
     callbacks_handlers: Record<string, ListenerList>;
 }
 /** One dispatch, as the dispatch tap sees it. */

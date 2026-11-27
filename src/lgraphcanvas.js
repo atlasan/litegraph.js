@@ -1276,7 +1276,7 @@ export class LGraphCanvas {
                         cbRet = node.processCallbackHandlers("onDblClick",{
                             def_cb: node.onDblClick
                         }, e, pos, this );
-                        if ( CallbackHandler.handled(cbRet) ) {
+                        if ( CallbackHandler.handledAt("onDblClick", cbRet) ) {
                             LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onDblClick", cbRet);
                         }else{
                             this.processNodeDblClicked(node);
@@ -1290,7 +1290,7 @@ export class LGraphCanvas {
                     }, e, pos, this );
                     
                     // if do not capture mouse
-                    if ( CallbackHandler.handled(cbRet) ) {
+                    if ( CallbackHandler.handledAt("onMouseDown", cbRet) ) {
                         LiteGraph.log_debug("lgraphcanvas", "processMouseDown", "dragging blocked by onMouseDownCbRet", cbRet);
                         block_drag_node = true;
                     } else {
@@ -2742,7 +2742,7 @@ export class LGraphCanvas {
             r = this.processCallbackHandlers("onDropItem",{
                 def_cb: this.onDropItem
             }, e);
-            if(!CallbackHandler.valueOf(r)){
+            if(!CallbackHandler.handledAt("onDropItem", r, CallbackHandler.valueOf)){
                 LiteGraph.log_verbose("lgraphcanvas", "processDrop", "running default implementation", e);
                 this.checkDropItem(e);
                 return CallbackHandler.valueOf(r); // this is probably ignored
@@ -2769,7 +2769,7 @@ export class LGraphCanvas {
                     }, file);
 
                     // if not getting a positive result, process file as data and call onDropData
-                    if(!CallbackHandler.valueOf(r)){
+                    if(!CallbackHandler.handledAt("onDropFile", r, CallbackHandler.valueOf)){
                             
                         // prepare reader
                         var reader = new FileReader();
@@ -2802,7 +2802,7 @@ export class LGraphCanvas {
                 def_cb: node.onDropItem
             }, e);
             // if getting a positive result, return
-            if(CallbackHandler.handled(r)){
+            if(CallbackHandler.handledAt("onDropItem", r)){
                 return true;
             }
 
@@ -2811,7 +2811,7 @@ export class LGraphCanvas {
                 def_cb: this.onDropItem
             }, e);
             // if getting a positive result, return
-            if(CallbackHandler.handled(r)){
+            if(CallbackHandler.handledAt("onDropItem", r)){
                 return true;
             }
 
@@ -9044,7 +9044,7 @@ export class LGraphCanvas {
         let r = this.processCallbackHandlers("onShowNodePanel",{
             def_cb: this.onShowNodePanel
         }, node);
-        if(!CallbackHandler.valueOf(r)){
+        if(!CallbackHandler.handledAt("onShowNodePanel", r, CallbackHandler.valueOf)){
             this.showShowNodePanel(node); // use onShowNodePanel, this is an only local method
             return true;
         }
