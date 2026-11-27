@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-25 | [Call scopes and pure semantics](2026-11-25-call-scopes.md): flows step 4 (D-4): call scopes per frame, event, Sequence output, loop iteration and function call; `pure: "volatile"`; property version; `refresh` input; `volatile-loop-input`; audit findings 1–4 fixed; `benchmark.json` 40% faster under `ancestors`; branch `LG/dev_flows_call_scopes` | final; `Local-CI: pass cc2a532` |
 | 2026-11-25 | [`no-undef` in the lint config, and the compatibility charter](2026-11-25-lint-charter.md): `no-undef` an error with browser/Node/provided globals (`globals` dev dependency), undeclared-names test guards the config, `docs/compatibility.md` (targets, checks, six rules; decision 0008, C-4); branch `LG/dev_lint_charter` | final |
 | 2026-11-24 | [Pre-release 0.18.0-dev.2: push and merge](2026-11-24-release-0.18.0-dev.2-merge.md): `LG/dev` pushed, local CI `--full` proofs posted on PR #11, PR merged into `master` as `0bdeff3`, branches aligned; GitHub checks skipped by the gate; tagged `v0.18.0-dev.2` | final |
 | 2026-11-24 | [Local CI and the gated GitHub workflow](2026-11-24-local-ci.md): `tools/ci/ci.mjs` (`npm run ci:local`, `lg ci`) in clean clones under `.lg/ci/`, parallel runs, optional audit/pack/ComfyUI/Bun steps, proof reports and `Local-CI:` summaries; workflow kept, gated on `LG_GITHUB_CI`; two parallel `--full` runs pass; branch `LG/dev_HMD_ci` | final |

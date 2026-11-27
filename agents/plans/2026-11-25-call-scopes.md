@@ -1,6 +1,6 @@
 # Call scopes and pure semantics (flows step 4)
 
-> **Date** 2026-11-25 · **Kind** plan · **Status** accepted · **Base** `LG/dev` @ `a1eb082`
+> **Date** 2026-11-25 · **Kind** plan · **Status** done ([execution](../executions/2026-11-25-call-scopes.md)) · **Base** `LG/dev` @ `a1eb082`
 
 Under `ancestors` and the newer models, an ON_REQUEST node that reads randomness, time or outside state gives a fresh value in each loop iteration and each Sequence branch; a property edit made inside a call is seen; and one call id is used. `legacy` stays byte-identical (decision [0002](../memories/decisions/0002-execution-models.md), kept with no removal date by [0008](../memories/decisions/0008-legacy-compatibility-scope.md)). This is step 4 of the [flows direction](2026-11-22-flows-direction.md), accepted as DEC-5 in the [next priorities plan](2026-11-25-next-priorities-after-0.18.0-dev.2.md); track branch `LG/dev_flows_call_scopes`.
 
