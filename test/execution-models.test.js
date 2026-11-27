@@ -17,6 +17,7 @@ beforeAll(async () => {
     flagValues = { ...LiteGraph._legacy_flag_values };
     class Src { constructor() { this.addOutput('go', LiteGraph.EVENT); } onExecute() {} }
     class Pure { constructor() { this.addInput('a', 'number'); this.addOutput('o', 'number'); this.runs = 0; this.params = []; } onExecute(param) { this.runs++; this.params.push(param); this.setOutputData(0, (this.getInputData(0) ?? 0) + 1); } }
+    class DetPure extends Pure { static def = { execution: { pure: true } }; }
     class Sink { constructor() { this.addInput('v', 'number'); this.seen = []; } onExecute() { this.seen.push(this.getInputData(0)); } }
     class PullSink { constructor() { this.addInput('v', 'number'); this.seen = []; } onExecute() { this.seen.push(this.getInputData(0, true, true)); } }
     class Rec { constructor() { this.addInput('in', LiteGraph.ACTION); this.addInput('v', 0); this.addInput('w', 0); this.log = []; } onExecute() {} onAction() { this.log.push([this.getInputData(1), this.getInputData(2)]); } }
@@ -25,7 +26,7 @@ beforeAll(async () => {
     class Reenter { constructor() { this.runs = 0; } onExecute() { this.runs++; this.doExecute(); } }
     class Trig { constructor() { this.addInput('onTrigger', LiteGraph.ACTION); this.runs = 0; } onExecute() { this.runs++; } }
     class Emitter { constructor() { this.addInput('a', 'number'); this.addOutput('ev', LiteGraph.EVENT); this.addOutput('o', 'number'); } onExecute() { this.triggerSlot(0); this.setOutputData(1, 1); } }
-    for (const [name, cls] of Object.entries({ src: Src, pure: Pure, sink: Sink, pullsink: PullSink, rec: Rec, plain: Plain, loop: Loop, reenter: Reenter, trig: Trig, emitter: Emitter })) {
+    for (const [name, cls] of Object.entries({ src: Src, pure: Pure, sink: Sink, pullsink: PullSink, detpure: DetPure, rec: Rec, plain: Plain, loop: Loop, reenter: Reenter, trig: Trig, emitter: Emitter })) {
         LiteGraph.registerNodeType(`exm/${name}`, cls);
     }
 });
@@ -182,25 +183,30 @@ describe('ancestors semantics (step 8)', () => {
         expect(rec.log).toHaveLength(2);
     });
 
-    test('A5: FOR through an ON_REQUEST node gives [0,1,2]; only changed nodes re-run', () => {
+    test('A5: FOR through an ON_REQUEST node gives [0,1,2]; only changed deterministic nodes re-run', () => {
         const g = graph('ancestors');
         const src = make(g, 'exm/src');
         const start = make(g, 'basic/const', { value: 0 });
         const n = make(g, 'basic/const', { value: 3 });
         const f = make(g, 'logic/CycleFOR');
-        const byIndex = make(g, 'exm/pure', {}, LiteGraph.ON_REQUEST);
-        const constant = make(g, 'exm/pure', {}, LiteGraph.ON_REQUEST);
+        const byIndex = make(g, 'exm/detpure', {}, LiteGraph.ON_REQUEST);
+        const constant = make(g, 'exm/detpure', {}, LiteGraph.ON_REQUEST);
+        const undeclared = make(g, 'exm/pure', {}, LiteGraph.ON_REQUEST);
         const ten = make(g, 'basic/const', { value: 10 });
         const rec = make(g, 'exm/rec');
         start.connect(0, f, 0); n.connect(0, f, 1); src.connect(0, f, 2);
         f.connect(0, rec, 0); f.connect(1, byIndex, 0); byIndex.connect(0, rec, 1);
         ten.connect(0, constant, 0); constant.connect(0, rec, 2);
+        ten.connect(0, undeclared, 0);
+        const rec2 = make(g, 'exm/rec');
+        f.connect(0, rec2, 0); undeclared.connect(0, rec2, 1);
         step(g);
-        byIndex.runs = 0; constant.runs = 0;
+        byIndex.runs = 0; constant.runs = 0; undeclared.runs = 0;
         src.triggerSlot(0);
         expect(rec.log).toEqual([[1, 11], [2, 11], [3, 11]]);
         expect(byIndex.runs).toBe(3); // its input changed every iteration
-        expect(constant.runs).toBe(1); // once for the call
+        expect(constant.runs).toBe(0); // declared pure: its input did not change since the step
+        expect(undeclared.runs).toBe(3); // undeclared: once per call scope, and each iteration is one (flows step 4)
     });
 
     test('an ON_REQUEST chain is pulled in order before an action', () => {

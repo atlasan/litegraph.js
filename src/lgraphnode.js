@@ -508,6 +508,8 @@ export class LGraphNode {
         if(CallbackHandler.is(r, false)){
             this.properties[name] = prevValue;
             LiteGraph.log_debug("lgraphnode","setProperty","prevent property set by cbHandler",name,value,prevValue,r);
+        } else if (this.properties[name] !== prevValue) {
+            ExecutionEngine.touch(this); // a property version: a pulled node sees the edit at once (FLW-04)
         }
 
         // Update the widget value associated with the property name
@@ -1085,8 +1087,9 @@ export class LGraphNode {
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
-        options.action_call ??= `${this.id}_exec_${LiteGraph.uuidv4()}`;
         const rules = ExecutionEngine.rulesFor(graph);
+        // outside legacy the call id is the scope id (one call id, flows step 4)
+        options.action_call ??= (!rules.legacy && ExecutionEngine.scopeId) || `${this.id}_exec_${LiteGraph.uuidv4()}`;
         if (!rules.legacy) {
             if (!ExecutionEngine.enter(this, "execute", options, rules)) return;
         } else {
@@ -1140,8 +1143,7 @@ export class LGraphNode {
      */
     _dispatchEvent(run) {
         LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
-        const outerCall = ExecutionEngine._call;
-        if (!outerCall) ExecutionEngine._call = `call_${++ExecutionEngine._callCount}`;
+        const outerScope = ExecutionEngine.openRoot("call");
         try {
             return run();
         } catch (error) {
@@ -1156,7 +1158,7 @@ export class LGraphNode {
             return undefined;
         } finally {
             LiteGraph._dispatch_depth--;
-            ExecutionEngine._call = outerCall;
+            ExecutionEngine._scope = outerScope;
         }
     }
 
@@ -1199,10 +1201,13 @@ export class LGraphNode {
         }
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
-        options.action_call ??= `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
         const rules = ExecutionEngine.rulesFor(graph);
+        options.action_call ??= (!rules.legacy && ExecutionEngine.scopeId) || `${this.id}_${action || "action"}_${LiteGraph.uuidv4()}`;
         if (!rules.legacy) {
             if (!ExecutionEngine.enter(this, "action", options, rules)) return;
+            // a refresh input (FLW-03): run the node again now, whatever its own actions do
+            const input = action_slot != null ? this.inputs?.[action_slot] : this.inputs?.find((slot) => slot.name === action);
+            if (ExecutionEngine.isRefreshInput(input)) { ExecutionEngine.refresh(this); return; }
         } else {
             if (LiteGraph.ensureNodeSingleAction && graph.nodes_actioning[this.id] === options.action_call) return;
             if (LiteGraph.ensureUniqueExecutionAndActionCall && graph.nodes_executedAction[this.id] === options.action_call) return;

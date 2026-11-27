@@ -233,7 +233,7 @@
       "id": "random-console",
       "file": "tests/randomConsole.JSON",
       "title": "Timer, random and branch",
-      "description": "Every second the Timer asks a Branch whether Rand is above a threshold; on true a Sequence logs the value, shows it in a Watch and counts the hit. Watch and log see the value that was compared.",
+      "description": "Every second the Timer asks a Branch whether Rand is above a threshold; on true a Sequence logs the value, shows it in a Watch and counts the hit. Rand is Always, so Watch and log see the value that was compared.",
       "category": "flows/blueprint",
       "profile": "blueprint",
       "flow": "blueprint",

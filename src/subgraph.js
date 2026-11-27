@@ -1673,12 +1673,16 @@ export class NodeFunction extends Subgraph {
         const limit = LiteGraph.subgraph_max_depth ?? 32;
         if (depth >= limit) throw new Error(`graph/function: call depth limit reached (LiteGraph.subgraph_max_depth = ${limit})`);
         NodeFunction._depth = depth + 1;
+        // each call runs in its own child call scope (outside legacy): inner volatile nodes run once per call
+        this._call_count = (this._call_count ?? 0) + 1;
         try {
-            this._pushInputs();
-            this.subgraph.runStep(1);
-            this.outputs?.forEach((output, i) => {
-                if (output.type === LiteGraph.EVENT || output.type === LiteGraph.ACTION) return;
-                this.setOutputData(i, this.subgraph.getOutputData(output.name));
+            ExecutionEngine.inScope(ExecutionEngine.scopeFor(this, `f${this._call_count}`), () => {
+                this._pushInputs();
+                this.subgraph.runStep(1);
+                this.outputs?.forEach((output, i) => {
+                    if (output.type === LiteGraph.EVENT || output.type === LiteGraph.ACTION) return;
+                    this.setOutputData(i, this.subgraph.getOutputData(output.name));
+                });
             });
         } finally {
             NodeFunction._depth = depth;

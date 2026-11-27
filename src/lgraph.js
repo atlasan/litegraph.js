@@ -646,7 +646,7 @@ export class LGraph {
         this.globaltime = 0.001 * (start - this.starttime);
         const rules = ExecutionEngine.rulesFor(this);
         const wasStepping = this._stepping;
-        const outerCall = ExecutionEngine._call;
+        const outerScope = ExecutionEngine._scope;
         this._stepping = true;
         const resetExecutionState = () => {
             this.nodes_executing = [];
@@ -658,7 +658,8 @@ export class LGraph {
         try {
             for (let step = 0; step < num; step++) {
                 this._frame = (this._frame ?? 0) + 1;
-                if (!rules.legacy && !outerCall) ExecutionEngine._call = `frame_${ExecutionEngine._callCount++}`;
+                // a root call scope per step, unless the step runs inside a call (a function, an event)
+                if (!rules.legacy && !outerScope) ExecutionEngine._scope = { id: `frame_${ExecutionEngine._callCount++}`, parent: null };
                 // Changes made during one cycle take effect in the following cycle.
                 const nodes = this._nodes_executable ?? this._nodes;
                 const count = limit == null ? nodes.length : Math.max(0, Math.min(nodes.length, limit));
@@ -692,7 +693,7 @@ export class LGraph {
         } finally {
             LiteGraph._dispatch_depth--;
             this._stepping = wasStepping;
-            ExecutionEngine._call = outerCall;
+            ExecutionEngine._scope = outerScope;
             const now = LiteGraph.getTime();
             this.execution_time = 0.001 * Math.max(1, now - start);
             this.globaltime += this.execution_time;

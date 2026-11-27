@@ -290,8 +290,9 @@ describe('ancestors', () => {
         expect(rec.log.length).toBeLessThan(50);
     });
 
-    test('declarations: math/rand, math/formula, basic/time and basic/variable are volatile and start ON_REQUEST', () => {
-        for (const type of ['math/rand', 'math/formula', 'basic/time', 'basic/variable']) {
+    test('declarations: math/rand, math/formula and basic/time are volatile and start ON_REQUEST', () => {
+        expect(ExecutionEngine.declarationOf('basic/variable')).toBeNull(); // a setter too: not pure
+        for (const type of ['math/rand', 'math/formula', 'basic/time']) {
             expect(ExecutionEngine.declarationOf(type)).toMatchObject({ pure: true, volatile: true });
         }
         expect(ExecutionEngine.declarationOf('math/operation')).toMatchObject({ pure: true, volatile: false });

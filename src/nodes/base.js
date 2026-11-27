@@ -1413,9 +1413,11 @@ LiteGraph.declareNodeExecution(["basic/array_length", "basic/array[]", "basic/ta
 // declaration pass (flows track): constants and conversions are pure; alert only reacts to events
 LiteGraph.declareNodeExecution(["basic/const", "basic/boolean", "basic/string", "basic/data", "basic/array", "basic/length", "basic/not"], { pure: true });
 LiteGraph.declareNodeExecution(["basic/alert"], { default_mode: LiteGraph.ON_EVENT });
-// Volatile (FLW-02, not a declaration kind yet): they read time, randomness, outside state or the UI, so they
-// stay undeclared and ALWAYS; ON_REQUEST would keep one value per frame or call (event flows audit, finding 1):
-// basic/time, basic/variable, basic/object, basic/script, basic/file.
+// volatile (FLW-02, flows step 4): they read time or outside state; ON_REQUEST runs them once per call
+// scope (a step, an event, a loop iteration, a Sequence output)
+LiteGraph.declareNodeExecution(["basic/time"], { pure: "volatile" });
+// Volatile but kept undeclared and ALWAYS until checked in a browser: basic/object, basic/script, basic/file.
+// basic/variable is not pure: with its input connected it writes the variable (a setter, often ON_TRIGGER).
 // Side effects or state, kept ALWAYS (a mode change would stop them): basic/set_array, basic/array_append,
 // basic/console, basic/download, basic/jsonparse, basic/data_store, basic/watch.
 

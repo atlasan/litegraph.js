@@ -1,7 +1,8 @@
 // Declaration pass (flows track, part B): the execution needs of the node types the event flows
 // audit (§2) found undeclared. pure → ON_REQUEST for new nodes under "ancestors"; ticks → advanced
-// by the step loop only, never by a pull; ON_EVENT default for event-only nodes. Volatile nodes
-// (time, randomness, outside state, widgets) stay undeclared, so ALWAYS, until FLW-02.
+// by the step loop only, never by a pull; ON_EVENT default for event-only nodes. Since flows step 4
+// (FLW-02) time and randomness readers are declared volatile (pure, memoized per call scope); the
+// other volatile nodes (outside state, scripts, widgets) stay undeclared, so ALWAYS.
 import { jest } from '@jest/globals';
 import { LiteGraph } from '../src/litegraph.js';
 import { LGraph } from '../src/lgraph.js';
@@ -20,8 +21,9 @@ const PURE = [
 ];
 const TICKS = ['math/average', 'math/tendTo', 'math/spikes', 'math/accumulate'];
 const ON_EVENT = ['events/once', 'events/waitAll', 'events/filter', 'events/log', 'basic/alert'];
+const DECLARED_VOLATILE = ['basic/time', 'math/rand', 'math/formula'];
 const VOLATILE = [
-    'basic/time', 'basic/variable', 'basic/object', 'basic/script', 'math/rand', 'math/formula', 'objects/evaluate',
+    'basic/variable', 'basic/object', 'basic/script', 'objects/evaluate',
     'widget/button', 'widget/toggle', 'widget/number', 'widget/combo', 'widget/knob', 'widget/hslider', 'widget/internal_slider',
 ];
 // stateful or side effects: they keep their ALWAYS behaviour (a mode change would stop them)
@@ -53,18 +55,22 @@ describe('declarations', () => {
     test('event-only types default to ON_EVENT outside legacy', () => {
         for (const type of ON_EVENT) expect([type, decl(type)?.default_mode]).toEqual([type, LiteGraph.ON_EVENT]);
     });
-    test('volatile and stateful types stay undeclared (ALWAYS everywhere)', () => {
+    test('time and randomness readers are declared volatile (flows step 4)', () => {
+        for (const type of DECLARED_VOLATILE) expect([type, decl(type)?.pure, decl(type)?.volatile]).toEqual([type, true, true]);
+    });
+    test('the other volatile and stateful types stay undeclared (ALWAYS everywhere)', () => {
         for (const type of [...VOLATILE, ...STATEFUL]) expect([type, decl(type)]).toEqual([type, null]);
     });
 });
 
 describe('effect on new nodes', () => {
-    test('under ancestors: pure → On Request, event-only → On Event, ticking and volatile → Always', () => {
+    test('under ancestors: pure and declared volatile → On Request, event-only → On Event, ticking and undeclared → Always', () => {
         const g = graph('ancestors');
         expect(make(g, 'basic/const').mode).toBe(LiteGraph.ON_REQUEST);
         expect(make(g, 'events/once').mode).toBe(LiteGraph.ON_EVENT);
         expect(make(g, 'math/average').mode).toBe(LiteGraph.ALWAYS);
-        expect(make(g, 'math/rand').mode).toBe(LiteGraph.ALWAYS);
+        expect(make(g, 'math/rand').mode).toBe(LiteGraph.ON_REQUEST);
+        expect(make(g, 'objects/evaluate').mode).toBe(LiteGraph.ALWAYS);
     });
     test('under legacy nothing changes: every new node starts Always', () => {
         const g = graph('legacy');
