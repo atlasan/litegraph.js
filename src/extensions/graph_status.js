@@ -17,6 +17,7 @@ const graphStatusRunning = (graph) => graph?.status === (graph?.constructor?.STA
 
 /** the chip's text: the model title (or name) */
 export function graphStatusLabel(graph) {
+    if (graph?.getExecutionBlockReason()) return "Execution paused";
     const engine = LiteGraph.ExecutionEngine;
     const name = engine?.modelNameFor(graph) ?? "legacy";
     const model = engine?.getModel(name);
@@ -71,7 +72,8 @@ export function graphStatusMenu(canvas) {
     const graph = graphStatusRoot(canvas);
     const engine = LiteGraph.ExecutionEngine;
     if (!graph || !engine) return [];
-    const current = engine.modelNameFor(graph);
+    const blocked = graph.getExecutionBlockReason();
+    const current = blocked ? graph.config.execution : engine.modelNameFor(graph);
     const items = engine.listModels().map((model) => ({
         content: `${model.name === current ? "✓ " : ""}${model.title ?? model.name}`,
         callback: () => {
@@ -81,7 +83,7 @@ export function graphStatusMenu(canvas) {
     }));
     items.push(null, graphStatusRunning(graph)
         ? { content: "Stop", callback: () => { graph.stop(); canvas.setDirty(true, true); } }
-        : { content: "Start", callback: () => { graph.start(); canvas.setDirty(true, true); } });
+        : { content: "Start", disabled: !!blocked, callback: () => { graph.start(); canvas.setDirty(true, true); } });
     return items;
 }
 

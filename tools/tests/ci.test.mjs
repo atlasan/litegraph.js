@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  parseArgs, parseJest, parseNodeTest, parseBrowser, parseBunTest, parseAudit, parseComfy, parseFresh, runId, summaryLine,
+  parseArgs, parseJest, parseNodeTest, parseBrowser, parseExecutionParity, parseBunTest, parseAudit, parseComfy, parseFresh, runId, summaryLine,
   overallResult, renderMarkdown, commentCommand, githubCommand, githubState, shellQuote, UsageError,
 } from '../ci/core.mjs';
 import { main, runMany, listRuns, findRun } from '../ci/ci.mjs';
@@ -75,6 +75,10 @@ test('log parsers: Jest, node:test (spec and TAP), bun test, audit, ComfyUI prob
   assert.deepEqual(parseBrowser('browser smoke: skipped: no Firefox found on PATH'), { skipped: true, reason: 'no Firefox found on PATH' });
   assert.deepEqual(parseBrowser('browser smoke: FAIL: LG_FIREFOX=/x is not an executable file'), { passed: 0, total: 0, failed: 1, skipped: false, reason: 'LG_FIREFOX=/x is not an executable file' });
   assert.equal(parseBrowser('Tests: 5 passed, 5 total'), null);
+  assert.deepEqual(parseExecutionParity('execution parity: 2/2 cases passed (browser and Node)'), { passed: 2, total: 2, failed: false, browser: true, browserSkipReason: null });
+  assert.deepEqual(parseExecutionParity('execution parity: browser skipped: no Firefox\nexecution parity: 2/2 cases passed (Node only)'), { passed: 2, total: 2, failed: false, browser: false, browserSkipReason: 'no Firefox' });
+  assert.deepEqual(parseExecutionParity('execution parity: FAIL: host check failed'), { failed: true, reason: 'host check failed' });
+  assert.equal(parseExecutionParity('older check run'), null);
   assert.deepEqual(parseFresh('$ git diff\n'), { ok: true, files: [] });
   assert.deepEqual(parseFresh(' build/litegraph.js | 2 +-\n 1 file changed'), { ok: false, files: ['build/litegraph.js'] });
 });
@@ -131,6 +135,12 @@ test('summary line, result and report.md', () => {
   browser.summary = summaryLine(browser);
   assert.equal(browser.summary, 'Local-CI: pass f944f3d node22.23.4 jest 1016/1016 int 151/151 browser 9/9 fresh ok');
   assert.match(renderMarkdown(browser), /browser smoke 9\/9 on firefox 141\.0/);
+  const executionParity = parseExecutionParity('execution parity: browser skipped: no Firefox\nexecution parity: 2/2 cases passed (Node only)');
+  const nodeOnly = { ...browser, counts: { ...browser.counts, executionParity }, steps: browser.steps.map((step) => (
+    step.name === 'check' ? { ...step, counts: { ...step.counts, executionParity } } : step
+  )) };
+  assert.match(summaryLine(nodeOnly), /execution parity 2\/2 \(Node only\)/);
+  assert.match(renderMarkdown(nodeOnly), /execution parity 2\/2 \(Node only: no Firefox\)/);
   browser.counts.browser = { skipped: true, reason: 'no Firefox found on PATH' };
   browser.steps[2].counts = { browser: browser.counts.browser };
   assert.equal(summaryLine(browser), 'Local-CI: pass f944f3d node22.23.4 jest 1016/1016 int 151/151 browser skip fresh ok');

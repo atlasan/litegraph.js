@@ -291,18 +291,23 @@ describe.each(Object.keys(PRESETS))('configuration %s', (preset) => {
         expect([yes.log.length, no.log.length]).toEqual([0, 1]);
     });
 
-    test('WaitAll fires once both inputs arrived', () => {
+    test('WaitAll waits for both inputs again after each completion', async () => {
         const g = setup(preset);
         const a = make(g, 'evm/src');
         const b = make(g, 'evm/src');
         const w = make(g, 'events/waitAll');
         const r = make(g, 'evm/recNoExec');
         a.connect(0, w, 0); b.connect(0, w, 1); w.connect(0, r, 0);
+        await g.whenReady();
         step(g);
         a.triggerSlot(0); step(g);
         expect(r.log.length).toBe(0);
         b.triggerSlot(0, 'last'); step(g);
         expect(r.log.length).toBe(1);
+        b.triggerSlot(0, 'next first'); step(g);
+        expect(r.log.length).toBe(1);
+        a.triggerSlot(0, 'next last'); step(g);
+        expect(r.log.length).toBe(2);
     });
 
     test('B15: WaitAll forwards the payload of the completing event', () => {

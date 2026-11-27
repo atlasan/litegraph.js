@@ -166,6 +166,19 @@ export function parseBrowser(log) {
   return other[1] === 'skipped' ? { skipped: true, reason: other[2].trim() } : { passed: 0, total: 0, failed: 1, skipped: false, reason: other[2].trim() };
 }
 
+/** The Node parity cases also run when Firefox is skipped. */
+export function parseExecutionParity(log) {
+  const text = strip(log);
+  const failure = text.match(/^execution parity: FAIL: (.+)$/m);
+  if (failure) return { failed: true, reason: failure[1] };
+  const pass = text.match(/^execution parity: (\d+)\/(\d+) cases passed \((browser and Node|Node only)\)$/m);
+  if (!pass) return null;
+  return {
+    passed: Number(pass[1]), total: Number(pass[2]), failed: false, browser: pass[3] === 'browser and Node',
+    browserSkipReason: text.match(/^execution parity: browser skipped: (.+)$/m)?.[1] ?? null,
+  };
+}
+
 /** bun test's summary: ` 150 pass`, ` 1 fail`, `Ran 151 tests across 21 files.` */
 export function parseBunTest(log) {
   const text = strip(log);
@@ -220,6 +233,8 @@ export function summaryLine(report) {
   parts.push(`jest ${pair(report.counts.jest)}`, `int ${pair(report.counts.integration)}`);
   const browser = report.counts.browser;
   if (browser) parts.push(`browser ${browser.skipped ? 'skip' : browser.failed ? `FAIL ${pair(browser)}` : pair(browser)}`);
+  const executionParity = report.counts.executionParity;
+  if (executionParity) parts.push(`execution parity ${executionParity.failed ? 'FAIL' : `${pair(executionParity)}${executionParity.browser ? '' : ' (Node only)'}`}`);
   const fresh = step('fresh');
   const waiting = (s) => s.status === 'pending' || s.status === 'running';
   parts.push(`fresh ${!fresh || fresh.status === 'skip' ? 'n/a' : waiting(fresh) ? '…' : fresh.status === 'pass' ? 'ok' : 'FAIL'}`);
@@ -257,6 +272,8 @@ function stepDetail(step) {
     case 'check': return [
       c.jest && `Jest ${pair(c.jest)} in ${c.jest.suites} suites`, c.integration && `integration ${pair(c.integration)}`,
       c.browser && (c.browser.skipped ? `browser smoke skipped (${c.browser.reason})` : `browser smoke ${pair(c.browser)}${c.browser.browser ? ` on ${c.browser.browser}` : ''}${c.browser.reason ? ` (${c.browser.reason})` : ''}`),
+      c.executionParity && (c.executionParity.failed ? `execution parity failed (${c.executionParity.reason})`
+        : `execution parity ${pair(c.executionParity)} (${c.executionParity.browser ? 'browser and Node' : `Node only: ${c.executionParity.browserSkipReason}`})`),
     ].filter(Boolean).join(', ');
     case 'fresh': return c.ok ? 'build/ and build_node/ match the sources' : `differs: ${c.files.join(', ')}`;
     case 'audit': return `${c.vulnerabilities} vulnerabilities`;

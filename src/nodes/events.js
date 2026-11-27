@@ -128,7 +128,7 @@ class WaitAll {
             that.size[0] = 90;
         });
         this.size = [90, 70];
-        this.ready = [];
+        this._arrived = [];
     }
 
     getTitle() {
@@ -141,7 +141,7 @@ class WaitAll {
         }
         for (var i = 0; i < this.inputs.length; ++i) {
             var y = i * LiteGraph.NODE_SLOT_HEIGHT + 10;
-            ctx.fillStyle = this.ready[i] ? "#AFB" : "#000";
+            ctx.fillStyle = this._arrived[i] ? "#AFB" : "#000";
             ctx.fillRect(20, y, 10, 10);
         }
     }
@@ -149,19 +149,17 @@ class WaitAll {
     onAction(action, param, options, slot_index) {
         if (slot_index == null) return;
 
-        // check all
-        this.ready.length = this.inputs.length; // one flag per input to wait for
-        this.ready[slot_index] = true;
-        for (var i = 0; i < this.ready.length; ++i)
-            if (!this.ready[i])
-                return;
-        // pass, with the payload of the completing event (B15)
+        this._arrived[slot_index] = true;
+        for (let i = 0; i < this.inputs.length; i++) {
+            if (!this._arrived[i]) return;
+        }
+        // Pass the payload of the completing event (B15).
         this.reset();
         this.triggerSlot(0, param, null, options);
     }
 
     reset() {
-        this.ready.length = 0;
+        this._arrived.length = 0;
     }
 }
 LiteGraph.registerNodeType("events/waitAll", WaitAll);
