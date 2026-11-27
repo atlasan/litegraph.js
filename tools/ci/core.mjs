@@ -150,6 +150,22 @@ export function parseNodeTest(log) {
   return { passed: count('pass') ?? 0, failed: count('fail') ?? 0, skipped: (count('skipped') ?? 0) + (count('todo') ?? 0), total, suites: count('suites') };
 }
 
+/**
+ * The browser smoke test (tools/browser/smoke.mjs, in npm run check): `browser smoke: 9/9 passed (firefox 141.0)`,
+ * `browser smoke: skipped: <why>` or `browser smoke: FAIL: <why>`. null when the log has none (older commits).
+ */
+export function parseBrowser(log) {
+  const text = strip(log);
+  const counted = [...text.matchAll(/^browser smoke: (\d+)\/(\d+) passed( FAIL)?(?: \((\S+) ([^)]*)\))?\s*$/gm)].pop();
+  if (counted) {
+    const [, passed, total, fail, browser, version] = counted;
+    return { passed: Number(passed), total: Number(total), failed: fail ? 1 : 0, skipped: false, browser: browser && version !== 'n/a' ? `${browser} ${version}` : null };
+  }
+  const other = [...text.matchAll(/^browser smoke: (skipped|FAIL): (.*)$/gm)].pop();
+  if (!other) return null;
+  return other[1] === 'skipped' ? { skipped: true, reason: other[2].trim() } : { passed: 0, total: 0, failed: 1, skipped: false, reason: other[2].trim() };
+}
+
 /** bun test's summary: ` 150 pass`, ` 1 fail`, `Ran 151 tests across 21 files.` */
 export function parseBunTest(log) {
   const text = strip(log);
@@ -202,6 +218,8 @@ export function summaryLine(report) {
   const step = (name) => report.steps.find((s) => s.name === name);
   const parts = [`Local-CI: ${report.result}`, report.commit.slice(0, 7), `node${report.versions.node.replace(/^v/, '')}`];
   parts.push(`jest ${pair(report.counts.jest)}`, `int ${pair(report.counts.integration)}`);
+  const browser = report.counts.browser;
+  if (browser) parts.push(`browser ${browser.skipped ? 'skip' : browser.failed ? `FAIL ${pair(browser)}` : pair(browser)}`);
   const fresh = step('fresh');
   const waiting = (s) => s.status === 'pending' || s.status === 'running';
   parts.push(`fresh ${!fresh || fresh.status === 'skip' ? 'n/a' : waiting(fresh) ? '…' : fresh.status === 'pass' ? 'ok' : 'FAIL'}`);
@@ -236,7 +254,10 @@ function stepDetail(step) {
   if (step.status === 'skip') return step.reason ?? 'skipped';
   if (!c) return '';
   switch (step.name) {
-    case 'check': return [c.jest && `Jest ${pair(c.jest)} in ${c.jest.suites} suites`, c.integration && `integration ${pair(c.integration)}`].filter(Boolean).join(', ');
+    case 'check': return [
+      c.jest && `Jest ${pair(c.jest)} in ${c.jest.suites} suites`, c.integration && `integration ${pair(c.integration)}`,
+      c.browser && (c.browser.skipped ? `browser smoke skipped (${c.browser.reason})` : `browser smoke ${pair(c.browser)}${c.browser.browser ? ` on ${c.browser.browser}` : ''}${c.browser.reason ? ` (${c.browser.reason})` : ''}`),
+    ].filter(Boolean).join(', ');
     case 'fresh': return c.ok ? 'build/ and build_node/ match the sources' : `differs: ${c.files.join(', ')}`;
     case 'audit': return `${c.vulnerabilities} vulnerabilities`;
     case 'pack': return `${pair(c)} checks; ${c.files ?? '?'} files, ${c.size ?? '?'}`;

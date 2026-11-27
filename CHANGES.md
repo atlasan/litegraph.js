@@ -8,6 +8,7 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 ## Added
 
 * **Compatibility charter** (`docs/compatibility.md`, linked from `AGENTS.md`): the targets (this library's API and documents, the original LiteGraph API, ComfyUI workflows, WebGLStudio and other hosts), how far each is kept, how each is checked, and the rules for compatibility changes ([decision 0008](agents/memories/decisions/0008-legacy-compatibility-scope.md)).
+* **Browser smoke test** (`npm run check:browser`, USE-09): `apps/editor/editor_build.html` in a headless Firefox through WebDriver BiDi, with real pointer and key input. It loads the page and the built bundles, links two nodes by dragging, drags a node, adds a reroute from the link menu and drags it, inserts a node from the search box with Enter, then undoes each step with Ctrl+Z, checking the graph every time; any page error fails it. It needs no npm dependency (Node's built-in `WebSocket`, `tools/browser/firefox-bidi.mjs`) and skips with a message when no Firefox is found (`LG_FIREFOX` picks one, `LG_BROWSER_SMOKE=require` makes it mandatory). It is the last step of `npm run check`, and the local CI summary shows its count (`browser 9/9`, or `browser skip`).
 
 ## Changed
 

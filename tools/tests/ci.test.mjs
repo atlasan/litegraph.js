@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  parseArgs, parseJest, parseNodeTest, parseBunTest, parseAudit, parseComfy, parseFresh, runId, summaryLine,
+  parseArgs, parseJest, parseNodeTest, parseBrowser, parseBunTest, parseAudit, parseComfy, parseFresh, runId, summaryLine,
   overallResult, renderMarkdown, commentCommand, githubCommand, githubState, shellQuote, UsageError,
 } from '../ci/core.mjs';
 import { main, runMany, listRuns, findRun } from '../ci/ci.mjs';
@@ -69,6 +69,12 @@ test('log parsers: Jest, node:test (spec and TAP), bun test, audit, ComfyUI prob
   assert.deepEqual(parseAudit('found 0 vulnerabilities'), { vulnerabilities: 0 });
   assert.deepEqual(parseAudit('# npm audit report\n...\n3 high severity vulnerabilities'), { vulnerabilities: 3 });
   assert.deepEqual(parseComfy('PASS x\n\n79/79 pass\n26 interface slots appended\n0 files with content differences of 41'), { schema: { passed: 79, total: 79 }, content: { differing: 0, total: 41 } });
+  assert.deepEqual(parseBrowser('ok - load\nbrowser smoke: 9/9 passed (firefox 141.0)\n'), { passed: 9, total: 9, failed: 0, skipped: false, browser: 'firefox 141.0' });
+  assert.deepEqual(parseBrowser('browser smoke: 6/9 passed FAIL (firefox 141.0)'), { passed: 6, total: 9, failed: 1, skipped: false, browser: 'firefox 141.0' });
+  assert.deepEqual(parseBrowser('browser smoke: 0/0 passed FAIL (firefox n/a)'), { passed: 0, total: 0, failed: 1, skipped: false, browser: null });
+  assert.deepEqual(parseBrowser('browser smoke: skipped: no Firefox found on PATH'), { skipped: true, reason: 'no Firefox found on PATH' });
+  assert.deepEqual(parseBrowser('browser smoke: FAIL: LG_FIREFOX=/x is not an executable file'), { passed: 0, total: 0, failed: 1, skipped: false, reason: 'LG_FIREFOX=/x is not an executable file' });
+  assert.equal(parseBrowser('Tests: 5 passed, 5 total'), null);
   assert.deepEqual(parseFresh('$ git diff\n'), { ok: true, files: [] });
   assert.deepEqual(parseFresh(' build/litegraph.js | 2 +-\n 1 file changed'), { ok: false, files: ['build/litegraph.js'] });
 });
@@ -116,6 +122,21 @@ test('summary line, result and report.md', () => {
   assert.equal(stale.result, 'fail');
   assert.equal(summaryLine(stale), 'Local-CI: fail f944f3d node22.23.4 jest 1016/1016 int 151/151 fresh FAIL failed: fresh');
   assert.match(renderMarkdown({ ...stale, summary: summaryLine(stale) }), /differs: build\/litegraph\.js/);
+
+  // the browser smoke test, when the check printed it
+  const browser = sampleReport();
+  browser.counts.browser = { passed: 9, total: 9, failed: 0, skipped: false, browser: 'firefox 141.0' };
+  browser.steps[2].counts = { browser: browser.counts.browser };
+  browser.result = overallResult(browser.steps);
+  browser.summary = summaryLine(browser);
+  assert.equal(browser.summary, 'Local-CI: pass f944f3d node22.23.4 jest 1016/1016 int 151/151 browser 9/9 fresh ok');
+  assert.match(renderMarkdown(browser), /browser smoke 9\/9 on firefox 141\.0/);
+  browser.counts.browser = { skipped: true, reason: 'no Firefox found on PATH' };
+  browser.steps[2].counts = { browser: browser.counts.browser };
+  assert.equal(summaryLine(browser), 'Local-CI: pass f944f3d node22.23.4 jest 1016/1016 int 151/151 browser skip fresh ok');
+  assert.match(renderMarkdown({ ...browser, summary: summaryLine(browser) }), /browser smoke skipped \(no Firefox found on PATH\)/);
+  browser.counts.browser = { passed: 6, total: 9, failed: 1, skipped: false, browser: 'firefox 141.0' };
+  assert.match(summaryLine(browser), / browser FAIL 6\/9 /);
 
   assert.equal(overallResult([{ status: 'pass' }, { status: 'running' }]), 'running');
   assert.match(runId('abc1234', new Date('2026-11-24T12:00:16.789Z')), /^abc1234-20261124T120016Z$/);
