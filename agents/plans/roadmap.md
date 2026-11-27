@@ -26,7 +26,7 @@ Routine changes build into the ignored `.lg/local-build/` package. Refresh the t
 
 ## Integration baseline
 
-`LG/dev_plan` at `f5c5437` passed `npm run ci:local -- f5c5437 --full` on Linux with Node 22.23.5. Jest passed 1,151/1,151, integration 172/172, Firefox 9/9, browser–Node parity 5/5 and packed install 9/9. The snapshot guard passed and the runtime dependency audit reported zero vulnerabilities. Bun passed 169/172 with the same three advisory failures as the parent. The external ComfyUI probes skipped because their local inputs were absent.
+`LG/dev` at merge commit `9308cea` is the verified integration baseline. Full local CI passed on Linux with Node 22.23.5, including the frozen snapshot check. Bun passed 169/172 with three advisory failures. The external ComfyUI probes await their local inputs. [Merge and CI results](../executions/2026-11-27-dev-plan-merge.md)
 
 1. **Finish 0.18 validation.** Verify the Windows and macOS launchers, run the external ComfyUI probes with their fixtures, and resolve the distribution decision (D12).
 2. **Run the host tracks in parallel.** The nunuStudio session is evaluating the new integration and can propose compatible LiteGraph changes. The WebGLStudio session is pursuing full legacy compatibility against real host projects. Each track should contribute reproducible fixtures and record remaining differences. [Host acceptance criteria](../../docs/compatibility.md#targets)
