@@ -17,6 +17,10 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'ut
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'litegraph-types-'));
 try {
     // Reproduce a consumer that has only the declarations selected for publication.
+    // Its own package.json stops TypeScript's package self-reference walk: without it, a temporary
+    // directory inside a checkout (ci:local puts TMPDIR under .lg/ci/work/) resolves
+    // "@litegraph/litegraph" to that checkout's declarations instead of the copy below.
+    fs.writeFileSync(path.join(temporary, 'package.json'), JSON.stringify({ name: 'litegraph-types-consumer', private: true }));
     const installed = path.join(temporary, 'node_modules/@litegraph/litegraph');
     fs.mkdirSync(path.join(installed, 'src'), { recursive: true });
     fs.copyFileSync(path.join(root, 'package.json'), path.join(installed, 'package.json'));
