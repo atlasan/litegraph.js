@@ -152,6 +152,7 @@ Introduced in Wave 1:
 - **Connections:** the WebSocket accepts only same-origin pages and the runner's own host names.
 - **Node types:** workflows containing shell, file-write, process or service, or remote-library nodes are refused at any subgraph depth (`nodePolicy.js`).
 - **Scripts:** script evaluation is off.
+- **Documents:** every workflow is validated before it is built (`LiteGraph.validateGraphData`, strict): oversized or malformed workflows are refused with a report, and runtime-only fields are dropped.
 - **Trusted use:** `RUNNER_ALLOW_SYS=1` lifts the node-type and script restrictions.
 - **Not covered:** there is no authentication. Treat workflows as trusted programs. Decision D1 in the [roadmap](../agents/plans/roadmap.md) covers stricter defaults.
 
@@ -167,6 +168,8 @@ Requests have the form `{type, data, requestId?}`. Replies echo `requestId`.
 | `get_active_graphs` / `stop_all_graphs` | — | `active_graphs` |
 
 Broadcasts, without a request: `graph_status`, `active_graphs`, `console {graphId, level, message}`, and `execution_state {graphId, message}`. The message is the shared execution-state shape (`LiteGraph.ExecutionState`, protocol `v: 1`): `{v, kind: status | progress | error | reset, path, status, value?, max?, message?, time}`, one per change of a node's state; `path` is the node's path ("3:7" inside a subgraph). An editor applies one with `graph.applyExecutionState(message)`; the runner page does so for the open workflow and keeps the states per workflow (`apps/runner/public/execution-view-state.js`), so a tab switch redraws them. Nodes run by actions or pulls send `running` then `done`.
+
+A failed request answers `{type: "error", data: {message, report?}, requestId}`. `report` is present when the validated loader refused the workflow (`open_graph`, `update_graph`): every workflow is checked by `LiteGraph.validateGraphData` in strict mode, with the node-type policy as its type hook, before it is built. The report lists each issue with its `code`, JSON `path` and `message`; the limits are the `LiteGraph.Loader.*` settings ([guide](guide.md#untrusted-documents)).
 
 Edits are applied in memory only; nothing is written back to the workflow file.
 

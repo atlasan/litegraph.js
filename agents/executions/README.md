@@ -6,6 +6,7 @@ What was done and how it was verified. Plans say what *will* happen; executions 
 
 | Date | Record | Status |
 |---|---|---|
+| 2026-11-25 | [Validated loader for untrusted graphs](2026-11-25-graph-loader.md): `LiteGraph.validateGraphData` (`src/graphloader.js`) with `LiteGraph.Loader.*` limits, runtime fields dropped, link checks and a type hook; the runner refuses failing workflows with a structured report; `graph.load()` and the Editor drop validate in repair mode; branch `LG/dev_graph_loader` | final; not merged |
 | 2026-11-25 | [`no-undef` in the lint config, and the compatibility charter](2026-11-25-lint-charter.md): `no-undef` an error with browser/Node/provided globals (`globals` dev dependency), undeclared-names test guards the config, `docs/compatibility.md` (targets, checks, six rules; decision 0008, C-4); branch `LG/dev_lint_charter` | final |
 | 2026-11-24 | [Pre-release 0.18.0-dev.2: push and merge](2026-11-24-release-0.18.0-dev.2-merge.md): `LG/dev` pushed, local CI `--full` proofs posted on PR #11, PR merged into `master` as `0bdeff3`, branches aligned; GitHub checks skipped by the gate; tagged `v0.18.0-dev.2` | final |
 | 2026-11-24 | [Local CI and the gated GitHub workflow](2026-11-24-local-ci.md): `tools/ci/ci.mjs` (`npm run ci:local`, `lg ci`) in clean clones under `.lg/ci/`, parallel runs, optional audit/pack/ComfyUI/Bun steps, proof reports and `Local-CI:` summaries; workflow kept, gated on `LG_GITHUB_CI`; two parallel `--full` runs pass; branch `LG/dev_HMD_ci` | final |

@@ -437,6 +437,12 @@ export interface LiteGraphAPI extends CallbackHost<LiteGraphHooks> {
     /** registers how to replace a node type by another, as data; returns a disposer */
     registerNodeReplacement(mapping: NodeReplacementMapping): () => void;
     getNodeReplacement(type: string): Readonly<NodeReplacementMapping> | null;
+    /**
+     * Validates a serialized graph before any node is constructed: bounds (settings
+     * `LiteGraph.Loader.*`), runtime-only fields dropped, malformed links reported, the type hook.
+     * The input is never changed; `data` is a cleaned copy, or null when not ok.
+     */
+    validateGraphData(data: unknown, options?: GraphValidationOptions): GraphValidationResult;
     listNodeDefinitions(filter?: { category?: string; capability?: string; includeDeprecated?: boolean; includeHidden?: boolean; supportedOnly?: boolean }): Readonly<NodeDefinition>[];
     declareCapabilities(selector: string | string[] | ((type: string) => boolean), capabilities: string[]): void;
     getRuntimeCapabilities(): Set<string>;
@@ -889,7 +895,21 @@ export declare class LGraph {
      */
     /** returns null when a configuring listener cancelled loading */
     configure(data: object, keep_old?: boolean): boolean | null | undefined;
-    load(url: string): void;
+    /**
+     * Configures from untrusted data: validates it (LiteGraph.validateGraphData, repair mode by
+     * default) and loads the cleaned copy; a refused document leaves the graph unchanged. A report
+     * with issues is emitted as `load-report`.
+     */
+    configureValidated(data: unknown, options?: GraphValidationOptions & { source?: string; keep_old?: boolean }): ConfigureValidatedResult;
+    /** loads a file or URL, validated as the setting `LiteGraph.Loader.OnOpen` says */
+    load(url: string | Blob, callback?: (result: ConfigureValidatedResult | { ok: true; error: boolean; report: null }) => void): void;
+}
+
+export interface ConfigureValidatedResult {
+    ok: boolean;
+    /** configure() reported missing or broken nodes (always true when refused) */
+    error: boolean;
+    report: GraphValidationReport;
 }
 
 export type SerializedLLink = [GraphId, GraphId, number, GraphId, number, SlotType];
@@ -1500,6 +1520,8 @@ export interface LGraphEventMap {
     /** a document with missing node types loaded (root graph; only when someone listens) */
     /** reason: "load", or "history" / "rollback" when undo, redo or a failed transaction reloads the graph */
     "missing-nodes": { report: MissingNodeReport[]; reason: 'load' | 'history' | 'rollback' };
+    /** a validated load (configureValidated, load, the Editor's drop) refused the data or changed it */
+    "load-report": { report: GraphValidationReport; ok: boolean; source: string };
     "node-replaced": { node: LGraphNode; from: string; to: string; dropped: DroppedLink[] };
     /** one per recorded change (per transaction); from a subgraph also on the root graph with kind "subgraph"; kind "configure" after a load */
     "graph-changed": { kind: GraphChangeKind; kinds: GraphChangeKind[]; action: string; revision: number; graph: LGraph; reason?: 'load' | 'history' | 'rollback' };
@@ -3360,6 +3382,64 @@ export interface SubgraphInterfaceSlot {
     linkIds?: GraphId[];
     [key: string]: unknown;
 }
+/** limits of the validated loader; each is a setting `LiteGraph.Loader.<Name>` */
+export interface GraphLoaderLimits {
+    maxNodes: number;
+    maxLinks: number;
+    maxGroups: number;
+    maxDefinitions: number;
+    maxDepth: number;
+    maxValueDepth: number;
+    maxStringLength: number;
+    maxPropertiesSize: number;
+    maxDocumentSize: number;
+    maxCoordinate: number;
+}
+export interface GraphValidationOptions {
+    /** fix what can be fixed (malformed links and slots, coordinates); bounds are never repaired */
+    repair?: boolean;
+    /** overrides of the settings, per call */
+    limits?: Partial<GraphLoaderLimits>;
+    /** asked about every node type (not about instances of a definition): true allows, false or a reason refuses */
+    allowType?: (type: string, context: { path: string; node: GraphId }) => boolean | string | null | undefined;
+}
+export interface GraphValidationIssue {
+    severity: 'error' | 'warning';
+    /** e.g. too-many-nodes, too-deep, value-too-deep, string-too-long, properties-too-large, document-too-large, bad-coordinate, bad-node, duplicate-node-id, bad-link, duplicate-link-id, dangling-link, bad-slot-reference, missing-link, dropped-field, type-refused, non-json-value, cycle */
+    code: string;
+    /** where, as a JSON path: "$.nodes[2].properties.text" */
+    path: string;
+    message: string;
+    node?: GraphId;
+    link?: GraphId;
+    limit?: number;
+    value?: number;
+}
+export interface GraphValidationReport {
+    ok: boolean;
+    repaired: boolean;
+    issues: GraphValidationIssue[];
+    counts: { nodes: number; links: number; groups: number; definitions: number; depth: number };
+}
+export interface GraphValidationResult {
+    ok: boolean;
+    /** the cleaned deep copy; null when not ok */
+    data: Record<string, any> | null;
+    report: GraphValidationReport;
+}
+/** the validated loader for untrusted graphs (pure JSON); LiteGraph.validateGraphData is its entry */
+export declare const GraphLoader: {
+    readonly DEFAULT_LIMITS: Readonly<GraphLoaderLimits>;
+    /** limit -> [setting id, setting name] */
+    readonly LIMIT_SETTINGS: Readonly<Record<keyof GraphLoaderLimits, readonly [string, string]>>;
+    limits(): GraphLoaderLimits;
+    defineSettings(settings: { has(id: string): boolean; define(def: object): unknown }): void;
+    validate(data: unknown, options?: GraphValidationOptions): GraphValidationResult;
+    /** a short text: errors first, at most `max` issues; empty for a clean report */
+    formatReport(report: GraphValidationReport | null | undefined, max?: number): string;
+    failure(code: string, message: string): GraphValidationReport;
+};
+
 /** document transforms between inline subgraphs and definitions (pure JSON) */
 export declare const SubgraphDefs: {
     readonly IO_INPUT_NODE: -10;

@@ -1,6 +1,7 @@
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { LGraph } from "./lgraph.js";
 import { LiteGraph } from "./litegraph.js";
+import { GraphLoader } from "./graphloader.js";
 
 // Creates an interface to access extra features from a graph (like play, stop, live, etc)
 export class Editor {
@@ -57,6 +58,13 @@ export class Editor {
             const id = "litegraph.nodes.showMissing";
             if (LiteGraph.settings?.get("LiteGraph.Nodes.ShowMissingOnLoad") === false || !LiteGraph.commands?.get(id)) return;
             LiteGraph.commands.execute(id, LiteGraph.commands.contextFor(graphcanvas));
+        });
+
+        // opened or dropped files are validated (graph.configureValidated): show what was refused or repaired
+        graph.events.on("load-report", (event) => {
+            const { report, ok, source } = event.detail;
+            const summary = GraphLoader.formatReport(report, 3);
+            graphcanvas.showExecutionNotice(ok ? `Loaded ${source} with fixes: ${summary}` : `Not loaded (${source}): ${summary}`, ok ? 6000 : 12000);
         });
 
         // add stuff
@@ -400,10 +408,8 @@ export class Editor {
             var ext = LGraphCanvas.getFileExtension(file.name);
             var reader = new FileReader();
             if(ext == "json") {
-                reader.onload = (event) => {
-                    var data = JSON.parse( event.target.result );
-                    that.graph.configure(data);
-                };
+                // untrusted: checked by the validated loader (setting LiteGraph.Loader.OnOpen), report shown as a notice
+                reader.onload = (event) => that.graph._configureOpened(event.target.result, file.name);
                 reader.readAsText(file);
             }
         }

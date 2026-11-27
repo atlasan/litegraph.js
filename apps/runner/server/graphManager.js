@@ -50,7 +50,8 @@ async function attempt(operation, logger) {
   try { return await operation(); }
   catch (error) {
     logger?.error(error.message);
-    return { error: error.message };
+    // a refused workflow carries the validated loader's report (LiteGraph.validateGraphData)
+    return error.report ? { error: error.message, report: error.report } : { error: error.message };
   }
 }
 
@@ -72,7 +73,7 @@ export async function openGraph(file, logger) {
         if (pending) {
           clearTimeout(pending.timer);
           entry.pending.delete(message.requestId);
-          if (message.error) pending.reject(new Error(message.error));
+          if (message.error) pending.reject(Object.assign(new Error(message.error), message.report ? { report: message.report } : {}));
           else pending.resolve({ graphId, ...message });
         }
       });

@@ -169,6 +169,26 @@ export function assertAllowedGraph(data, isRegistered, { env = process.env, maxD
 }
 
 /**
+ * The runner's type policy as a hook for the validated loader (`LiteGraph.validateGraphData`
+ * option `allowType`): every node type the loader meets, at any depth, is checked against the
+ * same denylist as assertAllowedGraph. The runner still runs assertAllowedGraph afterwards.
+ * @param {(type: string) => boolean} isRegistered
+ * @param {{env?: object, replacedType?: (type: string) => string|null}} [options]
+ * @returns {(type: string) => true|string} true, or why the type is refused
+ */
+export function typePolicy(isRegistered, { env = process.env, replacedType = renamedType } = {}) {
+  const denied = deniedTypes(env);
+  return (type) => {
+    const loadsAs = replacedType(type);
+    if (!(isRegistered(type) || (loadsAs && isRegistered(loadsAs)))) return 'unknown node type';
+    const refused = (loadsAs ? [type, loadsAs] : [type]).find((checked) => isDenied(checked, denied));
+    if (!refused) return true;
+    const family = familyOf(refused);
+    return `${refused} is not allowed in the runner (RUNNER_ALLOW_TYPES=${family ? '@' + family : refused} enables it)`;
+  };
+}
+
+/**
  * Notes for a graph that loads but will not do everything it could, e.g. script nodes while
  * script evaluation is off. Each note says how to turn the feature on.
  * @returns {string[]}

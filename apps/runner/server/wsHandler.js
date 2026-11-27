@@ -59,11 +59,11 @@ export function setupWebSocket(server) {
           case 'get_active_graphs': send(ws, activeGraphs()); return;
           default: throw new Error('Unknown event type');
         }
-        if (result.error) throw new Error(result.error);
+        if (result.error) throw Object.assign(new Error(result.error), result.report ? { report: result.report } : {});
         if (type === 'graph_updated') {
           for (const client of wss.clients) send(client, { type, data: result, requestId: client === ws ? requestId : undefined });
         } else send(ws, { type, data: result, requestId });
-      }).catch((error) => send(ws, { type: 'error', data: { message: error.message }, requestId }));
+      }).catch((error) => send(ws, { type: 'error', data: error.report ? { message: error.message, report: error.report } : { message: error.message }, requestId }));
     });
   });
   wss.on('close', () => { setConsolePipeCallback(null); setStatusCallback(null); });

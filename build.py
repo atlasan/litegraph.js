@@ -71,6 +71,7 @@ lib_js_files = [
     "./src/lgraphnode.js",
     "./src/llink.js",
     "./src/subgraphdefs.js",
+    "./src/graphloader.js",
     "./src/subgraph.js",
     "./src/librarymanager.js",
     "./src/widgets.js",

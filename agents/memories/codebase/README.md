@@ -39,6 +39,7 @@ Listed in build order (`build.py` `lib_js_files`):
 | `contextmenu.js`, `curveeditor.js` | DOM menus; curve widget helper |
 | `dragandscale.js`, `canvaspointer.js`, `linkconnector.js`, `reroute.js` | View transform, pointer gestures, link-drag state machine, reroutes |
 | `lgraph.js`, `lgraphnode.js`, `llink.js`, `lgraphgroup.js`, `subgraph.js`, `subgraphdefs.js` | The graph model |
+| `graphloader.js` | `GraphLoader` (`LiteGraph.validateGraphData`): the validated loader for untrusted documents (pure JSON): count, nesting, size and coordinate bounds (`LiteGraph.Loader.*` settings), runtime-only fields dropped, link checks, `allowType` hook, `{ok, data, report}`; `graph.configureValidated` and `graph.load()` use it |
 | `lgraphcanvas.js` | Rendering and interaction, about 9.5k lines |
 | `librarymanager.js` | Optional library loading and manifest |
 | `executionstate.js` | `ExecutionState` (`LiteGraph.ExecutionState`): the v1 execution-state messages (`create`, `isMessage`, `apply` by path, `applyToNode`, `clear`) (Wave 4b) |
@@ -168,6 +169,7 @@ Listed in build order (`build.py` `lib_js_files`):
   - `security.js` checks Origin and Host.
   - `nodePolicy.js` refuses `sys/runCommand`, `sys/fileWrite`, `sys/fileDelete`, `sys/processControl`, `sys/serviceManager`, `libraries/load`, `libraries/register`, `libraries/search_CDN_lib` and `geometry/eval`, recursively up to depth 64, plus the D1 families (see `describePolicy`). The type an `auto` replacement mapping loads as is checked too (`replacedType`, Wave 4a).
   - Scripts are off unless `RUNNER_ALLOW_SYS=1`.
+  - **Validated loader:** `graphRunner.js` runs `LiteGraph.validateGraphData` (strict, with `nodePolicy.typePolicy` as `allowType`) before building a graph, then `assertAllowedGraph` on the cleaned copy. A refusal's `report` travels worker → `graphManager` (`{error, report}`) → `wsHandler` (`error` message `data.report`). A failed first load answers the first command instead of crashing the worker.
 - **Protocol:** see [docs/development.md](../../../docs/development.md#graph-runner). Workers post `execution-state` messages; `graphManager.setExecutionStateCallback` → `wsHandler` broadcasts `execution_state {graphId, message}` (Wave 4b). The page (`public/app.js`) records them per workflow (`execution-view-state.js`) and applies them to the open view (Wave 6d).
 
 ## Build and test

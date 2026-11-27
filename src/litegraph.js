@@ -5,6 +5,7 @@ import { LGraphGroup } from "./lgraphgroup.js";
 import { LGraphCanvas } from "./lgraphcanvas.js";
 import { Subgraph, GraphInput, GraphOutput, NodeFunction } from "./subgraph.js";
 import { SubgraphDefs } from "./subgraphdefs.js";
+import { GraphLoader } from "./graphloader.js";
 import { DragAndScale } from "./dragandscale.js";
 import { ContextMenu } from "./contextmenu.js";
 import { CallbackHandler, installHooks } from "./callbackhandler.js";
@@ -879,6 +880,8 @@ export class LiteGraphClass {
             this.settings.define({ id: "LiteGraph.Palette.Favorites", type: "json", name: "Favourite node types (palette)", default: () => [] });
             this.settings.define({ id: "LiteGraph.Palette.Recent", type: "json", name: "Recently inserted node types (palette)", default: () => [] });
         }
+        // limits of the validated loader (graph.configureValidated, graph.load, the runner)
+        GraphLoader.defineSettings(this.settings);
         if (!this.settings.has("LiteGraph.Layout.Engine")) {
             this.settings.define({ id: "LiteGraph.Layout.Engine", name: "Auto-layout engine (dagre, layered, or a registered one)", default: "dagre" });
         }
@@ -1471,6 +1474,18 @@ export class LiteGraphClass {
             }
         }
         this.log_debug("Nodes reloaded");
+    }
+
+    /**
+     * Validates a serialized graph before any node is constructed (untrusted files, pushed graphs).
+     * Checks the bounds in the settings `LiteGraph.Loader.*`, drops runtime-only fields, reports
+     * malformed links and asks `options.allowType` about every node type. See GraphLoader.
+     * @param {*} data serialized graph; never changed
+     * @param {{repair?: boolean, limits?: object, allowType?: Function}} [options]
+     * @returns {{ok: boolean, data: (object|null), report: object}} `data` is a cleaned copy, null when not ok
+     */
+    validateGraphData(data, options) {
+        return GraphLoader.validate(data, options);
     }
 
     /**
