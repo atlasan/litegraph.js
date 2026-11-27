@@ -315,6 +315,7 @@ The tables are generated from the event maps in `src/litegraph.d.cts` (`LiteGrap
 | `configuring` | `{ data: Record<string, unknown>; keep_old: boolean }` | before a document loads; mutate detail.data to migrate it, preventDefault() to cancel |
 | `configured` | `{ data: Record<string, unknown>; error: boolean; replaced: { id: GraphId; from: string; to: string; dropped: DroppedLink[] }[] }` | replaced: nodes changed by automatic replacement mappings while loading |
 | `missing-nodes` | `{ report: MissingNodeReport[]; reason: 'load' \| 'history' \| 'rollback' }` | a document with missing node types loaded (root graph; only when someone listens); reason: "load", or "history" / "rollback" when undo, redo or a failed transaction reloads the graph |
+| `load-report` | `{ report: GraphValidationReport; ok: boolean; source: string }` | a validated load (configureValidated, load, the Editor's drop) refused the data or changed it |
 | `node-replaced` | `{ node: LGraphNode; from: string; to: string; dropped: DroppedLink[] }` |  |
 | `graph-changed` | `{ kind: GraphChangeKind; kinds: GraphChangeKind[]; action: string; revision: number; graph: LGraph; reason?: 'load' \| 'history' \| 'rollback' }` | one per recorded change (per transaction); from a subgraph also on the root graph with kind "subgraph"; kind "configure" after a load |
 | `modified-changed` | `{ modified: boolean }` | isModified changed |

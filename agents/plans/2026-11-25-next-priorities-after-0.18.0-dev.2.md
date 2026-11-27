@@ -1,6 +1,6 @@
 # Next priorities after 0.18.0-dev.2
 
-> **Date** 2026-11-25 · **Kind** plan · **Status** accepted (Tier 1 in progress) · **Base** `LG/dev` @ `a14c29a`
+> **Date** 2026-11-25 · **Kind** plan · **Status** accepted (Tier 1 done except step 6) · **Base** `LG/dev` @ `a14c29a`
 
 This plan orders what is still open after the `0.18.0-dev.2` pre-release. Tier 1 leads to a stable `0.18.0`. Tier 2 makes the library's structure match its package contract (0.19). Tier 3 extends the extension and settings platform. Tier 4 connects the library to other projects. Tier 5 is the 0.20 removal of the legacy paths. Each step is a separate track or wave branch from `LG/dev`, keeps the existing compatibility rules (deprecate with a logged shim first, remove no earlier than 0.20), and ends with `npm run check` and a local CI proof.
 
@@ -79,12 +79,12 @@ The 11 old remote branches (deleting them changes the shared remote), extra work
 | Step | Track branch | Main files | Depends on | Status |
 |---|---|---|---|---|
 | 1 | `LG/dev_decisions_tier1` | `agents/`, `docs/development.md`, `AGENTS.md`, `.nvmrc` | — | done (coordinator) |
-| 2 | `LG/dev_flows_call_scopes` | `src/execution.js`, `src/lgraphnode.js`, flow nodes, tests | 1 | session |
-| 3 | `LG/dev_browser_smoke` | `tools/`, `tools/ci/`, `package.json` (dev dependency, if any) | 1 | session |
-| 4 | `LG/dev_graph_loader` | `src/lgraph.js` (`configure` path), `apps/runner/server/`, tests | 1 | session |
-| 5 | `LG/dev_hooks_deprecations` | `src/callbackhandler.js`, `tools/` doc tables, `docs/callbacks.md`, tests | 1 | session |
-| 8 + C-4 | `LG/dev_lint_charter` | `eslint.config.js`, `docs/compatibility.md`, `AGENTS.md` | 1 | coordinator |
-| 7 | `LG/dev_core_split` | `src/lgraph.js`, `src/litegraph.js`, `build.py`, `tools/check-build.mjs` | 4 merged | later |
+| 2 | `LG/dev_flows_call_scopes` | `src/execution.js`, `src/lgraphnode.js`, flow nodes, tests | 1 | done, merged 2026-11-27 |
+| 3 | `LG/dev_browser_smoke` | `tools/`, `tools/ci/`, `package.json` (dev dependency, if any) | 1 | done, merged 2026-11-27 |
+| 4 | `LG/dev_graph_loader` | `src/lgraph.js` (`configure` path), `apps/runner/server/`, tests | 1 | done, merged 2026-11-27 |
+| 5 | `LG/dev_hooks_deprecations` | `src/callbackhandler.js`, `tools/` doc tables, `docs/callbacks.md`, tests | 1 | done, merged 2026-11-27 |
+| 8 + C-4 | `LG/dev_lint_charter` | `eslint.config.js`, `docs/compatibility.md`, `AGENTS.md` | 1 | done, merged 2026-11-25 |
+| 7 | `LG/dev_core_split` | `src/lgraph.js`, `src/litegraph.js`, `build.py`, `tools/check-build.mjs` | 4 merged | next (unblocked) |
 | 9, 10 | later tracks | `src/lgraphcanvas.js`, `build.py` | 3, 7 | later |
 
 **Coordination rules for the sessions:**
@@ -107,3 +107,4 @@ The 11 old remote branches (deleting them changes the shared remote), extra work
 - 2026-11-25: proposed. Written from a check of `LG/dev` @ `a14c29a` against the state audit and the roadmap.
 - 2026-11-25: decisions from the user. DEC-1 (`docs/nodes/`) deferred. DEC-2 and DEC-3 to be revisited one by one, so no recommendation is marked decided. DEC-4: keep the `legacy` paths for now and decide later, so Tier 5 is on hold. DEC-5: accept flows step 4 (call scopes, step 2 here), steps 5–7 later.
 - 2026-11-25: the remaining recommendations accepted by the user and recorded as decisions 0005–0008. Plan accepted; environment set to nvm Node 22 (`.nvmrc`) with Bun preferred; Tier 1 steps 2–5 started as parallel sessions (see Execution).
+- 2026-11-27: Tier 1 steps 2–5 done by the four sessions (each resumed once after a usage limit) and merged into `LG/dev` in the order loader → hooks → call scopes → browser smoke; only records and minified bundles conflicted ([integration record](../executions/2026-11-27-tier1-integration.md)). Step 7 is unblocked.
