@@ -1,5 +1,13 @@
 import stylistic from '@stylistic/eslint-plugin'
 import js from "@eslint/js";
+import globals from "globals";
+
+// Globals other scripts provide on purpose: gl-matrix and litegl (WebGL nodes), litescene,
+// jQuery and the optional audio/midi/osc/socket.io helpers, host-page hooks behind typeof checks.
+const PROVIDED = ["glMatrix", "vec2", "vec3", "vec4", "mat3", "mat4", "quat", "GL", "gl", "LS",
+    "enableWebGLCanvas", "showElement", "$", "MidiParser", "AudioSynth", "OSC", "io", "Bun",
+    "WebTransport", "graphcanvas"];
+const readonly = (names) => Object.fromEntries(names.map((name) => [name, "readonly"]));
 
 export default [
     js.configs.recommended,
@@ -7,13 +15,18 @@ export default [
         "name": "LiteGraph/standard",
         "languageOptions": {
             "ecmaVersion": "latest",
-            "sourceType": "module"
+            "sourceType": "module",
+            "globals": {
+                ...globals.browser,
+                ...globals.node,
+                ...readonly(PROVIDED),
+            },
         },
         "plugins": {
             "@stylistic": stylistic
         },
         "rules": {
-            "no-undef": 0, /* had to disable because it doesn't recognize DOM objects */
+            "no-undef": 2, /* browser, Node and the PROVIDED globals above are declared */
             "no-unused-vars": [1,
                 {
                     "argsIgnorePattern": "^_",
@@ -97,4 +110,12 @@ export default [
                 "always"
             ],
         }
+    },
+    {
+        // Loaded as plain scripts that read the global LiteGraph rather than importing it.
+        "name": "LiteGraph/script-scope",
+        "files": ["src/nodes/nodejs_only/**/*.js", "src/nodes/libraries/**/*.js"],
+        "languageOptions": {
+            "globals": readonly(["LiteGraph", "LGraph", "LGraphNode", "LGraphCanvas", "LLink"]),
+        },
     }]

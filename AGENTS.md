@@ -14,6 +14,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
 | Codebase map | [agents/memories/codebase](agents/memories/codebase/README.md) |
 | Ideas (not planned work) | [agents/ideas](agents/ideas/README.md) |
 | Changes per version | [CHANGES.md](CHANGES.md) |
+| What stays compatible, and how compatibility changes are made | [docs/compatibility.md](docs/compatibility.md) |
 
 ## Workflow
 

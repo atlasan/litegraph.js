@@ -1,53 +1,30 @@
 // Sources are ES modules, so they run in strict mode: reading or assigning a name that
 // was never declared throws a ReferenceError the first time that code path runs.
-// The lint config keeps no-undef off for lack of browser globals; this check supplies them.
+// `no-undef` is an error in eslint.config.js (browser, Node and provided globals declared there);
+// this test keeps it on and keeps src/ clean, so the regression tests of #361 stay meaningful.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Linter } from 'eslint';
-import { JSDOM } from 'jsdom';
+import { loadESLint } from 'eslint';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+// ESLint 8 defaults to eslintrc; the repository uses the flat config (eslint.config.js).
+const FlatESLint = await loadESLint({ useFlatConfig: true });
 
-// Globals other scripts provide on purpose: gl-matrix and litegl (WebGL nodes), litescene,
-// jQuery and the optional audio/midi/osc/socket.io helpers, host-page hooks behind typeof checks.
-const PROVIDED = ['glMatrix', 'vec2', 'vec3', 'vec4', 'mat3', 'mat4', 'quat', 'GL', 'gl', 'LS',
-    'enableWebGLCanvas', 'showElement', '$', 'MidiParser', 'AudioSynth', 'OSC', 'io', 'Bun',
-    'WebTransport', 'graphcanvas'];
+test('the lint config reports undeclared names as errors', async () => {
+    const eslint = new FlatESLint({ cwd: root });
+    const config = await eslint.calculateConfigForFile('src/lgraph.js');
+    const level = config.rules['no-undef'];
+    assert.equal(Array.isArray(level) ? level[0] : level, 2);
+    const [probe] = await eslint.lintText('export const f = () => notDeclaredAnywhere;', { filePath: 'src/probe.js' });
+    assert.ok(probe.messages.some((m) => m.ruleId === 'no-undef'));
+});
 
-// Real browser APIs jsdom does not implement (require is only used behind a typeof check).
-const BROWSER_EXTRA = ['requestAnimationFrame', 'AudioParam', 'AudioContext', 'DeviceOrientationEvent',
-    'RTCPeerConnection', 'RTCSessionDescription', 'require'];
-
-// Loaded as plain scripts that read the global LiteGraph rather than importing it.
-const SCRIPT_DIRS = ['src/nodes/nodejs_only', 'src/nodes/libraries'];
-
-test('sources only use declared names', () => {
-    const { window } = new JSDOM('');
-    const browser = Object.getOwnPropertyNames(window);
-    const globals = Object.fromEntries([...browser, ...Object.getOwnPropertyNames(globalThis), ...BROWSER_EXTRA, ...PROVIDED]
-        .map((name) => [name, 'readonly']));
-    const config = [{
-        languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals },
-        rules: { 'no-undef': 'error' },
-    }];
-    const linter = new Linter({ configType: 'flat' });
-    const files = [];
-    const walk = (dir) => {
-        for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
-            const rel = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (!SCRIPT_DIRS.includes(rel)) walk(rel);
-            } else if (entry.name.endsWith('.js')) {
-                files.push(rel);
-            }
-        }
-    };
-    walk('src');
-    const problems = files.flatMap((file) => linter
-        .verify(fs.readFileSync(path.join(root, file), 'utf8'), config, file)
-        .map((m) => `${file}:${m.line} ${m.message}`));
+test('sources only use declared names', async () => {
+    const eslint = new FlatESLint({ cwd: root });
+    const results = await eslint.lintFiles(['src']);
+    const problems = results.flatMap((r) => r.messages
+        .filter((m) => m.ruleId === 'no-undef')
+        .map((m) => `${r.filePath.slice(root.length)}:${m.line} ${m.message}`));
     assert.deepEqual(problems, []);
 });
