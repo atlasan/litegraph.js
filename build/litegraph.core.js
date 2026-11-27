@@ -6641,6 +6641,7 @@ export class LGraph {
     }
 
     startAsync(interval = 0) {
+        if (this.getExecutionBlockReason()) return Promise.resolve(false);
         if (this._pending_start) return this._pending_start.promise;
         const request = {};
         this._pending_start = request;
@@ -6664,6 +6665,7 @@ export class LGraph {
 
     /** Start immediately when ready, or return a Promise while dependencies load. */
     start(interval = 0) {
+        if (this.getExecutionBlockReason()) return;
         if (this.status === LGraph.STATUS_RUNNING) return;
         if (this.hasPendingInitialization() || this._pendingCleanup?.size || this._cleanupWait) return this.startAsync(interval);
         this.initialization_error = null;
@@ -6854,8 +6856,8 @@ export class LGraph {
         return this;
     }
 
-    stopAsync() {
-        return this._cleanupAsync(() => this.stop());
+    stopAsync(options) {
+        return this._cleanupAsync(() => this.stop(options));
     }
     clearAsync() {
         return this._cleanupAsync(() => this.clear());
@@ -6872,6 +6874,7 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        if (this.getExecutionBlockReason()) return;
         // an inner graph keeps its parent's clock origin (B13)
         const parent = this._subgraph_node?.graph;
         if (parent && this.starttime !== parent.starttime) {
@@ -9114,6 +9117,13 @@ export class LGraph {
     /** the rules of this graph's execution model */
     getExecutionRules() {
         return ExecutionEngine.rulesFor(this);
+    }
+
+    /** A saved model unavailable on this host keeps the graph inspectable and paused. */
+    getExecutionBlockReason() {
+        const requested = this.rootGraph.config?.execution;
+        if (typeof requested !== "string" || !requested || ExecutionEngine.getModel(requested)) return null;
+        return `Execution paused: model ${JSON.stringify(requested)} is unavailable.`;
     }
 
     /**
@@ -21711,7 +21721,7 @@ export class LGraphNode {
             return null;
         }
 
-        if (!force_update) {
+        if (!force_update || this.graph.getExecutionBlockReason()) {
             return link.data;
         }
 
@@ -22195,6 +22205,7 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (this.graph?.getExecutionBlockReason()) return;
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
@@ -22265,6 +22276,7 @@ export class LGraphNode {
      * then rethrown to the caller, as before.
      */
     _dispatchEvent(run) {
+        if (this.graph?.getExecutionBlockReason()) return;
         LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         const outerScope = ExecutionEngine.openRoot("call");
         try {
@@ -22326,6 +22338,7 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (this.graph?.getExecutionBlockReason()) return;
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
             // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
             return this._dispatchEvent(() => {
@@ -22432,7 +22445,7 @@ export class LGraphNode {
      * @param {Number} link_id [optional] in case you want to trigger and specific output link in a slot
      */
     triggerSlot(slot, param, link_id, options = {}) {
-        if (!this.outputs) {
+        if (!this.outputs || this.graph?.getExecutionBlockReason()) {
             return;
         }
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));
