@@ -1,6 +1,6 @@
 # Roadmap: waves
 
-> **Updated** 2026-11-25 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev`, its two leftovers (generated doc tables, deprecation logs) and decision 0007 done on `LG/dev_hooks_deprecations`; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` released: merged into `master` (`0bdeff3`, PR #11) and tagged `v0.18.0-dev.2` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
+> **Updated** 2026-11-27 · **Kind** roadmap · **Status** living; launcher track done; Waves 0–3 done and in `master`; Waves 4–6 done in `LG/dev`; Wave 7 done in `LG/dev`, its two leftovers (generated doc tables, deprecation logs) and decision 0007 done on `LG/dev_hooks_deprecations`; flows and panels tracks done in `LG/dev`; pre-release `0.18.0-dev.2` released: merged into `master` (`0bdeff3`, PR #11) and tagged `v0.18.0-dev.2` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md))
 
 This is the single place for the current status of planned work.
 
@@ -22,12 +22,21 @@ This is the single place for the current status of planned work.
 | `LG/runner_deny_d1` | [PR #7](https://github.com/atlasan/litegraph.js/pull/7) (rest of D1 denied, family opt-ins), merged into `master` and `LG/dev` on 2026-11-20. |
 | `LG/dev` → `master` | [PR #10](https://github.com/atlasan/litegraph.js/pull/10) (Wave 3) was merged into `master` on 2026-11-20 as `18f5545` after CI passed; `LG/dev` was fast-forwarded to the same commit. Earlier: [PR #9](https://github.com/atlasan/litegraph.js/pull/9) (Wave 2) as `768f176`, [PR #8](https://github.com/atlasan/litegraph.js/pull/8) (Wave 1) as `35c7e4f`. |
 
-Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regenerates `build/` and `build_node/` with `npm run build`.
+Routine changes build into the ignored `.lg/local-build/` package. Refresh the tracked `build/` and `build_node/` snapshot in a separate build commit at agreed milestones. See [Milestone builds](../../docs/development.md#milestone-builds).
+
+## Integration baseline
+
+`LG/dev_plan` at `f5c5437` passed `npm run ci:local -- f5c5437 --full` on Linux with Node 22.23.5. Jest passed 1,151/1,151, integration 172/172, Firefox 9/9, browser–Node parity 5/5 and packed install 9/9. The snapshot guard passed and the runtime dependency audit reported zero vulnerabilities. Bun passed 169/172 with the same three advisory failures as the parent. The external ComfyUI probes skipped because their local inputs were absent.
+
+1. **Finish 0.18 validation.** Verify the Windows and macOS launchers, run the external ComfyUI probes with their fixtures, and resolve the distribution decision (D12).
+2. **Run the host tracks in parallel.** The nunuStudio session is evaluating the new integration and can propose compatible LiteGraph changes. The WebGLStudio session is pursuing full legacy compatibility against real host projects. Each track should contribute reproducible fixtures and record remaining differences. [Host acceptance criteria](../../docs/compatibility.md#targets)
+3. **Add a headless entry for 0.19.** This revises Tier 2 step 7. Verify the new entry loads and executes a saved graph without canvas dependencies. Test existing ESM, CommonJS and typed consumers of `./core`, including its canvas exports. Use the host fixtures during subsequent canvas and bundler refactors.
 
 ## Status at a glance
 
 | Wave | Theme | Status |
 |---|---|---|
+| Track | [Browser and Node execution parity](2026-11-27-browser-node-execution-parity.md) | Trace comparison covers linked instance state and deferred queues across stop/start, reopen, and explicit clearing, plus paused inspection for unavailable models |
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |
@@ -42,7 +51,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 | Track | Editor examples polish | **Done**, merged into `LG/dev` from `LG/dev_HMD_examples` ([audit](../audits/2026-11-23-editor-examples.md), [record](../executions/2026-11-23-editor-examples.md)): every example states its execution model, fits its nodes and explains itself; 11 new examples (basics and one per flow category); a stricter examples test; 6 library fixes |
 | Track | Launcher and Bun commands (`lg.sh` / `lg.bat`) | **Done**, merged into `LG/dev` from `LG/dev_HMD_launcher` ([plan](2026-11-23-launcher-and-bun.md), [record](../executions/2026-11-23-launcher-and-bun.md)); see [Launcher track](#launcher-track) |
 | Track | Group UX: body drag, title size, header toggle, space panning | **Done**, merged into `LG/dev` from `LG/dev_HMD_groups` ([record](../executions/2026-11-24-groups-ux.md)): the body pans and the title bar or Alt moves (`LiteGraph.Group.BodyDrag`), titles 12–48 px on screen (`LiteGraph.Group.TitleScale`), a capped node-pin-like toggle clear of the title, space panning fixed and on the gesture path (audit N-4) |
-| Track | Next priorities, Tier 1 ([plan](2026-11-25-next-priorities-after-0.18.0-dev.2.md#execution-tracks-dependencies-and-coordination)) | **Done in `LG/dev` (2026-11-27)**, except step 6 (launcher on Windows/macOS, npm decision D12): decisions 0005–0008 and the nvm/Bun environment; `no-undef` and the compatibility charter ([record](../executions/2026-11-25-lint-charter.md)); call scopes, D-4 ([record](../executions/2026-11-25-call-scopes.md), decision 0009); browser smoke test, USE-09 ([record](../executions/2026-11-25-browser-smoke.md)); validated loader, X-04 ([record](../executions/2026-11-25-graph-loader.md)); hook deprecations and `StrictHandled`, N-1 / decision 0007 ([record](../executions/2026-11-25-hooks-deprecations.md)). Integration: [record](../executions/2026-11-27-tier1-integration.md). Next: Tier 2 step 7 (core without the canvas) |
+| Track | Next priorities, Tier 1 ([plan](2026-11-25-next-priorities-after-0.18.0-dev.2.md#execution-tracks-dependencies-and-coordination)) | **Done in `LG/dev` (2026-11-27)**, except step 6 (launcher on Windows/macOS, npm decision D12): decisions 0005–0008 and the nvm/Bun environment; `no-undef` and the compatibility charter ([record](../executions/2026-11-25-lint-charter.md)); call scopes, D-4 ([record](../executions/2026-11-25-call-scopes.md), decision 0009); browser smoke test, USE-09 ([record](../executions/2026-11-25-browser-smoke.md)); validated loader, X-04 ([record](../executions/2026-11-25-graph-loader.md)); hook deprecations and `StrictHandled`, N-1 / decision 0007 ([record](../executions/2026-11-25-hooks-deprecations.md)). Integration: [record](../executions/2026-11-27-tier1-integration.md). Next: Tier 2 step 7, revised to deliver an additive headless entry |
 | Release | Pre-release `0.18.0-dev.2`: everything on `LG/dev` | **Merged into `master` (2026-11-24)** as `0bdeff3` from [atlasan/litegraph.js#11](https://github.com/atlasan/litegraph.js/pull/11), after a local CI `--full` proof on the head ([record](../executions/2026-11-24-release-0.18.0-dev.2-merge.md))and tagged `v0.18.0-dev.2` (annotated, pushed). **Released.** Before: steps 2–5 done and merged into `LG/dev` ([plan](2026-11-23-pre-release-0.18.0-dev.2.md), [record](../executions/2026-11-23-pre-release-0.18.0-dev.2.md)); release checks rerun on `LG/dev` @ `ce8c231` after the [audit fixes](../executions/2026-11-23-audit-fixes.md), and again on the final `LG/dev` @ `3c2ada2` on 2026-11-24, browser included (see the plan's History); push, PR and tag wait for approval; supersedes `0.18.0-dev.1`, which was never tagged; see [Pre-releases](#pre-releases) |
 
 ## Wave 0: safety and correctness (done)
@@ -150,7 +159,7 @@ Plan: [Wave 4: ecosystem and workspace](2026-11-20-wave4-ecosystem-workspace.md)
 From the [workspace plan](2026-11-01-workspace-structure-and-memory.md) and the 11-18 roadmap phases 2 and 5:
 
 - **Packaging truthfulness:** an exports map without `./build/*` wildcards, real runtime dependencies, no `defaults_debug.js` in library builds.
-- **CI:** check that `build/` is fresh (`git diff --exit-code`). Since 2026-11-24 local (D10): `npm run ci:local`, with proof reports; the workflow is kept, gated off.
+- **CI:** test the local output and check that validation leaves the tracked milestone snapshot untouched. `npm run ci:local` records the proof (D10); the GitHub workflow is kept, gated off.
 - **Documentation:** README, getting-started, architecture docs; generated API docs out of the authored tree. **Not done:** the generated API is still in `docs/api/` (see the [state audit](../audits/2026-11-23-state-audit.md) §3); it is regenerated for 0.18.0-dev.2 (D-3).
 - **Applications:** move the editor, tester and runner apps into their own homes; one defaults module; one tester controller (**not done**: N-3).
 

@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  parseArgs, parseJest, parseNodeTest, parseBrowser, parseBunTest, parseAudit, parseComfy, parseFresh, runId, summaryLine,
+  parseArgs, parseJest, parseNodeTest, parseBrowser, parseExecutionParity, parseBunTest, parseAudit, parseComfy, parseFresh, runId, summaryLine,
   overallResult, renderMarkdown, commentCommand, githubCommand, githubState, shellQuote, UsageError,
 } from '../ci/core.mjs';
 import { main, runMany, listRuns, findRun } from '../ci/ci.mjs';
@@ -75,6 +75,10 @@ test('log parsers: Jest, node:test (spec and TAP), bun test, audit, ComfyUI prob
   assert.deepEqual(parseBrowser('browser smoke: skipped: no Firefox found on PATH'), { skipped: true, reason: 'no Firefox found on PATH' });
   assert.deepEqual(parseBrowser('browser smoke: FAIL: LG_FIREFOX=/x is not an executable file'), { passed: 0, total: 0, failed: 1, skipped: false, reason: 'LG_FIREFOX=/x is not an executable file' });
   assert.equal(parseBrowser('Tests: 5 passed, 5 total'), null);
+  assert.deepEqual(parseExecutionParity('execution parity: 2/2 cases passed (browser and Node)'), { passed: 2, total: 2, failed: false, browser: true, browserSkipReason: null });
+  assert.deepEqual(parseExecutionParity('execution parity: browser skipped: no Firefox\nexecution parity: 2/2 cases passed (Node only)'), { passed: 2, total: 2, failed: false, browser: false, browserSkipReason: 'no Firefox' });
+  assert.deepEqual(parseExecutionParity('execution parity: FAIL: host check failed'), { failed: true, reason: 'host check failed' });
+  assert.equal(parseExecutionParity('older check run'), null);
   assert.deepEqual(parseFresh('$ git diff\n'), { ok: true, files: [] });
   assert.deepEqual(parseFresh(' build/litegraph.js | 2 +-\n 1 file changed'), { ok: false, files: ['build/litegraph.js'] });
 });
@@ -131,6 +135,12 @@ test('summary line, result and report.md', () => {
   browser.summary = summaryLine(browser);
   assert.equal(browser.summary, 'Local-CI: pass f944f3d node22.23.4 jest 1016/1016 int 151/151 browser 9/9 fresh ok');
   assert.match(renderMarkdown(browser), /browser smoke 9\/9 on firefox 141\.0/);
+  const executionParity = parseExecutionParity('execution parity: browser skipped: no Firefox\nexecution parity: 2/2 cases passed (Node only)');
+  const nodeOnly = { ...browser, counts: { ...browser.counts, executionParity }, steps: browser.steps.map((step) => (
+    step.name === 'check' ? { ...step, counts: { ...step.counts, executionParity } } : step
+  )) };
+  assert.match(summaryLine(nodeOnly), /execution parity 2\/2 \(Node only\)/);
+  assert.match(renderMarkdown(nodeOnly), /execution parity 2\/2 \(Node only: no Firefox\)/);
   browser.counts.browser = { skipped: true, reason: 'no Firefox found on PATH' };
   browser.steps[2].counts = { browser: browser.counts.browser };
   assert.equal(summaryLine(browser), 'Local-CI: pass f944f3d node22.23.4 jest 1016/1016 int 151/151 browser skip fresh ok');
@@ -158,7 +168,7 @@ test('the workflow is kept and gated off by the LG_GITHUB_CI variable', () => {
   const workflow = fs.readFileSync(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /^\s+if: vars\.LG_GITHUB_CI == 'on' \|\| github\.event_name == 'workflow_dispatch'$/m);
   assert.match(workflow, /workflow_dispatch:/);
-  for (const step of ['npm ci --ignore-scripts', 'npm run check', 'git diff --exit-code --stat -- build build_node']) assert.ok(workflow.includes(`run: ${step}`), step);
+  for (const step of ['npm ci --ignore-scripts', 'npm run check', 'git diff HEAD --exit-code --stat -- build build_node']) assert.ok(workflow.includes(`run: ${step}`), step);
 });
 
 test('github switch: status, on, off and dry runs call gh with the expected arguments', { skip: !posix }, async () => {
@@ -279,6 +289,28 @@ test('runs: clean clones, two at once, freshness, reports, notes; the working tr
   assert.equal(listRuns(dir).length, 2);
   assert.equal(findRun(stale.report.commit.slice(0, 7), dir).id, stale.report.id);
   assert.equal(findRun(fresh.report.id, dir).result, 'pass');
+});
+
+test('local-output refs leave the milestone snapshot untouched', { skip: !posix, timeout: 120000 }, async () => {
+  const { repo, sh } = tinyRepo();
+  sh('restore', 'src.js');
+  sh('checkout', '--quiet', 'stale');
+  fs.mkdirSync(path.join(repo, 'tools'));
+  fs.writeFileSync(path.join(repo, 'tools/local-build.mjs'), '');
+  const check = path.join(repo, 'check.js');
+  fs.writeFileSync(check, fs.readFileSync(check, 'utf8').replace(
+    "fs.writeFileSync('build/out.js', fs.readFileSync('src.js'));",
+    "fs.mkdirSync('.lg/local-build/build', { recursive: true }); fs.writeFileSync('.lg/local-build/build/out.js', fs.readFileSync('src.js'));",
+  ));
+  sh('add', 'check.js', 'tools/local-build.mjs');
+  sh('commit', '--quiet', '-m', 'Build to ignored output');
+  const dir = path.join(repo, '.lg', 'ci');
+  const [{ report }] = await runMany(['stale'], { dir, root: repo, keep: true, versions: { node: process.version, npm: '10' } });
+  assert.equal(report.result, 'pass', JSON.stringify(report.steps));
+  assert.match(report.summary, /snapshot ok$/);
+  const checkout = path.join(dir, 'work', report.id, 'repo');
+  assert.equal(fs.readFileSync(path.join(checkout, 'build/out.js'), 'utf8'), 'one\n');
+  assert.equal(fs.readFileSync(path.join(checkout, '.lg/local-build/build/out.js'), 'utf8'), 'two\n');
 });
 
 test('CLI: show, note (dry run), comment without --post, clean', { skip: !posix, timeout: 120000 }, async () => {

@@ -3,9 +3,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
+import { localBuildRoot as root } from './local-build.mjs';
+
+if (process.argv.includes('--snapshot')) {
+  const snapshot = fileURLToPath(new URL('../', import.meta.url));
+  for (const dir of ['build', 'build_node']) {
+    const localFiles = fs.readdirSync(path.join(root, dir)).sort();
+    assert.deepEqual(fs.readdirSync(path.join(snapshot, dir)).sort(), localFiles, `${dir} snapshot file list differs`);
+    for (const file of localFiles) {
+      const relative = path.join(dir, file);
+      assert.ok(fs.readFileSync(path.join(root, relative)).equals(fs.readFileSync(path.join(snapshot, relative))), `Milestone snapshot differs: ${relative}`);
+    }
+  }
+  console.log('The milestone snapshot matches the local build.');
+  process.exit(0);
+}
+
 let checked = 0;
 for (const dir of ['build', 'build_node']) {
   for (const file of fs.readdirSync(path.join(root, dir)).filter((name) => /\.(cjs|js)$/.test(name))) {
@@ -13,7 +28,7 @@ for (const dir of ['build', 'build_node']) {
     assert.ok(fs.statSync(target).size > 1000, `${file} is empty`);
     const syntax = spawnSync(process.execPath, ['--check', target], { encoding: 'utf8' });
     assert.equal(syntax.status, 0, syntax.stderr);
-    const code = `const m = await import(${JSON.stringify(new URL(target, 'file:').href)}); const lg=m.LiteGraph || m.default?.LiteGraph; if(!lg?.LGraph || !lg.registered_node_types['graph/subgraph']) throw Error('Missing initialized exports'); const g=new lg.LGraph(); g.runStep(); g.clear();`;
+    const code = `const m = await import(${JSON.stringify(pathToFileURL(target).href)}); const lg=m.LiteGraph || m.default?.LiteGraph; if(!lg?.LGraph || !lg.registered_node_types['graph/subgraph']) throw Error('Missing initialized exports'); const g=new lg.LGraph(); g.runStep(); g.clear();`;
     const smoke = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: root, encoding: 'utf8', timeout: 20000 });
     assert.equal(smoke.status, 0, `${file}: ${smoke.stderr}\n${smoke.stdout}`);
     if (file.includes('.mini.')) {

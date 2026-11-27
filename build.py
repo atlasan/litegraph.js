@@ -4,6 +4,8 @@ import json
 import sys
 import re
 import shutil
+import tempfile
+from pathlib import Path
 
 # Resolve inputs and output paths relative to this script.
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -175,10 +177,6 @@ js_files_lists = [
         "js_files": lib_js_files
     }
 ]
-
-# Specify the build folders
-build_folder = "build"
-build_node_folder = "build_node"
 
 def concatenate_js_files(js_files, output_filename, output_folder, remove_imports=False):
     concatenated_data = "" #"// readable version\n"
@@ -354,28 +352,59 @@ def reprocess_files_for_node(input_filepath, output_filepath):
     except FileNotFoundError:
         print("\033[91mJS File not found\033[0m")
 
-# Create build folders if they do not exist
-if not os.path.exists(build_folder):
-    os.makedirs(build_folder)
+def build(output):
+    build_folder = output / "build"
+    build_node_folder = output / "build_node"
+    build_folder.mkdir(parents=True, exist_ok=True)
+    build_node_folder.mkdir(parents=True, exist_ok=True)
 
-if not os.path.exists(build_node_folder):
-    os.makedirs(build_node_folder)
+    for entry in js_files_lists:
+        filename = entry["output_filename"]
+        minify = options["minify"] and ".mini." in filename
+        concatenate_js_files(entry["js_files"], filename, build_folder, remove_imports=True)
+        pack_js_files(build_folder / filename, filename, build_folder, minify=minify)
 
-# Concatenate and minify JS files from each list and save to the respective output filenames
-for js_files_list in js_files_lists:
-    # For build folder
-    concatenate_js_files(js_files_list["js_files"], js_files_list["output_filename"], build_folder, remove_imports=True)
-    minify = options["minify"] and ".mini." in js_files_list["output_filename"]
-    pack_js_files(os.path.join(build_folder, js_files_list["output_filename"]), js_files_list["output_filename"], build_folder, minify=minify)
+        node_filename = filename.replace(".js", ".cjs")
+        concatenate_js_files(entry["js_files"], node_filename, build_node_folder, remove_imports=True)
+        node_path = build_node_folder / node_filename
+        reprocess_files_for_node(node_path, node_path)
+        pack_js_files(node_path, node_filename, build_node_folder, minify=minify)
 
-    # For build_node folder
-    node_output_filename = js_files_list["output_filename"].replace(".js", ".cjs")
-    concatenate_js_files(js_files_list["js_files"], node_output_filename, build_node_folder, remove_imports=True)
-    reprocess_files_for_node(os.path.join(build_node_folder, node_output_filename), os.path.join(build_node_folder, node_output_filename))
-    pack_js_files(os.path.join(build_node_folder, node_output_filename), node_output_filename, build_node_folder, minify=minify)
 
-files_to_update = ["src/litegraph.js", "package.json"]
+def stage_package(stage):
+    manifest = json.loads(Path("package.json").read_text(encoding="utf-8"))
+    # Keep the same package exports and filenames as the milestone snapshot.
+    for name in ["package.json", "README.md", "LICENSE", *manifest["files"]]:
+        source = Path(name)
+        destination = stage / source
+        if destination.exists():  # build and build_node were just generated
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            shutil.copyfile(source, destination)
 
-# Update the version number in the specified files
+
+def build_distribution(milestone):
+    state = Path(".lg")
+    output = Path(".") if milestone else state / "local-build"
+    state.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="build-", dir=state) as temporary:
+        stage = Path(temporary)
+        build(stage)
+        if not milestone:
+            stage_package(stage)
+        # Replace complete files after all build steps succeed.
+        for file in stage.rglob("*"):
+            if file.is_file():
+                destination = output / file.relative_to(stage)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(file, destination)
+    print("Milestone snapshot refreshed" if milestone else f"Local package built in {output}")
+
+
 if options["update-version"]:
-    update_version_in_files(get_new_version(), files_to_update)
+    update_version_in_files(get_new_version(), ["src/litegraph.js", "package.json"])
+
+build_distribution(milestone="--milestone" in sys.argv)

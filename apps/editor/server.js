@@ -3,6 +3,7 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { localBuildRoot } from "../../tools/local-build.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
 const serve = (directory) => express.static(path.join(root, directory));
@@ -11,7 +12,7 @@ export function createEditorApp() {
     const app = express();
     app.use('/css', serve('css'));
     app.use('/src', serve('src'));
-    app.use('/build', serve('build'));
+    app.use('/build', express.static(path.join(localBuildRoot, 'build')), serve('build'));
     app.use('/external', serve('external'));
     app.use('/vendor', serve('vendor'));
     app.use('/docs', serve('docs')); // the generated API (docs/api/) and the reference pages

@@ -110,10 +110,25 @@ describe('where the model comes from (step 7)', () => {
         expect(again.executionModel).toBe('strict');
     });
 
-    test('an unknown model name runs as legacy; setExecutionModel refuses it', () => {
-        const g = graph('future-model');
+    test('an unavailable saved model pauses execution until an available model is selected', async () => {
+        const source = graph('future-model');
+        const counter = make(source, 'events/counter', { doCountExecution: true });
+        const g = new LGraph(source.serialize());
         expect(g.executionModel).toBe('legacy');
+        expect(g.getExecutionBlockReason()).toContain('future-model');
+        expect(g.serialize().config.execution).toBe('future-model');
         expect(() => g.setExecutionModel('nope')).toThrow(/unknown execution model "nope"; known: legacy, ancestors, step, strict, event/);
+        const reopened = g.getNodeById(counter.id);
+        g.start();
+        expect(g.status).toBe(LGraph.STATUS_STOPPED);
+        expect(await g.startAsync()).toBe(false);
+        g.runStep();
+        reopened.actionDo('inc');
+        expect(reopened.num).toBe(0);
+        g.setExecutionModel('legacy');
+        expect(g.getExecutionBlockReason()).toBeNull();
+        g.runStep();
+        expect(reopened.num).toBe(1);
     });
 
     test('setExecutionModel is one undo step', () => {
@@ -349,7 +364,7 @@ describe('event-dropped reasons (step 10)', () => {
         expect(never.log).toEqual([]);
     });
 
-    test('stopped-queue is reported once per node; stop({dropQueued}) clears it (B12)', () => {
+    test('stopped-queue is reported once per node; stopAsync({dropQueued}) clears it (B12)', async () => {
         const g = graph('step');
         const events = dropped(g);
         const src = make(g, 'exm/src');
@@ -359,7 +374,7 @@ describe('event-dropped reasons (step 10)', () => {
         expect(rec._waiting_actions).toHaveLength(2);
         expect(events.map((x) => x.reason)).toEqual(['stopped-queue']);
         expect(events[0].message).toMatch(/dropQueued/);
-        g.stop({ dropQueued: true });
+        await g.stopAsync({ dropQueued: true });
         expect(rec._waiting_actions).toHaveLength(0);
     });
 

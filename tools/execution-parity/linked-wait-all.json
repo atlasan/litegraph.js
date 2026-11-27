@@ -1,0 +1,631 @@
+{
+  "id": "c4cb93b0-dedc-4b43-b4b6-152f27f8b0f5",
+  "revision": 22,
+  "last_node_id": 7,
+  "last_link_id": 12,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "events/timer",
+      "pos": [
+        30,
+        110
+      ],
+      "size": [
+        116.98600006103516,
+        30
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "on_tick",
+          "type": -1,
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "interval": 3600000,
+        "event": "tick"
+      }
+    },
+    {
+      "id": 2,
+      "type": "events/stepper",
+      "pos": [
+        180,
+        90
+      ],
+      "size": [
+        152.51800537109375,
+        122
+      ],
+      "flags": {
+        "render_box": false
+      },
+      "order": 1,
+      "mode": 1,
+      "inputs": [
+        {
+          "name": "index",
+          "type": "number",
+          "link": null
+        },
+        {
+          "name": "step",
+          "type": -1,
+          "link": 1
+        },
+        {
+          "name": "reset",
+          "type": -1,
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "index",
+          "type": "number",
+          "links": null
+        },
+        {
+          "name": "",
+          "type": -1,
+          "links": [
+            2,
+            3
+          ]
+        },
+        {
+          "name": "",
+          "type": -1,
+          "links": [
+            9
+          ]
+        },
+        {
+          "name": "",
+          "type": -1,
+          "links": [
+            10,
+            11
+          ],
+          "removable": true
+        }
+      ],
+      "title": "One stage per start",
+      "properties": {
+        "index": 0
+      }
+    },
+    {
+      "id": 3,
+      "type": "7d9cbf21-187e-4f25-8746-1c9cda628a2d",
+      "pos": [
+        410,
+        60
+      ],
+      "size": [
+        200,
+        160
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 1,
+      "inputs": [
+        {
+          "name": "left",
+          "type": -1,
+          "link": 2
+        },
+        {
+          "name": "right",
+          "type": -1,
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "counted",
+          "type": -1,
+          "links": [
+            7
+          ]
+        }
+      ],
+      "title": "Linked A",
+      "properties": {
+        "enabled": true,
+        "subgraph_id": "7d9cbf21-187e-4f25-8746-1c9cda628a2d"
+      }
+    },
+    {
+      "id": 4,
+      "type": "7d9cbf21-187e-4f25-8746-1c9cda628a2d",
+      "pos": [
+        410,
+        250
+      ],
+      "size": [
+        200,
+        90
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 1,
+      "inputs": [
+        {
+          "link": 11,
+          "name": "left",
+          "type": -1
+        },
+        {
+          "link": 3,
+          "name": "right",
+          "type": -1
+        }
+      ],
+      "outputs": [
+        {
+          "links": [
+            8
+          ],
+          "name": "counted",
+          "type": -1
+        }
+      ],
+      "title": "Linked B",
+      "properties": {
+        "enabled": true,
+        "subgraph_id": "7d9cbf21-187e-4f25-8746-1c9cda628a2d"
+      }
+    },
+    {
+      "id": 5,
+      "type": "events/log",
+      "pos": [
+        640,
+        70
+      ],
+      "size": [
+        93.2979965209961,
+        30
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 1,
+      "inputs": [
+        {
+          "name": "event",
+          "type": -1,
+          "link": 7
+        }
+      ],
+      "outputs": [],
+      "title": "Record A",
+      "properties": {}
+    },
+    {
+      "id": 6,
+      "type": "events/log",
+      "pos": [
+        640,
+        260
+      ],
+      "size": [
+        93.2979965209961,
+        30
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 1,
+      "inputs": [
+        {
+          "name": "event",
+          "type": -1,
+          "link": 8
+        }
+      ],
+      "outputs": [],
+      "title": "Record B",
+      "properties": {}
+    },
+    {
+      "id": 7,
+      "type": "events/counter",
+      "pos": [
+        300,
+        320
+      ],
+      "size": [
+        176.20599365234375,
+        102
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 1,
+      "inputs": [
+        {
+          "name": "inc",
+          "type": -1,
+          "link": 9
+        },
+        {
+          "name": "dec",
+          "type": -1,
+          "link": 10
+        },
+        {
+          "name": "reset",
+          "type": -1,
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "change",
+          "type": -1,
+          "links": [
+            12
+          ]
+        },
+        {
+          "name": "num",
+          "type": "number",
+          "links": null
+        }
+      ],
+      "title": "Route both right pulses",
+      "properties": {
+        "doCountExecution": false
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      1,
+      -1
+    ],
+    [
+      2,
+      2,
+      1,
+      3,
+      0,
+      -1
+    ],
+    [
+      3,
+      2,
+      1,
+      4,
+      1,
+      -1
+    ],
+    [
+      7,
+      3,
+      0,
+      5,
+      0,
+      -1
+    ],
+    [
+      8,
+      4,
+      0,
+      6,
+      0,
+      -1
+    ],
+    [
+      9,
+      2,
+      2,
+      7,
+      0,
+      -1
+    ],
+    [
+      10,
+      2,
+      3,
+      7,
+      1,
+      -1
+    ],
+    [
+      11,
+      2,
+      3,
+      4,
+      0,
+      -1
+    ],
+    [
+      12,
+      7,
+      0,
+      3,
+      1,
+      -1
+    ]
+  ],
+  "groups": [],
+  "config": {
+    "align_to_grid": true,
+    "links_ontop": false,
+    "execution": "ancestors"
+  },
+  "extra": {},
+  "version": 0.4,
+  "litegraph_version": "0.18.0-dev.2",
+  "litegraph_modes": 2,
+  "state": {
+    "lastNodeId": 7,
+    "lastLinkId": 12,
+    "lastGroupId": 0,
+    "lastRerouteId": 0
+  },
+  "definitions": {
+    "subgraphs": [
+      {
+        "id": "7d9cbf21-187e-4f25-8746-1c9cda628a2d",
+        "revision": 12,
+        "groups": [],
+        "config": {
+          "align_to_grid": true,
+          "links_ontop": false
+        },
+        "extra": {
+          "litegraph": {
+            "io": {
+              "971bbe52-1ef8-434a-9ba7-51ed737b0ebf": {
+                "pos": [
+                  30,
+                  30
+                ],
+                "size": [
+                  180,
+                  90
+                ],
+                "flags": {},
+                "mode": 0,
+                "properties": {
+                  "name": "left",
+                  "type": -1,
+                  "value": 0,
+                  "slot_id": "971bbe52-1ef8-434a-9ba7-51ed737b0ebf"
+                }
+              },
+              "eff85c2d-3205-4426-ae57-7c99e122ca31": {
+                "pos": [
+                  30,
+                  130
+                ],
+                "size": [
+                  180,
+                  90
+                ],
+                "flags": {},
+                "mode": 0,
+                "properties": {
+                  "name": "right",
+                  "type": -1,
+                  "value": 0,
+                  "slot_id": "eff85c2d-3205-4426-ae57-7c99e122ca31"
+                }
+              },
+              "50e8199b-1ca5-4beb-9b1c-625f8c376150": {
+                "pos": [
+                  600,
+                  80
+                ],
+                "size": [
+                  180,
+                  60
+                ],
+                "flags": {},
+                "mode": 0,
+                "properties": {
+                  "name": "counted",
+                  "type": -1,
+                  "slot_id": "50e8199b-1ca5-4beb-9b1c-625f8c376150"
+                }
+              }
+            }
+          }
+        },
+        "version": 1,
+        "litegraph_modes": 2,
+        "state": {
+          "lastNodeId": 5,
+          "lastLinkId": 4,
+          "lastGroupId": 0,
+          "lastRerouteId": 0
+        },
+        "name": "Linked A",
+        "inputNode": {
+          "id": -10,
+          "bounding": [
+            30,
+            30,
+            180,
+            190
+          ]
+        },
+        "outputNode": {
+          "id": -20,
+          "bounding": [
+            600,
+            80,
+            180,
+            60
+          ]
+        },
+        "inputs": [
+          {
+            "id": "971bbe52-1ef8-434a-9ba7-51ed737b0ebf",
+            "name": "left",
+            "type": "event",
+            "litegraph_type": -1,
+            "linkIds": [
+              1
+            ]
+          },
+          {
+            "id": "eff85c2d-3205-4426-ae57-7c99e122ca31",
+            "name": "right",
+            "type": "event",
+            "litegraph_type": -1,
+            "linkIds": [
+              2
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "id": "50e8199b-1ca5-4beb-9b1c-625f8c376150",
+            "name": "counted",
+            "type": "event",
+            "litegraph_type": -1,
+            "linkIds": [
+              4
+            ]
+          }
+        ],
+        "widgets": [],
+        "nodes": [
+          {
+            "id": 3,
+            "type": "events/waitAll",
+            "pos": [
+              240,
+              80
+            ],
+            "size": [
+              140,
+              82
+            ],
+            "flags": {},
+            "order": 2,
+            "mode": 1,
+            "inputs": [
+              {
+                "name": "",
+                "type": -1,
+                "link": 1
+              },
+              {
+                "name": "",
+                "type": -1,
+                "link": 2
+              }
+            ],
+            "outputs": [
+              {
+                "name": "",
+                "type": -1,
+                "links": [
+                  3
+                ]
+              }
+            ],
+            "properties": {}
+          },
+          {
+            "id": 4,
+            "type": "events/counter",
+            "pos": [
+              410,
+              80
+            ],
+            "size": [
+              140,
+              102
+            ],
+            "flags": {},
+            "order": 3,
+            "mode": 1,
+            "inputs": [
+              {
+                "name": "inc",
+                "type": -1,
+                "link": 3
+              },
+              {
+                "name": "dec",
+                "type": -1,
+                "link": null
+              },
+              {
+                "name": "reset",
+                "type": -1,
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "name": "change",
+                "type": -1,
+                "links": [
+                  4
+                ]
+              },
+              {
+                "name": "num",
+                "type": "number",
+                "links": null
+              }
+            ],
+            "properties": {
+              "doCountExecution": false
+            }
+          }
+        ],
+        "links": [
+          {
+            "id": 1,
+            "origin_id": -10,
+            "origin_slot": 0,
+            "target_id": 3,
+            "target_slot": 0,
+            "type": -1
+          },
+          {
+            "id": 2,
+            "origin_id": -10,
+            "origin_slot": 1,
+            "target_id": 3,
+            "target_slot": 1,
+            "type": -1
+          },
+          {
+            "id": 3,
+            "origin_id": 3,
+            "origin_slot": 0,
+            "target_id": 4,
+            "target_slot": 0,
+            "type": -1
+          },
+          {
+            "id": 4,
+            "origin_id": 4,
+            "origin_slot": 0,
+            "target_id": -20,
+            "target_slot": 0,
+            "type": -1
+          }
+        ]
+      }
+    ]
+  }
+}

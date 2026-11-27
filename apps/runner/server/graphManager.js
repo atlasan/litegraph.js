@@ -104,10 +104,10 @@ export async function openGraph(file, logger) {
 
 export const loadGraph = openGraph;
 
-export async function controlGraph(graphId, action, logger) {
+export async function controlGraph(graphId, action, logger, { dropQueued } = {}) {
   return attempt(async () => {
     if (!['start', 'stop', 'status', 'clear'].includes(action)) throw new Error('Unsupported graph action');
-    return request(await getEntry(graphId), action);
+    return request(await getEntry(graphId), action, action === 'stop' && dropQueued === true ? { dropQueued } : {});
   }, logger);
 }
 

@@ -4,8 +4,10 @@ import { once } from 'node:events';
 import dgram from 'node:dgram';
 import { WebSocket } from 'ws';
 import { createRequire } from 'node:module';
+import { bundlePath } from '../local-build.mjs';
+
 const require = createRequire(import.meta.url);
-const { LiteGraph, LGraph } = require('../../build_node/litegraph_nodejs.full.cjs');
+const { LiteGraph, LGraph } = require(bundlePath('build_node/litegraph_nodejs.full.cjs'));
 LiteGraph.logging_set_level(0);
 
 async function fixture(type) {

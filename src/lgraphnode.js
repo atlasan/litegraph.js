@@ -629,7 +629,7 @@ export class LGraphNode {
             return null;
         }
 
-        if (!force_update) {
+        if (!force_update || this.graph.getExecutionBlockReason()) {
             return link.data;
         }
 
@@ -1084,6 +1084,7 @@ export class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (this.graph?.getExecutionBlockReason()) return;
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
@@ -1142,6 +1143,7 @@ export class LGraphNode {
      * then rethrown to the caller, as before.
      */
     _dispatchEvent(run) {
+        if (this.graph?.getExecutionBlockReason()) return;
         LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         const outerScope = ExecutionEngine.openRoot("call");
         try {
@@ -1192,6 +1194,7 @@ export class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (this.graph?.getExecutionBlockReason()) return;
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
             // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
             return this._dispatchEvent(() => {
@@ -1284,7 +1287,7 @@ export class LGraphNode {
      * @param {Number} link_id [optional] in case you want to trigger and specific output link in a slot
      */
     triggerSlot(slot, param, link_id, options = {}) {
-        if (!this.outputs) {
+        if (!this.outputs || this.graph?.getExecutionBlockReason()) {
             return;
         }
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));

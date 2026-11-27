@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { format } from 'node:util';
 import { assertAllowedGraph, graphPolicyNotes, scriptsAllowed, renamedType, typePolicy } from '../nodePolicy.js';
+import { bundlePath } from '../../../tools/local-build.mjs';
 
 const require = createRequire(import.meta.url);
-const { LiteGraph, LGraph, GraphLoader } = require('../../../build_node/litegraph_nodejs.full.cjs');
+const { LiteGraph, LGraph, GraphLoader } = require(bundlePath('build_node/litegraph_nodejs.full.cjs'));
 LiteGraph.logging_set_level(process.env.LOG_LEVEL === 'debug' ? 4 : 2);
 // the Node.js build enables script nodes (math/formula, basic/script, ...); a pushed workflow must
 // not run arbitrary code unless the operator opts in (RUNNER_ALLOW_SCRIPTS=1 or RUNNER_ALLOW_SYS=1)
@@ -76,7 +77,7 @@ parentPort.on('message', (message) => {
   commands = commands.then(() => handleCommand(message));
 });
 
-async function handleCommand({ requestId, action, serializedGraph }) {
+async function handleCommand({ requestId, action, serializedGraph, dropQueued }) {
   if (loadError) {
     parentPort.postMessage({ requestId, error: loadError.message, ...(loadError.report ? { report: loadError.report } : {}), status: 'error' });
     return;
@@ -84,8 +85,13 @@ async function handleCommand({ requestId, action, serializedGraph }) {
   try {
     let data = {};
     switch (action) {
-      case 'start': await graph.startAsync(); break;
-      case 'stop': await graph.stopAsync(); break;
+      case 'start': {
+        const reason = graph.getExecutionBlockReason();
+        if (reason) throw new Error(reason);
+        await graph.startAsync();
+        break;
+      }
+      case 'stop': await graph.stopAsync({ dropQueued: dropQueued === true }); break;
       case 'clear': await graph.clearAsync(); break;
       case 'status': break;
       case 'sync': data.serializedGraph = graph.serialize(); break;
@@ -98,12 +104,14 @@ async function handleCommand({ requestId, action, serializedGraph }) {
           throw error;
         }
         graph = replacement;
-        if (wasRunning) await graph.startAsync();
+        if (wasRunning && !graph.getExecutionBlockReason()) await graph.startAsync();
         data.serializedGraph = graph.serialize();
         break;
       }
       default: throw new Error(`Unknown command: ${action}`);
     }
+    const executionBlocked = graph.getExecutionBlockReason();
+    if (executionBlocked) data.executionBlocked = executionBlocked;
     parentPort.postMessage({ requestId, status: status(), iteration: graph.iteration, ...data });
   } catch (error) {
     parentPort.postMessage({ requestId, error: error.message, ...(error.report ? { report: error.report } : {}), status: status() });

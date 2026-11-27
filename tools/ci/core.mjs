@@ -20,7 +20,7 @@ export const EXTRA_STEPS = {
 export const CORE_STEPS = [
   { name: 'install', title: 'npm ci --ignore-scripts', command: ['npm', 'ci', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'] },
   { name: 'check', title: 'npm run check', command: ['npm', 'run', 'check'] },
-  { name: 'fresh', title: 'git diff --exit-code --stat -- build build_node', command: ['git', 'diff', '--exit-code', '--stat', '--', 'build', 'build_node'] },
+  { name: 'snapshot', title: 'Verify the build left the milestone snapshot untouched', command: ['git', 'diff', 'HEAD', '--exit-code', '--stat', '--', 'build', 'build_node'] },
 ];
 
 export class UsageError extends Error {}
@@ -166,6 +166,19 @@ export function parseBrowser(log) {
   return other[1] === 'skipped' ? { skipped: true, reason: other[2].trim() } : { passed: 0, total: 0, failed: 1, skipped: false, reason: other[2].trim() };
 }
 
+/** The Node parity cases also run when Firefox is skipped. */
+export function parseExecutionParity(log) {
+  const text = strip(log);
+  const failure = text.match(/^execution parity: FAIL: (.+)$/m);
+  if (failure) return { failed: true, reason: failure[1] };
+  const pass = text.match(/^execution parity: (\d+)\/(\d+) cases passed \((browser and Node|Node only)\)$/m);
+  if (!pass) return null;
+  return {
+    passed: Number(pass[1]), total: Number(pass[2]), failed: false, browser: pass[3] === 'browser and Node',
+    browserSkipReason: text.match(/^execution parity: browser skipped: (.+)$/m)?.[1] ?? null,
+  };
+}
+
 /** bun test's summary: ` 150 pass`, ` 1 fail`, `Ran 151 tests across 21 files.` */
 export function parseBunTest(log) {
   const text = strip(log);
@@ -220,9 +233,11 @@ export function summaryLine(report) {
   parts.push(`jest ${pair(report.counts.jest)}`, `int ${pair(report.counts.integration)}`);
   const browser = report.counts.browser;
   if (browser) parts.push(`browser ${browser.skipped ? 'skip' : browser.failed ? `FAIL ${pair(browser)}` : pair(browser)}`);
-  const fresh = step('fresh');
+  const executionParity = report.counts.executionParity;
+  if (executionParity) parts.push(`execution parity ${executionParity.failed ? 'FAIL' : `${pair(executionParity)}${executionParity.browser ? '' : ' (Node only)'}`}`);
+  const bundles = step('snapshot') ?? step('fresh');
   const waiting = (s) => s.status === 'pending' || s.status === 'running';
-  parts.push(`fresh ${!fresh || fresh.status === 'skip' ? 'n/a' : waiting(fresh) ? '…' : fresh.status === 'pass' ? 'ok' : 'FAIL'}`);
+  if (bundles) parts.push(`${bundles.name} ${bundles.status === 'skip' ? 'n/a' : waiting(bundles) ? '…' : bundles.status === 'pass' ? 'ok' : 'FAIL'}`);
   for (const name of Object.keys(EXTRA_STEPS)) {
     const s = step(name);
     if (!s) continue;
@@ -257,7 +272,10 @@ function stepDetail(step) {
     case 'check': return [
       c.jest && `Jest ${pair(c.jest)} in ${c.jest.suites} suites`, c.integration && `integration ${pair(c.integration)}`,
       c.browser && (c.browser.skipped ? `browser smoke skipped (${c.browser.reason})` : `browser smoke ${pair(c.browser)}${c.browser.browser ? ` on ${c.browser.browser}` : ''}${c.browser.reason ? ` (${c.browser.reason})` : ''}`),
+      c.executionParity && (c.executionParity.failed ? `execution parity failed (${c.executionParity.reason})`
+        : `execution parity ${pair(c.executionParity)} (${c.executionParity.browser ? 'browser and Node' : `Node only: ${c.executionParity.browserSkipReason}`})`),
     ].filter(Boolean).join(', ');
+    case 'snapshot': return c.ok ? 'The milestone snapshot was untouched' : `changed: ${c.files.join(', ')}`;
     case 'fresh': return c.ok ? 'build/ and build_node/ match the sources' : `differs: ${c.files.join(', ')}`;
     case 'audit': return `${c.vulnerabilities} vulnerabilities`;
     case 'pack': return `${pair(c)} checks; ${c.files ?? '?'} files, ${c.size ?? '?'}`;

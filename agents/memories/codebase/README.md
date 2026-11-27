@@ -11,7 +11,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `src/` | The library, as ES modules |
 | `src/nodes/` | Node catalog: 23 files in the standard build, plus 3 Node-only files in `nodejs_only/` |
 | `src/extensions/` | `autoconnect`, `renamer`, `keyboard_helper`, `quick_connect`, `subgraph_tools`, `node_packs`, `view_tools`, `node_pin` (pin style by mode and state, pin quick menu, node mode commands), `graph_status` (execution model chip) (registered extensions); `comfy_interop` (ComfyUI JSON import and export) |
-| `build/`, `build_node/` | Committed bundles: 6 ESM and 6 CJS (see Build and test) |
+| `build/`, `build_node/` | Milestone snapshot: 6 ESM and 6 CJS. Routine builds write the same paths inside the ignored `.lg/local-build/` package. |
 | `lg.sh`, `lg.bat`, `tools/lg/` | Launcher: the wrappers pick Bun, else Node (`LG_RUNTIME`), and run `tools/lg/lg.mjs` (commands, menu); `core.mjs` (arguments, runtime choice, ports, app table), `state.mjs` (pid records, health, detached start, stop), `term.mjs` (colours, symbols). State in the git-ignored `.lg/` (`LG_STATE_DIR`) |
 | `apps/editor/` | Demo editor (served at `/editor/` and `/apps/editor/` by `apps/editor/server.js`, which also serves `/docs` and `createEditorApp()`; runs on Node and Bun). `index.html` loads `src/` without extensions; `editor_build.html` loads the bundle with extensions; `js/defaults.js?preset=debug|mobile|event_based` is the one defaults module. `examples/index.json` is the examples manifest; `js/examples.js` builds the Demo menu and collapsible example explanations from it and `LiteGraph.packs.listTemplates()`; `examples/essentials/` holds six focused lessons |
 | `apps/tester/` | Browser tester that generates per-node scenarios (also served at `/editor_tester/`) |
@@ -19,7 +19,8 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
-| `tools/browser/` | Browser smoke test (`npm run check:browser`, last step of `npm run check`): `firefox-bidi.mjs` (finds Firefox, snap-aware profile, a minimal WebDriver BiDi client on Node's `WebSocket`, `browser.close` before signals), `smoke.mjs` (serves the editor in-process, drives `editor_build.html` with pointer and key input, checks the graph after each step; skips without Firefox) |
+| `tools/browser/` | Browser smoke test (`npm run check:browser`): `firefox-bidi.mjs` locates and controls Firefox, and `smoke.mjs` checks editor gestures and undo. |
+| `tools/execution-parity/` | `npm run check:execution-parity` compares ordered traces and stopped checkpoints in the built editor and Node runner, including deferred actions inside linked subgraphs. |
 | `tools/ci/`, `.github/workflows/validate.yml` | Local CI (`npm run ci:local`, `lg ci`): `ci.mjs` (clean clones under `.lg/ci/work/`, parallel runs, steps, reports in `.lg/ci/runs/`, notes, PR comments, the GitHub switch), `core.mjs` (arguments, step table, log parsers, summary line, `report.md`), `pack-smoke.mjs` (the packed-install checks). The workflow is gated on the repository variable `LG_GITHUB_CI` = `on` (off by default) |
 | `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses); `hook-docs.mjs` (`npm run docs:callbacks`: the generated hook and event tables of `docs/callbacks.md`) |
 | `test/` | Jest suites |
@@ -166,7 +167,7 @@ Listed in build order (`build.py` `lib_js_files`):
 
 ## Runner
 
-- **Workers:** each graph runs in a `worker_threads` worker (`graphManager.js`), which loads `build_node/litegraph_nodejs.full.cjs`.
+- **Workers:** each graph runs in a `worker_threads` worker (`graphManager.js`), which prefers the local `build_node/litegraph_nodejs.full.cjs` and falls back to the milestone snapshot.
 - **Security:**
   - `security.js` checks Origin and Host.
   - `nodePolicy.js` refuses `sys/runCommand`, `sys/fileWrite`, `sys/fileDelete`, `sys/processControl`, `sys/serviceManager`, `libraries/load`, `libraries/register`, `libraries/search_CDN_lib` and `geometry/eval`, recursively up to depth 64, plus the D1 families (see `describePolicy`). The type an `auto` replacement mapping loads as is checked too (`replacedType`, Wave 4a).

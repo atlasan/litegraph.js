@@ -1,7 +1,5 @@
 import fs from 'node:fs'
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const lg = require('../../build_node/litegraph_nodejs.full.cjs')
+import { LGmod as lg } from './lg.mjs'
 const { LiteGraph } = lg
 for (const k of ['log_debug', 'log_verbose', 'log_warn', 'log_info', 'log_error']) LiteGraph[k] = () => {}
 const { ComfyInterop } = await import('../../src/extensions/comfy_interop.js')

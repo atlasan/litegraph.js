@@ -44,7 +44,7 @@ export function setupWebSocket(server) {
         let type;
         switch (packet.type) {
           case 'open_graph': result = await openGraph(payload.file, logger); type = 'graph_opened'; break;
-          case 'control_graph': result = await controlGraph(payload.graphId, payload.action, logger); type = 'graph_status'; break;
+          case 'control_graph': result = await controlGraph(payload.graphId, payload.action, logger, { dropQueued: payload.dropQueued }); type = 'graph_status'; break;
           case 'update_graph': result = await updateGraph(payload.graphId, payload.serializedGraph, logger); type = 'graph_updated'; break;
           case 'request_sync': result = await requestSync(payload.graphId, logger); type = 'graph_sync'; break;
           case 'unload_graph': result = await unloadGraph(payload.graphId, logger); type = 'graph_status'; break;

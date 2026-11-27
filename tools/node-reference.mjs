@@ -13,6 +13,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { bundlePath } from './local-build.mjs';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // ---- environment ------------------------------------------------------------------------------
@@ -103,7 +105,7 @@ export async function loadCatalog() {
         if (typeof globalThis.glMatrix === 'undefined') {
             new Function(fs.readFileSync(path.join(ROOT, 'vendor/gl-matrix-min.js'), 'utf8')).call(globalThis);
         }
-        const mod = await import(pathToFileURL(path.join(ROOT, 'build/litegraph_nodejs.full.js')).href);
+        const mod = await import(pathToFileURL(bundlePath('build/litegraph_nodejs.full.js')).href);
         await mod.LiteGraph.LibraryManager.ready;
         return mod;
     })();

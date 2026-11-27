@@ -6641,6 +6641,7 @@ class LGraph {
     }
 
     startAsync(interval = 0) {
+        if (this.getExecutionBlockReason()) return Promise.resolve(false);
         if (this._pending_start) return this._pending_start.promise;
         const request = {};
         this._pending_start = request;
@@ -6664,6 +6665,7 @@ class LGraph {
 
     /** Start immediately when ready, or return a Promise while dependencies load. */
     start(interval = 0) {
+        if (this.getExecutionBlockReason()) return;
         if (this.status === LGraph.STATUS_RUNNING) return;
         if (this.hasPendingInitialization() || this._pendingCleanup?.size || this._cleanupWait) return this.startAsync(interval);
         this.initialization_error = null;
@@ -6854,8 +6856,8 @@ class LGraph {
         return this;
     }
 
-    stopAsync() {
-        return this._cleanupAsync(() => this.stop());
+    stopAsync(options) {
+        return this._cleanupAsync(() => this.stop(options));
     }
     clearAsync() {
         return this._cleanupAsync(() => this.clear());
@@ -6872,6 +6874,7 @@ class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        if (this.getExecutionBlockReason()) return;
         // an inner graph keeps its parent's clock origin (B13)
         const parent = this._subgraph_node?.graph;
         if (parent && this.starttime !== parent.starttime) {
@@ -9114,6 +9117,13 @@ class LGraph {
     /** the rules of this graph's execution model */
     getExecutionRules() {
         return ExecutionEngine.rulesFor(this);
+    }
+
+    /** A saved model unavailable on this host keeps the graph inspectable and paused. */
+    getExecutionBlockReason() {
+        const requested = this.rootGraph.config?.execution;
+        if (typeof requested !== "string" || !requested || ExecutionEngine.getModel(requested)) return null;
+        return `Execution paused: model ${JSON.stringify(requested)} is unavailable.`;
     }
 
     /**
@@ -21711,7 +21721,7 @@ class LGraphNode {
             return null;
         }
 
-        if (!force_update) {
+        if (!force_update || this.graph.getExecutionBlockReason()) {
             return link.data;
         }
 
@@ -22195,6 +22205,7 @@ class LGraphNode {
      * @param {*} options
      */
     doExecute(param, options = {}) {
+        if (this.graph?.getExecutionBlockReason()) return;
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.doExecute(param, options));
         const graph = this.graph;
         if (!graph || this.mode === LiteGraph.NEVER || this.initialization_state === "loading" || this.initialization_error || this.wrong_environment) return;
@@ -22265,6 +22276,7 @@ class LGraphNode {
      * then rethrown to the caller, as before.
      */
     _dispatchEvent(run) {
+        if (this.graph?.getExecutionBlockReason()) return;
         LiteGraph._dispatch_depth = (LiteGraph._dispatch_depth || 0) + 1;
         const outerScope = ExecutionEngine.openRoot("call");
         try {
@@ -22326,6 +22338,7 @@ class LGraphNode {
      * @param {*} param
      */
     actionDo(action, param, options = {}, action_slot) {
+        if (this.graph?.getExecutionBlockReason()) return;
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) {
             // a host call is an event entry: under refresh "ancestors" its data is pulled first, as for a delivered event
             return this._dispatchEvent(() => {
@@ -22432,7 +22445,7 @@ class LGraphNode {
      * @param {Number} link_id [optional] in case you want to trigger and specific output link in a slot
      */
     triggerSlot(slot, param, link_id, options = {}) {
-        if (!this.outputs) {
+        if (!this.outputs || this.graph?.getExecutionBlockReason()) {
             return;
         }
         if (!(LiteGraph._dispatch_depth > 0) && this.graph) return this._dispatchEvent(() => this.triggerSlot(slot, param, link_id, options));
@@ -36177,7 +36190,7 @@ class WaitAll {
             that.size[0] = 90;
         });
         this.size = [90, 70];
-        this.ready = [];
+        this._arrived = [];
     }
 
     getTitle() {
@@ -36190,7 +36203,7 @@ class WaitAll {
         }
         for (var i = 0; i < this.inputs.length; ++i) {
             var y = i * LiteGraph.NODE_SLOT_HEIGHT + 10;
-            ctx.fillStyle = this.ready[i] ? "#AFB" : "#000";
+            ctx.fillStyle = this._arrived[i] ? "#AFB" : "#000";
             ctx.fillRect(20, y, 10, 10);
         }
     }
@@ -36198,19 +36211,17 @@ class WaitAll {
     onAction(action, param, options, slot_index) {
         if (slot_index == null) return;
 
-        // check all
-        this.ready.length = this.inputs.length; // one flag per input to wait for
-        this.ready[slot_index] = true;
-        for (var i = 0; i < this.ready.length; ++i)
-            if (!this.ready[i])
-                return;
-        // pass, with the payload of the completing event (B15)
+        this._arrived[slot_index] = true;
+        for (let i = 0; i < this.inputs.length; i++) {
+            if (!this._arrived[i]) return;
+        }
+        // Pass the payload of the completing event (B15).
         this.reset();
         this.triggerSlot(0, param, null, options);
     }
 
     reset() {
-        this.ready.length = 0;
+        this._arrived.length = 0;
     }
 }
 LiteGraph.registerNodeType("events/waitAll", WaitAll);
@@ -63620,6 +63631,11 @@ class Editor {
             const summary = GraphLoader.formatReport(report, 3);
             graphcanvas.showExecutionNotice(ok ? `Loaded ${source} with fixes: ${summary}` : `Not loaded (${source}): ${summary}`, ok ? 6000 : 12000);
         });
+        graph.events.on("graph-changed", (event) => {
+            if (event.detail.reason !== "load" || event.detail.action !== "configure") return;
+            const reason = graph.getExecutionBlockReason();
+            if (reason) graphcanvas.showExecutionNotice(reason, 12000);
+        });
 
         // add stuff
         // this.addToolsButton("loadsession_button","Load","imgs/icon-load.png", this.onLoadButton.bind(this), ".tools-left" );
@@ -63976,6 +63992,8 @@ class Editor {
     onPlayButton() {
         var graph = this.graph;
         if (graph.status == LGraph.STATUS_STOPPED) {
+            const reason = graph.getExecutionBlockReason();
+            if (reason) return this.graphcanvas.showExecutionNotice(reason);
             graph.start();
         } else {
             graph.stop();
@@ -63984,6 +64002,8 @@ class Editor {
 
     onPlayStepButton() {
         var graph = this.graph;
+        const reason = graph.getExecutionBlockReason();
+        if (reason) return this.graphcanvas.showExecutionNotice(reason);
         graph.runStep(1);
         this.graphcanvas.draw(true, true);
     }
@@ -65595,6 +65615,7 @@ const graphStatusRunning = (graph) => graph?.status === (graph?.constructor?.STA
 
 /** the chip's text: the model title (or name) */
 function graphStatusLabel(graph) {
+    if (graph?.getExecutionBlockReason()) return "Execution paused";
     const engine = LiteGraph.ExecutionEngine;
     const name = engine?.modelNameFor(graph) ?? "legacy";
     const model = engine?.getModel(name);
@@ -65649,7 +65670,8 @@ function graphStatusMenu(canvas) {
     const graph = graphStatusRoot(canvas);
     const engine = LiteGraph.ExecutionEngine;
     if (!graph || !engine) return [];
-    const current = engine.modelNameFor(graph);
+    const blocked = graph.getExecutionBlockReason();
+    const current = blocked ? graph.config.execution : engine.modelNameFor(graph);
     const items = engine.listModels().map((model) => ({
         content: `${model.name === current ? "✓ " : ""}${model.title ?? model.name}`,
         callback: () => {
@@ -65667,6 +65689,7 @@ function graphStatusMenu(canvas) {
         } :
         {
             content: "Start",
+            disabled: !!blocked,
             callback: () => {
                 graph.start();
                 canvas.setDirty(true, true);

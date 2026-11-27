@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TestFramework } from '../../apps/tester/js/test-framework.js';
 import { TestRunner } from '../../apps/tester/js/test-runner.js';
-import { LiteGraph } from '../../build/litegraph.js';
+import { LiteGraph } from '../../apps/tester/js/litegraph.js';
 
 const config = { execution: { timeout: 200, maxConcurrent: 2 } };
 const definition = (extra = {}) => ({ id: 'fixture', nodeType: 'basic/const', timeout: 200, expectedInputs: [], expectedOutputs: [], ...extra });

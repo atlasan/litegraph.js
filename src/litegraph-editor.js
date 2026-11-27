@@ -66,6 +66,11 @@ export class Editor {
             const summary = GraphLoader.formatReport(report, 3);
             graphcanvas.showExecutionNotice(ok ? `Loaded ${source} with fixes: ${summary}` : `Not loaded (${source}): ${summary}`, ok ? 6000 : 12000);
         });
+        graph.events.on("graph-changed", (event) => {
+            if (event.detail.reason !== "load" || event.detail.action !== "configure") return;
+            const reason = graph.getExecutionBlockReason();
+            if (reason) graphcanvas.showExecutionNotice(reason, 12000);
+        });
 
         // add stuff
         // this.addToolsButton("loadsession_button","Load","imgs/icon-load.png", this.onLoadButton.bind(this), ".tools-left" );
@@ -374,6 +379,8 @@ export class Editor {
     onPlayButton() {
         var graph = this.graph;
         if (graph.status == LGraph.STATUS_STOPPED) {
+            const reason = graph.getExecutionBlockReason();
+            if (reason) return this.graphcanvas.showExecutionNotice(reason);
             graph.start();
         } else {
             graph.stop();
@@ -382,6 +389,8 @@ export class Editor {
 
     onPlayStepButton() {
         var graph = this.graph;
+        const reason = graph.getExecutionBlockReason();
+        if (reason) return this.graphcanvas.showExecutionNotice(reason);
         graph.runStep(1);
         this.graphcanvas.draw(true, true);
     }

@@ -278,6 +278,7 @@ function refreshControls() {
   const ready = connected && !commandPending;
   const loaded = ['running', 'stopped'].includes(graphsStore[currentGraphId]?.status);
   for (const id of ['runBtn', 'pauseBtn', 'applyBtn', 'syncBtn']) document.getElementById(id).disabled = !ready || !loaded;
+  if (graphsStore[currentGraphId]?.executionBlocked) document.getElementById('runBtn').disabled = true;
   document.getElementById('toggleBtn').disabled = !graphViewer.editor;
   document.getElementById('editMode').textContent = graphViewer.editor ? (graphViewer.editor.read_only ? 'Read-only view' : 'Editing local graph') : '';
   document.getElementById('stopAllBtn').disabled = !ready;
@@ -331,18 +332,20 @@ function handleWebSocketMessage(message) {
       }
       break;
     case "graph_opened": {
-      const { graphId, serializedGraph, status } = message.data;
+      const { graphId, serializedGraph, status, executionBlocked } = message.data;
       // Normalize graphId across visualization and execution.
-      graphsStore[graphId] = { serializedGraph, status };
+      graphsStore[graphId] = { serializedGraph, status, executionBlocked };
       tabManager.addTab(graphId, graphId, status, () => {
         currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, graphId);
         applyExecutionStates(graphViewer.graph, graphsStore[currentGraphId]);
+        if (graphsStore[graphId].executionBlocked) notice(graphsStore[graphId].executionBlocked);
         refreshControls();
       });
       tabManager.activateTab(graphId);
       if (currentGraphId === graphId) graphViewer.updateGraph(serializedGraph);
       else currentGraphId = selectGraphView(graphViewer, graphsStore, currentGraphId, graphId);
       applyExecutionStates(graphViewer.graph, graphsStore[graphId]);
+      if (executionBlocked) notice(executionBlocked);
       break;
     }
     case "graph_status": {
@@ -362,15 +365,16 @@ function handleWebSocketMessage(message) {
     }
     case "graph_updated":
     case "graph_sync": {
-      const { graphId, serializedGraph } = message.data;
+      const { graphId, serializedGraph, executionBlocked } = message.data;
       if (message.type === 'graph_updated' && !message.requestId) {
         notice(`Worker ${graphId} changed in another client. Local view retained; Sync to retrieve it.`);
         break;
       }
-      if (graphsStore[graphId]) graphsStore[graphId].serializedGraph = serializedGraph;
+      if (graphsStore[graphId]) Object.assign(graphsStore[graphId], { serializedGraph, executionBlocked });
       if (currentGraphId === graphId) {
         graphViewer.updateGraph(serializedGraph);
         applyExecutionStates(graphViewer.graph, graphsStore[graphId]);
+        if (executionBlocked) notice(executionBlocked);
       }
       break;
     }

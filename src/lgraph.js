@@ -444,6 +444,7 @@ export class LGraph {
     }
 
     startAsync(interval = 0) {
+        if (this.getExecutionBlockReason()) return Promise.resolve(false);
         if (this._pending_start) return this._pending_start.promise;
         const request = {};
         this._pending_start = request;
@@ -467,6 +468,7 @@ export class LGraph {
 
     /** Start immediately when ready, or return a Promise while dependencies load. */
     start(interval = 0) {
+        if (this.getExecutionBlockReason()) return;
         if (this.status === LGraph.STATUS_RUNNING) return;
         if (this.hasPendingInitialization() || this._pendingCleanup?.size || this._cleanupWait) return this.startAsync(interval);
         this.initialization_error = null;
@@ -625,7 +627,7 @@ export class LGraph {
         return this;
     }
 
-    stopAsync() { return this._cleanupAsync(() => this.stop()); }
+    stopAsync(options) { return this._cleanupAsync(() => this.stop(options)); }
     clearAsync() { return this._cleanupAsync(() => this.clear()); }
     removeAsync(node) { return this._cleanupAsync(() => this.remove(node)); }
 
@@ -637,6 +639,7 @@ export class LGraph {
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
     runStep(num = 1, do_not_catch_errors, limit) {
+        if (this.getExecutionBlockReason()) return;
         // an inner graph keeps its parent's clock origin (B13)
         const parent = this._subgraph_node?.graph;
         if (parent && this.starttime !== parent.starttime) {
@@ -2572,6 +2575,13 @@ export class LGraph {
     /** the rules of this graph's execution model */
     getExecutionRules() {
         return ExecutionEngine.rulesFor(this);
+    }
+
+    /** A saved model unavailable on this host keeps the graph inspectable and paused. */
+    getExecutionBlockReason() {
+        const requested = this.rootGraph.config?.execution;
+        if (typeof requested !== "string" || !requested || ExecutionEngine.getModel(requested)) return null;
+        return `Execution paused: model ${JSON.stringify(requested)} is unavailable.`;
     }
 
     /**

@@ -24,6 +24,7 @@ New plans start from the [plan template](../_templates/plan.md).
 
 | Date | Plan | Status |
 |---|---|---|
+| 2026-11-27 | [Browser and Node execution parity](2026-11-27-browser-node-execution-parity.md) | done ([execution](../executions/2026-11-27-browser-node-execution-parity.md)) |
 | 2026-11-25 | [Validated loader for untrusted graphs](2026-11-25-graph-loader.md): `LiteGraph.validateGraphData` (`src/graphloader.js`) bounds counts, nesting, strings and coordinates, drops runtime-only fields and reports malformed links before any node is built; the runner refuses failing data with a structured report, the editor opens and drops files in repair mode; limits are `LiteGraph.Loader.*` settings; branch `LG/dev_graph_loader` | accepted |
 | 2026-11-25 | [Hooks: generated doc tables, deprecation logs and strict "handled"](2026-11-25-hooks-deprecations.md): Wave 7 leftovers (N-1) and decision 0007, `LiteGraph.Hooks.StrictHandled` (next priorities step 5) | accepted |
 | 2026-11-25 | [Call scopes and pure semantics](2026-11-25-call-scopes.md): flows step 4 (FLW-01 to FLW-04, FLW-14): one hierarchical scope id per step, outer call, Sequence output, loop iteration and function call; `pure: "volatile"`; a property version in the memo; a `refresh` input; the `volatile-loop-input` check; branch `LG/dev_flows_call_scopes` | done ([execution](../executions/2026-11-25-call-scopes.md)) |

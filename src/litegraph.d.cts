@@ -680,12 +680,14 @@ export declare class LGraph {
     stop(options?: { dropQueued?: boolean }): void;
     /** the execution model this graph runs under, resolved from the root's config.execution; assigning it is `setExecutionModel(name)` (one undo step; an unknown name throws) */
     executionModel: string;
+    /** Returns the reason execution is paused, or null when the requested model is available. */
+    getExecutionBlockReason(): string | null;
     getExecutionRules(): ExecutionModel;
     /** sets the root's config.execution in one undo step; throws for an unknown model */
     setExecutionModel(name: string): boolean;
     /** Await asynchronous cleanup returned by stop/removal callbacks. */
     whenIdle(): Promise<this>;
-    stopAsync(): Promise<this>;
+    stopAsync(options?: { dropQueued?: boolean }): Promise<this>;
     clearAsync(): Promise<this>;
     removeAsync(node: LGraphNode): Promise<this>;
     cleanup_error?: Error | null;

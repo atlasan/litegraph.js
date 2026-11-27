@@ -8,6 +8,7 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import { Worker } from 'node:worker_threads';
+import { localBuildRoot } from '../local-build.mjs';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'litegraph-runner-'));
 process.env.WORKFLOWS_DIR = path.join(temp, 'workflows');
@@ -155,6 +156,26 @@ test('runner parity (Wave 6): ancestors and legacy workflows give the in-process
   } finally { manager.setExecutionStateCallback(null); await manager.unloadAllGraphs(logger); }
 });
 
+test('replacing a running graph with an unavailable model pauses it and preserves the model', { timeout: 10000 }, async () => {
+  const file = 'empty.json';
+  const missing = 'missing-runner-model';
+  try {
+    assert.equal((await manager.openGraph(file, logger)).status, 'stopped');
+    assert.equal((await manager.controlGraph(file, 'start', logger)).status, 'running');
+    const paused = await manager.updateGraph(file, { ...workflow, config: { execution: missing } }, logger);
+    assert.equal(paused.status, 'stopped');
+    assert.match(paused.executionBlocked, /missing-runner-model/);
+    assert.equal(paused.serializedGraph.config.execution, missing);
+    assert.equal((await manager.controlGraph(file, 'start', logger)).error, paused.executionBlocked);
+    const available = await manager.updateGraph(file, { ...workflow, config: { execution: 'legacy' } }, logger);
+    assert.equal(available.status, 'stopped');
+    assert.equal(available.executionBlocked, undefined);
+    assert.equal((await manager.controlGraph(file, 'start', logger)).status, 'running');
+  } finally {
+    await manager.unloadGraph(file, logger);
+  }
+});
+
 test('worker stop/update acknowledgments wait for bound ports to be released', { timeout: 10000 }, async () => {
   const reservation = net.createServer();
   reservation.listen(0, '127.0.0.1');
@@ -260,7 +281,9 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     const listed = await fetch(`http://${address}/api/list_files`).then((r) => r.json());
     assert.ok(listed.includes('empty.json'));
     assert.ok(!listed.includes('escape.json'));
-    assert.equal((await fetch(`http://${address}/build/litegraph.full.js`)).status, 200);
+    const bundle = await fetch(`http://${address}/build/litegraph.full.js`);
+    assert.equal(bundle.status, 200);
+    assert.deepEqual(Buffer.from(await bundle.arrayBuffer()), fs.readFileSync(path.join(localBuildRoot, 'build/litegraph.full.js')));
     ws.send('null');
     assert.match((await waitFor((m) => m.type === 'error')).data.message, /Invalid message/);
     ws.send(JSON.stringify({ type: 'open_graph', requestId: 'open-fixture', data: { file: 'empty.json' } }));
@@ -298,6 +321,12 @@ test('HTTP and WebSocket protocol on an ephemeral port', async () => {
     assert.equal(ownUpdate.requestId, 'update-fixture');
     assert.equal(broadcast.requestId, undefined);
     assert.equal(broadcast.data.serializedGraph.extra.marker, 'peer-update');
+    ws.send(JSON.stringify({ type: 'control_graph', requestId: 'stop-and-clear', data: {
+      graphId: 'empty.json', action: 'stop', dropQueued: true,
+    } }));
+    const stopped = await waitFor((m) => m.requestId === 'stop-and-clear');
+    assert.equal(stopped.type, 'graph_status');
+    assert.equal(stopped.data.status, 'stopped');
     messages.length = 0;
     ws.send(JSON.stringify({ type: 'stop_all_graphs' }));
     await waitFor((m) => m.type === 'active_graphs' && m.data.graphs[0]?.status === 'stopped');

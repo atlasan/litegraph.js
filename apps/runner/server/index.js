@@ -9,11 +9,13 @@ import { unloadAllGraphs } from './graphManager.js';
 import { logger } from '../logger.js';
 import { hostGuard } from './security.js';
 import { describePolicy } from '../nodePolicy.js';
+import { localBuildRoot } from '../../../tools/local-build.mjs';
 
 export function createRunnerServer() {
   const app = express();
   app.use(hostGuard);
   app.use(express.static(path.join(runnerRoot, 'public')));
+  app.use('/build', express.static(path.join(localBuildRoot, 'build')));
   for (const directory of ['css', 'src', 'build', 'external', 'vendor']) {
     app.use('/' + directory, express.static(path.join(repositoryRoot, directory)));
   }

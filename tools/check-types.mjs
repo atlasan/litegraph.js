@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
+import { localBuildRoot } from './local-build.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const compiler = path.join(root, 'node_modules/typescript/bin/tsc');
@@ -41,7 +42,7 @@ async function checkExports(declaration, artifact, singleton = false) {
     const exports = checker.getExportsOfModule(checker.getSymbolAtLocation(source));
     const resolve = (symbol) => symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
     const names = exports.filter((symbol) => resolve(symbol).flags & ts.SymbolFlags.Value).map((symbol) => symbol.name).sort();
-    const imported = await import(new URL(artifact, import.meta.url));
+    const imported = await import(pathToFileURL(path.join(localBuildRoot, artifact)));
     const runtime = artifact.endsWith('.cjs') ? imported.default : imported;
     assert.deepEqual(names, Object.keys(runtime).sort(), `Declared/runtime exports differ: ${artifact}`);
     if (singleton) {
@@ -50,10 +51,10 @@ async function checkExports(declaration, artifact, singleton = false) {
         assert.deepEqual(fields.map((field) => field.name).filter((name) => !(name in runtime.LiteGraph)), [], 'Declared LiteGraph members missing at runtime');
     }
 }
-await checkExports('src/litegraph.d.ts', '../build/litegraph.js', true);
-await checkExports('src/litegraph.core.d.ts', '../build/litegraph.core.js');
-await checkExports('src/litegraph.full.d.cts', '../build_node/litegraph.cjs');
-await checkExports('src/litegraph.node.d.cts', '../build_node/litegraph_nodejs.full.cjs');
+await checkExports('src/litegraph.d.ts', 'build/litegraph.js', true);
+await checkExports('src/litegraph.core.d.ts', 'build/litegraph.core.js');
+await checkExports('src/litegraph.full.d.cts', 'build_node/litegraph.cjs');
+await checkExports('src/litegraph.node.d.cts', 'build_node/litegraph_nodejs.full.cjs');
 
 // every typed event emitted in src/ is declared in one of the event maps
 const declarations = fs.readFileSync(path.join(root, 'src/litegraph.d.cts'), 'utf8');

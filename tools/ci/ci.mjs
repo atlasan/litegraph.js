@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  HELP, CORE_STEPS, EXTRA_STEPS, REPORT_SCHEMA, UsageError, parseArgs, parseJest, parseNodeTest, parseBrowser, parseBunTest,
+  HELP, CORE_STEPS, EXTRA_STEPS, REPORT_SCHEMA, UsageError, parseArgs, parseJest, parseNodeTest, parseBrowser, parseExecutionParity, parseBunTest,
   parseAudit, parseComfy, parseFresh, runId, summaryLine, overallResult, renderMarkdown, commentCommand,
   githubCommand, githubState, shellQuote, repositoryRoot,
 } from './core.mjs';
@@ -90,6 +90,9 @@ export function resolveRef(ref, root = repositoryRoot) {
  */
 export async function runOne({ ref, extras = [], keep = null, root = repositoryRoot, dir = ciDir(), progress = () => {}, versions }) {
   const target = resolveRef(ref, root);
+  // Historical refs built into the tracked directories and still get their original freshness check.
+  const localBuild = spawnSync('git', ['cat-file', '-e', `${target.commit}:tools/local-build.mjs`], { cwd: root }).status === 0;
+  const bundleStep = localBuild ? CORE_STEPS[2] : { ...CORE_STEPS[2], name: 'fresh', title: 'Rebuilt bundles match the committed build' };
   const id = claimRunDir(path.join(dir, 'runs'), runId(target.commit.slice(0, 7)));
   const runDir = path.join(dir, 'runs', id);
   const logs = path.join(runDir, 'logs');
@@ -105,10 +108,10 @@ export async function runOne({ ref, extras = [], keep = null, root = repositoryR
     startedAt: new Date(started).toISOString(), finishedAt: null, durationMs: null,
     host: { platform: os.platform(), release: os.release(), arch: os.arch(), cpus: os.cpus().length, hostname: os.hostname() },
     versions, runner: { commit: git(['rev-parse', 'HEAD'], root), changed: git(['status', '--porcelain', '--', 'tools/ci'], root) !== '', sha256: sha256(SELF), pid: process.pid },
-    workDir: path.relative(root, work), counts: { jest: null, integration: null, browser: null },
+    workDir: path.relative(root, work), counts: { jest: null, integration: null, browser: null, executionParity: null },
     steps: [
       { name: 'clone', title: 'git clone --local, checkout --detach', advisory: false },
-      ...CORE_STEPS.map(({ name, title }) => ({ name, title, advisory: false })),
+      ...CORE_STEPS.slice(0, 2).concat(bundleStep).map(({ name, title }) => ({ name, title, advisory: false })),
       ...extras.map((name) => ({ name, title: EXTRA_STEPS[name].title, advisory: EXTRA_STEPS[name].advisory })),
     ].map((step) => ({ ...step, status: 'pending', exitCode: null, durationMs: null, log: `logs/${step.name}.log`, logSha256: null, counts: null })),
     result: 'running', summary: '',
@@ -164,12 +167,14 @@ export async function runOne({ ref, extras = [], keep = null, root = repositoryR
     report.counts.jest = parseJest(text);
     report.counts.integration = parseNodeTest(text);
     report.counts.browser = parseBrowser(text);
-    return { exitCode, counts: { jest: report.counts.jest, integration: report.counts.integration, browser: report.counts.browser } };
+    report.counts.executionParity = parseExecutionParity(text);
+    const { jest, integration, browser, executionParity } = report.counts;
+    return { exitCode, counts: { jest, integration, browser, executionParity } };
   });
 
-  await runStep('fresh', async (log) => {
+  await runStep(bundleStep.name, async (log) => {
     // the workflow's step, plus files the build added that git diff does not see
-    let exitCode = await exec(CORE_STEPS[2].command, { cwd: checkout, env, log });
+    let exitCode = await exec(bundleStep.command, { cwd: checkout, env, log });
     const untracked = spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'build', 'build_node'], { cwd: checkout, encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
     const counts = parseFresh(fs.readFileSync(log, 'utf8'));
     if (untracked.length) {
@@ -181,7 +186,7 @@ export async function runOne({ ref, extras = [], keep = null, root = repositoryR
     return { exitCode, counts };
   });
 
-  for (const name of extras) await runStep(name, (log, step) => EXTRA[name]({ checkout, env, log, root, tmp, step, report }));
+  for (const name of extras) await runStep(name, (log, step) => EXTRA[name]({ checkout, env, log, root, tmp, step, report, localBuild }));
 
   report.finishedAt = new Date().toISOString();
   report.durationMs = Date.now() - started;
@@ -201,15 +206,17 @@ const EXTRA = {
     return { exitCode, counts: parseAudit(fs.readFileSync(log, 'utf8')) };
   },
 
-  async pack({ checkout, env, log, tmp }) {
+  async pack({ checkout, env, log, tmp, localBuild }) {
     const dest = path.join(tmp, 'pack');
     const project = path.join(tmp, 'pack-install');
     fs.mkdirSync(dest, { recursive: true });
     fs.mkdirSync(project, { recursive: true });
     const jsonLog = path.join(tmp, 'pack.json');
-    const packed = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', dest], { cwd: checkout, env, encoding: 'utf8' });
-    fs.appendFileSync(log, `$ npm pack --ignore-scripts --json --pack-destination ${dest}\n${packed.stderr}`);
-    if (packed.status !== 0) { fs.appendFileSync(log, packed.stdout); return { exitCode: packed.status ?? 1 }; }
+    const packageRoot = localBuild ? path.join(checkout, '.lg', 'local-build') : checkout;
+    const args = ['pack', '--ignore-scripts', '--json', '--pack-destination', dest];
+    const packed = spawnSync('npm', args, { cwd: packageRoot, env, encoding: 'utf8' });
+    fs.appendFileSync(log, `$ npm ${args.join(' ')} (in ${packageRoot})\n${packed.stderr ?? packed.error ?? ''}`);
+    if (packed.status !== 0) { fs.appendFileSync(log, packed.stdout ?? ''); return { exitCode: packed.status ?? 1 }; }
     fs.writeFileSync(jsonLog, packed.stdout);
     const info = JSON.parse(packed.stdout)[0];
     fs.appendFileSync(log, `${info.filename}: ${info.entryCount} files, ${info.size} bytes packed, ${info.unpackedSize} unpacked\n`);
@@ -231,7 +238,7 @@ const EXTRA = {
       fs.appendFileSync(log, `skipped: ${source} with schema/ and node_modules/ is not present (git-ignored; see its README)\n`);
       return { skip: 'experiments/comfy-interop not present' };
     }
-    // the probes load ../../build_node and ../../src, so they run inside the checkout
+    // Run the probes against the checkout’s bundles and sources.
     const target = path.join(checkout, 'experiments', 'comfy-interop');
     fs.cpSync(source, target, { recursive: true, filter: (file) => !file.startsWith(path.join(source, 'node_modules')) });
     fs.symlinkSync(path.join(source, 'node_modules'), path.join(target, 'node_modules'), 'dir');
