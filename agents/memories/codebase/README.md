@@ -20,7 +20,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
 | `tools/ci/`, `.github/workflows/validate.yml` | Local CI (`npm run ci:local`, `lg ci`): `ci.mjs` (clean clones under `.lg/ci/work/`, parallel runs, steps, reports in `.lg/ci/runs/`, notes, PR comments, the GitHub switch), `core.mjs` (arguments, step table, log parsers, summary line, `report.md`), `pack-smoke.mjs` (the packed-install checks). The workflow is gated on the repository variable `LG_GITHUB_CI` = `on` (off by default) |
-| `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses) |
+| `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses); `hook-docs.mjs` (`npm run docs:callbacks`: the generated hook and event tables of `docs/callbacks.md`) |
 | `test/` | Jest suites |
 | `csharp/` | Experimental C#/Unity port, untouched since 2023 |
 
@@ -55,7 +55,7 @@ Listed in build order (`build.py` `lib_js_files`):
 ## Initialization
 
 1. The constructor of `LiteGraphClass` does not initialize anything.
-2. `initialize()` (`litegraph.js:253`) sets up callbacks, attaches the class references, then creates the `LibraryManager`, then calls `setupPlatform()`. That creates `commands`, `keybindings`, `settings`, `menus`, `widget_types` and `extensions`.
+2. `initialize()` (`litegraph.js:253`) attaches the class references (hook registries are created when a handler is first registered), then creates the `LibraryManager`, then calls `setupPlatform()`. That creates `commands`, `keybindings`, `settings`, `menus`, `widget_types` and `extensions`.
 3. Finally it registers the `graph/*` subgraph types.
 4. A bundle and `src/` imports in one page share **one** global `LiteGraph`.
 
@@ -119,7 +119,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Event and action slots:** `EVENT` and `ACTION` both equal -1. Under `legacy`, actions on a node that has an `onExecute` are deferred to its next execution unless `use_deferred_actions` is off; under the models, the model's `delivery` decides (`emit: "immediate"` and `immediate_inputs` override it).
 - **Legacy guards** (flags, all off by default, deprecated): `ensureUniqueExecutionAndActionCall`, `ensureNodeSingleExecution`, `ensureNodeSingleAction`, `preventAncestorRecalculation`.
 - **Hooks and typed events share one core (Wave 7):**
-  - **Hooks intercept.** About 100 `onX` names; the assigned `onX` is the default handler. `CallbackHandler.run` calls only `onX` when no handler is registered, isolates handler errors and rethrows the first one after the chain. Read results with `CallbackHandler.is` / `handled` / `valueOf` / `objectOf` (menus); `test/hook-results.test.js` pins each site's rule. Hook names and arguments per host are declared in the `*Hooks` maps of `litegraph.d.cts` (`check:types` fails on an undeclared dispatched name).
+  - **Hooks intercept.** About 100 `onX` names; the assigned `onX` is the default handler. `CallbackHandler.run` calls only `onX` when no handler is registered, isolates handler errors and rethrows the first one after the chain. Read results with `CallbackHandler.is` / `handled` / `valueOf` / `objectOf` (menus); the 8 lenient "handled" sites go through `CallbackHandler.handledAt(name, r, legacy)`, strict when the setting `LiteGraph.Hooks.StrictHandled` is on, otherwise warning once per hook (decision 0007). `test/hook-results.test.js` pins each site's rule in both modes. Hook names and arguments per host are declared in the `*Hooks` maps of `litegraph.d.cts` (`check:types` fails on an undeclared dispatched name); the tables in `docs/callbacks.md` are generated from them and from the event maps (`tools/hook-docs.mjs`, freshness test `tools/tests/hook-docs.test.mjs`). The registry lives in `host._cb_handler` / `handler._lists`; the old names `cb_handler`, `callbacks_handlers` and `callbackhandler_setup()` still work and log once (deprecated).
   - **Typed events observe.** `LiteGraph.events`, `graph.events` and `canvas.events`.
   - **Points with both** fire the hook chain, then the event; `CallbackHandler.fireHookThenEvent` does it where the two are adjacent (selection, property changes, type registration, construct hooks) and skips the event after a veto. `test/hook-order.test.js` is the order golden.
   - **Dispatch tap:** `LiteGraph.setDispatchTap(fn)` (stored as `ListenerList.tap`) sees every hook and event dispatch with its duration.
@@ -183,7 +183,7 @@ Listed in build order (`build.py` `lib_js_files`):
 - **Package exports:** `.`, `./core`, `./node` (ESM and CJS), plus `./build/*` wildcards that Wave 5 removes.
 - **Tests:**
   - Jest: 45 files, 856 tests (26 golden snapshots, documents frozen in `test/fixtures/golden-examples/`), in `test/`. Wave 6: `event-models.test.js` (flow nodes × every model), `execution-models.test.js`, `execution-golden.test.js` (snapshots that must stay identical under `legacy`).
-  - node:test: 22 files, in `tools/tests/`; covers the launcher (`launcher`, also under `bun test`), the local CI (`ci`: parsers, reports, the GitHub switch with a fake `gh`, parallel runs on a tiny repository), the node catalog (`node-catalog`), the examples library (`examples`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
+  - node:test: 23 files, in `tools/tests/`; covers the launcher (`launcher`, also under `bun test`), the local CI (`ci`: parsers, reports, the GitHub switch with a fake `gh`, parallel runs on a tiny repository), the node catalog (`node-catalog`), the examples library (`examples`), the generated callback tables (`hook-docs`), the runner (incl. Wave 6 parity fixtures), tester, network lifecycle, upstream issues and undeclared names.
 
 ## Known traps
 

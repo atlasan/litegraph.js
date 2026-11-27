@@ -1,6 +1,6 @@
 # Event integration: one core, two faces
 
-> **Date** 2026-11-22 · **Kind** plan · **Status** accepted; done except generated doc tables, deprecation logs and async hooks (see History) · **Base** `LG/dev` @ `a5604d8`
+> **Date** 2026-11-22 · **Kind** plan · **Status** done; async hooks need their own proposal (decision 0007) (see History) · **Base** `LG/dev` @ `a5604d8`
 
 **Outcome:** the legacy `onX` callbacks, the CallbackHandler hooks and the typed events run on **one listener engine**, and today's code keeps working unchanged.
 - **Hooks** stay the **intercept** face: priority, veto and return values.
@@ -232,4 +232,4 @@ Proposed as **Wave 7**, on branches `LG/wave7<x>_<topic>` cut from `LG/dev`. Eve
   - **Typed hook maps** (step 12's hook half) and the declared-hooks check in `check-types`.
   - **The menu `return_value` sites:** `CallbackHandler.objectOf`, identical behaviour.
   - **Still deferred:** generated doc tables, step 13 (deprecation logs), making "handled" uniform (0.20), async hooks.
-
+- 2026-11-25: the leftovers, on `LG/dev_hooks_deprecations` ([plan](2026-11-25-hooks-deprecations.md), [record](../executions/2026-11-25-hooks-deprecations.md)): generated doc tables (`npm run docs:callbacks`), step 13 (the three names log once; `CallbackHandler` itself stays undeprecated, it holds the result helpers), and open decision 2 as [decision 0007](../memories/decisions/0007-hook-handled-rule.md) settled it: `LiteGraph.Hooks.StrictHandled`, off by default, no removal date.
