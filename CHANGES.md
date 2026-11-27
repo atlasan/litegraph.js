@@ -7,9 +7,12 @@ Plan: `agents/plans/2026-11-25-next-priorities-after-0.18.0-dev.2.md`. Each trac
 
 ## Added
 
+* **Compatibility charter** (`docs/compatibility.md`, linked from `AGENTS.md`): the targets (this library's API and documents, the original LiteGraph API, ComfyUI workflows, WebGLStudio and other hosts), how far each is kept, how each is checked, and the rules for compatibility changes ([decision 0008](agents/memories/decisions/0008-legacy-compatibility-scope.md)).
+
 ## Changed
 
 * **Development environment:** Node.js 22 is pinned in `.nvmrc` (`nvm use`); Bun is the preferred script and app runner (`bun run check`, `editor:bun`, `graphrunner:bun`); installs stay on `npm ci` and `package-lock.json`.
+* **`no-undef` is an error in `eslint.config.js`:** browser and Node globals come from the `globals` package (new dev dependency, 13.24.0, already in the lock through ESLint), and the scripts in `src/nodes/nodejs_only/` and `src/nodes/libraries/` get the `LiteGraph` script-scope globals. `tools/tests/undeclared-names.test.mjs` now checks that the config keeps the rule on and that `src/` is clean.
 
 ## Fixed
 
