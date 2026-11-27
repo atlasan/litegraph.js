@@ -33,7 +33,7 @@ This plan orders what is still open after the `0.18.0-dev.2` pre-release. Tier 1
 | 3 | Browser smoke test of the built bundles in the gate (USE-09): load `editor_build.html` headless, create, link and drag nodes, reroute, search insert with Enter, undo | `npm run check` (or a `check:browser` step in `ci:local --full`) fails on a page error or a failed scripted interaction |
 | 4 | Validated loader for untrusted graphs (X-04), shared by the editor and the runner: type allowlist hook, size and coordinate bounds, unknown runtime fields dropped, a structured report | Runner integration test: an oversized or malformed graph is refused with a report; existing fixtures and examples load unchanged |
 | 5 | Wave 7 leftovers (N-1): hook and event doc tables generated from the declarations; one-time deprecation logs for `callbacks_handlers`, `cb_handler`, `callbackhandler_setup` and the remaining legacy names; plus [decision 0007](../memories/decisions/0007-hook-handled-rule.md): `LiteGraph.Hooks.StrictHandled` and its one-time warnings | The generated tables match the declarations (a freshness test); each deprecated name logs once in a test; `test/hook-results.test.js` covers strict mode |
-| 6 | Launcher on Windows and macOS; npm publish decision and `0.18.0` release checks | Records of the wrapper runs; `ci:local --full` proof on the release commit; tag only after approval |
+| 6 | Launcher on Windows and macOS; Git-tagged `0.18.0` release checks | Records of the wrapper runs; `ci:local --full` proof on the release commit; tag only after approval |
 
 ### Tier 2: library structure (0.19)
 
