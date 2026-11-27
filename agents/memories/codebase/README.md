@@ -1,6 +1,6 @@
 # Codebase map
 
-> **Updated** 2026-11-24 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
+> **Updated** 2026-11-27 · **Kind** reference · **Status** living · **Base** `LG/dev` after Wave 4e
 
 This is a map for finding things, not a contract; contracts are in [docs/development.md](../../../docs/development.md). Paths are relative to the repository root. The [node runtime catalog](node-runtime-catalog.md) covers node families in depth.
 
@@ -19,6 +19,7 @@ This is a map for finding things, not a contract; contracts are in [docs/develop
 | `vendor/` | Third-party browser libraries (litegl, gl-matrix, audiosynth, midi-parser, dds, sillyclient), formerly `editor/js/libs/`; the GL nodes use the global `gl` |
 | `headless/examples/` | Node scripts that run graphs from `build_node/` |
 | `experiments/` | Bounded probes (`comfy-interop/`) |
+| `tools/browser/` | Browser smoke test (`npm run check:browser`, last step of `npm run check`): `firefox-bidi.mjs` (finds Firefox, snap-aware profile, a minimal WebDriver BiDi client on Node's `WebSocket`, `browser.close` before signals), `smoke.mjs` (serves the editor in-process, drives `editor_build.html` with pointer and key input, checks the graph after each step; skips without Firefox) |
 | `tools/ci/`, `.github/workflows/validate.yml` | Local CI (`npm run ci:local`, `lg ci`): `ci.mjs` (clean clones under `.lg/ci/work/`, parallel runs, steps, reports in `.lg/ci/runs/`, notes, PR comments, the GitHub switch), `core.mjs` (arguments, step table, log parsers, summary line, `report.md`), `pack-smoke.mjs` (the packed-install checks). The workflow is gated on the repository variable `LG_GITHUB_CI` = `on` (off by default) |
 | `tools/` | Gate scripts (`check-build`, `check-types`), node:test suites, fixtures; `node-reference.mjs` (`npm run docs:nodes`: the node reference in `docs/nodes/`, and the catalog loader the catalog test uses); `hook-docs.mjs` (`npm run docs:callbacks`: the generated hook and event tables of `docs/callbacks.md`) |
 | `test/` | Jest suites |

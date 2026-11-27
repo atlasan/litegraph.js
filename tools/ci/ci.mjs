@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  HELP, CORE_STEPS, EXTRA_STEPS, REPORT_SCHEMA, UsageError, parseArgs, parseJest, parseNodeTest, parseBunTest,
+  HELP, CORE_STEPS, EXTRA_STEPS, REPORT_SCHEMA, UsageError, parseArgs, parseJest, parseNodeTest, parseBrowser, parseBunTest,
   parseAudit, parseComfy, parseFresh, runId, summaryLine, overallResult, renderMarkdown, commentCommand,
   githubCommand, githubState, shellQuote, repositoryRoot,
 } from './core.mjs';
@@ -105,7 +105,7 @@ export async function runOne({ ref, extras = [], keep = null, root = repositoryR
     startedAt: new Date(started).toISOString(), finishedAt: null, durationMs: null,
     host: { platform: os.platform(), release: os.release(), arch: os.arch(), cpus: os.cpus().length, hostname: os.hostname() },
     versions, runner: { commit: git(['rev-parse', 'HEAD'], root), changed: git(['status', '--porcelain', '--', 'tools/ci'], root) !== '', sha256: sha256(SELF), pid: process.pid },
-    workDir: path.relative(root, work), counts: { jest: null, integration: null },
+    workDir: path.relative(root, work), counts: { jest: null, integration: null, browser: null },
     steps: [
       { name: 'clone', title: 'git clone --local, checkout --detach', advisory: false },
       ...CORE_STEPS.map(({ name, title }) => ({ name, title, advisory: false })),
@@ -163,7 +163,8 @@ export async function runOne({ ref, extras = [], keep = null, root = repositoryR
     const text = fs.readFileSync(log, 'utf8');
     report.counts.jest = parseJest(text);
     report.counts.integration = parseNodeTest(text);
-    return { exitCode, counts: { jest: report.counts.jest, integration: report.counts.integration } };
+    report.counts.browser = parseBrowser(text);
+    return { exitCode, counts: { jest: report.counts.jest, integration: report.counts.integration, browser: report.counts.browser } };
   });
 
   await runStep('fresh', async (log) => {

@@ -20,7 +20,8 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 
 | Command | What it does |
 |---|---|
-| `npm run check` | Lint errors, all 12 builds, strict type consumers, Jest, node:test integration, package check |
+| `npm run check` | Lint errors, all 12 builds, strict type consumers, Jest, node:test integration, package check, the browser smoke test |
+| `npm run check:browser` | The [browser smoke test](#browser-smoke-test): `editor_build.html` in a headless Firefox, driven by pointer and key input. Skipped (exit 0) when no Firefox is found |
 | `npm run build` | `build.py`: regenerates `build/` and `build_node/`. Commit the output separately |
 | `npm test` / `npm run test:integration` | Jest (`test/`) / node:test (`tools/tests/`) |
 | `npm run check:fresh` | Rebuilds and fails when `build/` or `build_node/` differ from what is committed |
@@ -32,6 +33,27 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 | `npm run docs` | JSDoc from `src/` into [docs/api](api/index.html); the plugin `docs/jsdoc-ts-types.cjs` turns TypeScript-style types JSDoc cannot parse into `function` / `Object` / `*` and keeps the original in the description |
 
 `--ignore-scripts` skips native integration bindings. Browser GPU, audio and MIDI nodes, and external services, are outside the gate.
+
+## Browser smoke test
+
+`tools/browser/smoke.mjs` (`npm run check:browser`, the last step of `npm run check`) serves the editor in-process on a free port and opens `/editor/editor_build.html` in a headless Firefox through WebDriver BiDi (`tools/browser/firefox-bidi.mjs`: Node's built-in `WebSocket`, no npm dependency, nothing downloaded). Each step checks the graph and fails on any uncaught page error, `console.error` or failed request:
+
+1. the page loads with an empty graph;
+2. `build/litegraph.js` and `build/litegraph.full.js` load as modules in a blank tab and run a two-node graph;
+3. two nodes are created, then linked by dragging an output to an input;
+4. a node is dragged by its title (the expected position follows the grid alignment);
+5. a reroute is added from the link menu, then dragged;
+6. a double click opens the search box, its input has the focus, `watch` is typed and Enter inserts the first result;
+7. Ctrl+Z five times, each back to the state before the step (the test turns `actionHistory_enabled` on; the page keeps it off).
+
+| Setting | Effect |
+|---|---|
+| `LG_FIREFOX=/path/to/firefox` | The executable. Otherwise `firefox`, `firefox-esr`, ... on the `PATH`, then the usual install places. A wrong path fails the run |
+| `LG_BROWSER_SMOKE=0` | Skip |
+| `LG_BROWSER_SMOKE=require` | No Firefox is a failure instead of a skip |
+| `--verbose` | Firefox's output and the page's console |
+
+A snap Firefox (Ubuntu) gets its throwaway profile under `~/snap/firefox/common/`, because it cannot see the host's `/tmp`. Firefox is closed through BiDi `browser.close` first, signals only as a fallback. A run takes about 15 s, about half of it Firefox starting.
 
 ## Local CI
 
@@ -48,7 +70,7 @@ npm run ci:local -- list                  # recent runs; show [run] --md|--json|
 |---|---|---|
 | `clone` | `git clone --local`, `checkout --detach <commit>`; the checkout must be clean | always |
 | `install` | `npm ci --ignore-scripts --prefer-offline` (the shared npm cache) | always |
-| `check` | `npm run check`; the Jest and node:test counts are read from the log | always |
+| `check` | `npm run check`; the Jest, node:test and browser smoke counts are read from the log | always |
 | `fresh` | `git diff --exit-code --stat -- build build_node`, plus new untracked files there | always |
 | `audit` | `npm audit --omit=dev` (needs the network) | `--audit` |
 | `pack` | `npm pack`, installed with `--omit=optional` into an empty project: ESM `.`, `/core`, a deep import; CJS `.` and `/node`; the version; `allow_scripts` false; `definitions`; `ancestors`; a graph run; `src/` not exported; no dependencies (`tools/ci/pack-smoke.mjs`) | `--pack` |
@@ -60,8 +82,10 @@ Each run has its own clone, `TMPDIR` and state, with `CI=true` and no npm settin
 **Report:** `.lg/ci/runs/<sha>-<time>/` holds `report.json` (commit and tree, ref, branches, clean flag, host, Node, npm, Python, git and Bun versions, each step's exit code, duration, counts and log sha256, the runner's own commit and hash), `report.md` (paste it into a PR body, an issue or a comment), `summary.txt` and `logs/`. The summary is one line, usable as a commit trailer:
 
 ```
-Local-CI: pass 1a2b3c4 node22.23.4 jest 1016/1016 int 151/151 fresh ok
+Local-CI: pass 1a2b3c4 node22.23.4 jest 1016/1016 int 151/151 browser 9/9 fresh ok
 ```
+
+`browser 9/9` is the browser smoke test inside `check`; `browser skip` means the machine had no Firefox, so that run did not exercise the browser. Commits from before the test show no `browser` token.
 
 - `--note` (or `ci.mjs note [run]`) appends the summary as a git note under `refs/notes/ci`; `git log --notes=ci` shows it. Notes are local: the tool never pushes them (`git push origin refs/notes/ci` does, by hand).
 - `--pr N` / `--issue N` (or `ci.mjs comment [run] --pr N`) print the `gh pr comment N --body-file report.md` command; only `--post` runs it. Posting is outward-facing: agents ask the user first.

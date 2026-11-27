@@ -1,6 +1,6 @@
 # Ideas catalog
 
-> **Updated** 2026-11-23 · **Kind** idea catalog · **Status** living
+> **Updated** 2026-11-27 · **Kind** idea catalog · **Status** living
 
 One row per idea. The [README](README.md#conventions) defines the IDs, fields and lifecycle, and [purposes.md](purposes.md) defines P1 to P10. Details are in each idea's area document.
 
@@ -44,7 +44,7 @@ These ideas recur across several areas, so each one also absorbs related area id
 | USE-06 | Node reference generated from the registry, searchable by agents (→ FLW-23) | P9 P10 | ext | S | ref | promoted |
 | USE-07 | Recent-nodes palette | P10 | ext | S | ref | seed |
 | USE-08 | Code-generation targets (LangGraph, JS, server steps) | P6 P7 P8 | io | L | adapt | seed |
-| USE-09 | Headless-Chromium smoke test of built bundles in the gate | P10 | runtime | S | none | seed |
+| USE-09 | Headless-browser smoke test of built bundles in the gate (done with Firefox through WebDriver BiDi: [plan](../plans/2026-11-25-browser-smoke.md)) | P10 | runtime | S | none | promoted |
 | USE-10 | Domain-object slot type and host-plugin embedding | P6 | core | M | none | seed |
 | USE-11 | MaterialX / OpenPBR import and view | P2 | io | L | ref | seed |
 | USE-12 | Compile to a shader with live preview, plus starter recipes | P2 P9 | io | L | adapt | seed |
