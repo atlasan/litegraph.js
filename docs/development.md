@@ -20,8 +20,9 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 
 | Command | What it does |
 |---|---|
-| `npm run check` | Lint errors, all 12 builds, strict type consumers, Jest, node:test integration, package check, the browser smoke test |
+| `npm run check` | Lint, builds, type checks, Jest, integration, package, browser smoke, and execution parity |
 | `npm run check:browser` | The [browser smoke test](#browser-smoke-test): `editor_build.html` in a headless Firefox, driven by pointer and key input. Skipped (exit 0) when no Firefox is found |
+| `npm run check:execution-parity` | [Browser and Node execution parity](#browser-and-node-execution-parity) across the built editor and Node runner. Requires Firefox. |
 | `npm run build` | `build.py`: regenerates `build/` and `build_node/`. Commit the output separately |
 | `npm test` / `npm run test:integration` | Jest (`test/`) / node:test (`tools/tests/`) |
 | `npm run check:fresh` | Rebuilds and fails when `build/` or `build_node/` differ from what is committed |
@@ -36,7 +37,7 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 
 ## Browser smoke test
 
-`tools/browser/smoke.mjs` (`npm run check:browser`, the last step of `npm run check`) serves the editor in-process on a free port and opens `/editor/editor_build.html` in a headless Firefox through WebDriver BiDi (`tools/browser/firefox-bidi.mjs`: Node's built-in `WebSocket`, no npm dependency, nothing downloaded). Each step checks the graph and fails on any uncaught page error, `console.error` or failed request:
+`tools/browser/smoke.mjs` (`npm run check:browser`) serves the editor in-process on a free port and opens `/editor/editor_build.html` in a headless Firefox through WebDriver BiDi (`tools/browser/firefox-bidi.mjs`: Node's built-in `WebSocket`, no npm dependency, nothing downloaded). Each step checks the graph and fails on any uncaught page error, `console.error` or failed request:
 
 1. the page loads with an empty graph;
 2. `build/litegraph.js` and `build/litegraph.full.js` load as modules in a blank tab and run a two-node graph;
@@ -54,6 +55,24 @@ bun run graphrunner:bun  # http://127.0.0.1:3000/
 | `--verbose` | Firefox's output and the page's console |
 
 A snap Firefox (Ubuntu) gets its throwaway profile under `~/snap/firefox/common/`, because it cannot see the host's `/tmp`. Firefox is closed through BiDi `browser.close` first, signals only as a fallback. A run takes about 15 s, about half of it Firefox starting.
+
+## Browser and Node execution parity
+
+With Node 22 and Firefox available, run:
+
+```sh
+npm run build
+npm run check:execution-parity
+npm run check:execution-parity -- --json ../execution-parity-report.json
+```
+
+Use `LG_FIREFOX` to select the executable. Choose a new report path outside the worktree. The JSON report (schema 2) contains the traces and stopped checkpoints for each fixture by host.
+
+- [Branch and Counter](../tools/execution-parity/branch-counter.json) emits `1` on the first start, `2` after stop/start, and `1` after reopening.
+- [Linked WaitAll](../tools/execution-parity/linked-wait-all.json) verifies two live instances of one saved definition. Pending inputs survive stop/start in their own instance. Reopening clears the pending inputs and counters.
+- [Linked deferred actions](../tools/execution-parity/linked-deferred-actions.json) runs under `step`, `strict`, and the default `legacy` flags. A normal stop/start delivers each queued action once. Reopening a stopped snapshot or explicitly clearing the queues before restart delivers none.
+
+The cases check paused inspection when the saved model is unavailable. The browser comparison follows `LG_BROWSER_SMOKE` in the validation gate. Node checks still run when Firefox is skipped. Local CI reports which hosts ran. [Execution parity plan](../agents/plans/2026-11-27-browser-node-execution-parity.md)
 
 ## Local CI
 
@@ -185,13 +204,15 @@ Requests have the form `{type, data, requestId?}`. Replies echo `requestId`.
 | Request | Payload | Response |
 |---|---|---|
 | `open_graph` | `file` | `graph_opened` |
-| `control_graph` | `graphId`, `action`: start / stop / status / clear | `graph_status` |
+| `control_graph` | `graphId`, `action`: start / stop / status / clear. A stop may include `dropQueued: true`. | `graph_status` |
 | `update_graph` | `graphId`, `serializedGraph` | `graph_updated` |
 | `request_sync` | `graphId` | `graph_sync` |
 | `unload_graph` | `graphId` | `graph_status: unloaded` |
 | `get_active_graphs` / `stop_all_graphs` | — | `active_graphs` |
 
 Broadcasts, without a request: `graph_status`, `active_graphs`, `console {graphId, level, message}`, and `execution_state {graphId, message}`. The message is the shared execution-state shape (`LiteGraph.ExecutionState`, protocol `v: 1`): `{v, kind: status | progress | error | reset, path, status, value?, max?, message?, time}`, one per change of a node's state; `path` is the node's path ("3:7" inside a subgraph). An editor applies one with `graph.applyExecutionState(message)`; the runner page does so for the open workflow and keeps the states per workflow (`apps/runner/public/execution-view-state.js`), so a tab switch redraws them. Nodes run by actions or pulls send `running` then `done`.
+
+An ordinary stop retains deferred actions. A stop with `dropQueued: true` removes actions already queued in the graph and its nested instances, even if the graph is already stopped. It keeps the loaded document and node state.
 
 A failed request answers `{type: "error", data: {message, report?}, requestId}`. `report` is present when the validated loader refused the workflow (`open_graph`, `update_graph`): every workflow is checked by `LiteGraph.validateGraphData` in strict mode, with the node-type policy as its type hook, before it is built. The report lists each issue with its `code`, JSON `path` and `message`; the limits are the `LiteGraph.Loader.*` settings ([guide](guide.md#untrusted-documents)).
 

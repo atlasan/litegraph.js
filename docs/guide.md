@@ -106,6 +106,8 @@ How events are delivered and when ON_REQUEST nodes run is chosen **per document*
 | `event` | immediate | none | Pure push wiring |
 | `legacy` | from the global flags | from the global flags | Documents saved without the field, exactly as before |
 
+If a document names a model unavailable on the host, it opens for inspection with execution paused. Saving preserves the requested name. Check `graph.getExecutionBlockReason()` before offering execution. Register the missing model or explicitly choose an available one, then start the graph.
+
 ```js
 graph.executionModel;                 // "ancestors"
 graph.setExecutionModel("step");      // one undo step
@@ -216,7 +218,8 @@ class Player {
 }
 ```
 
-- **Delivery** follows the document's model: immediate under `ancestors` and `event` (the target's ON_REQUEST inputs pulled first under `ancestors`); under `step` and `strict`, an action to a node that has an `onExecute` waits for its turn in the next frame (`graph.stop({dropQueued: true})` clears that queue). An input named `onTrigger` (or an ON_TRIGGER node without `onAction`) runs the node's `onExecute`.
+- **Delivery** follows the document's model. `ancestors` and `event` deliver immediately, with ON_REQUEST inputs pulled first under `ancestors`. Under `step` and `strict`, an action to a node with `onExecute` waits for that node's turn. An input named `onTrigger` (or an ON_TRIGGER node without `onAction`) runs the node's `onExecute`.
+- Ordinary stop/start retains deferred actions on the loaded instance. Reopening a saved workflow starts with empty queues. Use `graph.stop({dropQueued: true})` or `await graph.stopAsync({dropQueued: true})` to discard actions already queued in the graph and its nested instances.
 - **Exec slots** are any node's built-in `onTrigger` input (an event there runs `onExecute`) and `onExecuted` output (fired after the node executed or ran an action).
   - **How they are made:** `node.addOnTriggerInput()` / `addOnExecutedOutput()` append them, so the indices of the other slots never change, and mark them with `slot.exec`.
   - **Creating them on drop:** dropping an event link on a node's body creates them and switches the node to ON_TRIGGER (a type that refuses that mode keeps its mode and still gets `onTrigger`). This happens under the `ancestors` model (the model rule `exec_slots`), or when `LiteGraph.do_add_triggers_slots` is assigned true. The setting `LiteGraph.Node.ExecSlots` (`auto` / `on` / `off`) overrides both.

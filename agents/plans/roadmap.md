@@ -28,6 +28,7 @@ Each change keeps the `docs` / `fix` or `feat` / `build` commit split, and regen
 
 | Wave | Theme | Status |
 |---|---|---|
+| Track | [Browser and Node execution parity](2026-11-27-browser-node-execution-parity.md) | Trace comparison covers linked instance state and deferred queues across stop/start, reopen, and explicit clearing, plus paused inspection for unavailable models |
 | 0 | Safety and correctness | **Done**: [PR #5](https://github.com/atlasan/litegraph.js/pull/5) merged into `master`; follow-up [PR #6](https://github.com/atlasan/litegraph.js/pull/6) merged into `master` and `LG/dev` |
 | 1 | Platform layer | **Done** (`LG/wave1_platform` + `LG/wave1_finish`), merged into `LG/dev` and `master` ([PR #8](https://github.com/atlasan/litegraph.js/pull/8)) |
 | 2 | Authoring core (standalone ports) | **Done**: 2a (subgraphs, groups, clipboard, search) on `LG/wave2_authoring` and 2b (links, pointer gestures, floating reroutes, badges) on `LG/wave2_links`, both merged into `LG/dev` and `master` ([PR #9](https://github.com/atlasan/litegraph.js/pull/9)). See the [plan](2026-11-20-wave2-authoring-core.md). |

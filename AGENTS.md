@@ -18,6 +18,7 @@ Short operational notes for contributors and coding agents. Keep this file refer
 
 ## Workflow
 
+- **Git:** leave changes uncommitted unless the user explicitly requests a commit. Validate working-tree changes with `npm run check`.
 - **Branches:**
   - `LG/dev` is the progressive integration branch.
   - Parallel work runs on temporary `LG/dev_<topic>` branches cut from it and merged back; it gets a named track on the roadmap, not a wave number.
@@ -38,7 +39,9 @@ Short operational notes for contributors and coding agents. Keep this file refer
 
 ## Records
 
-Write every plan, run, review, research note and idea as a file in [agents/](agents/README.md), never only in chat:
+Keep [agents/](agents/README.md) records focused on Atlasan. Record repository decisions, implementation findings and reproducible verification using repository-relative links and portable commands. Keep personal context, private chats or pages, workstation paths, setup workarounds and raw local logs outside the worktree. Add or update a record when it provides durable project information.
+
+Name tools and records for the behavior they cover. Use that name consistently in commands, filenames, headings, the roadmap and the codebase map.
 
 | Record | Where | Template |
 |---|---|---|
